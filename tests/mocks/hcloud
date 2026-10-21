@@ -28,20 +28,22 @@ kind, action = args[0], args[1]
 TYPES = {'cx53': {'id': 1, 'cores': 16, 'memory': 32, 'disk': 320, 'architecture': 'x86'},
          'cpx02': {'id': 2, 'cores': 1, 'memory': 1, 'disk': 20, 'architecture': 'x86'},
          'cax11': {'id': 3, 'cores': 2, 'memory': 4, 'disk': 40, 'architecture': 'arm'}}
-# MOCK_SOLD_OUT=<type>: not orderable anywhere
-sold_out = TYPES.get(os.environ.get('MOCK_SOLD_OUT', ''), {}).get('id')
-DCS = [{'name': 'fsn1-dc14', 'location': {'name': 'fsn1'}, 'server_types': {'available': [t['id'] for t in TYPES.values() if t['id'] != sold_out]}},
-       {'name': 'nbg1-dc3', 'location': {'name': 'nbg1'}, 'server_types': {'available': [t['id'] for t in TYPES.values() if t['id'] != sold_out]}}]
+# Like the real API: per-location availability is part of the server type.
+# MOCK_SOLD_OUT=<type>: offered but not orderable; MOCK_DEPRECATED=<type>: deprecated in fsn1
+def locations(name):
+    sold = os.environ.get('MOCK_SOLD_OUT') == name
+    dep = {'announced': '2026-01-01T00:00:00Z', 'unavailable_after': '2027-01-01T00:00:00Z'} if os.environ.get('MOCK_DEPRECATED') == name else None
+    return [{'name': 'fsn1', 'available': not sold, 'deprecation': dep}, {'name': 'nbg1', 'available': True, 'deprecation': None}]
 IMAGES = {('ubuntu-26.04', 'x86'), ('ubuntu-26.04', 'arm'), ('ubuntu-24.04', 'x86'), ('ubuntu-24.04', 'arm')}
 if (kind, action) == ('server-type', 'describe'):
     t = TYPES.get(args[2])
     if not t:
         print('hcloud: server type not found: ' + args[2], file=sys.stderr); sys.exit(1)
-    print(json.dumps(dict(t, name=args[2]))); sys.exit(0)
+    print(json.dumps(dict(t, name=args[2], locations=locations(args[2])))); sys.exit(0)
 if (kind, action) == ('location', 'describe'):
     sys.exit(0 if args[2] in ('fsn1', 'nbg1', 'hel1') else 1)
-if (kind, action) == ('datacenter', 'list'):
-    print(json.dumps(DCS)); sys.exit(0)
+if kind == 'datacenter':   # removed from the real API
+    print('hcloud: API functionality was removed (deprecated_api_endpoint)', file=sys.stderr); sys.exit(1)
 if (kind, action) == ('image', 'describe'):
     arch = opt('--architecture') or 'x86'
     sys.exit(0 if (args[-1], arch) in IMAGES else 1)

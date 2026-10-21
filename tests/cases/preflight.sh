@@ -10,6 +10,7 @@ test_preflight_ok_and_read_only() {
   run preflight.sh web >"$T/out"
   check "summary" has '^Preflight OK' "$T/out"
   check "availability checked" has 'cx53 can currently be ordered in fsn1' "$T/out"
+  check "type summary" has 'server type cx53 exists \(16 vCPU, 32 GB RAM, 320 GB disk\), architecture x86' "$T/out"
   check "nothing created" nothing_created
 }
 
@@ -48,7 +49,7 @@ test_sold_out_server_type_fails_before_anything() {
   echo 'SERVER_TYPE=cpx02' > "$W/machines/web.env.local"
   export MOCK_SOLD_OUT=cpx02
   fails run start.sh web >/dev/null 2>"$T/err"
-  check "message" has 'cpx02 cannot currently be ordered in fsn1' "$T/err"
+  check "message" has 'cpx02 cannot currently be ordered in fsn1 \(available in: nbg1\)' "$T/err"
   check "nothing created" nothing_created
 }
 
@@ -120,4 +121,18 @@ test_setup_creates_env_local_private() {
   rm "$W/.env.local"
   run setup.sh >/dev/null 2>&1 || true   # stops at the empty DNS_DOMAIN of the template
   check "mode 600" test "$(stat -c %a "$W/.env.local")" = 600
+}
+
+test_type_not_offered_in_location() {
+  run setup.sh >/dev/null
+  printf 'SERVER_TYPE=cpx02\nSERVER_LOCATION=hel1\n' > "$W/machines/web.env.local"
+  fails run preflight.sh web >"$T/out"
+  check "message" has 'cpx02 is not offered in hel1 \(available in: fsn1, nbg1\)' "$T/out"
+}
+
+test_deprecated_type_is_warned_about() {
+  run setup.sh >/dev/null
+  export MOCK_DEPRECATED=cx53
+  run preflight.sh web >"$T/out"
+  check "warning" has 'WARN  cx53 is deprecated in fsn1 and unavailable after 2027-01-01' "$T/out"
 }

@@ -57,17 +57,21 @@ else
   else
     arch=$(jq -r '.architecture // "x86"' <<<"$st")
     type_id=$(jq '.id' <<<"$st")
-    ok "server type $SERVER_TYPE exists ($(jq -r '"\(.cores) vCPU, \(.memory) GB RAM, \(.disk) GB disk"' <<<"$st"), architecture $arch"
+    ok "server type $SERVER_TYPE exists ($(jq -r '"\(.cores) vCPU, \(.memory) GB RAM, \(.disk) GB disk"' <<<"$st")), architecture $arch"
     if hcloud location describe "$SERVER_LOCATION" >/dev/null 2>&1; then
       ok "location $SERVER_LOCATION exists"
-      dcs=$(hcloud datacenter list -o json)
-      avail=$(jq --arg loc "$SERVER_LOCATION" --argjson id "$type_id" \
-        '[.[] | select(.location.name == $loc) | .server_types.available // empty | any(.[]; . == $id)] | if length == 0 then "unknown" elif any then "yes" else "no" end' <<<"$dcs")
-      case "$avail" in
-        '"yes"') ok "$SERVER_TYPE can currently be ordered in $SERVER_LOCATION" ;;
-        '"no"')  bad "$SERVER_TYPE cannot currently be ordered in $SERVER_LOCATION (set SERVER_LOCATION or SERVER_TYPE, e.g. in machines/$MACHINE.env.local)" ;;
-        *)       info "availability of $SERVER_TYPE in $SERVER_LOCATION could not be determined" ;;
-      esac
+      # availability per location comes with the server type (the datacenter API was removed)
+      loc=$(jq -c --arg loc "$SERVER_LOCATION" '[.locations[]? | select(.name == $loc)][0] // empty' <<<"$st")
+      offered=$(jq -r '[.locations[]? | select(.available) | .name] | join(", ")' <<<"$st")
+      if [[ -z "$loc" ]]; then
+        bad "$SERVER_TYPE is not offered in $SERVER_LOCATION (available in: ${offered:-none}); set SERVER_LOCATION or SERVER_TYPE, e.g. in machines/$MACHINE.env.local"
+      elif [[ "$(jq -r '.available' <<<"$loc")" != true ]]; then
+        bad "$SERVER_TYPE cannot currently be ordered in $SERVER_LOCATION (available in: ${offered:-none}); set SERVER_LOCATION or SERVER_TYPE, e.g. in machines/$MACHINE.env.local"
+      else
+        ok "$SERVER_TYPE can currently be ordered in $SERVER_LOCATION"
+        dep=$(jq -r '.deprecation.unavailable_after // empty' <<<"$loc")
+        [[ -z "$dep" ]] || warn "$SERVER_TYPE is deprecated in $SERVER_LOCATION and unavailable after $dep"
+      fi
     else
       bad "location $SERVER_LOCATION does not exist (see: hcloud location list)"
     fi
