@@ -105,3 +105,19 @@ test_bad_allowed_cidrs_reported() {
   fails run preflight.sh web >"$T/out"
   check "message" has 'not a network: anywhere' "$T/out"
 }
+
+test_readable_config_with_tokens_is_warned_about() {
+  run setup.sh >/dev/null
+  chmod 644 "$W/.env.local"
+  run preflight.sh web >"$T/out"
+  check "warning" has 'WARN  .env.local is readable by other users' "$T/out"
+  chmod 600 "$W/.env.local"
+  run preflight.sh web >"$T/out2"
+  check "no warning" bash -c "! grep -q WARN '$T/out2'"
+}
+
+test_setup_creates_env_local_private() {
+  rm "$W/.env.local"
+  run setup.sh >/dev/null 2>&1 || true   # stops at the empty DNS_DOMAIN of the template
+  check "mode 600" test "$(stat -c %a "$W/.env.local")" = 600
+}

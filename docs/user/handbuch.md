@@ -18,12 +18,11 @@ Dieses Handbuch richtet sich an Entwicklerinnen und Entwickler, die auf einem Li
 
 ### Voraussetzungen
 
-Auf Ihrem lokalen Rechner (nur Linux ist erprobt; unter macOS bitte den Container-Lauf nutzen):
+Auf Ihrem lokalen Rechner (nur Linux ist erprobt):
 
-* `bash`, `curl`, `jq`, `python3`, OpenSSH-Client
-* die Hetzner-Kommandozeile `hcloud`
-* VS Code mit der Erweiterung **Remote-SSH** (optional: der Befehl `code`)
-* Alternativ zu den lokalen Werkzeugen: Docker und `make` (siehe Aufgabe „Rechner im Container einrichten und beenden“)
+* **Empfohlen:** Docker und `make`. Alle Werkzeuge (`ssh`, `hcloud`, `jq`, `curl`, `python3`) kommen dann aus dem Container, Sie installieren sonst nichts. Dieses Handbuch nennt jeweils den `make`-Befehl (siehe auch Aufgabe „Rechner im Container einrichten und beenden“).
+* **Alternativ** ohne Container: `bash`, `curl`, `jq`, `python3`, OpenSSH-Client und die Hetzner-Kommandozeile `hcloud`. Dann rufen Sie die Skripte direkt auf (`./setup.sh`, `./start.sh <rechner>` usw.).
+* Optional VS Code mit der Erweiterung **Remote-SSH**. Sie nutzt den OpenSSH-Client Ihres Rechners, der dafür lokal installiert sein muss. Ohne ihn verbinden Sie sich mit `make ssh MACHINE=<rechner>`.
 
 Bei den Anbietern:
 
@@ -44,6 +43,7 @@ Bei den Anbietern:
 |---|---|
 | `setup.sh` | Legt Ihren Login-Schlüssel und die lokale Host-CA an (einmalig). |
 | `preflight.sh <rechner>` | Prüft vorab nur lesend Einstellungen, Setup, Hetzner, Cloudflare und GitHub. Legt nichts an. `start.sh` führt es zuerst aus. |
+| `connect.sh <rechner> [befehl]` | Öffnet eine Shell auf dem Rechner oder führt einen Befehl aus, mit der SSH-Konfiguration des Rechners. Im Container: `make ssh`. |
 | `start.sh <rechner>` | Richtet einen Rechner ein, setzt den DNS-Eintrag, legt das Arbeitsverzeichnis an und klont das Repository. |
 | `stop.sh <rechner>` | Prüft den Git-Stand, warnt vor ungesicherter Arbeit und löscht Server und DNS-Eintrag. |
 | `dns.sh` | Verwaltet nur den eigenen DNS-Eintrag. Sie rufen es normalerweise nicht selbst auf. |
@@ -73,7 +73,7 @@ Sie haben die Voraussetzungen aus Kapitel 1 erfüllt.
 1. Wechseln Sie in das Hauptverzeichnis des Repositorys.
 2. Kopieren Sie die Vorlage: `cp .env.local.example .env.local`
 3. Öffnen Sie `.env.local` und tragen Sie bei `DNS_DOMAIN` Ihre Domain ein.
-4. Führen Sie `./setup.sh` aus.
+4. Führen Sie `make setup` aus (ohne Container: `./setup.sh`).
 5. Setzen Sie die Zugangsdaten in Ihrer Shell:
    ```bash
    export HCLOUD_TOKEN='...'
@@ -119,6 +119,7 @@ Geprüft werden:
 
 * Schreibrechte der Tokens (Hetzner: Server anlegen, Cloudflare: DNS bearbeiten) lassen sich nur lesend nicht prüfen. Fehlen sie, scheitert erst `start.sh`.
 * Fehlen in `.env.local` die Werte `SERVER_TYPE`, `SERVER_LOCATION`, `SERVER_IMAGE` oder `SSH_KEY`, gelten die Standardwerte aus Kapitel 4.
+* Zeilen mit `WARN` blockieren nicht. Ist etwa `.env.local` für andere Benutzer lesbar, empfiehlt der Preflight `chmod 600 .env.local`, weil die Datei Tokens enthalten kann.
 
 ### Erster Testlauf mit einem kleinen Server
 
@@ -130,18 +131,16 @@ Die erstmalige Einrichtung ist abgeschlossen. Am besten nutzen Sie ein eigenes H
 
 #### Vorgehen
 
-1. Legen Sie für den Testrechner eine eigene Einstellungsdatei an:
-   ```bash
-   echo 'SERVER_TYPE=cpx02' > machines/test.env.local
-   ```
-   `cpx02` hat 1 vCPU, 1 GB RAM und 20 GB Platte.
-2. Prüfen Sie vorab: `./preflight.sh test https://github.com/<konto>/<repo>.git`. Meldet die Prüfung, dass `cpx02` in `fsn1` derzeit nicht bestellbar ist, ergänzen Sie in derselben Datei `SERVER_LOCATION=nbg1` oder `hel1`, oder nehmen Sie `SERVER_TYPE=cpx12` (2 GB RAM).
-3. Starten Sie den Rechner: `./start.sh test https://github.com/<konto>/<repo>.git`.
+1. Tragen Sie in die Einstellungsdatei des Testrechners `machines/test.env.local` die Zeile `SERVER_TYPE=cpx02` ein. Gibt es die Datei noch nicht, kopieren Sie vorher `machines/example.env.local.example` dorthin. Dort können Sie auch `REPO_URL` setzen, dann brauchen Sie die URL in den folgenden Befehlen nicht. `cpx02` hat 1 vCPU, 1 GB RAM und 20 GB Platte.
+2. Prüfen Sie vorab: `make preflight MACHINE=test` (mit URL: `make preflight MACHINE=test REPO=https://github.com/<konto>/<repo>.git`). Meldet die Prüfung, dass `cpx02` in `fsn1` derzeit nicht bestellbar ist, ergänzen Sie in derselben Datei `SERVER_LOCATION=nbg1` oder `hel1`, oder nehmen Sie `SERVER_TYPE=cpx12` (2 GB RAM).
+3. Starten Sie den Rechner: `make up MACHINE=test` (oder mit `REPO=…` wie oben).
 4. Prüfen Sie den Rechner:
    ```bash
-   ssh hetzner-claude-test "bash -lc 'claude --version; gh --version | head -n1; docker info >/dev/null && echo docker ok; ls /Development'"
+   make ssh MACHINE=test CMD="bash -lc 'claude --version; gh --version | head -n1; docker info >/dev/null && echo docker ok; ls /Development'"
    ```
-5. Löschen Sie den Rechner wieder: `./stop.sh test` und bestätigen Sie mit `DELETE`.
+5. Löschen Sie den Rechner wieder: `make down MACHINE=test` und bestätigen Sie mit `DELETE`.
+
+Ohne Container lauten die Befehle `./preflight.sh test`, `./start.sh test`, `./connect.sh test "<befehl>"` und `./stop.sh test`.
 
 #### Ergebnis
 
@@ -150,7 +149,7 @@ Sie wissen, dass Tokens, DNS, SSH-Vertrauen, Einrichtung, Clone und Löschen in 
 #### Hinweise
 
 * 1 GB RAM reicht für den Funktionstest. Für echte Arbeit des Agenten mit Builds und Tests ist der Speicher zu knapp. Nutzen Sie dafür einen größeren Typ.
-* Bricht `start.sh` ab, bleibt der Server bestehen. Führen Sie `./start.sh test` nach dem Beheben erneut aus, oder löschen Sie ihn mit `./stop.sh test`.
+* Bricht `make up` ab, bleibt der Server bestehen. Führen Sie `make up MACHINE=test` nach dem Beheben erneut aus, oder löschen Sie ihn mit `make down MACHINE=test`.
 
 ### Einen Rechner für ein Repository einrichten
 
@@ -187,17 +186,19 @@ Statt `hcloud`, `jq` und die übrigen Werkzeuge lokal zu installieren, können S
 #### Voraussetzung
 
 * `.env.local` ist angelegt (siehe erstmalige Einrichtung).
-* Die drei Zugangsdaten sind in der Shell gesetzt (`HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`).
+* Die drei Zugangsdaten (`HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`) stehen in `.env.local` oder sind in der Shell exportiert. Der Container liest beides.
 
 #### Vorgehen
 
 1. Einmalig: `make setup`
-2. Rechner starten: `make up MACHINE=web REPO=https://git.example.org/team/web.git`
-3. Rechner beenden: `make down MACHINE=web` (bei nicht erreichbarem Server `make down MACHINE=web FORCE=1`)
+2. Vorab prüfen: `make preflight MACHINE=web`
+3. Rechner starten: `make up MACHINE=web REPO=https://git.example.org/team/web.git`
+4. Verbinden: `make ssh MACHINE=web` (Shell) oder `make ssh MACHINE=web CMD="<befehl>"` (ein Befehl)
+5. Rechner beenden: `make down MACHINE=web` (bei nicht erreichbarem Server `make down MACHINE=web FORCE=1`)
 
 #### Ergebnis
 
-Das Ergebnis ist dasselbe wie beim direkten Aufruf. Login-Schlüssel, Host-CA und SSH-Konfiguration liegen in Ihrem `~/.ssh`, weil der Container dieses Verzeichnis unter demselben Pfad einbindet. Eine Verbindung mit `ssh hetzner-claude-web` oder VS Code Remote-SSH funktioniert daher direkt vom Host aus.
+Das Ergebnis ist dasselbe wie beim direkten Aufruf. Login-Schlüssel, Host-CA und SSH-Konfiguration liegen in Ihrem `~/.ssh`, weil der Container dieses Verzeichnis unter demselben Pfad einbindet. Ist auf Ihrem Rechner ein OpenSSH-Client installiert, funktionieren daher auch `ssh hetzner-claude-web` und VS Code Remote-SSH direkt vom Host aus. Ohne lokalen Client nutzen Sie `make ssh`.
 
 #### Hinweise
 
@@ -211,7 +212,7 @@ Das Ergebnis ist dasselbe wie beim direkten Aufruf. Login-Schlüssel, Host-CA un
 
 #### Vorgehen
 
-1. Öffnen Sie in VS Code das integrierte Terminal.
+1. Öffnen Sie in VS Code das integrierte Terminal, oder verbinden Sie sich mit `make ssh MACHINE=<rechner>`.
 2. Wechseln Sie in das Repository-Verzeichnis.
 3. Starten Sie eine dauerhafte Sitzung und Claude Code:
    ```bash
@@ -219,7 +220,7 @@ Das Ergebnis ist dasselbe wie beim direkten Aufruf. Login-Schlüssel, Host-CA un
    claude
    ```
 4. Zum Verlassen der Sitzung drücken Sie **Strg+B**, dann **D**. Die Sitzung läuft weiter.
-5. Verbinden Sie sich später von einem beliebigen SSH-Client erneut mit `tmux attach -t claude`.
+5. Verbinden Sie sich später erneut, etwa mit `make ssh MACHINE=<rechner> CMD="tmux attach -t claude"` oder von einem beliebigen SSH-Client mit `tmux attach -t claude`.
 
 #### Ergebnis
 
@@ -556,4 +557,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.6 | v3 mit Mehrrechner-Betrieb | Standard-Image ist Ubuntu 26.04 LTS. Bestehende `.env.local` mit `ubuntu-24.04` funktionieren weiter. |
 | 1.7 | v3 mit Mehrrechner-Betrieb | Klonen ohne `REPO_BRANCH` funktioniert. `stop.sh` erkennt ungepushte Commits auf allen Branches und in Worktrees und prüft das beim Start genutzte Arbeitsverzeichnis. Fehler der Hetzner-API führen zum Abbruch statt zum Aufräumen. Verbindung über die IP, keine Wartezeit auf DNS. Nach Ablauf des Zertifikats bleibt die Verbindung über den hinterlegten Host-Schlüssel möglich. Tokens erscheinen nicht mehr in Befehlszeilen und werden nicht an VS Code vererbt. |
 | 1.8 | v3 mit Mehrrechner-Betrieb | DNS-Name und lokale Dateien enthalten das Präfix (`claude-web.<domain>`). Die Skripte vertrauen nur dem hinterlegten Host-Schlüssel des jeweiligen Servers. `stop.sh` sucht Repositories auch im Home- und Temp-Verzeichnis, meldet Dateien außerhalb von Repositories und fragt vor dem Aufräumen eines nicht gefundenen Servers nach `CLEANUP`. `start.sh` holt eine fehlgeschlagene Claude-Installation nach und verwendet einen schon hochgeladenen SSH-Schlüssel weiter. Antworten können per Pipe übergeben werden. |
-| 1.9 | v3 mit Mehrrechner-Betrieb | Das GitHub-Token heißt jetzt `VIPER_GH_TOKEN` (statt `GH_TOKEN`), ein lokal exportiertes `GH_TOKEN` wird nicht mehr übernommen. Ein abgelehnter Host-Schlüssel wird als solcher gemeldet statt als „nicht erreichbar“, und `stop.sh --force` prüft einen erreichbaren Server trotzdem. Hinterlegte Schlüssel werden bei neuer Server-ID verworfen und nach einer CA-geprüften Verbindung nachgetragen. Eine als Symlink verwaltete `~/.ssh/config` bleibt erhalten. Neu: Abschnitt „Erster Testlauf mit einem kleinen Server“. `preflight.sh` prüft vorab nur lesend, und `start.sh` führt es zuerst aus. Fehlende Pflichtwerte werden gemeinsam gemeldet, bevor etwas angelegt oder gelöscht wird. |
+| 1.9 | v3 mit Mehrrechner-Betrieb | Das GitHub-Token heißt jetzt `VIPER_GH_TOKEN` (statt `GH_TOKEN`), ein lokal exportiertes `GH_TOKEN` wird nicht mehr übernommen. Ein abgelehnter Host-Schlüssel wird als solcher gemeldet statt als „nicht erreichbar“, und `stop.sh --force` prüft einen erreichbaren Server trotzdem. Hinterlegte Schlüssel werden bei neuer Server-ID verworfen und nach einer CA-geprüften Verbindung nachgetragen. Eine als Symlink verwaltete `~/.ssh/config` bleibt erhalten. Neu: Abschnitt „Erster Testlauf mit einem kleinen Server“ und `make ssh` (bzw. `connect.sh`) für Verbindungen ohne lokalen SSH-Client; das Handbuch nennt jetzt durchgehend die `make`-Befehle. `preflight.sh` prüft vorab nur lesend, und `start.sh` führt es zuerst aus. Fehlende Pflichtwerte werden gemeinsam gemeldet, bevor etwas angelegt oder gelöscht wird. |

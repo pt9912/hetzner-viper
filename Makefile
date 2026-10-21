@@ -1,16 +1,19 @@
-# make test | docker-test            offline tests (see tests/tests.mk)
-# make preflight MACHINE=web [REPO=<url>]  read-only checks (nothing is created)
-# make up MACHINE=web [REPO=<url>]   real run in a container: create machine
-# make down MACHINE=web [FORCE=1]    real run in a container: delete machine
+# Everything runs in a container (ssh, hcloud, jq, ... come from the Dockerfile):
+# make setup                                     login key and host CA (once)
+# make preflight MACHINE=web [REPO=<url>]        read-only checks (nothing is created)
+# make up MACHINE=web [REPO=<url>]               create the machine, clone the repo
+# make ssh MACHINE=web [CMD='<command>']         shell (or one command) on the machine
+# make down MACHINE=web [FORCE=1]                delete the machine
+# make test | docker-test                        offline tests (see tests/tests.mk)
 TEST_IMAGE ?= hetzner-claude-tests
 RUN_IMAGE  ?= hetzner-claude-run
 
 include tests/tests.mk
 
 # passed to the recipe shell as environment, expanded there in double quotes (URLs with & ; ?)
-export MACHINE REPO
+export MACHINE REPO CMD
 
-.PHONY: build setup preflight up down
+.PHONY: build setup preflight up ssh down
 
 build:
 	docker build --target run --build-arg USER_UID=$$(id -u) --build-arg USER_HOME="$$HOME" -t $(RUN_IMAGE) .
@@ -25,21 +28,25 @@ define RUN
 	  -v "$(CURDIR)":/repo:ro $(RUN_IMAGE) $(1)
 endef
 
-setpreflight: build
-	@test -n "$(MACHINE)" || { echo 'Usage: make preflight MACHINE=<name> [REPO=<url>]' >&2; exit 1; }
-	$(call RUN,./preflight.sh "$$MACHINE" "$$REPO")
+define NEED_MACHINE
+	@test -n "$(MACHINE)" || { echo 'Usage: make $@ MACHINE=<name> $(1)' >&2; exit 1; }
+endef
 
-up: build
+setup: build
 	$(call RUN,./setup.sh)
 
 preflight: build
-	@test -n "$(MACHINE)" || { echo 'Usage: make preflight MACHINE=<name> [REPO=<url>]' >&2; exit 1; }
+	$(call NEED_MACHINE,[REPO=<url>])
 	$(call RUN,./preflight.sh "$$MACHINE" "$$REPO")
 
 up: build
-	@test -n "$(MACHINE)" || { echo 'Usage: make up MACHINE=<name> [REPO=<url>]' >&2; exit 1; }
+	$(call NEED_MACHINE,[REPO=<url>])
 	$(call RUN,./start.sh "$$MACHINE" "$$REPO")
 
+ssh: build
+	$(call NEED_MACHINE,[CMD="<command>"])
+	$(call RUN,./connect.sh "$$MACHINE" $${CMD:+"$$CMD"})
+
 down: build
-	@test -n "$(MACHINE)" || { echo 'Usage: make down MACHINE=<name> [FORCE=1]' >&2; exit 1; }
+	$(call NEED_MACHINE,[FORCE=1])
 	$(call RUN,./stop.sh "$$MACHINE" $(if $(FORCE),--force))

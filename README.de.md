@@ -14,19 +14,22 @@ Zielgruppe sind Entwicklerinnen und Entwickler mit eigenem Hetzner- und Cloudfla
 
 Diese Befehle sind vorhanden. Stand der Prüfung: Die Skripte sind gegen simulierte Hetzner- und Cloudflare-APIs getestet, **nicht** gegen echte Konten (siehe [Grenzen](#sicherheit-und-grenzen)).
 
+Alles läuft per `make` in einem Docker-Container. Lokal brauchen Sie nur Docker und `make` (`ssh`, `hcloud`, `jq` usw. kommen aus dem [`Dockerfile`](Dockerfile)):
+
 ```bash
-cp .env.local.example .env.local   # DNS_DOMAIN eintragen
-./setup.sh                         # Login-Key und lokale Host-CA anlegen
-./preflight.sh web                 # nur lesende Prüfung: Einstellungen, Hetzner, Cloudflare, GitHub
-export HCLOUD_TOKEN=... CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ZONE_ID=...
-./start.sh web https://example.org/org/web.git   # Rechner "web" einrichten, Repo klonen
-./stop.sh web                                    # Rechner "web" löschen
+cp .env.local.example .env.local   # DNS_DOMAIN und Tokens eintragen, dann: chmod 600 .env.local
+make setup                                          # Login-Key und lokale Host-CA anlegen
+make preflight MACHINE=web                          # nur lesende Prüfung: Einstellungen, Hetzner, Cloudflare, GitHub
+make up MACHINE=web REPO=https://example.org/org/web.git   # Rechner "web" einrichten, Repo klonen
+make ssh MACHINE=web                                # Shell auf dem Rechner (CMD="..." für einen Befehl)
+make down MACHINE=web                               # Rechner "web" löschen
 ```
 
-- `./preflight.sh <name> [repo-url]` (oder `make preflight MACHINE=<name>`) prüft vorab nur lesend, bevor etwas angelegt wird: Einstellungen, lokales Setup, Hetzner-Token, Bestellbarkeit des Servertyps am Standort, Image, Cloudflare-Zone und -Eintrag, GitHub-Token und Repo-Zugriff. `start.sh` führt es zuerst aus.
+Ohne Container rufen Sie die Skripte direkt auf: `./setup.sh`, `./preflight.sh web`, `./start.sh web <url>`, `./connect.sh web`, `./stop.sh web`.
+
+- `make preflight MACHINE=<name>` (oder `./preflight.sh <name> [repo-url]`) prüft vorab nur lesend, bevor etwas angelegt wird: Einstellungen, lokales Setup, Hetzner-Token, Bestellbarkeit des Servertyps am Standort, Image, Cloudflare-Zone und -Eintrag, GitHub-Token und Repo-Zugriff. `start.sh` führt es zuerst aus.
 - `make test` führt die Tests gegen Mocks aus (offline, ohne Kosten), `make docker-test` dieselben im Container ohne Netz.
-- `make up MACHINE=web REPO=<url>` und `make down MACHINE=web` führen die Skripte in einem Docker-Container aus.
-- Mehrere Rechner parallel: `./start.sh api …` neben `web`. Jeder hat eigenen Server und DNS-Namen `<SERVER_PREFIX>-<name>.<DNS_DOMAIN>` (Standard-Präfix `claude`).
+- Mehrere Rechner parallel: `make up MACHINE=api …` neben `web`. Jeder hat eigenen Server und DNS-Namen `<SERVER_PREFIX>-<name>.<DNS_DOMAIN>` (Standard-Präfix `claude`).
 - Mit `VIPER_GH_TOKEN` (GitHub-PAT, am besten fein granular pro Rechner; ein für das lokale `gh` exportiertes `GH_TOKEN` wird bewusst nicht verwendet) ist auf dem Server die GitHub-CLI `gh` angemeldet, und `git` pusht über HTTPS. Der Agent kann so auch Pull Requests anlegen.
 - `stop.sh` prüft den Git-Stand aller Repositories und Worktrees im Arbeitsverzeichnis, im Home- und in den Temp-Verzeichnissen (uncommittete Änderungen, Commits auf keinem Remote auf allen Branches, Stash-Einträge), meldet Einträge auf oberster Ebene des Arbeitsverzeichnisses, die zu keinem Repository gehören (Dateien außerhalb von Repositories an anderen Orten prüft es nicht), listet ignorierte Dateien auf und fragt bei ungesicherter Arbeit zusätzlich nach `DISCARD`.
 
@@ -59,7 +62,7 @@ Rechner sind Wegwerfware: Alles, was zählt, liegt im Git-Repository. Deshalb gi
 
 ## Voraussetzungen
 
-Nur unter Linux erprobt. Docker und `make` (auch für macOS), **oder** lokal `bash`, `curl`, `jq`, `python3`, OpenSSH-Client und die `hcloud`-CLI. Dazu ein Hetzner-Cloud-API-Token (Lesen und Schreiben) und ein Cloudflare-Token mit **Zone DNS Edit/Read** samt Zone-ID.
+Nur unter Linux erprobt. Docker und `make` (empfohlen, auch für macOS), **oder** lokal `bash`, `curl`, `jq`, `python3`, OpenSSH-Client und die `hcloud`-CLI. VS Code Remote-SSH braucht einen lokalen OpenSSH-Client; ohne ihn nutzen Sie `make ssh`. Dazu ein Hetzner-Cloud-API-Token (Lesen und Schreiben) und ein Cloudflare-Token mit **Zone DNS Edit/Read** samt Zone-ID.
 
 ## Lizenz
 

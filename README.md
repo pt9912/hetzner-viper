@@ -14,19 +14,22 @@ It is meant for developers with their own Hetzner and Cloudflare accounts.
 
 These commands exist. State of verification: the scripts are tested against simulated Hetzner and Cloudflare APIs, **not** against real accounts (see [Limits](#security-and-limits)).
 
+Everything runs in a Docker container via `make`, so locally you only need Docker and `make` (`ssh`, `hcloud`, `jq` etc. come from the [`Dockerfile`](Dockerfile)):
+
 ```bash
-cp .env.local.example .env.local   # set DNS_DOMAIN
-./setup.sh                         # create login key and local host CA
-./preflight.sh web                 # read-only checks: settings, Hetzner, Cloudflare, GitHub
-export HCLOUD_TOKEN=... CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ZONE_ID=...
-./start.sh web https://example.org/org/web.git   # set up machine "web", clone the repo
-./stop.sh web                                    # delete machine "web"
+cp .env.local.example .env.local   # set DNS_DOMAIN and the tokens, then: chmod 600 .env.local
+make setup                                          # create login key and local host CA
+make preflight MACHINE=web                          # read-only checks: settings, Hetzner, Cloudflare, GitHub
+make up MACHINE=web REPO=https://example.org/org/web.git   # set up machine "web", clone the repo
+make ssh MACHINE=web                                # shell on the machine (CMD="..." for one command)
+make down MACHINE=web                               # delete machine "web"
 ```
 
-- `./preflight.sh <name> [repo-url]` (or `make preflight MACHINE=<name>`) checks everything read-only before anything is created: settings, local setup, Hetzner token, server type available at the location, image, Cloudflare zone and record, GitHub token and repository access. `start.sh` runs it first.
+Without the container, call the scripts directly: `./setup.sh`, `./preflight.sh web`, `./start.sh web <url>`, `./connect.sh web`, `./stop.sh web`.
+
+- `make preflight MACHINE=<name>` (or `./preflight.sh <name> [repo-url]`) checks everything read-only before anything is created: settings, local setup, Hetzner token, server type available at the location, image, Cloudflare zone and record, GitHub token and repository access. `start.sh` runs it first.
 - `make test` runs the tests against mocks (offline, no cost); `make docker-test` runs the same tests in a container without network.
-- `make up MACHINE=web REPO=<url>` and `make down MACHINE=web` run the scripts inside a Docker container.
-- Several machines in parallel: `./start.sh api …` next to `web`. Each has its own server and DNS name `<SERVER_PREFIX>-<name>.<DNS_DOMAIN>` (default prefix `claude`).
+- Several machines in parallel: `make up MACHINE=api …` next to `web`. Each has its own server and DNS name `<SERVER_PREFIX>-<name>.<DNS_DOMAIN>` (default prefix `claude`).
 - With `VIPER_GH_TOKEN` (a GitHub PAT, ideally fine-grained per machine; a `GH_TOKEN` exported for your local `gh` is deliberately not used) the GitHub CLI `gh` is logged in on the server and `git` pushes over HTTPS, so the agent can also open pull requests.
 - `stop.sh` checks the Git state of all repositories and worktrees in the workspace, the home directory and the temp directories (uncommitted changes, commits on any branch that are on no remote, stash entries), flags entries at the top of the workspace that belong to no repository (files outside repositories elsewhere are not checked), lists ignored files, and additionally asks for `DISCARD` when there is unsaved work.
 
@@ -59,7 +62,7 @@ Machines are disposable: everything that matters lives in the Git repository. Th
 
 ## Requirements
 
-Only tested on Linux. Docker and `make` (also for macOS), **or** locally `bash`, `curl`, `jq`, `python3`, an OpenSSH client and the `hcloud` CLI. Plus a Hetzner Cloud API token (read and write) and a Cloudflare token with **Zone DNS Edit/Read** and the zone ID.
+Only tested on Linux. Docker and `make` (recommended, also for macOS), **or** locally `bash`, `curl`, `jq`, `python3`, an OpenSSH client and the `hcloud` CLI. VS Code Remote-SSH needs a local OpenSSH client; without one use `make ssh`. Plus a Hetzner Cloud API token (read and write) and a Cloudflare token with **Zone DNS Edit/Read** and the zone ID.
 
 ## License
 

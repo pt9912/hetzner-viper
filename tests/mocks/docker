@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Fake docker for the Makefile tests: one file per call, one argument per line.
+n=$(ls "$MOCK_STATE"/docker-call-* 2>/dev/null | wc -l)
+printf '%s\n' "$@" > "$MOCK_STATE/docker-call-$n"

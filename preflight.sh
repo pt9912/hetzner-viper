@@ -13,6 +13,7 @@ failures=0
 ok()   { echo "ok    $*"; }
 bad()  { echo "FAIL  $*"; failures=$((failures + 1)); }
 info() { echo "info  $*"; }
+warn() { echo "WARN  $*"; }
 
 echo "== settings and local setup ($SERVER_NAME)"
 ok "settings complete: $SERVER_TYPE in $SERVER_LOCATION, $SERVER_IMAGE, DNS $DNS_HOST"
@@ -31,6 +32,13 @@ for var in GIT_DEPLOY_KEY_FILE IPAD_SSH_PUBLIC_KEY_FILE; do
   f="${!var:-}"; f="${f/#\~/$HOME}"
   [[ -z "$f" ]] && continue
   if [[ -r "$f" ]]; then ok "$var readable"; else bad "$var: File not readable: $f (in the container only ~/.ssh is visible)"; fi
+done
+# config files hold API tokens: nobody but the owner should read them
+for f in .env.local "machines/$MACHINE.env.local"; do
+  [[ -f "$f" ]] || continue
+  if [[ -n "$(find "$f" -perm /077 2>/dev/null)" ]]; then
+    warn "$f is readable by other users; it may hold tokens: chmod 600 $f"
+  fi
 done
 cidr_ok=1
 IFS=',' read -r -a cidrs <<<"${SSH_ALLOWED_CIDRS:-0.0.0.0/0,::/0}"

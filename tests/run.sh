@@ -10,7 +10,7 @@ PASS=0; FAIL=0
 new_env() {  # fresh sandbox: copy of the scripts, own HOME and mock state
   T=$(mktemp -d)
   mkdir -p "$T/work" "$T/home" "$T/state" "$T/mnt"
-  (cd "$ROOT" && cp -r cloud-init.yaml common.sh dns.sh preflight.sh setup.sh start.sh stop.sh .env.local.example machines "$T/work/")
+  (cd "$ROOT" && cp -r cloud-init.yaml common.sh connect.sh dns.sh preflight.sh setup.sh start.sh stop.sh .env.local.example machines "$T/work/")
   rm -f "$T/work/machines/"*.env.local
   cp "$T/work/.env.local.example" "$T/work/.env.local"
   printf 'DNS_DOMAIN=test.invalid\nWORKSPACE_DIR=%s\n' "$T/mnt" >> "$T/work/.env.local"
