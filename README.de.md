@@ -17,18 +17,20 @@ Diese Befehle sind vorhanden. Stand der Prüfung: Die Skripte sind gegen simulie
 ```bash
 cp .env.local.example .env.local   # DNS_DOMAIN eintragen
 ./setup.sh                         # Login-Key und lokale Host-CA anlegen
+./preflight.sh web                 # nur lesende Prüfung: Einstellungen, Hetzner, Cloudflare, GitHub
 export HCLOUD_TOKEN=... CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ZONE_ID=...
 ./start.sh web https://example.org/org/web.git   # Rechner "web" einrichten, Repo klonen
 ./stop.sh web                                    # Rechner "web" löschen
 ```
 
+- `./preflight.sh <name> [repo-url]` (oder `make preflight MACHINE=<name>`) prüft vorab nur lesend, bevor etwas angelegt wird: Einstellungen, lokales Setup, Hetzner-Token, Bestellbarkeit des Servertyps am Standort, Image, Cloudflare-Zone und -Eintrag, GitHub-Token und Repo-Zugriff. `start.sh` führt es zuerst aus.
 - `make test` führt die Tests gegen Mocks aus (offline, ohne Kosten), `make docker-test` dieselben im Container ohne Netz.
 - `make up MACHINE=web REPO=<url>` und `make down MACHINE=web` führen die Skripte in einem Docker-Container aus.
 - Mehrere Rechner parallel: `./start.sh api …` neben `web`. Jeder hat eigenen Server und DNS-Namen `<SERVER_PREFIX>-<name>.<DNS_DOMAIN>` (Standard-Präfix `claude`).
-- Mit `GH_TOKEN` (GitHub-PAT, am besten fein granular pro Rechner) ist auf dem Server die GitHub-CLI `gh` angemeldet, und `git` pusht über HTTPS. Der Agent kann so auch Pull Requests anlegen.
-- `stop.sh` prüft den Git-Stand aller Repositories und Worktrees im Arbeitsverzeichnis, im Home- und in den Temp-Verzeichnissen (uncommittete Änderungen, Commits auf keinem Remote auf allen Branches, Stash-Einträge), meldet Dateien außerhalb von Repositories, listet ignorierte Dateien auf und fragt bei ungesicherter Arbeit zusätzlich nach `DISCARD`.
+- Mit `VIPER_GH_TOKEN` (GitHub-PAT, am besten fein granular pro Rechner; ein für das lokale `gh` exportiertes `GH_TOKEN` wird bewusst nicht verwendet) ist auf dem Server die GitHub-CLI `gh` angemeldet, und `git` pusht über HTTPS. Der Agent kann so auch Pull Requests anlegen.
+- `stop.sh` prüft den Git-Stand aller Repositories und Worktrees im Arbeitsverzeichnis, im Home- und in den Temp-Verzeichnissen (uncommittete Änderungen, Commits auf keinem Remote auf allen Branches, Stash-Einträge), meldet Einträge auf oberster Ebene des Arbeitsverzeichnisses, die zu keinem Repository gehören (Dateien außerhalb von Repositories an anderen Orten prüft es nicht), listet ignorierte Dateien auf und fragt bei ungesicherter Arbeit zusätzlich nach `DISCARD`.
 
-Die vollständige Anleitung mit allen Aufgaben, Einstellungen und der Fehlerbehebung steht im [Benutzerhandbuch](docs/user/handbuch.md).
+Die vollständige Anleitung mit allen Aufgaben, Einstellungen und der Fehlerbehebung steht im [Benutzerhandbuch](docs/user/handbuch.md). Für den ersten echten Lauf beginnen Sie dort mit dem Abschnitt „Erster Testlauf mit einem kleinen Server“ (Servertyp `cpx02`, wenige Cent pro Stunde).
 
 ## Warum Hetzner Viper?
 

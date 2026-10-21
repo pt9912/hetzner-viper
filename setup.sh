@@ -4,6 +4,7 @@ cd "$(dirname "$0")"
 [[ -f .env.local ]] || cp .env.local.example .env.local
 source ./.env.local
 : "${DNS_DOMAIN:?Set DNS_DOMAIN in .env.local}"
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/hetzner-build}"
 SSH_KEY="${SSH_KEY/#\~/$HOME}"
 mkdir -p "$(dirname "$SSH_KEY")" "$HOME/.ssh"
 [[ -f "$SSH_KEY" ]] || ssh-keygen -t ed25519 -f "$SSH_KEY" -N ''

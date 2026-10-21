@@ -10,13 +10,13 @@ PASS=0; FAIL=0
 new_env() {  # fresh sandbox: copy of the scripts, own HOME and mock state
   T=$(mktemp -d)
   mkdir -p "$T/work" "$T/home" "$T/state" "$T/mnt"
-  (cd "$ROOT" && cp -r cloud-init.yaml common.sh dns.sh setup.sh start.sh stop.sh .env.local.example machines "$T/work/")
+  (cd "$ROOT" && cp -r cloud-init.yaml common.sh dns.sh preflight.sh setup.sh start.sh stop.sh .env.local.example machines "$T/work/")
   rm -f "$T/work/machines/"*.env.local
   cp "$T/work/.env.local.example" "$T/work/.env.local"
   printf 'DNS_DOMAIN=test.invalid\nWORKSPACE_DIR=%s\n' "$T/mnt" >> "$T/work/.env.local"
   export HOME="$T/home" MOCK_STATE="$T/state" PATH="$MOCKS:$PATH"
   export HCLOUD_TOKEN=t CLOUDFLARE_API_TOKEN=t CLOUDFLARE_ZONE_ID=z
-  unset MOCK_SSH_DOWN MOCK_DNS_STALE MOCK_CLOUDINIT_RC MOCK_HCLOUD_FAIL MOCK_CF_FAIL MOCK_INSTALL_FAIL MOCK_DOCKER_FAIL MOCK_DESCRIBE_FAIL GH_TOKEN GH_HOST
+  unset MOCK_SSH_DOWN MOCK_DNS_STALE MOCK_CLOUDINIT_RC MOCK_HCLOUD_FAIL MOCK_CF_FAIL MOCK_INSTALL_FAIL MOCK_DOCKER_FAIL MOCK_DESCRIBE_FAIL MOCK_SSH_HOSTKEY_FAIL MOCK_SOLD_OUT MOCK_CF_ZONE MOCK_GH_BAD MOCK_GH_SCOPES MOCK_GH_NOREPO GH_TOKEN GH_HOST VIPER_GH_TOKEN VIPER_GH_HOST
   touch "$T/state/claude-ready"
   : > "$MOCK_STATE/calls.log"
   W="$T/work"; CALLS="$MOCK_STATE/calls.log"
@@ -40,8 +40,9 @@ for t in "$ROOT"/tests/cases/*.sh; do
     [[ -z "$FILTER" || "$fn" == *"$FILTER"* ]] || continue
     new_env
     out=$( (set -e; "$fn" 3>&2) 2>&1 ); rc=$?
-    if (( rc == 0 )); then PASS=$((PASS+1)); echo "ok   $fn"
+    if (( rc == 0 )); then PASS=$((PASS+1)); echo "ok   $fn"; grep '^ *skipped:' <<<"$out" || true
     else FAIL=$((FAIL+1)); echo "FAIL $fn"; echo "$out" | tail -25 | sed 's/^/    /'; fi
+    for pid in "$T"/*/pid; do [[ -f "$pid" ]] && kill "$(cat "$pid")" 2>/dev/null; done
     rm -rf "$T"
   done < <(grep -oE '^test_[a-z0-9_]+' "$t")
 done

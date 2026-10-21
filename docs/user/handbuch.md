@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.8  
+Version: 1.9  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -43,6 +43,7 @@ Bei den Anbietern:
 | Skript | Aufgabe |
 |---|---|
 | `setup.sh` | Legt Ihren Login-Schlüssel und die lokale Host-CA an (einmalig). |
+| `preflight.sh <rechner>` | Prüft vorab nur lesend Einstellungen, Setup, Hetzner, Cloudflare und GitHub. Legt nichts an. `start.sh` führt es zuerst aus. |
 | `start.sh <rechner>` | Richtet einen Rechner ein, setzt den DNS-Eintrag, legt das Arbeitsverzeichnis an und klont das Repository. |
 | `stop.sh <rechner>` | Prüft den Git-Stand, warnt vor ungesicherter Arbeit und löscht Server und DNS-Eintrag. |
 | `dns.sh` | Verwaltet nur den eigenen DNS-Eintrag. Sie rufen es normalerweise nicht selbst auf. |
@@ -90,6 +91,67 @@ Es existieren Ihr Login-Schlüssel (Standard: `~/.ssh/hetzner-build`) und die Ho
 * Der private CA-Schlüssel darf nie auf den Server oder ein anderes Gerät kopiert werden.
 * Die Login-Schlüssel haben keine Passphrase. Schützen Sie die Dateien im Ordner `~/.ssh`.
 
+### Vorab prüfen (Preflight)
+
+#### Voraussetzung
+
+Die erstmalige Einrichtung ist abgeschlossen.
+
+#### Vorgehen
+
+1. Führen Sie `./preflight.sh <rechner> [repo-url]` aus, im Container `make preflight MACHINE=<rechner> [REPO=<url>]`.
+2. Lesen Sie die Ausgabe. Jede Zeile beginnt mit `ok`, `info` oder `FAIL`.
+
+Geprüft werden:
+
+* **Einstellungen:** Alle Pflichtwerte sind gesetzt, `DNS_DOMAIN` und `SSH_ALLOWED_CIDRS` haben ein gültiges Format.
+* **Lokales Setup:** Login-Schlüssel und Host-CA sind vorhanden, die CA gilt für `*.<DNS_DOMAIN>`, die Dateien aus `GIT_DEPLOY_KEY_FILE` und `IPAD_SSH_PUBLIC_KEY_FILE` sind lesbar.
+* **Hetzner:** Das Token kann das Projekt lesen. Servertyp, Standort und Image (für die Architektur des Typs) existieren. Der Servertyp ist am Standort derzeit bestellbar. Der Login-Schlüssel kollidiert nicht mit einem anderen Schlüssel gleichen Namens.
+* **Cloudflare:** Die Zone ist lesbar, `DNS_DOMAIN` liegt darin, und es gibt keinen fremden DNS-Eintrag für den Rechner.
+* **GitHub (wenn `VIPER_GH_TOKEN` gesetzt ist):** Das Token ist gültig, ein klassisches Token hat die Scopes `repo` und `read:org`, und es hat Zugriff auf ein GitHub-Repository aus `REPO_URL`.
+* **Repository:** Ein HTTPS- oder lokales Repository ist erreichbar. SSH-Repositories prüft erst der Clone auf dem Server.
+
+#### Ergebnis
+
+`Preflight OK.` oder eine Liste der Probleme. Es wurde nichts angelegt oder geändert.
+
+#### Hinweise
+
+* Schreibrechte der Tokens (Hetzner: Server anlegen, Cloudflare: DNS bearbeiten) lassen sich nur lesend nicht prüfen. Fehlen sie, scheitert erst `start.sh`.
+* Fehlen in `.env.local` die Werte `SERVER_TYPE`, `SERVER_LOCATION`, `SERVER_IMAGE` oder `SSH_KEY`, gelten die Standardwerte aus Kapitel 4.
+
+### Erster Testlauf mit einem kleinen Server
+
+Bevor Sie mit einem großen Server arbeiten, prüfen Sie die Einrichtung einmal mit dem kleinsten Typ. Ein Testlauf von etwa einer Stunde kostet nur Cent-Beträge, weil Hetzner stundenweise abrechnet.
+
+#### Voraussetzung
+
+Die erstmalige Einrichtung ist abgeschlossen. Am besten nutzen Sie ein eigenes Hetzner-Projekt nur für diese Rechner. Ein API-Token gilt immer für das ganze Projekt.
+
+#### Vorgehen
+
+1. Legen Sie für den Testrechner eine eigene Einstellungsdatei an:
+   ```bash
+   echo 'SERVER_TYPE=cpx02' > machines/test.env.local
+   ```
+   `cpx02` hat 1 vCPU, 1 GB RAM und 20 GB Platte.
+2. Prüfen Sie vorab: `./preflight.sh test https://github.com/<konto>/<repo>.git`. Meldet die Prüfung, dass `cpx02` in `fsn1` derzeit nicht bestellbar ist, ergänzen Sie in derselben Datei `SERVER_LOCATION=nbg1` oder `hel1`, oder nehmen Sie `SERVER_TYPE=cpx12` (2 GB RAM).
+3. Starten Sie den Rechner: `./start.sh test https://github.com/<konto>/<repo>.git`.
+4. Prüfen Sie den Rechner:
+   ```bash
+   ssh hetzner-claude-test "bash -lc 'claude --version; gh --version | head -n1; docker info >/dev/null && echo docker ok; ls /Development'"
+   ```
+5. Löschen Sie den Rechner wieder: `./stop.sh test` und bestätigen Sie mit `DELETE`.
+
+#### Ergebnis
+
+Sie wissen, dass Tokens, DNS, SSH-Vertrauen, Einrichtung, Clone und Löschen in Ihrem Konto funktionieren. In der Hetzner Console und bei Cloudflare ist danach nichts mehr vom Testrechner übrig. SSH-Schlüssel und Firewall bleiben für die nächsten Rechner bestehen.
+
+#### Hinweise
+
+* 1 GB RAM reicht für den Funktionstest. Für echte Arbeit des Agenten mit Builds und Tests ist der Speicher zu knapp. Nutzen Sie dafür einen größeren Typ.
+* Bricht `start.sh` ab, bleibt der Server bestehen. Führen Sie `./start.sh test` nach dem Beheben erneut aus, oder löschen Sie ihn mit `./stop.sh test`.
+
 ### Einen Rechner für ein Repository einrichten
 
 #### Voraussetzung
@@ -114,7 +176,7 @@ Die Meldung `Ready: ssh hetzner-claude-web (work dir: …)` erscheint. Das Repos
 
 * Ein schon vorhandenes Repository wird beim erneuten Aufruf von `start.sh` für einen laufenden Server nicht erneut geklont.
 * Das Host-Zertifikat des Servers ist sieben Tage gültig. Bei jedem neuen Server wird ein frisches Zertifikat erstellt. Eine manuelle Prüfung des Fingerabdrucks ist nicht nötig.
-* Zusätzlich hinterlegt `start.sh` den Host-Schlüssel des Servers in `~/.ssh/known_hosts_hetzner_<SERVER_PREFIX>-<rechner>`. Die Skripte, `ssh` und VS Code vertrauen auf diesem Computer nur diesem Schlüssel. Ein Schlüssel eines früheren Servers wird abgelehnt, auch wenn sein Zertifikat noch gültig ist. Die Verbindung funktioniert auch nach Ablauf des Zertifikats. Fehlt der hinterlegte Schlüssel (Server auf einem anderen Computer angelegt), gilt die Host-CA.
+* Zusätzlich hinterlegt `start.sh` den Host-Schlüssel des Servers in `~/.ssh/known_hosts_hetzner_<SERVER_PREFIX>-<rechner>`. Die Skripte, `ssh` und VS Code vertrauen auf diesem Computer nur diesem Schlüssel. Ein Schlüssel eines früheren Servers wird abgelehnt, auch wenn sein Zertifikat noch gültig ist. Die Verbindung funktioniert auch nach Ablauf des Zertifikats. Fehlt der hinterlegte Schlüssel (Server auf einem anderen Computer angelegt), gilt bei der ersten Verbindung die Host-CA. Danach trägt das Skript den über diese Verbindung gelesenen Schlüssel als hinterlegten Schlüssel ein. Wird der Rechner neu angelegt (neue Server-ID), verwirft es einen alten hinterlegten Schlüssel.
 * Schlägt die Installation von Claude Code bei der Einrichtung fehl, holt `start.sh` sie beim nächsten Aufruf nach.
 * Die Skripte verbinden sich über die IP-Adresse des Servers. Den DNS-Eintrag brauchen nur Sie für andere Geräte (etwa das iPad). `start.sh` wartet deshalb nicht darauf, dass er weltweit sichtbar ist.
 
@@ -211,10 +273,12 @@ Sie haben bei GitHub ein PAT erzeugt. Empfohlen ist ein **fein granulares** Toke
 
 #### Vorgehen
 
-1. Tragen Sie das Token als `GH_TOKEN` ein:
+1. Tragen Sie das Token als `VIPER_GH_TOKEN` ein:
    * für einen einzelnen Rechner in `machines/<rechner>.env.local` (empfohlen), oder
-   * für alle Rechner in `.env.local` oder als `export GH_TOKEN=...` in der Shell.
-2. Für GitHub Enterprise setzen Sie zusätzlich `GH_HOST` auf den Hostnamen.
+   * für alle Rechner in `.env.local` oder als `export VIPER_GH_TOKEN=...` in der Shell.
+2. Für GitHub Enterprise setzen Sie zusätzlich `VIPER_GH_HOST` auf den Hostnamen.
+
+Die Skripte lesen bewusst nicht `GH_TOKEN`. Ein Token, das Sie für Ihr lokales `gh` exportiert haben, landet so nie ungewollt auf einem Server.
 3. Starten Sie den Rechner mit `./start.sh <rechner>` bzw. `make up MACHINE=<rechner>`.
 
 #### Ergebnis
@@ -251,7 +315,7 @@ Schließen Sie alle VS-Code-Fenster und Terminals, die auf dem Rechner geöffnet
 #### Vorgehen
 
 1. Führen Sie `./stop.sh <rechner>` aus.
-2. Lesen Sie die Ausgabe: Das Skript zeigt je Repository und je Worktree den Git-Stand, Commits, die auf keinem Remote liegen (auf allen lokalen Branches), und die tmux-Sitzungen. Es sucht Repositories im Arbeitsverzeichnis, mit dem der Rechner gestartet wurde, im Home-Verzeichnis von `builder` und in `/tmp` und `/var/tmp`. Dateien und Ordner direkt im Arbeitsverzeichnis, die zu keinem Repository gehören, listet es unter **Not in any git repository (lost)** auf. Gibt es ungesicherte Arbeit (uncommittete Änderungen, Commits auf keinem Remote, mit `git stash` beiseitegelegte Änderungen, Dateien außerhalb eines Repositorys, ein fehlendes Arbeitsverzeichnis oder ein nicht lesbares Repository), steht `UNSAVED WORK` in der Ausgabe, und Sie müssen zusätzlich `DISCARD` eingeben, um fortzufahren. Von Git ignorierte Dateien (zum Beispiel `.env` oder Build-Verzeichnisse) werden unter **Ignored by git (also lost)** aufgelistet, blockieren aber nicht.
+2. Lesen Sie die Ausgabe: Das Skript zeigt je Repository und je Worktree den Git-Stand, Commits, die auf keinem Remote liegen (auf allen lokalen Branches), und die tmux-Sitzungen. Es sucht Repositories im Arbeitsverzeichnis, mit dem der Rechner gestartet wurde, im Home-Verzeichnis von `builder` und in `/tmp` und `/var/tmp`. Dateien und Ordner direkt im Arbeitsverzeichnis, die zu keinem Repository gehören, listet es unter **Not in any git repository (lost)** auf. Dateien außerhalb von Repositories im Home-Verzeichnis oder in `/tmp` prüft es nicht. Gibt es ungesicherte Arbeit (uncommittete Änderungen, Commits auf keinem Remote, mit `git stash` beiseitegelegte Änderungen, Dateien außerhalb eines Repositorys, ein fehlendes Arbeitsverzeichnis oder ein nicht lesbares Repository), steht `UNSAVED WORK` in der Ausgabe, und Sie müssen zusätzlich `DISCARD` eingeben, um fortzufahren. Von Git ignorierte Dateien (zum Beispiel `.env` oder Build-Verzeichnisse) werden unter **Ignored by git (also lost)** aufgelistet, blockieren aber nicht.
 3. Sichern Sie offene Änderungen (committen und pushen), falls nötig, und starten Sie `stop.sh` erneut.
 4. Geben Sie zur Bestätigung `DELETE` ein.
 
@@ -293,9 +357,9 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `REPO_URL` | Repository, das beim Start geklont wird | leer |
 | `REPO_BRANCH` | Zweig, der geklont wird | Standardzweig |
 | `GIT_DEPLOY_KEY_FILE` | Deploy-Key für private SSH-Repositories | leer |
-| `GH_TOKEN` | GitHub-PAT für `gh` und `git` über HTTPS auf dem Server | leer |
-| `GH_HOST` | GitHub-Host (für GitHub Enterprise) | `github.com` |
-| `HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID` | Zugangsdaten (Shell oder `.env.local`) | leer |
+| `VIPER_GH_TOKEN` | GitHub-PAT für `gh` und `git` über HTTPS auf dem Server | leer |
+| `VIPER_GH_HOST` | GitHub-Host (für GitHub Enterprise) | `github.com` |
+| `HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID` | Zugangsdaten (Shell oder `.env.local`), Pflichtangaben | leer |
 
 ### Firewall und Anmeldung
 
@@ -326,10 +390,25 @@ Die Skripte importieren und exportieren keine Daten. Ihre Arbeitsdateien liegen 
 **Ursache:** Die Datei `.env.local` fehlt.  
 **Lösung:** Kopieren Sie `.env.local.example` nach `.env.local` und tragen Sie `DNS_DOMAIN` ein.
 
-### Meldung: "Set DNS_DOMAIN in .env.local", "Set HCLOUD_TOKEN" oder ähnlich
+### Meldung: "Missing settings: …"
 
-**Ursache:** Eine Pflichtangabe oder ein Zugangswert fehlt.  
-**Lösung:** Tragen Sie den Wert in `.env.local` ein oder exportieren Sie ihn in der Shell. Beachten Sie: Eine leere Zeile `HCLOUD_TOKEN=` in `.env.local` überschreibt den Wert aus der Shell.
+**Ursache:** Pflichtwerte fehlen: `DNS_DOMAIN`, `HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN` oder `CLOUDFLARE_ZONE_ID`. Die Meldung nennt alle fehlenden auf einmal. Es wurde nichts angelegt oder gelöscht.  
+**Lösung:** Tragen Sie die Werte in `.env.local` oder `machines/<rechner>.env.local` ein oder exportieren Sie sie in der Shell. Beachten Sie: Eine leere Zeile `HCLOUD_TOKEN=` in `.env.local` überschreibt den Wert aus der Shell.
+
+### Meldung: "DNS_DOMAIN must be a domain like example.com"
+
+**Ursache:** `DNS_DOMAIN` enthält Großbuchstaben, ein Schema wie `https://`, einen Pfad oder einen Punkt am Ende.  
+**Lösung:** Tragen Sie nur den Domainnamen ein, zum Beispiel `example.com`.
+
+### Meldung: "Preflight: … problem(s); nothing was created."
+
+**Ursache:** Die Vorabprüfung hat Probleme gefunden. Die Zeilen mit `FAIL` darüber nennen sie. Häufige Fälle:
+* `… cannot currently be ordered in …`: Der Servertyp ist am Standort ausverkauft oder dort nicht erhältlich. Setzen Sie `SERVER_LOCATION` (etwa `nbg1` oder `hel1`) oder einen anderen `SERVER_TYPE`, am besten in `machines/<rechner>.env.local`.
+* `server type … does not exist`, `location … does not exist`, `image … does not exist`: Tippfehler oder ein Wert, den Hetzner nicht anbietet. Die gültigen Werte zeigen `hcloud server-type list`, `hcloud location list` und `hcloud image list --type system`.
+* `DNS_DOMAIN … is not in Cloudflare zone …`: `CLOUDFLARE_ZONE_ID` gehört zu einer anderen Domain.
+* `repository … not reachable without credentials`: Das Repository ist privat. Setzen Sie `VIPER_GH_TOKEN` (GitHub) oder nutzen Sie eine SSH-URL mit `GIT_DEPLOY_KEY_FILE`.
+
+**Lösung:** Beheben Sie die genannten Punkte und führen Sie `./preflight.sh <rechner>` erneut aus.
 
 ### Meldung: "Machine name required" oder "Machine name: lowercase letters, digits, hyphens"
 
@@ -382,8 +461,8 @@ Die Skripte importieren und exportieren keine Daten. Ihre Arbeitsdateien liegen 
 
 ### Meldung: "error validating token" beim Start
 
-**Ursache:** `gh` hat das Token aus `GH_TOKEN` abgelehnt: Es ist abgelaufen, widerrufen oder falsch kopiert. Ein klassisches Token (nicht fein granular) braucht außerdem mindestens die Scopes `repo` und `read:org`. Der Server ist schon angelegt.  
-**Lösung:** Korrigieren Sie `GH_TOKEN` und führen Sie `./start.sh <rechner>` erneut aus. Der vorhandene Server wird weiterverwendet.
+**Ursache:** `gh` hat das Token aus `VIPER_GH_TOKEN` abgelehnt: Es ist abgelaufen, widerrufen oder falsch kopiert. Ein klassisches Token (nicht fein granular) braucht außerdem mindestens die Scopes `repo` und `read:org`. Der Server ist schon angelegt.  
+**Lösung:** Korrigieren Sie `VIPER_GH_TOKEN` und führen Sie `./start.sh <rechner>` erneut aus. Der vorhandene Server wird weiterverwendet.
 
 ### Meldung: "Git check on the server failed. NOT deleting server"
 
@@ -402,8 +481,17 @@ Die Skripte importieren und exportieren keine Daten. Ihre Arbeitsdateien liegen 
 
 ### Meldung: "SSH unreachable. Use ./stop.sh <machine> --force …"
 
-**Ursache:** `stop.sh` erreicht den Server nicht.  
+**Ursache:** `stop.sh` erreicht den Server nicht (Netz, Firewall oder der Server läuft nicht).  
 **Lösung:** Prüfen Sie Netz und Firewall. Ist der Server nicht zu retten, nutzen Sie `./stop.sh <rechner> --force`.
+
+### Meldung: "host key is not trusted" (bei `start.sh` oder `stop.sh`)
+
+**Ursache:** Der Server antwortet, beweist aber nicht, dass er der erwartete Rechner ist. Mögliche Gründe:
+* Der Rechner wurde von einem anderen Computer aus gelöscht und neu angelegt, und dieser Computer hat noch den Schlüssel des alten Servers hinterlegt. Das erkennt `start.sh` normalerweise an der geänderten Server-ID und verwirft den alten Schlüssel selbst.
+* Auf diesem Computer ist kein Schlüssel hinterlegt, und das Zertifikat ist abgelaufen.
+* Jemand sitzt zwischen Ihnen und dem Server.
+
+**Lösung:** Nutzen Sie **nicht** einfach `--force`, denn dann prüft `stop.sh` keine ungesicherte Arbeit. Arbeiten Sie vom Computer aus, der den Rechner angelegt hat, oder prüfen Sie den Fingerabdruck in der Web-Konsole des Servers (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`). Erst wenn Sie sicher sind, dass auf dem Server nichts Wichtiges liegt, löschen Sie ihn mit `./stop.sh <rechner> --force`.
 
 ### Meldung: "WARNING: DNS removal failed"
 
@@ -412,8 +500,8 @@ Die Skripte importieren und exportieren keine Daten. Ihre Arbeitsdateien liegen 
 
 ### Verbindung wird nach einigen Tagen abgelehnt
 
-**Ursache:** Das Host-Zertifikat ist nach sieben Tagen abgelaufen. Eine automatische Erneuerung gibt es nicht. Auf dem Rechner, auf dem Sie `start.sh` ausgeführt haben, greift dann der hinterlegte Host-Schlüssel, und die Verbindung funktioniert weiter. Betroffen sind Geräte, die nur der Host-CA vertrauen, etwa das iPad.  
-**Lösung:** Arbeiten Sie vom Rechner aus, auf dem Sie `start.sh` ausgeführt haben, pushen Sie dort Ihre Arbeit, beenden Sie den Rechner mit `./stop.sh <rechner>` und starten Sie ihn neu.
+**Ursache:** Das Host-Zertifikat ist nach sieben Tagen abgelaufen. Eine automatische Erneuerung gibt es nicht. Computer mit hinterlegtem Host-Schlüssel verbinden sich weiter. Das ist der Computer, der den Rechner angelegt hat, und jeder andere, der innerhalb der sieben Tage einmal `start.sh` oder `stop.sh` ausgeführt hat (dabei wird der Schlüssel über die noch gültige CA-Prüfung nachgetragen). Betroffen sind Geräte, die nur der Host-CA vertrauen, etwa das iPad, und Computer, die den Rechner nie innerhalb der Gültigkeit erreicht haben.  
+**Lösung:** Arbeiten Sie von einem Computer mit hinterlegtem Schlüssel aus, pushen Sie dort Ihre Arbeit, beenden Sie den Rechner mit `./stop.sh <rechner>` und starten Sie ihn neu.
 
 ## 8. FAQ
 
@@ -468,3 +556,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.6 | v3 mit Mehrrechner-Betrieb | Standard-Image ist Ubuntu 26.04 LTS. Bestehende `.env.local` mit `ubuntu-24.04` funktionieren weiter. |
 | 1.7 | v3 mit Mehrrechner-Betrieb | Klonen ohne `REPO_BRANCH` funktioniert. `stop.sh` erkennt ungepushte Commits auf allen Branches und in Worktrees und prüft das beim Start genutzte Arbeitsverzeichnis. Fehler der Hetzner-API führen zum Abbruch statt zum Aufräumen. Verbindung über die IP, keine Wartezeit auf DNS. Nach Ablauf des Zertifikats bleibt die Verbindung über den hinterlegten Host-Schlüssel möglich. Tokens erscheinen nicht mehr in Befehlszeilen und werden nicht an VS Code vererbt. |
 | 1.8 | v3 mit Mehrrechner-Betrieb | DNS-Name und lokale Dateien enthalten das Präfix (`claude-web.<domain>`). Die Skripte vertrauen nur dem hinterlegten Host-Schlüssel des jeweiligen Servers. `stop.sh` sucht Repositories auch im Home- und Temp-Verzeichnis, meldet Dateien außerhalb von Repositories und fragt vor dem Aufräumen eines nicht gefundenen Servers nach `CLEANUP`. `start.sh` holt eine fehlgeschlagene Claude-Installation nach und verwendet einen schon hochgeladenen SSH-Schlüssel weiter. Antworten können per Pipe übergeben werden. |
+| 1.9 | v3 mit Mehrrechner-Betrieb | Das GitHub-Token heißt jetzt `VIPER_GH_TOKEN` (statt `GH_TOKEN`), ein lokal exportiertes `GH_TOKEN` wird nicht mehr übernommen. Ein abgelehnter Host-Schlüssel wird als solcher gemeldet statt als „nicht erreichbar“, und `stop.sh --force` prüft einen erreichbaren Server trotzdem. Hinterlegte Schlüssel werden bei neuer Server-ID verworfen und nach einer CA-geprüften Verbindung nachgetragen. Eine als Symlink verwaltete `~/.ssh/config` bleibt erhalten. Neu: Abschnitt „Erster Testlauf mit einem kleinen Server“. `preflight.sh` prüft vorab nur lesend, und `start.sh` führt es zuerst aus. Fehlende Pflichtwerte werden gemeinsam gemeldet, bevor etwas angelegt oder gelöscht wird. |

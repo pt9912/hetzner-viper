@@ -4,7 +4,12 @@ MACHINE="${1:?Usage: ./start.sh <machine> [repo-url]}"; export MACHINE
 REPO_URL_ARG="${2:-}"
 source "$(dirname "$0")/common.sh"
 [[ -z "$REPO_URL_ARG" ]] || REPO_URL="$REPO_URL_ARG"
-: "${CLOUDFLARE_ZONE_ID:?Set CLOUDFLARE_ZONE_ID}"
+# read-only checks first, so a wrong setting fails before anything is created
+if ! preflight=$(./preflight.sh "$MACHINE" "$REPO_URL_ARG"); then
+  echo "$preflight" >&2
+  exit 1
+fi
+echo "$preflight"
 CA="$HOME/.ssh/hetzner_claude_host_ca"
 [[ -f "$CA" && -f "$SSH_KEY.pub" ]] || { echo 'Run ./setup.sh first' >&2; exit 1; }
 GIT_DEPLOY_KEY_FILE="${GIT_DEPLOY_KEY_FILE:+${GIT_DEPLOY_KEY_FILE/#\~/$HOME}}"
@@ -14,11 +19,13 @@ for f in "${GIT_DEPLOY_KEY_FILE:-}" "${IPAD_SSH_PUBLIC_KEY_FILE:-}"; do
 done
 # Hetzner allows each public key only once per project: reuse it under whatever name it has.
 fingerprint=$(ssh-keygen -E md5 -lf "$SSH_KEY.pub" | awk '{print $2}' | sed 's/^MD5://')
-keys=$(hcloud ssh-key list -o noheader -o columns=name,fingerprint) || { echo 'hcloud ssh-key list failed (check HCLOUD_TOKEN / project / network)' >&2; exit 1; }
-existing=$(awk -v fp="$fingerprint" 'tolower($2) == tolower(fp) {print $1; exit}' <<<"$keys")
+# fingerprint first: names may contain spaces, fingerprints do not
+keys=$(hcloud ssh-key list -o noheader -o columns=fingerprint,name) || { echo 'hcloud ssh-key list failed (check HCLOUD_TOKEN / project / network)' >&2; exit 1; }
+key_names() { awk -v fp="$1" '{ f = $1; sub(/^[^ ]+ +/, ""); sub(/ +$/, ""); if (fp == "" || tolower(f) == tolower(fp)) print }' <<<"$keys"; }
+existing=$(key_names "$fingerprint" | head -n1)
 if [[ -n "$existing" ]]; then
   KEY_NAME="$existing"
-elif awk -v n="$KEY_NAME" '$1 == n {found=1} END {exit !found}' <<<"$keys"; then
+elif key_names '' | grep -Fqx -- "$KEY_NAME"; then
   echo "SSH key $KEY_NAME in Hetzner belongs to a different public key than $SSH_KEY.pub" >&2; exit 1
 else
   hcloud ssh-key create --name "$KEY_NAME" --public-key-from-file "$SSH_KEY.pub"
@@ -37,7 +44,8 @@ if ! hcloud_has server "$SERVER_NAME"; then
   TMP=$(mktemp -d)
   chmod 700 "$TMP"
   trap 'rm -rf "$TMP"' EXIT
-  ssh-keygen -q -t ed25519 -N '' -f "$TMP/ssh_host_ed25519_key"
+  # -C: the default comment (local user@host) would end up in the user-data
+  ssh-keygen -q -t ed25519 -N '' -C "$SERVER_NAME" -f "$TMP/ssh_host_ed25519_key"
   ssh-keygen -q -s "$CA" -I "$SERVER_NAME-$(date +%s)" -h -n "$DNS_HOST" -V -5m:+7d "$TMP/ssh_host_ed25519_key.pub"
   python3 - "$SSH_KEY.pub" cloud-init.yaml "$TMP/cloud-init.yaml" "$TMP" "${IPAD_SSH_PUBLIC_KEY_FILE:-}" <<'PYGEN'
 import sys, json
@@ -67,31 +75,49 @@ PYGEN
   hcloud server create --name "$SERVER_NAME" --type "$SERVER_TYPE" --location "$SERVER_LOCATION" \
     --image "$SERVER_IMAGE" --ssh-key "$KEY_NAME" --firewall "$FW_NAME" \
     --user-data-from-file "$TMP/cloud-init.yaml"
+  SERVER_ID=$(server_id)
+  echo "$SERVER_ID" > "$ID_STATE"
 else
-  echo 'Existing server: reusing it (trusted via host CA, or the host key pinned at creation).'
+  echo 'Existing server: reusing it.'
+  SERVER_ID=$(server_id)
+  forget_stale_pin "$SERVER_ID"
 fi
 IP=$(hcloud server ip "$SERVER_NAME")
 echo "$IP" > "$IP_STATE"
 write_ssh_config "$IP"
-touch "$HOME/.ssh/config"
-chmod 600 "$HOME/.ssh/config"
-if ! grep -Fqx "Include $SSH_CFG" "$HOME/.ssh/config"; then
-  { echo "Include $SSH_CFG"; cat "$HOME/.ssh/config"; } > "$HOME/.ssh/config.new" && mv "$HOME/.ssh/config.new" "$HOME/.ssh/config"
-  chmod 600 "$HOME/.ssh/config"
-fi
+ssh_include add
 # The DNS name is for people (iPad, other clients); the scripts connect by IP and need not wait for it.
 ./dns.sh set "$IP"
 echo 'Waiting for SSH and cloud-init ...'
 # The probe always exits 0 once connected; only connection failures are retried.
 # cloud-init exits 0 (done), 2 (done with warnings) or 1 (errors).
 probe='cloud-init status --wait >/dev/null 2>&1; echo "cloud-init=$?"; test -f /var/tmp/claude-ready && echo claude=ok; docker info >/dev/null 2>&1 && echo docker=ok; true'
-status=''
+# While the server boots, sshd may briefly present a key other than the provisioned one,
+# so host-key errors are retried too; the last error is reported at the end.
+status=''; err=''
 for i in $(seq 1 120); do
-  status=$(ssh -n -F "$SSH_CFG" -o BatchMode=yes -o ConnectTimeout=5 "$SSH_ALIAS" "$probe" 2>/dev/null) && break
-  status=''
+  if status=$(ssh -n -F "$SSH_CFG" -o BatchMode=yes -o ConnectTimeout=5 "$SSH_ALIAS" "$probe" 2>"$STATE/ssh-err-$SERVER_NAME"); then
+    break
+  fi
+  status=''; err=$(cat "$STATE/ssh-err-$SERVER_NAME")
   sleep 5
 done
-[[ -n "$status" ]] || { echo 'SSH not reachable; server retained.' >&2; exit 1; }
+rm -f "$STATE/ssh-err-$SERVER_NAME"
+if [[ -z "$status" ]]; then
+  if [[ "$(ssh_failure_kind "$err")" == hostkey ]]; then
+    echo "SSH: the server's host key is not trusted; server retained." >&2
+    echo "  $err" >&2
+    echo "  The server answers but does not prove to be $SERVER_NAME (stale pin, expired certificate without pin, or someone in between)." >&2
+  else
+    echo 'SSH not reachable; server retained.' >&2
+  fi
+  exit 1
+fi
+# Verified via the host CA (no pin yet): pin the key from now on.
+if [[ ! -s "$KNOWN_PIN" ]]; then
+  pin_from_server "$SERVER_ID"
+  write_ssh_config "$IP"
+fi
 # runcmd runs only once per server; a failed Claude install is repaired here instead.
 if ! grep -qx 'claude=ok' <<<"$status"; then
   echo 'Claude Code is not installed yet; installing ...'
@@ -104,11 +130,12 @@ grep -qx 'cloud-init=1' <<<"$status" && echo 'WARNING: cloud-init reported error
 ssh -n -F "$SSH_CFG" "$SSH_ALIAS" "sudo install -d -o builder -g builder $(printf %q "$WORKSPACE_DIR")"
 echo "$WORKSPACE_DIR" > "$WORKSPACE_STATE"
 # GitHub CLI login for builder. The token goes through stdin (not argv, not user-data);
-# `gh auth setup-git` makes git use it for HTTPS clone/push.
-if [[ -n "${GH_TOKEN:-}" ]]; then
-  gh_host=$(printf %q "${GH_HOST:-github.com}")
-  ssh -F "$SSH_CFG" "$SSH_ALIAS" "gh auth login --hostname $gh_host --with-token && gh auth setup-git --hostname $gh_host" <<<"$GH_TOKEN"
-  echo "gh: logged in to ${GH_HOST:-github.com}"
+# `gh auth setup-git` makes git use it for HTTPS clone/push. A dedicated variable, so a
+# GH_TOKEN the user exported for local gh is never copied to a server.
+if [[ -n "${VIPER_GH_TOKEN:-}" ]]; then
+  gh_host=$(printf %q "${VIPER_GH_HOST:-github.com}")
+  ssh -F "$SSH_CFG" "$SSH_ALIAS" "gh auth login --hostname $gh_host --with-token && gh auth setup-git --hostname $gh_host" <<<"$VIPER_GH_TOKEN"
+  echo "gh: logged in to ${VIPER_GH_HOST:-github.com}"
 fi
 WORKDIR="$WORKSPACE_DIR"
 if [[ -n "${REPO_URL:-}" ]]; then
@@ -136,5 +163,5 @@ fi
 echo "Ready: ssh $SSH_ALIAS (work dir: $WORKDIR)"
 # VS Code and its extensions must not inherit the API tokens from .env.local
 if command -v code >/dev/null; then
-  env -u HCLOUD_TOKEN -u CLOUDFLARE_API_TOKEN -u CLOUDFLARE_ZONE_ID -u GH_TOKEN code --remote "ssh-remote+$SSH_ALIAS" "$WORKDIR" || true
+  env -u HCLOUD_TOKEN -u CLOUDFLARE_API_TOKEN -u CLOUDFLARE_ZONE_ID -u VIPER_GH_TOKEN -u GH_TOKEN code --remote "ssh-remote+$SSH_ALIAS" "$WORKDIR" || true
 fi

@@ -5,12 +5,8 @@ source "$(dirname "$0")/common.sh"
 
 # Remove the local SSH config of this machine.
 cleanup_local() {
-  if [[ -f "$HOME/.ssh/config" ]] && grep -Fqx "Include $SSH_CFG" "$HOME/.ssh/config"; then
-    grep -Fvx "Include $SSH_CFG" "$HOME/.ssh/config" > "$HOME/.ssh/config.new" || true
-    mv "$HOME/.ssh/config.new" "$HOME/.ssh/config"
-    chmod 600 "$HOME/.ssh/config"
-  fi
-  rm -f "$SSH_CFG" "$KNOWN_PIN" "$IP_STATE" "$WORKSPACE_STATE"
+  ssh_include remove
+  rm -f "$SSH_CFG" "$KNOWN_PIN" "$IP_STATE" "$ID_STATE" "$WORKSPACE_STATE"
 }
 
 if ! hcloud_has server "$SERVER_NAME"; then
@@ -30,16 +26,29 @@ if ! hcloud_has server "$SERVER_NAME"; then
   exit 0
 fi
 IP=$(hcloud server ip "$SERVER_NAME")
+SERVER_ID=$(server_id)
+forget_stale_pin "$SERVER_ID"
 write_ssh_config "$IP"
 # Check the directory the server was started with, even if WORKSPACE_DIR changed since.
 WS=$(cat "$WORKSPACE_STATE" 2>/dev/null || echo "$WORKSPACE_DIR")
 FORCE=0; [[ "${2:-}" == --force ]] && FORCE=1
-# -n: ssh must not swallow the answers that follow on stdin
-if (( FORCE )) || ! ssh -n -F "$SSH_CFG" -o BatchMode=yes -o ConnectTimeout=10 "$SSH_ALIAS" true 2>/dev/null; then
-  (( FORCE )) || { echo 'SSH unreachable. Use ./stop.sh <machine> --force to delete without checks.' >&2; exit 1; }
+# -n: ssh must not swallow the answers that follow on stdin. The git checks run whenever
+# the server is reachable and trusted, with or without --force.
+SKIP=0
+if ! err=$(ssh -n -F "$SSH_CFG" -o BatchMode=yes -o ConnectTimeout=10 "$SSH_ALIAS" true 2>&1 >/dev/null); then
+  if [[ "$(ssh_failure_kind "$err")" == hostkey ]]; then
+    echo "The server answers, but its host key is not trusted: $err" >&2
+    echo "It may have been recreated from another computer (stale pin) or its certificate expired without a pin." >&2
+    echo 'Unsaved work on it cannot be checked. Only if you are sure it holds nothing of value: ./stop.sh <machine> --force' >&2
+  else
+    echo 'SSH unreachable. Use ./stop.sh <machine> --force to delete without checks.' >&2
+  fi
+  (( FORCE )) || exit 1
   echo 'WARNING: --force skips the git checks; everything on the server is lost.' >&2
   SKIP=1
-else SKIP=0
+elif [[ ! -s "$KNOWN_PIN" ]]; then
+  pin_from_server "$SERVER_ID"
+  write_ssh_config "$IP"
 fi
 (( SKIP )) || {
 echo 'Checking git repositories, loose files and running sessions ...'

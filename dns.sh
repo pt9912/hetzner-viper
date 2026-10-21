@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Usage: MACHINE=<name> ./dns.sh set IP | delete [IP]
+# Usage: MACHINE=<name> ./dns.sh set IP | delete [IP] | check
 source "$(dirname "$0")/common.sh"
-: "${CLOUDFLARE_ZONE_ID:?Set CLOUDFLARE_ZONE_ID (your DNS zone)}"
 api="https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/dns_records"
 # The token is passed as a header file (printf is a builtin), so it never appears in curl's argv.
 cf() {
@@ -44,5 +43,21 @@ case "${1:-}" in
    fi
    echo 'DNS record removed (if present)'
    ;;
- *) echo 'Usage: dns.sh set IP | delete [EXPECTED_IP]' >&2; exit 1;;
+ check)
+   # read-only: zone matches DNS_DOMAIN, record free or owned by this setup
+   zone=$(cf GET "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID") || { echo "FAIL  Cloudflare zone $CLOUDFLARE_ZONE_ID not readable with this token"; exit 1; }
+   zone_name=$(jq -r '.result.name' <<<"$zone")
+   if [[ "$DNS_DOMAIN" != "$zone_name" && "$DNS_DOMAIN" != *".$zone_name" ]]; then
+     echo "FAIL  DNS_DOMAIN $DNS_DOMAIN is not in Cloudflare zone $zone_name"; exit 1
+   fi
+   echo "ok    Cloudflare zone $zone_name readable (edit permission is only seen when start.sh writes the record)"
+   if [[ -z "$id" ]]; then
+     echo "ok    $DNS_HOST: no record yet"
+   elif [[ "$(jq -r '.result[0].comment // ""' <<<"$records")" == 'managed by hetzner-claude' ]]; then
+     echo "info  $DNS_HOST -> $(jq -r '.result[0].content' <<<"$records") (managed by this setup)"
+   else
+     echo "FAIL  $DNS_HOST already has a record not managed by this setup"; exit 1
+   fi
+   ;;
+ *) echo 'Usage: dns.sh set IP | delete [EXPECTED_IP] | check' >&2; exit 1;;
 esac

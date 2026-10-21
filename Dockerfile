@@ -20,7 +20,9 @@ RUN set -eu; \
 WORKDIR /repo
 
 FROM base AS test
-RUN apt-get update && apt-get install -y --no-install-recommends shellcheck && rm -rf /var/lib/apt/lists/*
+# openssh-server: tests/cases/sshd.sh checks the ssh trust logic against a real (unprivileged) sshd
+RUN apt-get update && apt-get install -y --no-install-recommends shellcheck openssh-server && rm -rf /var/lib/apt/lists/* \
+ && mkdir -p /run/sshd
 RUN useradd --create-home tester
 USER tester
 CMD ["make", "test"]

@@ -12,10 +12,24 @@ auth = [open(h[1:]).read() if h.startswith('@') else h for h in headers]
 if os.environ.get('MOCK_CF_FAIL') or not any(a.startswith('Authorization: Bearer ') for a in auth):
     print('curl: (22) The requested URL returned error: 403', file=sys.stderr); sys.exit(22)
 method = args[args.index('-X') + 1] if '-X' in args else 'GET'
+# GitHub API (preflight.sh): MOCK_GH_BAD rejects the token, MOCK_GH_SCOPES fakes a classic
+# token's scopes, MOCK_GH_NOREPO denies repository access
+gh = [a for a in args if a.startswith('https://api.github.com/')]
+if gh:
+    if os.environ.get('MOCK_GH_BAD'):
+        print('curl: (22) The requested URL returned error: 401', file=sys.stderr); sys.exit(22)
+    if '/repos/' in gh[0] and os.environ.get('MOCK_GH_NOREPO'):
+        print('curl: (22) The requested URL returned error: 404', file=sys.stderr); sys.exit(22)
+    if '-D' in args:
+        with open(args[args.index('-D') + 1], 'w') as h:
+            h.write('HTTP/2 200\r\n' + ('x-oauth-scopes: ' + os.environ['MOCK_GH_SCOPES'] + '\r\n' if os.environ.get('MOCK_GH_SCOPES') else ''))
+    print(json.dumps({'login': 'tester'})); sys.exit(0)
 url = [a for a in args if a.startswith('https://')][0]
 data = json.loads(args[args.index('--data') + 1]) if '--data' in args else None
 u = urllib.parse.urlparse(url)
 rid = u.path.rstrip('/').split('/')[-1] if not u.path.endswith('dns_records') else None
+if '/dns_records' not in u.path:   # GET /zones/<id> (preflight.sh)
+    print(json.dumps({'success': True, 'result': {'id': rid, 'name': os.environ.get('MOCK_CF_ZONE', 'test.invalid')}})); sys.exit(0)
 def out(result):
     json.dump(recs, open(sf, 'w'))
     print(json.dumps({'success': True, 'result': result}))

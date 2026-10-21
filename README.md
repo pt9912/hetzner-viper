@@ -17,18 +17,20 @@ These commands exist. State of verification: the scripts are tested against simu
 ```bash
 cp .env.local.example .env.local   # set DNS_DOMAIN
 ./setup.sh                         # create login key and local host CA
+./preflight.sh web                 # read-only checks: settings, Hetzner, Cloudflare, GitHub
 export HCLOUD_TOKEN=... CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ZONE_ID=...
 ./start.sh web https://example.org/org/web.git   # set up machine "web", clone the repo
 ./stop.sh web                                    # delete machine "web"
 ```
 
+- `./preflight.sh <name> [repo-url]` (or `make preflight MACHINE=<name>`) checks everything read-only before anything is created: settings, local setup, Hetzner token, server type available at the location, image, Cloudflare zone and record, GitHub token and repository access. `start.sh` runs it first.
 - `make test` runs the tests against mocks (offline, no cost); `make docker-test` runs the same tests in a container without network.
 - `make up MACHINE=web REPO=<url>` and `make down MACHINE=web` run the scripts inside a Docker container.
 - Several machines in parallel: `./start.sh api …` next to `web`. Each has its own server and DNS name `<SERVER_PREFIX>-<name>.<DNS_DOMAIN>` (default prefix `claude`).
-- With `GH_TOKEN` (a GitHub PAT, ideally fine-grained per machine) the GitHub CLI `gh` is logged in on the server and `git` pushes over HTTPS, so the agent can also open pull requests.
-- `stop.sh` checks the Git state of all repositories and worktrees in the workspace, the home directory and the temp directories (uncommitted changes, commits on any branch that are on no remote, stash entries), flags files outside any repository, lists ignored files, and additionally asks for `DISCARD` when there is unsaved work.
+- With `VIPER_GH_TOKEN` (a GitHub PAT, ideally fine-grained per machine; a `GH_TOKEN` exported for your local `gh` is deliberately not used) the GitHub CLI `gh` is logged in on the server and `git` pushes over HTTPS, so the agent can also open pull requests.
+- `stop.sh` checks the Git state of all repositories and worktrees in the workspace, the home directory and the temp directories (uncommitted changes, commits on any branch that are on no remote, stash entries), flags entries at the top of the workspace that belong to no repository (files outside repositories elsewhere are not checked), lists ignored files, and additionally asks for `DISCARD` when there is unsaved work.
 
-The full guide with all tasks, settings and troubleshooting is the [user manual](docs/user/handbuch.md) (German).
+The full guide with all tasks, settings and troubleshooting is the [user manual](docs/user/handbuch.md) (German). For a first real run, start with the section „Erster Testlauf mit einem kleinen Server“ there (server type `cpx02`, a few cents per hour).
 
 ## Why Hetzner Viper?
 

@@ -10,7 +10,8 @@ while (( i < ${#args[@]} )) && [[ "${args[i]}" != hetzner-* ]]; do
 done
 remote="${args[*]:i+1}"
 consume() { (( no_stdin )) || cat >/dev/null; }
-[[ -z "${MOCK_SSH_DOWN:-}" ]] || { consume; exit 255; }
+[[ -z "${MOCK_SSH_DOWN:-}" ]] || { consume; echo 'ssh: connect to host 203.0.113.10 port 22: Connection timed out' >&2; exit 255; }
+[[ -z "${MOCK_SSH_HOSTKEY_FAIL:-}" ]] || { consume; echo 'Host key verification failed.' >&2; exit 255; }
 export HOME="$MOCK_STATE/remote-home" VIPER_TMP_DIRS="$MOCK_STATE/remote-tmp"
 mkdir -p "$HOME" "$VIPER_TMP_DIRS"
 case "$remote" in
@@ -23,7 +24,9 @@ case "$remote" in
     consume
     [[ -z "${MOCK_INSTALL_FAIL:-}" ]] || exit 1
     touch "$MOCK_STATE/claude-ready" ;;
-  "gh auth login"*) cat > "$MOCK_STATE/gh-token" ;;
+  "gh auth login"*) if (( no_stdin )); then : > "$MOCK_STATE/gh-token"; else cat > "$MOCK_STATE/gh-token"; fi ;;
+  # host key read over a CA-verified connection (pin_from_server)
+  "cat /etc/ssh/ssh_host_ed25519_key.pub") consume; cat "$MOCK_STATE/remote-hostkey.pub" 2>/dev/null ;;
   "bash -s"*) (( no_stdin )) && exec </dev/null; bash -c "$remote"; exit $? ;;
   *) consume ;;
 esac

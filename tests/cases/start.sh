@@ -13,7 +13,7 @@ test_start_rejects_bad_machine_names() {
   fails run start.sh 2>/dev/null
   fails run start.sh Bad_Name 2>/dev/null
   fails run start.sh -x 2>/dev/null
-  check "nothing created" test ! -s <(grep '^hcloud' "$CALLS")
+  check "nothing created" bash -c "! grep -q '^hcloud' '$CALLS'"
 }
 
 test_start_creates_all_resources_for_a_machine() {
@@ -94,9 +94,9 @@ test_repo_from_machine_file_with_deploy_key() {
 
 test_machine_file_overrides_server_type() {
   run setup.sh >/dev/null
-  echo 'SERVER_TYPE=cx11' > "$W/machines/small.env.local"
+  echo 'SERVER_TYPE=cpx02' > "$W/machines/small.env.local"
   run start.sh small >/dev/null
-  check "override" has '--type cx11' "$CALLS"
+  check "override" has '--type cpx02' "$CALLS"
   run start.sh big >/dev/null
   check "default elsewhere" has 'claude-big .*--type cx53' "$CALLS"
 }
@@ -209,7 +209,7 @@ test_gh_installed_by_cloud_init() {
 test_gh_token_passed_via_stdin_before_clone() {
   run setup.sh >/dev/null
   git init -q --bare "$T/origin.git"
-  export GH_TOKEN=ghp_secret123
+  export VIPER_GH_TOKEN=ghp_secret123
   run start.sh web "$T/origin.git" >/dev/null
   check "token reached gh" test "$(cat "$MOCK_STATE/gh-token")" = ghp_secret123
   check "git uses gh credentials" has 'gh auth setup-git' "$CALLS"
@@ -220,7 +220,7 @@ test_gh_token_passed_via_stdin_before_clone() {
 
 test_gh_token_per_machine() {
   run setup.sh >/dev/null
-  echo 'GH_TOKEN=ghp_web_only' > "$W/machines/web.env.local"
+  echo 'VIPER_GH_TOKEN=ghp_web_only' > "$W/machines/web.env.local"
   run start.sh web >/dev/null
   check "machine token used" test "$(cat "$MOCK_STATE/gh-token")" = ghp_web_only
   rm "$MOCK_STATE/gh-token"
@@ -303,7 +303,7 @@ test_hcloud_error_aborts_start_without_creating() {
   run setup.sh >/dev/null
   export MOCK_HCLOUD_FAIL=1
   fails run start.sh web >/dev/null 2>"$T/err"
-  check "message" has 'list failed' "$T/err"
+  check "message" has 'Hetzner API not usable' "$T/err"
   check "no dns" test ! -f "$MOCK_STATE/cf.json"
 }
 
@@ -317,8 +317,78 @@ test_cloudflare_token_not_in_argv() {
 
 test_vscode_does_not_inherit_tokens() {
   run setup.sh >/dev/null
-  export GH_TOKEN=ghp_x
+  export VIPER_GH_TOKEN=ghp_x GH_TOKEN=ghp_local
   run start.sh web >/dev/null
   check "code launched" has '^code ' "$CALLS"
   check "no tokens in its environment" test ! -s "$MOCK_STATE/code-env"
+}
+
+test_exported_gh_token_is_not_copied_to_the_server() {
+  run setup.sh >/dev/null
+  export GH_TOKEN=ghp_my_local_token
+  run start.sh web >/dev/null
+  check "no gh login" bash -c "! grep -q 'gh auth' '$CALLS'"
+}
+
+test_host_key_rejection_is_named_not_called_unreachable() {
+  run setup.sh >/dev/null
+  export MOCK_SSH_HOSTKEY_FAIL=1
+  fails run start.sh web >/dev/null 2>"$T/err"
+  check "named" has 'host key is not trusted' "$T/err"
+  check "not called unreachable" bash -c "! grep -q 'SSH not reachable' '$T/err'"
+}
+
+test_stale_pin_dropped_when_server_was_recreated() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  old=$(cat "$HOME/.ssh/known_hosts_hetzner_claude-web")
+  # another computer deletes and recreates claude-web: new ID, new host key
+  cp "$MOCK_STATE/hcloud/server/claude-web.user-data" "$T/ud"
+  rm "$MOCK_STATE/hcloud/server/claude-web.json"
+  hcloud server create --name claude-web --user-data-from-file "$T/ud" >/dev/null
+  echo "ssh-ed25519 AAAAnewkey claude-web" > "$MOCK_STATE/remote-hostkey.pub"
+  run start.sh web >"$T/out"
+  check "notice" has 'was recreated' "$T/out"
+  check "new key pinned" test "$(cat "$HOME/.ssh/known_hosts_hetzner_claude-web")" = "claude-web.test.invalid ssh-ed25519 AAAAnewkey"
+  check "differs from old" test "$(cat "$HOME/.ssh/known_hosts_hetzner_claude-web")" != "$old"
+}
+
+test_missing_pin_is_recorded_after_ca_verified_connection() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  rm "$HOME/.ssh/known_hosts_hetzner_claude-web" "$HOME/.local/state/hetzner-claude/id-claude-web"
+  echo "ssh-ed25519 AAAAserverkey root@host" > "$MOCK_STATE/remote-hostkey.pub"
+  run start.sh web >/dev/null
+  check "pinned" test "$(cat "$HOME/.ssh/known_hosts_hetzner_claude-web")" = "claude-web.test.invalid ssh-ed25519 AAAAserverkey"
+  check "config switched to pin" has "UserKnownHostsFile $HOME/.ssh/known_hosts_hetzner_claude-web\$" "$HOME/.ssh/config_hetzner_claude-web"
+}
+
+test_symlinked_ssh_config_stays_a_symlink() {
+  run setup.sh >/dev/null
+  mkdir -p "$T/dotfiles"; echo 'Host other' > "$T/dotfiles/ssh_config"
+  ln -sf "$T/dotfiles/ssh_config" "$HOME/.ssh/config"
+  run start.sh web >/dev/null
+  check "still a symlink" test -L "$HOME/.ssh/config"
+  check "include in target" has 'Include .*config_hetzner_claude-web' "$T/dotfiles/ssh_config"
+  check "own content kept" has '^Host other' "$T/dotfiles/ssh_config"
+}
+
+test_existing_key_name_with_spaces_is_reused() {
+  run setup.sh >/dev/null
+  hcloud ssh-key create --name 'my laptop key' --public-key-from-file "$HOME/.ssh/hetzner-build.pub" >/dev/null
+  run start.sh web >/dev/null
+  check "no second key" count_is 'hcloud ssh-key create' "$CALLS" 1
+  check "used by name" has '--ssh-key my laptop key' "$CALLS"
+}
+
+test_host_key_comment_does_not_leak_local_user() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  check "comment is server name" has 'ed25519_public: "ssh-ed25519 [^ ]+ claude-web"' "$MOCK_STATE/hcloud/server/claude-web.user-data"
+}
+
+test_ssh_config_has_keepalive() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  check "keepalive" has 'ServerAliveInterval 15' "$HOME/.ssh/config_hetzner_claude-web"
 }

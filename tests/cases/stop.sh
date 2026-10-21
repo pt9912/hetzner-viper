@@ -226,3 +226,19 @@ test_stop_dns_failure_still_deletes_with_warning() {
   check "deleted" test ! -f "$MOCK_STATE/hcloud/server/claude-web.json"
   check "warning" has 'DNS removal failed' "$T/err"
 }
+
+test_stop_host_key_rejection_does_not_recommend_force_blindly() {
+  boot
+  export MOCK_SSH_HOSTKEY_FAIL=1
+  echo DELETE | fails run stop.sh web >/dev/null 2>"$T/err"
+  check "named" has 'host key is not trusted' "$T/err"
+  check "server kept" test -f "$MOCK_STATE/hcloud/server/claude-web.json"
+}
+
+test_stop_force_still_checks_a_reachable_server() {
+  boot
+  git init -q "$T/mnt/proj"; echo x > "$T/mnt/proj/file"
+  printf 'no\n' | fails run stop.sh web --force >"$T/out" 2>&1
+  check "checks ran" has 'UNSAVED WORK' "$T/out"
+  check "server kept" test -f "$MOCK_STATE/hcloud/server/claude-web.json"
+}
