@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.13  
+Version: 1.14  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -205,6 +205,7 @@ Das Ergebnis ist dasselbe wie beim direkten Aufruf. Login-Schlüssel, Host-CA un
 * Der Container sieht das Repository nur lesend.
 * Von Ihrem Home-Verzeichnis sieht der Container nur `~/.ssh`. Legen Sie Dateien für `GIT_DEPLOY_KEY_FILE` und `IPAD_SSH_PUBLIC_KEY_FILE` deshalb dort ab. Sonst bricht `start.sh` mit „File not readable“ ab, bevor etwas angelegt wird.
 * Die Skripte nutzen nur die SSH-Konfiguration des jeweiligen Rechners (`~/.ssh/config_hetzner_<SERVER_PREFIX>-<rechner>`). Einstellungen in Ihrer `~/.ssh/config` stören daher nicht.
+* Ist `~/.ssh/config` ein Symlink, etwa in ein Dotfiles-Repository, bindet `make` dessen Ziel zusätzlich unter demselben Pfad ein, damit die `Include`-Zeile eingetragen werden kann. Lässt sich die Datei trotzdem nicht bearbeiten, warnt der Preflight, und `make up` läuft weiter. Nur `ssh <alias>` vom Host und VS Code brauchen die Zeile.
 
 ### Einen laufenden Rechner prüfen
 
@@ -273,7 +274,7 @@ Sie haben im Git-Dienst einen **Deploy-Key** (nur lesend) für das Repository hi
 
 1. Kopieren Sie `machines/example.env.local.example` nach `machines/<rechner>.env.local`.
 2. Tragen Sie `REPO_URL` (SSH-Adresse) und `GIT_DEPLOY_KEY_FILE` (Pfad zur Schlüsseldatei) ein.
-3. Starten Sie den Rechner mit `./start.sh <rechner>`.
+3. Starten Sie den Rechner mit `make up MACHINE=<rechner>`.
 
 #### Ergebnis
 
@@ -282,6 +283,7 @@ Das Repository wird geklont. Der Schlüssel liegt auf dem Server unter `~/.ssh/d
 #### Hinweise
 
 * Beim ersten Kontakt mit dem Git-Dienst wird dessen Host-Schlüssel ohne Rückfrage übernommen. Bei HTTPS-Adressen ist kein Schlüssel nötig.
+* Ohne `GIT_DEPLOY_KEY_FILE` hat der Server keinen SSH-Schlüssel für den Git-Dienst. Eine SSH-Adresse lehnt der Preflight dann ab. Ausnahme: Mit `VIPER_GH_TOKEN` werden SSH-Adressen von GitHub (bzw. `VIPER_GH_HOST`) automatisch über HTTPS mit dem Token geklont (`git config url.…insteadOf`).
 * Der Schlüssel wird bei jedem Start erneut auf den Server kopiert.
 
 ### GitHub-CLI und Token auf dem Rechner nutzen
@@ -328,7 +330,7 @@ Sie haben ein Claude-Abo und auf einem Rechner mit Browser Claude Code installie
 
 #### Ergebnis
 
-Die Meldung `claude: logged in with VIPER_CLAUDE_TOKEN` erscheint. `claude` ist auf dem Server in SSH-Befehlen, in tmux und im VS-Code-Terminal angemeldet. In Claude Code zeigt `/status` im Tab **Status** dann `Auth token: CLAUDE_CODE_OAUTH_TOKEN`. Prüfen können Sie das mit `make ssh MACHINE=<rechner> CMD="bash -lc 'claude -p \"Antworte nur mit OK\"'"`.
+Die Meldung `claude: logged in with VIPER_CLAUDE_TOKEN` erscheint. `claude` ist auf dem Server in SSH-Befehlen, in tmux und im VS-Code-Terminal angemeldet. In Claude Code zeigt `/status` im Tab **Status** dann `Auth token: CLAUDE_CODE_OAUTH_TOKEN`. Prüfen können Sie das mit `make check MACHINE=<rechner>` oder direkt mit `make ssh MACHINE=<rechner> CMD="bash -lc 'claude -p \"Antworte nur mit OK\" </dev/null'"`. Das `</dev/null` ist nötig, weil `claude -p` sonst auf weitere Eingaben wartet.
 
 #### Hinweise
 
@@ -363,7 +365,7 @@ Schließen Sie alle VS-Code-Fenster und Terminals, die auf dem Rechner geöffnet
 #### Vorgehen
 
 1. Führen Sie `./stop.sh <rechner>` aus.
-2. Lesen Sie die Ausgabe: Das Skript zeigt je Repository und je Worktree den Git-Stand, Commits, die auf keinem Remote liegen (auf allen lokalen Branches), und die tmux-Sitzungen. Es sucht Repositories im Arbeitsverzeichnis, mit dem der Rechner gestartet wurde, im Home-Verzeichnis von `builder` und in `/tmp` und `/var/tmp`. Dateien und Ordner direkt im Arbeitsverzeichnis, die zu keinem Repository gehören, listet es unter **Not in any git repository (lost)** auf. Dateien außerhalb von Repositories im Home-Verzeichnis oder in `/tmp` prüft es nicht. Gibt es ungesicherte Arbeit (uncommittete Änderungen, Commits auf keinem Remote, mit `git stash` beiseitegelegte Änderungen, Dateien außerhalb eines Repositorys, ein fehlendes Arbeitsverzeichnis oder ein nicht lesbares Repository), steht `UNSAVED WORK` in der Ausgabe, und Sie müssen zusätzlich `DISCARD` eingeben, um fortzufahren. Von Git ignorierte Dateien (zum Beispiel `.env` oder Build-Verzeichnisse) werden unter **Ignored by git (also lost)** aufgelistet, blockieren aber nicht.
+2. Lesen Sie die Ausgabe: Das Skript zeigt je Repository und je Worktree den Git-Stand, Commits, die auf keinem Remote liegen (auf allen lokalen Branches), und die tmux-Sitzungen. Es sucht Repositories in allen Arbeitsverzeichnissen, mit denen der Rechner je gestartet wurde (auch wenn Sie `WORKSPACE_DIR` später geändert haben), im Home-Verzeichnis von `builder` und in `/tmp` und `/var/tmp`. Dateien und Ordner direkt im Arbeitsverzeichnis, die zu keinem Repository gehören, listet es unter **Not in any git repository (lost)** auf. Dateien außerhalb von Repositories im Home-Verzeichnis oder in `/tmp` prüft es nicht. Gibt es ungesicherte Arbeit (uncommittete Änderungen, Commits auf keinem Remote, mit `git stash` beiseitegelegte Änderungen, Dateien außerhalb eines Repositorys, ein fehlendes Arbeitsverzeichnis oder ein nicht lesbares Repository), steht `UNSAVED WORK` in der Ausgabe, und Sie müssen zusätzlich `DISCARD` eingeben, um fortzufahren. Von Git ignorierte Dateien (zum Beispiel `.env` oder Build-Verzeichnisse) werden unter **Ignored by git (also lost)** aufgelistet, blockieren aber nicht.
 3. Sichern Sie offene Änderungen (committen und pushen), falls nötig, und starten Sie `stop.sh` erneut.
 4. Geben Sie zur Bestätigung `DELETE` ein.
 
@@ -413,6 +415,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 ### Firewall und Anmeldung
 
 * Die Firewall erlaubt eingehend SSH (TCP-Port 22) und ICMP (`ping`), beides aus den Netzen in `SSH_ALLOWED_CIDRS`. Fehlt eine der beiden Regeln, ergänzt `start.sh` sie, auch in einer schon vorhandenen Firewall. Andere Regeln lässt es unverändert. Eine bestehende Regel ändert es nicht: Wollen Sie die Netze nachträglich einschränken, ändern Sie die Regeln in der Hetzner Console.
+* Die SSH-Konfiguration jedes Rechners verbietet Agent- und X11-Weiterleitung (`ForwardAgent no`, `ForwardX11 no`), auch wenn Ihre `~/.ssh/config` sie allgemein erlaubt. Der Agent auf dem Server hat Root-Rechte und soll Ihre lokalen SSH-Schlüssel nicht benutzen können.
 * Standardmäßig ist SSH aus dem ganzen Internet erreichbar. Anmeldung ist nur mit SSH-Schlüssel möglich. Passwörter und Root-Login sind abgeschaltet. Schränken Sie die Netze ein, wenn Sie nur von festen Adressen arbeiten. Eine Alternative ist ein VPN.
 * Ausgehende Verbindungen des Servers sind nicht eingeschränkt.
 
@@ -442,7 +445,7 @@ Die Skripte importieren und exportieren keine Daten. Ihre Arbeitsdateien liegen 
 ### Meldung: "Missing settings: …"
 
 **Ursache:** Pflichtwerte fehlen: `DNS_DOMAIN`, `HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN` oder `CLOUDFLARE_ZONE_ID`. Die Meldung nennt alle fehlenden auf einmal. Es wurde nichts angelegt oder gelöscht.  
-**Lösung:** Tragen Sie die Werte in `.env.local` oder `machines/<rechner>.env.local` ein oder exportieren Sie sie in der Shell. Beachten Sie: Eine leere Zeile `HCLOUD_TOKEN=` in `.env.local` überschreibt den Wert aus der Shell.
+**Lösung:** Tragen Sie die Werte in `.env.local` oder `machines/<rechner>.env.local` ein. Die drei Tokens (`HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`) können Sie auch in der Shell exportieren; andere Einstellungen erreichen den `make`-Container nur über die Dateien. Beachten Sie: Eine leere Zeile `HCLOUD_TOKEN=` in `.env.local` überschreibt den Wert aus der Shell.
 
 ### Meldung: "DNS_DOMAIN must be a domain like example.com"
 
@@ -476,12 +479,17 @@ Die Skripte importieren und exportieren keine Daten. Ihre Arbeitsdateien liegen 
 
 ### Meldung: "SSH not reachable; server retained."
 
-**Ursache:** Der Server ist nach etwa 20 Minuten nicht per SSH erreichbar. Mögliche Gründe: Die Firewall blockiert Ihr Netz, der Server startet nicht, oder sein Host-Schlüssel passt nicht zum hinterlegten.  
+**Ursache:** Der Server ist nach etwa 20 Minuten nicht per SSH erreichbar. Mögliche Gründe: Die Firewall blockiert Ihr Netz, oder der Server startet nicht. (Ein nicht vertrauenswürdiger Host-Schlüssel oder ein abgelehnter Login-Schlüssel hat eigene Meldungen, siehe unten.)  
 **Lösung:**
 1. Prüfen Sie die Firewall-Regel für Port 22 in der Hetzner Console.
 2. Öffnen Sie die Web-Konsole des Servers und lesen Sie `/var/log/cloud-init-output.log`.
 3. Starten Sie `./start.sh <rechner>` erneut, wenn die Ursache behoben ist.
 4. Hilft das nicht, löschen Sie den Rechner mit `./stop.sh <rechner> --force` und legen Sie ihn neu an.
+
+### Meldung: "SSH: the server rejects the login key"
+
+**Ursache:** Der Server lehnt Ihren Login-Schlüssel ab (`Permission denied`). Meist wurde der Server mit einem anderen Login-Schlüssel angelegt, etwa von einem anderen Computer oder mit einem anderen `SSH_KEY`. Bei einem bereits laufenden Server meldet `start.sh` das sofort, statt lange zu warten.  
+**Lösung:** Nutzen Sie den Computer bzw. Schlüssel, mit dem der Rechner angelegt wurde, oder tragen Sie Ihren öffentlichen Schlüssel dort in `/home/builder/.ssh/authorized_keys` ein.
 
 ### Meldung: "Claude Code installation failed; server retained."
 
@@ -570,8 +578,8 @@ Nein. `stop.sh` löscht den Server samt Platte. `start.sh` richtet ihn neu ein u
 **Was kostet es, wenn nichts läuft?**  
 Nichts mehr. Ein gelöschter Server wird nicht berechnet. Prüfen Sie in der Hetzner Console, dass wirklich nichts übrig ist.
 
-**Warum muss ich mich bei Claude jedes Mal neu anmelden?**  
-Die Anmeldedaten liegen im Home-Verzeichnis des Servers und werden mit dem Server gelöscht.
+**Muss ich mich bei Claude nach jedem neuen Server neu anmelden?**  
+Nur ohne `VIPER_CLAUDE_TOKEN`: Die Anmeldung mit `/login` liegt im Home-Verzeichnis des Servers und wird mit ihm gelöscht. Mit dem Token ist jeder neue Server sofort angemeldet (siehe „Claude Code ohne erneute Anmeldung nutzen“).
 
 **Kann ich einen Rechner mit anderem Servertyp starten?**  
 Ja. Setzen Sie `SERVER_TYPE` in `machines/<rechner>.env.local`. Bei einem bereits laufenden Server wirkt die Änderung erst nach Löschen und Neustart.
@@ -620,3 +628,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.11 | v3 mit Mehrrechner-Betrieb | Mit `VIPER_CLAUDE_TOKEN` (aus `claude setup-token`) ist Claude Code auf dem Server ohne erneute Anmeldung nutzbar. |
 | 1.12 | v3 mit Mehrrechner-Betrieb | `make check` prüft einen laufenden Rechner: DNS bei öffentlichen Resolvern, Zugriff über den Namen mit der Host-CA wie ein anderes Gerät (mit Ablaufdatum des Zertifikats) und den Zustand des Servers. |
 | 1.13 | v3 mit Mehrrechner-Betrieb | Die Firewall erlaubt zusätzlich ICMP (`ping`); fehlende Regeln werden auch in einer vorhandenen Firewall ergänzt. `make check` benennt den gefragten Resolver und erklärt zwischengespeicherte negative DNS-Antworten. |
+| 1.14 | v3 mit Mehrrechner-Betrieb | `stop.sh` prüft alle Arbeitsverzeichnisse, mit denen ein Rechner je gestartet wurde. SSH-Adressen ohne Deploy-Key: mit `VIPER_GH_TOKEN` über HTTPS geklont, sonst vom Preflight abgelehnt. Keine Agent- oder X11-Weiterleitung zum Server. Ein Symlink als `~/.ssh/config` funktioniert im Container. Beim Wiederverwenden eines Servers enden Host-Key- und Anmeldefehler sofort. Klassische GitHub-Tokens mit `admin:org`/`write:org` werden akzeptiert. |

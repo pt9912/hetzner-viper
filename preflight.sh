@@ -40,6 +40,12 @@ for f in .env.local "machines/$MACHINE.env.local"; do
     warn "$f is readable by other users; it may hold tokens: chmod 600 $f"
   fi
 done
+# start.sh adds an Include line to ~/.ssh/config (for plain ssh and VS Code). In the make
+# container a symlink to a target outside ~/.ssh is only writable if make mounts the target.
+cfg_target=$(readlink -f "$HOME/.ssh/config" 2>/dev/null || true)
+if [[ -e "$HOME/.ssh/config" && ! -w "$cfg_target" ]]; then
+  warn "~/.ssh/config ($cfg_target) is not writable: start.sh cannot add 'Include $SSH_CFG'; ssh <alias> and VS Code need it"
+fi
 cidr_ok=1
 IFS=',' read -r -a cidrs <<<"${SSH_ALLOWED_CIDRS:-0.0.0.0/0,::/0}"
 for c in "${cidrs[@]}"; do
@@ -107,9 +113,11 @@ if [[ -n "${VIPER_GH_TOKEN:-}" ]]; then
     ok "VIPER_GH_TOKEN valid for $(jq -r '.login' <<<"$user") on $gh_host"
     scopes=$(awk -F': ' 'tolower($1) == "x-oauth-scopes" {gsub("\r", "", $2); print $2}' "$headers")
     if [[ -n "$scopes" ]]; then
-      for s in repo read:org; do
-        [[ ",${scopes// /}," == *",$s,"* ]] || bad "classic token lacks scope $s (has: $scopes); gh auth login will reject it"
-      done
+      # gh's minimum: repo, and read:org or a broader org scope (write:org, admin:org)
+      have=",${scopes// /},"
+      [[ "$have" == *",repo,"* ]] || bad "classic token lacks scope repo (has: $scopes); gh auth login will reject it"
+      [[ "$have" == *",read:org,"* || "$have" == *",write:org,"* || "$have" == *",admin:org,"* ]] ||
+        bad "classic token lacks scope read:org (or write:org/admin:org) (has: $scopes); gh auth login will reject it"
     fi
     if [[ -n "${REPO_URL:-}" ]] && [[ "$REPO_URL" =~ ^(https://$gh_host/|git@$gh_host:)([^/]+)/([^/]+)$ ]]; then
       repo="${BASH_REMATCH[2]}/${BASH_REMATCH[3]%.git}"
@@ -136,12 +144,21 @@ else
 fi
 if [[ -z "${REPO_URL:-}" ]]; then
   info "no repository to clone"
+elif [[ "$REPO_URL" == -* ]]; then
+  bad "REPO_URL must not start with '-': $REPO_URL"
 elif [[ "$REPO_URL" =~ ^(ssh://|[^/]+@[^/]+:) ]]; then
-  info "SSH repository $REPO_URL: access is only checked by the clone on the server"
+  gh_host="${VIPER_GH_HOST:-github.com}"
+  if [[ -n "${GIT_DEPLOY_KEY_FILE:-}" ]]; then
+    info "SSH repository $REPO_URL with deploy key: access is only checked by the clone on the server"
+  elif [[ -n "${VIPER_GH_TOKEN:-}" && ( "$REPO_URL" == "git@$gh_host:"* || "$REPO_URL" == "ssh://git@$gh_host/"* ) ]]; then
+    ok "SSH repository $REPO_URL will be cloned over HTTPS with VIPER_GH_TOKEN"
+  else
+    bad "SSH repository $REPO_URL needs GIT_DEPLOY_KEY_FILE (the server has no SSH key for the git host); or use an HTTPS URL, or VIPER_GH_TOKEN for $gh_host"
+  fi
 elif [[ -n "${VIPER_GH_TOKEN:-}" && "$REPO_URL" == "https://${VIPER_GH_HOST:-github.com}/"* ]]; then
   : # checked through the GitHub API above
 elif command -v git >/dev/null; then
-  if GIT_TERMINAL_PROMPT=0 git ls-remote "$REPO_URL" >/dev/null 2>&1; then
+  if GIT_TERMINAL_PROMPT=0 git ls-remote -- "$REPO_URL" >/dev/null 2>&1; then
     ok "repository $REPO_URL reachable"
   else
     bad "repository $REPO_URL not reachable without credentials (private? set VIPER_GH_TOKEN or GIT_DEPLOY_KEY_FILE)"

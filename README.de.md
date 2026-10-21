@@ -59,7 +59,8 @@ Rechner sind Wegwerfware: Alles, was zählt, liegt im Git-Repository. Deshalb gi
 - Der Benutzer `builder` hat sudo ohne Passwort und Docker-Zugriff, das entspricht Root. Nutzen Sie nur vertrauenswürdige Repositories.
 - Serverseitig wird ein CA-signiertes SSH-Host-Zertifikat verwendet (sieben Tage gültig, keine automatische Erneuerung). Der private Host-Key wird dafür in den Hetzner-User-Data übertragen und ist dort für Administratoren des Projekts und für Prozesse auf dem Server lesbar. Der CA-Schlüssel bleibt lokal. Der einrichtende Rechner hinterlegt den Host-Schlüssel jedes Servers und vertraut nur diesem. Ein abgeflossener Schlüssel eines früheren Servers wird so abgelehnt, und die Verbindung funktioniert auch nach Ablauf des Zertifikats.
 - Der Login-Schlüssel hat keine Passphrase.
-- **Alles auf dem Server geht beim Löschen verloren**, auch die Claude-Anmeldung.
+- **Alles auf dem Server geht beim Löschen verloren**, auch eine Claude-Anmeldung per `/login` (mit `VIPER_CLAUDE_TOKEN` ist jeder neue Server automatisch wieder angemeldet).
+- Die SSH-Konfiguration jedes Rechners leitet Ihren ssh-agent und X11 nie an den Server weiter, auch wenn Ihre eigene `~/.ssh/config` das tut.
 - Die Skripte legen kostenpflichtige Ressourcen an. Legen Sie API-Tokens nie in Git ab.
 - Nicht gegen ein echtes Hetzner- oder Cloudflare-Konto getestet. Probieren Sie sie zuerst in einem Wegwerf-Projekt aus.
 

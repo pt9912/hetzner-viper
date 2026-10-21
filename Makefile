@@ -21,13 +21,18 @@ help: ## show this help
 build: ## build the container image (done automatically by the other targets)
 	docker build --target run --build-arg USER_UID=$$(id -u) --build-arg USER_HOME="$$HOME" -t $(RUN_IMAGE) .
 
+# ~/.ssh/config may be a symlink into a dotfiles repo: mount its target too (at the same
+# path), otherwise the scripts cannot add their Include line from inside the container.
+SSH_CONFIG_TARGET := $(shell readlink -e "$$HOME/.ssh/config" 2>/dev/null)
+SSH_CONFIG_MOUNT := $(if $(filter-out $(HOME)/.ssh/%,$(SSH_CONFIG_TARGET)),-v "$(SSH_CONFIG_TARGET):$(SSH_CONFIG_TARGET)")
+
 # Runs as the host user with the host's ~/.ssh and state directory mounted at the same
 # paths, so keys, host CA and ssh config end up where the host's ssh and VS Code expect them.
 define RUN
 	@mkdir -p "$$HOME/.ssh" "$$HOME/.local/state/hetzner-claude"
 	docker run --rm -i $$(test -t 0 && echo -t) --user $$(id -u):$$(id -g) -e HOME="$$HOME" \
 	  -e HCLOUD_TOKEN -e CLOUDFLARE_API_TOKEN -e CLOUDFLARE_ZONE_ID -e VIPER_GH_TOKEN -e VIPER_GH_HOST -e VIPER_CLAUDE_TOKEN \
-	  -v "$$HOME/.ssh:$$HOME/.ssh" -v "$$HOME/.local/state/hetzner-claude:$$HOME/.local/state/hetzner-claude" \
+	  -v "$$HOME/.ssh:$$HOME/.ssh" -v "$$HOME/.local/state/hetzner-claude:$$HOME/.local/state/hetzner-claude" $(SSH_CONFIG_MOUNT) \
 	  -v "$(CURDIR)":/repo:ro $(RUN_IMAGE) $(1)
 endef
 

@@ -59,7 +59,8 @@ Machines are disposable: everything that matters lives in the Git repository. Th
 - The user `builder` has passwordless sudo and Docker access, which equals root. Only use trusted repositories.
 - The server uses a CA-signed SSH host certificate (valid for seven days, no automatic renewal). For this, the private host key is transferred in the Hetzner user data, where project administrators and processes on the server can read it. The CA key stays local. The machine that ran `start.sh` pins the host key of each server and trusts only that key, so a key leaked from an earlier server is rejected and connections keep working after the certificate expires.
 - The login key has no passphrase.
-- **Everything on the server is lost when it is deleted**, including the Claude login.
+- **Everything on the server is lost when it is deleted**, including a Claude `/login` (with `VIPER_CLAUDE_TOKEN` every new server is logged in again automatically).
+- The per-machine SSH config never forwards your ssh-agent or X11 to the server, even if your own `~/.ssh/config` does.
 - The scripts create paid resources. Never put API tokens into Git.
 - Not tested against a real Hetzner or Cloudflare account. Try them in a throwaway project first.
 

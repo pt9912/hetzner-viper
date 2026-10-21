@@ -5,7 +5,7 @@ source "$(dirname "$0")/common.sh"
 
 # Remove the local SSH config of this machine.
 cleanup_local() {
-  ssh_include remove
+  ssh_include remove || ssh_include_warning
   rm -f "$SSH_CFG" "$KNOWN_PIN" "$IP_STATE" "$ID_STATE" "$WORKSPACE_STATE"
 }
 
@@ -30,7 +30,9 @@ SERVER_ID=$(server_id)
 forget_stale_pin "$SERVER_ID"
 write_ssh_config "$IP"
 # Check the directory the server was started with, even if WORKSPACE_DIR changed since.
-WS=$(cat "$WORKSPACE_STATE" 2>/dev/null || echo "$WORKSPACE_DIR")
+# every workspace the server was started with (start.sh records each), else the configured one
+mapfile -t WSS < <(grep -v '^$' "$WORKSPACE_STATE" 2>/dev/null || true)
+(( ${#WSS[@]} > 0 )) || WSS=("$WORKSPACE_DIR")
 FORCE=0; [[ "${2:-}" == --force ]] && FORCE=1
 # -n: ssh must not swallow the answers that follow on stdin. The git checks run whenever
 # the server is reachable and trusted, with or without --force.
@@ -53,9 +55,9 @@ fi
 (( SKIP )) || {
 echo 'Checking git repositories, loose files and running sessions ...'
 # No `set -e` remotely: a git error must be reported as unsaved work, not abort the check.
-report=$(ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf %q "$WS")" <<'REMOTE'
+report=$(ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "${WSS[@]}")" <<'REMOTE'
 set -uo pipefail
-MP="$1"; unsaved=0
+unsaved=0   # "$@": the workspaces
 declare -A seen
 
 # One working tree: uncommitted changes, detached commits, ignored files.
@@ -93,19 +95,21 @@ check_repo() {
   [[ -z "$stashes" ]] || { echo "$stashes"; unsaved=1; }
 }
 
-if [[ ! -d "$MP" ]]; then
-  echo "ERROR: workspace $MP does not exist"; unsaved=1
-else
-  # Anything at the top of the workspace that is not a git repository is unprotected.
-  loose=$(find "$MP" -mindepth 1 -maxdepth 1 ! -exec test -e '{}/.git' ';' -print)
-  [[ -z "$loose" ]] || { printf 'Not in any git repository (lost):\n%s\n' "$loose"; unsaved=1; }
-fi
+for MP in "$@"; do
+  if [[ ! -d "$MP" ]]; then
+    echo "ERROR: workspace $MP does not exist"; unsaved=1
+  else
+    # Anything at the top of the workspace that is not a git repository is unprotected.
+    loose=$(find "$MP" -mindepth 1 -maxdepth 1 ! -exec test -e '{}/.git' ';' -print)
+    [[ -z "$loose" ]] || { printf 'Not in any git repository (lost):\n%s\n' "$loose"; unsaved=1; }
+  fi
+done
 # Repositories in the workspace, in the home directory and in the temp directories
 # (the agent may clone or init repos anywhere); caches and dependencies are skipped.
 # VIPER_TMP_DIRS only exists for the offline tests; ssh does not forward it.
 while IFS= read -r -d '' gitpath; do
   check_repo "${gitpath%/.git}"
-done < <(find "$MP" "$HOME" ${VIPER_TMP_DIRS:-/tmp /var/tmp} -xdev \
+done < <(find "$@" "$HOME" ${VIPER_TMP_DIRS:-/tmp /var/tmp} -xdev \
            \( -name node_modules -o -path "$HOME/.cache" -o -path "$HOME/.local" -o -path "$HOME/.npm" \
               -o -path "$HOME/.vscode-server" \) -prune -o -name .git -prune -print0 2>/dev/null)
 echo '== tmux sessions =='
@@ -119,7 +123,7 @@ if grep -q '^UNSAVED WORK' <<<"$report"; then
   [[ "$discard" == DISCARD ]] || { echo 'Cancelled: commit and push first'; exit 1; }
 fi
 }
-printf '\nServer %s (%s) and ALL its data (including %s) will be DESTROYED.\n' "$SERVER_NAME" "$IP" "$WS"
+printf '\nServer %s (%s) and ALL its data (including %s) will be DESTROYED.\n' "$SERVER_NAME" "$IP" "${WSS[*]}"
 read -r -p 'Type DELETE to continue: ' confirm
 [[ "$confirm" == DELETE ]] || { echo 'Cancelled'; exit 1; }
 hcloud server delete "$SERVER_NAME"

@@ -454,3 +454,67 @@ test_claude_token_works_without_existing_bashrc_and_profile() {
   check "loader created" has 'viper/claude.env' "$h/.bashrc"
   check "token loaded" test "$(HOME="$h" bash -c '. ~/.bashrc; printf %s "$CLAUDE_CODE_OAUTH_TOKEN"')" = sk-ant-oat01-x
 }
+
+test_unwritable_ssh_config_only_warns() {
+  run setup.sh >/dev/null
+  mkdir -p "$T/dotfiles"; echo 'Host other' > "$T/dotfiles/ssh_config"; chmod 444 "$T/dotfiles/ssh_config"
+  ln -sf "$T/dotfiles/ssh_config" "$HOME/.ssh/config"
+  run preflight.sh web >"$T/pre"
+  check "preflight warns" has 'WARN  ~/.ssh/config .* is not writable' "$T/pre"
+  run start.sh web >"$T/out" 2>"$T/err"
+  check "start goes on" has '^Ready: ssh hetzner-claude-web' "$T/out"
+  check "warning" has "WARNING: could not edit ~/.ssh/config" "$T/err"
+  chmod 644 "$T/dotfiles/ssh_config"
+}
+
+test_ssh_repo_url_without_deploy_key_fails_preflight() {
+  run setup.sh >/dev/null
+  fails run start.sh web git@github.com:o/r.git >/dev/null 2>"$T/err"
+  check "message" has 'needs GIT_DEPLOY_KEY_FILE' "$T/err"
+  check "no server" test ! -f "$MOCK_STATE/hcloud/server/claude-web.json"
+}
+
+test_ssh_repo_url_of_gh_host_goes_over_https_with_token() {
+  run setup.sh >/dev/null
+  export VIPER_GH_TOKEN=ghp_x
+  run preflight.sh web git@github.com:o/r.git >"$T/pre"
+  check "preflight ok" has 'will be cloned over HTTPS with VIPER_GH_TOKEN' "$T/pre"
+  fails run preflight.sh web git@gitlab.com:o/r.git >"$T/pre2"
+  check "other host still needs a key" has 'needs GIT_DEPLOY_KEY_FILE' "$T/pre2"
+  run start.sh web >/dev/null
+  check "git rewrites SSH URLs to HTTPS" has 'insteadOf git@github\.com: .*insteadOf ssh://git@github\.com/' "$CALLS"
+}
+
+test_repo_url_starting_with_dash_is_rejected() {
+  run setup.sh >/dev/null
+  fails run start.sh web '--upload-pack=touch /tmp/x' >/dev/null 2>"$T/err"
+  check "message" has "REPO_URL must not start with '-'" "$T/err"
+  check "no server" test ! -f "$MOCK_STATE/hcloud/server/claude-web.json"
+}
+
+test_ssh_config_never_forwards_agent_or_x11() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  check "agent" has '^    ForwardAgent no$' "$HOME/.ssh/config_hetzner_claude-web"
+  check "x11" has '^    ForwardX11 no$' "$HOME/.ssh/config_hetzner_claude-web"
+}
+
+test_reused_server_with_untrusted_key_fails_fast() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  : > "$CALLS"
+  MOCK_SSH_HOSTKEY_FAIL=1 fails run start.sh web >/dev/null 2>"$T/err"
+  check "message" has 'host key is not trusted' "$T/err"
+  check "no long retry" count_is 'cloud-init status' "$CALLS" 1
+  : > "$CALLS"
+  MOCK_SSH_AUTH_FAIL=1 fails run start.sh web >/dev/null 2>"$T/err"
+  check "auth message" has 'rejects the login key' "$T/err"
+  check "no long retry (auth)" count_is 'cloud-init status' "$CALLS" 1
+}
+
+test_classic_token_with_broader_org_scope_is_accepted() {
+  run setup.sh >/dev/null
+  export VIPER_GH_TOKEN=ghp_x MOCK_GH_SCOPES='repo, admin:org'
+  run preflight.sh web >"$T/out"
+  check "no scope failure" bash -c "! grep -q 'lacks scope' '$T/out'"
+}

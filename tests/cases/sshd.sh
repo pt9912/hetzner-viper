@@ -71,3 +71,14 @@ test_real_ssh_trust_logic() {
   fails real_ssh
   check "nothing listening is a network problem" test "$(kind_of_last_error)" = network
 }
+
+test_real_ssh_ignores_users_forward_agent() {
+  have_real_sshd || { echo "    skipped: no real sshd (runs in make docker-test)" >&3; return 0; }
+  run setup.sh >/dev/null
+  scripts_config
+  # the user's own config enables agent forwarding for every host, below our Include line
+  printf 'Include %s\nHost *\n    ForwardAgent yes\n    ForwardX11 yes\n' "$HOME/.ssh/config_hetzner_claude-web" > "$HOME/.ssh/config"
+  /usr/bin/ssh -G hetzner-claude-web > "$T/g"
+  check "no agent forwarding" has '^forwardagent no$' "$T/g"
+  check "no x11 forwarding" has '^forwardx11 no$' "$T/g"
+}

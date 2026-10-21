@@ -81,29 +81,35 @@ PYGEN
     --user-data-from-file "$TMP/cloud-init.yaml"
   SERVER_ID=$(server_id)
   echo "$SERVER_ID" > "$ID_STATE"
+  # a new server has none of the workspaces an earlier one with this name had
+  rm -f "$WORKSPACE_STATE"
+  REUSED=0
 else
   echo 'Existing server: reusing it.'
   SERVER_ID=$(server_id)
   forget_stale_pin "$SERVER_ID"
+  REUSED=1
 fi
 IP=$(hcloud server ip "$SERVER_NAME")
 echo "$IP" > "$IP_STATE"
 write_ssh_config "$IP"
-ssh_include add
+ssh_include add || ssh_include_warning
 # The DNS name is for people (iPad, other clients); the scripts connect by IP and need not wait for it.
 ./dns.sh set "$IP"
 echo 'Waiting for SSH and cloud-init ...'
 # The probe always exits 0 once connected; only connection failures are retried.
 # cloud-init exits 0 (done), 2 (done with warnings) or 1 (errors).
 probe='cloud-init status --wait >/dev/null 2>&1; echo "cloud-init=$?"; test -f /var/tmp/claude-ready && echo claude=ok; docker info >/dev/null 2>&1 && echo docker=ok; true'
-# While the server boots, sshd may briefly present a key other than the provisioned one,
-# so host-key errors are retried too; the last error is reported at the end.
+# While a new server boots, sshd may briefly present a key other than the provisioned one
+# and builder may not exist yet, so host-key and auth errors are retried too. A reused
+# server is already up: those errors are permanent there and end the wait at once.
 status=''; err=''
 for i in $(seq 1 120); do
   if status=$(ssh -n -F "$SSH_CFG" -o BatchMode=yes -o ConnectTimeout=5 "$SSH_ALIAS" "$probe" 2>"$STATE/ssh-err-$SERVER_NAME"); then
     break
   fi
   status=''; err=$(cat "$STATE/ssh-err-$SERVER_NAME")
+  (( REUSED )) && [[ "$(ssh_failure_kind "$err")" != network ]] && break
   sleep 5
 done
 rm -f "$STATE/ssh-err-$SERVER_NAME"
@@ -112,6 +118,9 @@ if [[ -z "$status" ]]; then
     echo "SSH: the server's host key is not trusted; server retained." >&2
     echo "  $err" >&2
     echo "  The server answers but does not prove to be $SERVER_NAME (stale pin, expired certificate without pin, or someone in between)." >&2
+  elif [[ "$(ssh_failure_kind "$err")" == auth ]]; then
+    echo "SSH: the server rejects the login key $SSH_KEY ($err); server retained." >&2
+    echo "  Was the server created with another login key? Its authorized key is set at creation." >&2
   else
     echo 'SSH not reachable; server retained.' >&2
   fi
@@ -132,14 +141,20 @@ grep -qx 'docker=ok' <<<"$status" || { echo 'Docker is not running; see /var/log
 grep -qx 'cloud-init=1' <<<"$status" && echo 'WARNING: cloud-init reported errors; see /var/log/cloud-init-output.log on the server.' >&2
 # Work directory on the server's own disk; it is deleted together with the server.
 ssh -n -F "$SSH_CFG" "$SSH_ALIAS" "sudo install -d -o builder -g builder $(printf %q "$WORKSPACE_DIR")"
-echo "$WORKSPACE_DIR" > "$WORKSPACE_STATE"
+# remember every workspace this server was started with: stop.sh checks all of them
+grep -qxF -- "$WORKSPACE_DIR" "$WORKSPACE_STATE" 2>/dev/null || echo "$WORKSPACE_DIR" >> "$WORKSPACE_STATE"
 # GitHub CLI login for builder. The token goes through stdin (not argv, not user-data);
 # `gh auth setup-git` makes git use it for HTTPS clone/push. A dedicated variable, so a
 # GH_TOKEN the user exported for local gh is never copied to a server.
 if [[ -n "${VIPER_GH_TOKEN:-}" ]]; then
-  gh_host=$(printf %q "${VIPER_GH_HOST:-github.com}")
-  ssh -F "$SSH_CFG" "$SSH_ALIAS" "gh auth login --hostname $gh_host --with-token && gh auth setup-git --hostname $gh_host" <<<"$VIPER_GH_TOKEN"
-  echo "gh: logged in to ${VIPER_GH_HOST:-github.com}"
+  host="${VIPER_GH_HOST:-github.com}"
+  gh_host=$(printf %q "$host")
+  # SSH URLs of that host go over HTTPS with the token: the server has no SSH key for it
+  https=$(printf %q "https://$host/"); scp_form=$(printf %q "git@$host:"); ssh_form=$(printf %q "ssh://git@$host/")
+  ssh -F "$SSH_CFG" "$SSH_ALIAS" "gh auth login --hostname $gh_host --with-token && gh auth setup-git --hostname $gh_host &&
+    { git config --global --unset-all url.$https.insteadOf || true; } &&
+    git config --global --add url.$https.insteadOf $scp_form && git config --global --add url.$https.insteadOf $ssh_form" <<<"$VIPER_GH_TOKEN"
+  echo "gh: logged in to $host (SSH URLs of $host are cloned over HTTPS)"
 fi
 # Claude Code login for builder with a long-lived subscription token (`claude setup-token`).
 # The token goes through stdin into a 600 file; a line at the very top of .bashrc/.profile
@@ -173,7 +188,7 @@ fi
 if [[ -d "$dir/.git" ]]; then
   echo "Repository already present: $dir"
 else
-  git clone ${branch:+--branch "$branch"} "$url" "$dir"
+  git clone ${branch:+--branch "$branch"} -- "$url" "$dir"
 fi
 [[ -z "$use_key" ]] || git -C "$dir" config core.sshCommand "$GIT_SSH_COMMAND"
 CLONE

@@ -64,3 +64,10 @@ test_every_make_target_has_a_description() {
   listed=$(make -s --no-print-directory -C "$ROOT" help | awk '/^  [a-z]/ {print $1}' | sort -u)
   check "help lists all targets" test "$defined" = "$listed"
 }
+
+test_make_mounts_symlinked_ssh_config_target() {
+  mkdir -p "$HOME/.ssh" "$T/dotfiles"; echo 'Host x' > "$T/dotfiles/ssh_config"
+  ln -sf "$T/dotfiles/ssh_config" "$HOME/.ssh/config"
+  mk preflight MACHINE=web
+  check "target mounted at the same path" bash -c "grep -A1 -x -- '-v' '$MOCK_STATE/docker-call-1' | grep -qxF '$T/dotfiles/ssh_config:$T/dotfiles/ssh_config'"
+}

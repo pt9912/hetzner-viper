@@ -15,7 +15,7 @@ missing=()
 for v in DNS_DOMAIN HCLOUD_TOKEN CLOUDFLARE_API_TOKEN CLOUDFLARE_ZONE_ID; do
   [[ -n "${!v:-}" ]] || missing+=("$v")
 done
-(( ${#missing[@]} == 0 )) || { echo "Missing settings: ${missing[*]} (in .env.local, machines/$MACHINE.env.local or the shell)" >&2; exit 1; }
+(( ${#missing[@]} == 0 )) || { echo "Missing settings: ${missing[*]} (in .env.local or machines/$MACHINE.env.local; the three tokens may also be exported in the shell)" >&2; exit 1; }
 [[ "$DNS_DOMAIN" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$ ]] || { echo "DNS_DOMAIN must be a domain like example.com (lowercase, no scheme, no trailing dot): $DNS_DOMAIN" >&2; exit 1; }
 for cmd in hcloud jq curl ssh ssh-keygen python3; do command -v "$cmd" >/dev/null || { echo "Missing: $cmd" >&2; exit 1; }; done
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/hetzner-build}"
@@ -68,6 +68,9 @@ Host $SSH_ALIAS
     HostKeyAlgorithms ssh-ed25519-cert-v01@openssh.com,ssh-ed25519
     ServerAliveInterval 15
     ServerAliveCountMax 4
+    # the server is root-equivalent for the agent: never hand it the local ssh-agent or X11
+    ForwardAgent no
+    ForwardX11 no
 CFG
   chmod 600 "$SSH_CFG"
 }
@@ -105,28 +108,37 @@ pin_from_server() {
 
 # ssh_include add|remove: edit ~/.ssh/config in place (keeps a symlink to dotfiles),
 # serialized with a lock so parallel runs do not lose each other's Include line.
+# Returns 1 (without aborting the caller) if the file cannot be edited: the scripts
+# themselves use -F, the Include only serves plain `ssh <alias>` and VS Code.
 ssh_include() {
-  local cfg line="Include $SSH_CFG" tmp
-  touch "$HOME/.ssh/config"
-  cfg=$(readlink -f "$HOME/.ssh/config")
+  local cfg line="Include $SSH_CFG" tmp rc=0
+  cfg=$(readlink -f "$HOME/.ssh/config") || return 1
+  { [[ -e "$cfg" ]] || touch "$cfg"; } 2>/dev/null && [[ -w "$cfg" ]] || return 1
   exec 9>"$STATE/ssh-config.lock"
   if command -v flock >/dev/null; then flock 9; fi
   tmp=$(mktemp)
   if [[ "$1" == add ]]; then
-    grep -Fqx "$line" "$cfg" || { { echo "$line"; cat "$cfg"; } > "$tmp"; cat "$tmp" > "$cfg"; }
+    grep -Fqx "$line" "$cfg" || { { echo "$line"; cat "$cfg"; } > "$tmp" && cat "$tmp" > "$cfg"; } || rc=1
   else
-    grep -Fvx "$line" "$cfg" > "$tmp" || true
-    cat "$tmp" > "$cfg"
+    { grep -Fvx "$line" "$cfg" > "$tmp" || true; } && cat "$tmp" > "$cfg" || rc=1
   fi
   rm -f "$tmp"
-  chmod 600 "$cfg"
+  chmod 600 "$cfg" 2>/dev/null || true
   exec 9>&-
+  return "$rc"
 }
 
-# ssh_failure_kind <stderr>: "hostkey" if ssh rejected the server's identity, else "network".
+ssh_include_warning() {
+  echo "WARNING: could not edit ~/.ssh/config ($(readlink -f "$HOME/.ssh/config" 2>/dev/null)); add or remove the line 'Include $SSH_CFG' yourself." >&2
+}
+
+# ssh_failure_kind <stderr>: "hostkey" if ssh rejected the server's identity, "auth" if the
+# server rejected our key, else "network".
 ssh_failure_kind() {
   if grep -qiE 'host key verification failed|remote host identification has changed|host key for .* has changed|no .* host key is known|certificate invalid' <<<"$1"; then
     echo hostkey
+  elif grep -qiE 'permission denied' <<<"$1"; then
+    echo auth
   else
     echo network
   fi

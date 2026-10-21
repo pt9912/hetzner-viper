@@ -12,6 +12,7 @@ remote="${args[*]:i+1}"
 consume() { (( no_stdin )) || cat >/dev/null; }
 [[ -z "${MOCK_SSH_DOWN:-}" ]] || { consume; echo 'ssh: connect to host 203.0.113.10 port 22: Connection timed out' >&2; exit 255; }
 [[ -z "${MOCK_SSH_HOSTKEY_FAIL:-}" ]] || { consume; echo 'Host key verification failed.' >&2; exit 255; }
+[[ -z "${MOCK_SSH_AUTH_FAIL:-}" ]] || { consume; echo 'builder@203.0.113.10: Permission denied (publickey).' >&2; exit 255; }
 # connection like another device (only the host CA is trusted): MOCK_CA_FAIL = expired certificate
 if [[ "$*" == *known_hosts_hetzner_claude_ca* && -n "${MOCK_CA_FAIL:-}" ]]; then
   consume; echo 'Certificate invalid: expired' >&2; echo 'Host key verification failed.' >&2; exit 255

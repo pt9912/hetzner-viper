@@ -214,9 +214,31 @@ test_stop_hcloud_error_keeps_everything() {
 test_stop_checks_workspace_from_start() {
   boot
   git init -q "$T/mnt/proj"; echo x > "$T/mnt/proj/file"
+  mkdir -p "$T/other"
   echo "WORKSPACE_DIR=$T/other" >> "$W/.env.local"
   out=$(printf 'no\n' | run stop.sh web 2>&1) || true
-  check "old workspace checked" bash -c "grep -q 'UNSAVED WORK' <<<'$out'"
+  check "workspace from start checked" bash -c "grep -qF '== $T/mnt/proj ==' <<<'$out'"
+  check "warning" bash -c "grep -q 'UNSAVED WORK' <<<'$out'"
+}
+
+test_stop_checks_every_workspace_the_server_had() {
+  boot
+  git init -q "$T/mnt/proj"; echo x > "$T/mnt/proj/file"
+  mkdir -p "$T/other"
+  echo "WORKSPACE_DIR=$T/other" >> "$W/.env.local"
+  run start.sh web >/dev/null          # rerun with a new workspace (e.g. to refresh a token)
+  out=$(printf 'DISCARD\nno\n' | run stop.sh web 2>&1) || true
+  check "old workspace still checked" bash -c "grep -qF '== $T/mnt/proj ==' <<<'$out'"
+  check "warning" bash -c "grep -q 'UNSAVED WORK' <<<'$out'"
+  check "both named in the prompt" bash -c "grep -qF 'including $T/mnt $T/other' <<<'$out'"
+}
+
+test_new_server_forgets_workspaces_of_an_earlier_one() {
+  boot
+  echo "$T/gone" >> "$HOME/.local/state/hetzner-claude/workspace-claude-web"
+  rm "$MOCK_STATE/hcloud/server/claude-web.json"      # deleted in the console
+  run start.sh web >/dev/null
+  check "only the current workspace" test "$(cat "$HOME/.local/state/hetzner-claude/workspace-claude-web")" = "$T/mnt"
 }
 
 test_stop_dns_failure_still_deletes_with_warning() {
