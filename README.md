@@ -1,62 +1,64 @@
 # Hetzner Viper
 
-**VIPER** steht für **VI**rtual **PER**son: ein Code-Agent, der wie eine weitere Person im Team auf einem eigenen Rechner in Ihrem Repository arbeitet.
+**English** | [Deutsch](README.de.md)
 
-## Was ist Hetzner Viper?
+**VIPER** stands for **VI**rtual **PER**son: a code agent that works in your repository on a machine of its own, like one more person on the team.
 
-Eine Sammlung von Bash-Skripten, die mit einem Befehl einen entfernten Linux-Rechner bei Hetzner Cloud einrichten. Auf diesem Rechner arbeitet der Code-Agent [Claude Code](https://github.com/anthropics/claude-code) remote in Ihrem Repository: Er liest und ändert Code, führt Builds und Tests aus und committet. Pro Git-Repository gibt es einen eigenen Rechner. Das Repository wird beim Einrichten automatisch geklont. Sie steuern den Agenten per SSH, VS Code Remote-SSH oder vom iPad, in einer tmux-Sitzung, die Verbindungsabbrüche übersteht. Wer fertig ist, löscht den Rechner wieder, und es entstehen keine laufenden Kosten.
+## What is Hetzner Viper?
 
-Zielgruppe sind Entwicklerinnen und Entwickler mit eigenem Hetzner- und Cloudflare-Konto.
+A set of Bash scripts that set up a remote Linux machine on Hetzner Cloud with a single command. On that machine the code agent [Claude Code](https://github.com/anthropics/claude-code) works remotely in your repository: it reads and changes code, runs builds and tests, and commits. There is one machine per Git repository, and the repository is cloned automatically during setup. You steer the agent via SSH, VS Code Remote-SSH or from an iPad, inside a tmux session that survives dropped connections. When you are done, you delete the machine again, and nothing keeps running or costing money.
 
-## Was kann ich heute tun?
+It is meant for developers with their own Hetzner and Cloudflare accounts.
 
-Diese Befehle sind vorhanden. Stand der Prüfung: Die Skripte sind gegen simulierte Hetzner- und Cloudflare-APIs getestet, **nicht** gegen echte Konten (siehe [Grenzen](#sicherheit-und-grenzen)).
+## What can I do today?
+
+These commands exist. State of verification: the scripts are tested against simulated Hetzner and Cloudflare APIs, **not** against real accounts (see [Limits](#security-and-limits)).
 
 ```bash
-cp .env.local.example .env.local   # DNS_DOMAIN eintragen
-./setup.sh                         # Login-Key und lokale Host-CA anlegen
+cp .env.local.example .env.local   # set DNS_DOMAIN
+./setup.sh                         # create login key and local host CA
 export HCLOUD_TOKEN=... CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ZONE_ID=...
-./start.sh web https://example.org/org/web.git   # Rechner "web" einrichten, Repo klonen
-./stop.sh web                                    # Rechner "web" löschen
+./start.sh web https://example.org/org/web.git   # set up machine "web", clone the repo
+./stop.sh web                                    # delete machine "web"
 ```
 
-- `make test` führt die Tests gegen Mocks aus (offline, ohne Kosten), `make docker-test` dieselben im Container ohne Netz.
-- `make up MACHINE=web REPO=<url>` und `make down MACHINE=web` führen die Skripte in einem Docker-Container aus.
-- Mehrere Rechner parallel: `./start.sh api …` neben `web`. Jeder hat eigenen Server und DNS-Namen `<name>.<DNS_DOMAIN>`.
-- Mit `GH_TOKEN` (GitHub-PAT, am besten fein granular pro Rechner) ist auf dem Server die GitHub-CLI `gh` angemeldet, und `git` pusht über HTTPS. Der Agent kann so auch Pull Requests anlegen.
-- `stop.sh` prüft den Git-Stand (auch Stash-Einträge), listet ignorierte Dateien auf und fragt bei ungesicherter Arbeit zusätzlich nach `DISCARD`.
+- `make test` runs the tests against mocks (offline, no cost); `make docker-test` runs the same tests in a container without network.
+- `make up MACHINE=web REPO=<url>` and `make down MACHINE=web` run the scripts inside a Docker container.
+- Several machines in parallel: `./start.sh api …` next to `web`. Each has its own server and DNS name `<name>.<DNS_DOMAIN>`.
+- With `GH_TOKEN` (a GitHub PAT, ideally fine-grained per machine) the GitHub CLI `gh` is logged in on the server and `git` pushes over HTTPS, so the agent can also open pull requests.
+- `stop.sh` checks the Git state of all repositories and worktrees (uncommitted changes, commits on any branch that are on no remote, stash entries), lists ignored files, and additionally asks for `DISCARD` when there is unsaved work.
 
-Die vollständige Anleitung mit allen Aufgaben, Einstellungen und der Fehlerbehebung steht im [Benutzerhandbuch](docs/user/handbuch.md).
+The full guide with all tasks, settings and troubleshooting is the [user manual](docs/user/handbuch.md) (German).
 
-## Warum Hetzner Viper?
+## Why Hetzner Viper?
 
-Ein Code-Agent wie Claude Code soll auf einem Rechner arbeiten, der nicht der eigene Laptop ist: mit viel Leistung, isoliert von den eigenen Daten und Zugängen, dauerhaft erreichbar per tmux und vom iPad bedienbar. Ein Dauerbetrieb lohnt sich dafür nicht. Von Hand sind Server, Firewall, DNS, SSH-Härtung und Repository-Setup bei jedem Start mühsam und fehleranfällig. Die Skripte machen daraus einen Befehl zum Starten und einen zum Löschen.
+A code agent like Claude Code should run on a machine that is not your own laptop: powerful, isolated from your own data and credentials, reachable at any time through tmux, and usable from an iPad. Running such a machine permanently does not pay off. Setting up server, firewall, DNS, SSH hardening and repository by hand on every start is tedious and error-prone. The scripts turn this into one command to start and one to delete.
 
-## Kerngedanke
+## Core idea
 
-Rechner sind Wegwerfware: Alles, was zählt, liegt im Git-Repository. Deshalb gibt es bewusst keinen persistenten Datenträger, und `stop.sh` schützt vor dem einzigen Risiko, das daraus folgt, nämlich vor ungepushter Arbeit.
+Machines are disposable: everything that matters lives in the Git repository. That is why there is deliberately no persistent volume, and `stop.sh` guards against the one risk this creates: unpushed work.
 
-## Was macht es vertrauenswürdig?
+## What makes it trustworthy?
 
-- **Tests:** `make test` (Syntaxprüfung, `shellcheck` falls installiert, Mock-Tests in [`tests/`](tests/)). Sie decken Einrichtung, Bereitschaftsprüfung, Mehrrechner-Betrieb, Git-Clone, Firewall- und DNS-Schutz sowie die Sicherheitsabfragen von `stop.sh` ab. Die erzeugte cloud-init-Konfiguration wurde einmalig mit `cloud-init schema` (cloud-init 26.2, Ubuntu 26.04 und 24.04) geprüft, dazu Paketverfügbarkeit, `sshd`-Härtung und `gh`-Flags unter 26.04 sowie die `hcloud`-Aufrufe gegen die Hilfe der CLI v1.70.1.
-- **Schutz fremder Ressourcen:** `dns.sh` ändert und löscht nur DNS-Einträge, die es selbst angelegt hat.
-- **Handbuch:** [`docs/user/handbuch.md`](docs/user/handbuch.md) mit Versions- und Änderungshistorie.
-- **Lizenz:** MIT, siehe [`LICENSE`](LICENSE).
+- **Tests:** `make test` (syntax check, `shellcheck` if installed, mock tests in [`tests/`](tests/)). They cover setup, readiness check, multiple machines, Git clone, firewall and DNS protection, and the safety prompts of `stop.sh`. The generated cloud-init configuration was checked once with `cloud-init schema` (cloud-init 26.2, Ubuntu 26.04 and 24.04), as were package availability, the `sshd` hardening and the `gh` flags on 26.04, and the `hcloud` calls against the help of CLI v1.70.1.
+- **Protection of foreign resources:** `dns.sh` only changes and deletes DNS records it created itself.
+- **Manual:** [`docs/user/handbuch.md`](docs/user/handbuch.md) (German) with version and change history.
+- **License:** MIT, see [`LICENSE`](LICENSE).
 
-## Sicherheit und Grenzen
+## Security and limits
 
-- SSH nur mit Public-Key (kein Passwort, kein Root-Login). Standardmäßig ist Port 22 aus dem ganzen Internet offen. Schränken Sie `SSH_ALLOWED_CIDRS` ein, wenn Sie nur von festen Netzen arbeiten.
-- Der Benutzer `builder` hat sudo ohne Passwort und Docker-Zugriff, das entspricht Root. Nutzen Sie nur vertrauenswürdige Repositories.
-- Serverseitig wird ein CA-signiertes SSH-Host-Zertifikat verwendet (sieben Tage gültig, keine automatische Erneuerung). Auf dem einrichtenden Rechner ist zusätzlich der Host-Schlüssel hinterlegt, sodass die Verbindung auch nach Ablauf funktioniert. Der private Host-Key wird dafür in den Hetzner-User-Data übertragen und ist dort für Administratoren des Projekts und für Prozesse auf dem Server lesbar. Der CA-Schlüssel bleibt lokal.
-- Der Login-Schlüssel hat keine Passphrase.
-- **Alles auf dem Server geht beim Löschen verloren**, auch die Claude-Anmeldung.
-- Die Skripte legen kostenpflichtige Ressourcen an. Legen Sie API-Tokens nie in Git ab.
-- Nicht gegen ein echtes Hetzner- oder Cloudflare-Konto getestet. Probieren Sie sie zuerst in einem Wegwerf-Projekt aus.
+- SSH with public key only (no password, no root login). By default port 22 is open to the whole internet. Restrict `SSH_ALLOWED_CIDRS` if you only work from fixed networks.
+- The user `builder` has passwordless sudo and Docker access, which equals root. Only use trusted repositories.
+- The server uses a CA-signed SSH host certificate (valid for seven days, no automatic renewal). For this, the private host key is transferred in the Hetzner user data, where project administrators and processes on the server can read it. The CA key stays local. The machine that ran `start.sh` additionally pins the host key, so connections keep working after the certificate expires.
+- The login key has no passphrase.
+- **Everything on the server is lost when it is deleted**, including the Claude login.
+- The scripts create paid resources. Never put API tokens into Git.
+- Not tested against a real Hetzner or Cloudflare account. Try them in a throwaway project first.
 
-## Voraussetzungen
+## Requirements
 
-Nur unter Linux erprobt. Docker und `make` (auch für macOS), **oder** lokal `bash`, `curl`, `jq`, `python3`, OpenSSH-Client und die `hcloud`-CLI. Dazu ein Hetzner-Cloud-API-Token (Lesen und Schreiben) und ein Cloudflare-Token mit **Zone DNS Edit/Read** samt Zone-ID.
+Only tested on Linux. Docker and `make` (also for macOS), **or** locally `bash`, `curl`, `jq`, `python3`, an OpenSSH client and the `hcloud` CLI. Plus a Hetzner Cloud API token (read and write) and a Cloudflare token with **Zone DNS Edit/Read** and the zone ID.
 
-## Lizenz
+## License
 
-MIT, siehe [`LICENSE`](LICENSE).
+MIT, see [`LICENSE`](LICENSE).
