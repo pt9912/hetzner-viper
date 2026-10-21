@@ -181,6 +181,25 @@ else
 fi
 
 if [[ "$VIPER_HOMEBREW" == 1 ]]; then info "Homebrew will be installed on the server (VIPER_HOMEBREW=0 to skip; about 1-2 minutes)"; fi
+read -r -d '' -a brew_taps <<<"${VIPER_BREW_TAPS:-}" || true; read -r -d '' -a brew_trust <<<"${VIPER_BREW_TRUST:-}" || true
+read -r -d '' -a brew_pkgs <<<"${VIPER_BREW_PACKAGES:-}" || true
+if (( ${#brew_taps[@]} + ${#brew_trust[@]} + ${#brew_pkgs[@]} > 0 )); then
+  [[ "$VIPER_HOMEBREW" == 1 ]] || bad "VIPER_BREW_TAPS / VIPER_BREW_TRUST / VIPER_BREW_PACKAGES need VIPER_HOMEBREW=1"
+  for t in "${brew_trust[@]}"; do
+    [[ "$t" =~ ^((tap|formula|cask|command):)?[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[A-Za-z0-9][A-Za-z0-9@+_.-]*)?$ ]] ||
+      bad "VIPER_BREW_TRUST: not a tap (owner/repo) or formula (owner/repo/name), optionally with cask:/command:: $t"
+  done
+  for t in "${brew_taps[@]}"; do
+    [[ "$t" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(=(https://|ssh://|git@)[^[:space:]]+)?$ ]] ||
+      bad "VIPER_BREW_TAPS: not a tap (owner/repo or owner/repo=URL): $t"
+  done
+  for p in "${brew_pkgs[@]}"; do
+    [[ "$p" =~ ^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/)?[A-Za-z0-9][A-Za-z0-9@+_.-]*$ ]] ||
+      bad "VIPER_BREW_PACKAGES: not a formula (name or owner/repo/name): $p"
+  done
+  info "Homebrew taps: ${brew_taps[*]:-none}; trust: ${brew_trust[*]:-none}; formulae: ${brew_pkgs[*]:-none}"
+fi
+[[ "$VIPER_HOMEBREW" != 1 || -z "${REPO_URL:-}" ]] || info "a Brewfile in the repository (if any) is applied with brew bundle"
 
 echo "== repository"
 if [[ -z "${REPO_URL:-}" ]]; then

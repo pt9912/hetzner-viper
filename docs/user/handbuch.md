@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.18  
+Version: 1.19  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -380,6 +380,61 @@ Die Meldung `claude: using model <Modell> at <Adresse>` erscheint. `claude` nutz
 * Der Schlüssel wird wie das Abo-Token per SSH über die Standardeingabe übertragen und liegt auf dem Server in `~/.config/viper/claude.env` (Rechte `600`). Claude Code und jeder Prozess von `builder` können ihn lesen.
 * Wechseln Sie zurück zum Abo, entfernen Sie die drei Einstellungen, setzen Sie `VIPER_CLAUDE_TOKEN` und führen Sie `make up MACHINE=<rechner>` erneut aus.
 
+### Werkzeuge mit Homebrew installieren
+
+Auf jedem Rechner ist Homebrew (`brew`) installiert, sofern Sie es nicht mit `VIPER_HOMEBREW=0` abschalten. Was Sie von Hand installieren, verschwindet mit dem Server. Damit jeder neue Rechner dieselben Werkzeuge bekommt, tragen Sie sie in die Einstellungen oder in eine `Brewfile` im Repository ein.
+
+#### Begriffe
+
+* **Tap:** eine zusätzliche Paketquelle, meist ein GitHub-Repository `owner/homebrew-repo`, angesprochen als `owner/repo`. Ohne Tap stehen nur die Pakete des Hauptkatalogs zur Verfügung.
+* **Trust:** Homebrew lädt Formeln, Casks und Befehle aus fremden Taps nur, wenn Sie ihnen vertrauen (`brew trust`). Vertrauen können Sie einem ganzen Tap oder einzelnen Formeln.
+* **Formel (Tool):** das eigentliche Paket, etwa `ripgrep`, oder aus einem Tap `owner/repo/name`.
+
+#### Vorgehen mit Einstellungen
+
+1. Tragen Sie in `machines/<rechner>.env.local` (oder für alle Rechner in `.env.local`) ein. Jede Einstellung ist eine Liste: Einträge trennen Sie mit Leerzeichen oder Zeilenumbrüchen, und den ganzen Wert setzen Sie in doppelte Anführungszeichen (sonst bricht das Einlesen der Datei ab):
+   ```
+   VIPER_BREW_TAPS="hashicorp/tap"
+   VIPER_BREW_TRUST="hashicorp/tap"
+   VIPER_BREW_PACKAGES="ripgrep fd hashicorp/tap/terraform"
+   ```
+   Lange Listen dürfen über mehrere Zeilen gehen:
+   ```
+   VIPER_BREW_PACKAGES="
+     ripgrep
+     fd
+     hashicorp/tap/terraform
+   "
+   ```
+   Kommas sind keine Trenner; der Preflight meldet einen Eintrag wie `ripgrep,fd` als ungültig.
+   * `VIPER_BREW_TAPS`: `owner/repo` für einen Tap auf GitHub, `owner/repo=URL` für einen Tap anderswo (z. B. `meinefirma/tools=https://git.example.com/tools.git`).
+   * `VIPER_BREW_TRUST`: `owner/repo` vertraut dem ganzen Tap, `owner/repo/name` einer einzelnen Formel. Mit `cask:` oder `command:` davor vertrauen Sie einem Cask oder einem externen Befehl.
+   * `VIPER_BREW_PACKAGES`: `name` aus dem Hauptkatalog oder `owner/repo/name` aus einem Tap.
+2. Prüfen Sie vorab mit `make preflight MACHINE=<rechner>`. Er meldet Einträge im falschen Format.
+3. Starten Sie den Rechner mit `make up MACHINE=<rechner>`. `start.sh` führt die Schritte in der Reihenfolge Tap, Trust, Installation aus und meldet jeden Schritt (`brew: tap …`, `brew: trusted …`, `brew: installed …`).
+
+#### Vorgehen mit einer Brewfile im Repository
+
+Legen Sie im Repository eine Datei `Brewfile` an. Homebrew unterscheidet dort selbst zwischen Taps und Formeln, und der Trust steht direkt am Tap:
+```ruby
+tap "hashicorp/tap", trusted: true
+brew "ripgrep"
+brew "hashicorp/tap/terraform"
+```
+Statt dem ganzen Tap können Sie einzelnen Formeln vertrauen: `tap "hashicorp/tap", trusted: { formulae: ["terraform"] }`. Nach dem Klonen führt `start.sh` `brew bundle install --no-upgrade` mit dieser Datei aus. So bekommt jeder Rechner dieses Projekts dieselben Werkzeuge, versioniert mit dem Code.
+
+#### Ergebnis
+
+Die Werkzeuge stehen in allen Shells zur Verfügung, auch für Claude Code. `make check` meldet `Homebrew: taps, trust entries and formulae present` bzw. `Brewfile of the repository satisfied`, oder was fehlt.
+
+#### Hinweise
+
+* Schritte, die scheitern, brechen die Einrichtung nicht ab. `start.sh` warnt, das Protokoll liegt auf dem Server in `~/.config/viper/brew-packages.log`, und ein erneuter `make up` versucht es wieder.
+* Jedes Paket verlängert die Einrichtung. Manche Formeln baut Homebrew aus dem Quellcode, das dauert auf kleinen Servern spürbar.
+* Homebrew wird dabei nicht selbst aktualisiert, und vorhandene Pakete werden nicht aktualisiert (`--no-upgrade`).
+* Vertrauen Sie nur Taps, deren Herausgeber Sie vertrauen: Formeln sind Ruby-Code, den Homebrew beim Installieren ausführt.
+* Von Hand geht es jederzeit auch: `make ssh MACHINE=<rechner> CMD="bash -lc 'brew install <name>'"`.
+
 ### Vom iPad aus verbinden
 
 #### Vorgehen
@@ -443,6 +498,9 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `SSH_ALLOWED_CIDRS` | Netze, die Port 22 erreichen dürfen | `0.0.0.0/0,::/0` |
 | `IPAD_SSH_PUBLIC_KEY_FILE` | Öffentlicher Schlüssel des iPads | leer |
 | `VIPER_HOMEBREW` | Homebrew (`brew`) auf dem Server installieren: `1` oder `0` | `1` |
+| `VIPER_BREW_TAPS` | Homebrew-Taps (`owner/repo` oder `owner/repo=URL`), mit Leerzeichen getrennt | leer |
+| `VIPER_BREW_TRUST` | Einträge für `brew trust`: `owner/repo` (Tap), `owner/repo/name` (Formel), `cask:…`, `command:…` | leer |
+| `VIPER_BREW_PACKAGES` | Zu installierende Formeln (`name` oder `owner/repo/name`) | leer |
 | `WORKSPACE_DIR` | Verzeichnis auf dem Server, in das die Repositories geklont werden | `/Development` |
 | `REPO_URL` | Repository, das beim Start geklont wird | leer |
 | `REPO_BRANCH` | Zweig, der geklont wird | Standardzweig |
@@ -609,6 +667,11 @@ Die Skripte importieren und exportieren keine Daten. Ihre Arbeitsdateien liegen 
 **Ursache:** Die Firewall des Rechners lässt kein ICMP durch. Ältere Firewalls hatten nur die SSH-Regel.  
 **Lösung:** Führen Sie `make up MACHINE=<rechner>` aus. Das ergänzt die ICMP-Regel in der Firewall, der Server bleibt dabei bestehen. Ob der Rechner erreichbar ist, zeigt auch ohne Ping `make check MACHINE=<rechner>`.
 
+### Meldung: "WARNING: some Homebrew taps, trust entries or formulae failed"
+
+**Ursache:** Ein Tap, ein Trust-Eintrag, eine Formel oder die `Brewfile` ließ sich nicht einrichten, etwa wegen eines Tippfehlers im Namen, eines nicht erreichbaren Taps oder eines Build-Fehlers. Die Zeilen mit `FAILED` darüber nennen den Schritt.  
+**Lösung:** Lesen Sie das Protokoll mit `make ssh MACHINE=<rechner> CMD="tail -n 50 ~/.config/viper/brew-packages.log"`, korrigieren Sie die Einstellung und führen Sie `make up MACHINE=<rechner>` erneut aus.
+
 ### Verbindung wird nach einigen Tagen abgelehnt
 
 **Ursache:** Das Host-Zertifikat ist nach sieben Tagen abgelaufen. Eine automatische Erneuerung gibt es nicht. Computer mit hinterlegtem Host-Schlüssel verbinden sich weiter. Das ist der Computer, der den Rechner angelegt hat, und jeder andere, der innerhalb der sieben Tage einmal `start.sh` oder `stop.sh` ausgeführt hat (dabei wird der Schlüssel über die noch gültige CA-Prüfung nachgetragen). Betroffen sind Geräte, die nur der Host-CA vertrauen, etwa das iPad, und Computer, die den Rechner nie innerhalb der Gültigkeit erreicht haben.  
@@ -644,6 +707,8 @@ Nein. Verwenden Sie die Shell oder `.env.local`, die nicht eingecheckt wird.
 | Host-Zertifikat | Beglaubigung des Server-Schlüssels, sieben Tage gültig |
 | Hinterlegter Host-Schlüssel | Öffentlicher Schlüssel des Servers, den `start.sh` beim Anlegen speichert; Rückfall nach Ablauf des Zertifikats |
 | PAT | Personal Access Token: Zugangsschlüssel für die GitHub-API anstelle eines Passworts |
+| Tap | Zusätzliche Paketquelle für Homebrew (`owner/repo`) |
+| Brewfile | Datei im Repository, in der Homebrew-Taps, Trust und Formeln stehen; `brew bundle` richtet sie ein |
 | Deploy-Key | SSH-Schlüssel, der nur für ein Repository gilt |
 | cloud-init | Automatische Ersteinrichtung des Servers beim ersten Start |
 | tmux | Programm, das Terminal-Sitzungen dauerhaft hält |
@@ -677,3 +742,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.16 | v3 mit Mehrrechner-Betrieb | Neue Server spielen beim Einrichten alle Updates ein und starten bei Bedarf einmal neu; `start.sh` wartet darauf, `make check` warnt bei später nötigem Neustart. Interaktive Shells starten im Arbeitsverzeichnis. cloud-init schaltet sich nach der Ersteinrichtung ab (sonst Fehlermeldungen nach jedem Neustart). `make ssh CMD=…` und `make up REPO=…` übernehmen `$` unverändert. |
 | 1.17 | v3 mit Mehrrechner-Betrieb | Ein abgebrochener erster `make up` wird beim erneuten Lauf wie ein neuer Server behandelt. `stop.sh` meldet einen abgelehnten Login-Schlüssel, kennt auch Arbeitsverzeichnisse anderer Computer und meldet Remotes auf dem Server selbst. `make ssh CMD=…` fordert im Terminal ein Terminal an (`tmux attach`). Ein Deploy-Key wird nicht mehr durch `VIPER_GH_TOKEN` umgangen. Der Check liest Fehler der Ersteinrichtung und akzeptiert nur eine echte OK-Antwort. Ein privater Schlüssel als iPad-Schlüssel wird abgelehnt. |
 | 1.18 | v3 mit Mehrrechner-Betrieb | Homebrew (`brew`) wird auf jedem neuen Server installiert (abschaltbar mit `VIPER_HOMEBREW=0`); `make check` prüft es. |
+| 1.19 | v3 mit Mehrrechner-Betrieb | Werkzeuge mit Homebrew: `VIPER_BREW_TAPS`, `VIPER_BREW_TRUST`, `VIPER_BREW_PACKAGES` und eine `Brewfile` im Repository; Reihenfolge Tap, Trust, Installation; Preflight prüft das Format, `make check` den Stand. |

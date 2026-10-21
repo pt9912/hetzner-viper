@@ -68,9 +68,9 @@ echo "== server ($SERVER_NAME, $IP)"
 WORKDIR="$WORKSPACE_DIR"
 [[ -z "${REPO_URL:-}" ]] || WORKDIR="$WORKSPACE_DIR/$(basename "${REPO_URL%.git}")"
 # key=value lines; nothing is changed on the server
-if ! out=$(ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$WORKDIR" "${VIPER_CLAUDE_TOKEN:+1}${VIPER_ANTHROPIC_BASE_URL:+1}" "$BREW")" <<'PROBE'
+if ! out=$(ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$WORKDIR" "${VIPER_CLAUDE_TOKEN:+1}${VIPER_ANTHROPIC_BASE_URL:+1}" "$BREW" "${VIPER_BREW_TAPS:-}" "${VIPER_BREW_PACKAGES:-}" "${REPO_URL:+$WORKDIR/Brewfile}" "${VIPER_BREW_TRUST:-}")" <<'PROBE'
 set -uo pipefail
-dir="$1"; ask_claude="$2"; brew="$3"
+dir="$1"; ask_claude="$2"; brew="$3"; taps_in="$4"; pkgs_in="$5"; brewfile="$6"; trust_in="$7"
 export LC_ALL=C PATH="$HOME/.local/bin:$PATH"
 echo "cloudinit=$(cloud-init status 2>/dev/null | sed -n 's/^status: //p')"
 # errors of the first boot stay recorded here, also once cloud-init is disabled
@@ -93,6 +93,29 @@ if gh auth status >/dev/null 2>&1; then echo gh_auth=yes; else echo gh_auth=no; 
 if docker info >/dev/null 2>&1; then echo docker=ok; else echo docker=no; fi
 echo "brew_version=$("$brew" --version 2>/dev/null | head -n1)"
 if bash -c '. ~/.bashrc >/dev/null 2>&1; command -v brew' >/dev/null 2>&1; then echo brew_path=yes; else echo brew_path=no; fi
+if [ -x "$brew" ]; then
+  eval "$("$brew" shellenv)"; export HOMEBREW_NO_AUTO_UPDATE=1
+  missing=''
+  for t in $taps_in; do n="${t%%=*}"; brew tap 2>/dev/null </dev/null | grep -qixF -- "$n" || missing="$missing tap:$n"; done
+  for p in $pkgs_in; do brew list --formula --versions "${p##*/}" >/dev/null 2>&1 </dev/null || missing="$missing $p"; done
+  if [ -n "$trust_in" ]; then
+    trusted=$(brew trust --json=v1 2>/dev/null </dev/null)
+    for t in $trust_in; do
+      case "$t" in
+        tap:*|formula:*|cask:*|command:*) kind="${t%%:*}"; name="${t#*:}" ;;
+        */*/*) kind=formula; name="$t" ;;
+        *) kind=tap; name="$t" ;;
+      esac
+      key=$(case "$kind" in tap) echo taps ;; formula) echo formulae ;; cask) echo casks ;; command) echo commands ;; esac)
+      jq -e --arg k "$key" --arg n "$name" '(.[$k] // []) | map(ascii_downcase) | index($n | ascii_downcase)' <<<"$trusted" >/dev/null 2>&1 ||
+        missing="$missing trust:$name"
+    done
+  fi
+  echo "brew_missing=${missing# }"
+  if [ -n "$brewfile" ] && [ -f "$brewfile" ]; then
+    if brew bundle check --no-upgrade --file="$brewfile" >/dev/null 2>&1 </dev/null; then echo brewfile=ok; else echo brewfile=missing; fi
+  fi
+fi
 if [ -d "$dir/.git" ]; then
   echo "repo=$(git -C "$dir" log --oneline -1 2>/dev/null || echo '(no commits yet)')"
   echo "repo_changes=$(git -C "$dir" status --short | wc -l)"
@@ -157,6 +180,15 @@ if [[ "$VIPER_HOMEBREW" == 1 ]]; then
     bad "$(val brew_version) installed but not in the shells' PATH (rerun ./start.sh $MACHINE)"
   else
     ok "$(val brew_version)"
+    if [[ -n "$(val brew_missing)" ]]; then
+      bad "Homebrew: missing $(val brew_missing) (rerun ./start.sh $MACHINE; log: ~/.config/viper/brew-packages.log)"
+    elif [[ -n "${VIPER_BREW_TAPS:-}${VIPER_BREW_TRUST:-}${VIPER_BREW_PACKAGES:-}" ]]; then
+      ok "Homebrew: taps, trust entries and formulae present (${VIPER_BREW_TAPS:-}${VIPER_BREW_TAPS:+; }${VIPER_BREW_TRUST:+trust }${VIPER_BREW_TRUST:-}${VIPER_BREW_TRUST:+; }${VIPER_BREW_PACKAGES:-})"
+    fi
+    case "$(val brewfile)" in
+      ok) ok "Homebrew: Brewfile of the repository satisfied" ;;
+      missing) warn "Homebrew: Brewfile of the repository not fully installed (rerun ./start.sh $MACHINE)" ;;
+    esac
   fi
 fi
 if [[ -n "${REPO_URL:-}" ]]; then

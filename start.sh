@@ -239,6 +239,48 @@ if [[ "$VIPER_HOMEBREW" == 1 ]]; then
     echo "WARNING: Homebrew installation failed (log on the server: ~/.config/viper/homebrew-install.log); rerun ./start.sh $MACHINE" >&2
   fi
 fi
+# Homebrew, in this order (not fatal): VIPER_BREW_TAPS ("owner/repo", or "owner/repo=URL" for
+# a tap outside GitHub), VIPER_BREW_TRUST (brew trust: "owner/repo" = a tap, "owner/repo/name"
+# = a formula, or "cask:…"/"command:…"), VIPER_BREW_PACKAGES ("name" or "owner/repo/name") and
+# a Brewfile in the cloned repository (tap/brew lines, trusted: options; brew bundle).
+brewfile=''; [[ -z "${REPO_URL:-}" ]] || brewfile="$WORKDIR/Brewfile"
+read -r -d '' -a brew_taps <<<"${VIPER_BREW_TAPS:-}" || true; read -r -d '' -a brew_trust <<<"${VIPER_BREW_TRUST:-}" || true
+read -r -d '' -a brew_pkgs <<<"${VIPER_BREW_PACKAGES:-}" || true
+if [[ "$VIPER_HOMEBREW" == 1 ]] && (( ${#brew_taps[@]} + ${#brew_trust[@]} + ${#brew_pkgs[@]} > 0 )) || [[ "$VIPER_HOMEBREW" == 1 && -n "$brewfile" ]]; then
+  if ! ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$BREW" "$brewfile" "${#brew_taps[@]}" "${#brew_trust[@]}" "${brew_taps[@]}" "${brew_trust[@]}" "${brew_pkgs[@]}")" <<'BREWPKG'
+set -uo pipefail
+brew="$1"; brewfile="$2"; ntaps="$3"; ntrust="$4"; shift 4
+taps=("${@:1:ntaps}"); trust=("${@:ntaps+1:ntrust}"); pkgs=("${@:ntaps+ntrust+1}")
+[ -x "$brew" ] || { echo "brew: Homebrew missing, taps and formulae skipped"; exit 1; }
+eval "$("$brew" shellenv)"
+export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 NONINTERACTIVE=1
+mkdir -p ~/.config/viper; log=~/.config/viper/brew-packages.log; : > "$log"
+rc=0
+for t in "${taps[@]}"; do
+  name="${t%%=*}"; url=''; [ "$t" = "$name" ] || url="${t#*=}"
+  if brew tap "$name" ${url:+"$url"} >>"$log" 2>&1 </dev/null; then echo "brew: tap $name"; else echo "brew: tap $name FAILED"; rc=1; fi
+done
+for t in "${trust[@]}"; do
+  case "$t" in
+    tap:*|formula:*|cask:*|command:*) kind="${t%%:*}"; name="${t#*:}" ;;
+    */*/*) kind=formula; name="$t" ;;
+    *) kind=tap; name="$t" ;;
+  esac
+  if brew trust "--$kind" "$name" >>"$log" 2>&1 </dev/null; then echo "brew: trusted $kind $name"; else echo "brew: trust $kind $name FAILED"; rc=1; fi
+done
+if (( ${#pkgs[@]} )); then
+  if brew install "${pkgs[@]}" >>"$log" 2>&1 </dev/null; then echo "brew: installed ${pkgs[*]}"; else echo "brew: install ${pkgs[*]} FAILED"; rc=1; fi
+fi
+if [ -n "$brewfile" ] && [ -f "$brewfile" ]; then
+  if brew bundle install --no-upgrade --file="$brewfile" >>"$log" 2>&1 </dev/null; then echo "brew: $brewfile applied"; else echo "brew: $brewfile FAILED"; rc=1; fi
+fi
+(( rc == 0 )) || tail -n 15 "$log"
+exit "$rc"
+BREWPKG
+  then
+    echo "WARNING: some Homebrew taps, trust entries or formulae failed (log on the server: ~/.config/viper/brew-packages.log); rerun ./start.sh $MACHINE" >&2
+  fi
+fi
 # Interactive shells (make ssh, tmux, a plain ssh login) that start in the home directory
 # change to the work directory: the line goes at the end of .bashrc, which non-interactive
 # shells (ssh commands, the scripts) never reach because of Ubuntu's early return.
