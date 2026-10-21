@@ -24,6 +24,8 @@ case "$remote" in
     consume
     [[ -z "${MOCK_INSTALL_FAIL:-}" ]] || exit 1
     touch "$MOCK_STATE/claude-ready" ;;
+  # Claude token login: run it for real in the sandbox home (stdin = token)
+  *viper/claude.env*) (( no_stdin )) && exec </dev/null; bash -c "$remote"; exit $? ;;
   "gh auth login"*) if (( no_stdin )); then : > "$MOCK_STATE/gh-token"; else cat > "$MOCK_STATE/gh-token"; fi ;;
   # host key read over a CA-verified connection (pin_from_server)
   "cat /etc/ssh/ssh_host_ed25519_key.pub") consume; cat "$MOCK_STATE/remote-hostkey.pub" 2>/dev/null ;;

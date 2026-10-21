@@ -32,6 +32,7 @@ Without the container, call the scripts directly: `./setup.sh`, `./preflight.sh 
 - `make test` runs the tests against mocks (offline, no cost); `make docker-test` runs the same tests in a container without network.
 - Several machines in parallel: `make up MACHINE=api …` next to `web`. Each has its own server and DNS name `<SERVER_PREFIX>-<name>.<DNS_DOMAIN>` (default prefix `claude`).
 - With `VIPER_GH_TOKEN` (a GitHub PAT, ideally fine-grained per machine; a `GH_TOKEN` exported for your local `gh` is deliberately not used) the GitHub CLI `gh` is logged in on the server and `git` pushes over HTTPS, so the agent can also open pull requests.
+- With `VIPER_CLAUDE_TOKEN` (a long-lived token for your Claude subscription from `claude setup-token`) Claude Code is logged in on the server, so there is no `/login` after each new server.
 - `stop.sh` checks the Git state of all repositories and worktrees in the workspace, the home directory and the temp directories (uncommitted changes, commits on any branch that are on no remote, stash entries), flags entries at the top of the workspace that belong to no repository (files outside repositories elsewhere are not checked), lists ignored files, and additionally asks for `DISCARD` when there is unsaved work.
 
 The full guide with all tasks, settings and troubleshooting is the [user manual](docs/user/handbuch.md) (German). For a first real run, start with the section „Erster Testlauf mit einem kleinen Server“ there (server type `cpx02`, a few cents per hour).

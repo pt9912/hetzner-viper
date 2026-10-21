@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.10  
+Version: 1.11  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -228,7 +228,7 @@ Claude Code läuft in einer Sitzung, die einen Verbindungsabbruch übersteht.
 
 #### Hinweise
 
-* Das Anmelden bei Claude müssen Sie nach jedem neuen Server wiederholen. Das Verzeichnis `/home/builder/.claude` wird mit dem Server gelöscht.
+* Ohne `VIPER_CLAUDE_TOKEN` müssen Sie das Anmelden bei Claude nach jedem neuen Server wiederholen, weil `/home/builder/.claude` mit dem Server gelöscht wird. Mit Token entfällt das (siehe „Claude Code ohne erneute Anmeldung nutzen“).
 
 ### Mehrere Rechner gleichzeitig betreiben
 
@@ -291,6 +291,31 @@ Die Meldung `gh: logged in to github.com` erscheint. Auf dem Server ist `gh` ang
 * Das Token wird per SSH über die Standardeingabe übertragen. Es steht weder in den Hetzner-User-Data noch in einer Befehlszeile.
 * Auf dem Server liegt das Token unverschlüsselt in `~/.config/gh/hosts.yml`. Claude Code und jeder Prozess des Benutzers `builder` können es lesen. Vergeben Sie deshalb nur die Rechte, die der Agent braucht.
 * Mit dem Löschen des Servers ist das Token dort entfernt. Bei GitHub bleibt es gültig, bis es abläuft oder Sie es widerrufen.
+
+### Claude Code ohne erneute Anmeldung nutzen
+
+Ohne weitere Einstellung melden Sie sich nach jedem neuen Server auf dem Rechner bei Claude an (`claude`, dann `/login`). Mit einem langlebigen Token Ihres Claude-Abos (Pro, Max oder Team) erledigt `start.sh` das für Sie.
+
+#### Voraussetzung
+
+Sie haben ein Claude-Abo und auf einem Rechner mit Browser Claude Code installiert.
+
+#### Vorgehen
+
+1. Erzeugen Sie das Token einmalig in **Ihrem eigenen Terminal**: `claude setup-token`. Folgen Sie der Anmeldung im Browser und kopieren Sie das angezeigte Token.
+2. Tragen Sie es als `VIPER_CLAUDE_TOKEN=…` ein, für einen Rechner in `machines/<rechner>.env.local` oder für alle in `.env.local`. Achten Sie darauf, dass die Datei die Rechte `600` hat.
+3. Starten Sie den Rechner mit `make up MACHINE=<rechner>`. Bei einem laufenden Rechner reicht derselbe Befehl, er überträgt das Token neu.
+
+#### Ergebnis
+
+Die Meldung `claude: logged in with VIPER_CLAUDE_TOKEN` erscheint. `claude` ist auf dem Server in SSH-Befehlen, in tmux und im VS-Code-Terminal angemeldet. Prüfen können Sie das mit `make ssh MACHINE=<rechner> CMD="bash -lc 'claude -p \"Antworte nur mit OK\"'"`.
+
+#### Hinweise
+
+* Das Token wird per SSH über die Standardeingabe übertragen. Es steht weder in den Hetzner-User-Data noch in einer Befehlszeile. Auf dem Server liegt es in `~/.config/viper/claude.env` (Rechte `600`), geladen von einer Zeile am Anfang von `~/.bashrc` und `~/.profile`.
+* Claude Code und jeder Prozess des Benutzers `builder` können das Token lesen. Es gilt lange und gibt Zugriff auf Ihr Abo. Behandeln Sie es wie ein Passwort und geben Sie es nicht in Chats oder Tickets weiter.
+* Die Skripte lesen bewusst nicht `CLAUDE_CODE_OAUTH_TOKEN`. Ein lokal gesetztes Token landet so nicht ungewollt auf einem Server.
+* Ist das Token abgelaufen, erzeugen Sie mit `claude setup-token` ein neues, tragen es ein und führen `make up MACHINE=<rechner>` erneut aus.
 
 ### Vom iPad aus verbinden
 
@@ -360,6 +385,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `GIT_DEPLOY_KEY_FILE` | Deploy-Key für private SSH-Repositories | leer |
 | `VIPER_GH_TOKEN` | GitHub-PAT für `gh` und `git` über HTTPS auf dem Server | leer |
 | `VIPER_GH_HOST` | GitHub-Host (für GitHub Enterprise) | `github.com` |
+| `VIPER_CLAUDE_TOKEN` | Langlebiges Token Ihres Claude-Abos aus `claude setup-token` | leer |
 | `HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID` | Zugangsdaten (Shell oder `.env.local`), Pflichtangaben | leer |
 
 ### Firewall und Anmeldung
@@ -559,3 +585,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.8 | v3 mit Mehrrechner-Betrieb | DNS-Name und lokale Dateien enthalten das Präfix (`claude-web.<domain>`). Die Skripte vertrauen nur dem hinterlegten Host-Schlüssel des jeweiligen Servers. `stop.sh` sucht Repositories auch im Home- und Temp-Verzeichnis, meldet Dateien außerhalb von Repositories und fragt vor dem Aufräumen eines nicht gefundenen Servers nach `CLEANUP`. `start.sh` holt eine fehlgeschlagene Claude-Installation nach und verwendet einen schon hochgeladenen SSH-Schlüssel weiter. Antworten können per Pipe übergeben werden. |
 | 1.9 | v3 mit Mehrrechner-Betrieb | Das GitHub-Token heißt jetzt `VIPER_GH_TOKEN` (statt `GH_TOKEN`), ein lokal exportiertes `GH_TOKEN` wird nicht mehr übernommen. Ein abgelehnter Host-Schlüssel wird als solcher gemeldet statt als „nicht erreichbar“, und `stop.sh --force` prüft einen erreichbaren Server trotzdem. Hinterlegte Schlüssel werden bei neuer Server-ID verworfen und nach einer CA-geprüften Verbindung nachgetragen. Eine als Symlink verwaltete `~/.ssh/config` bleibt erhalten. Die Bestellbarkeit wird über die Standortangaben des Servertyps geprüft (die frühere Rechenzentrums-Abfrage hat Hetzner abgeschaltet). Neu: Abschnitt „Erster Testlauf mit einem kleinen Server“ und `make ssh` (bzw. `connect.sh`) für Verbindungen ohne lokalen SSH-Client; das Handbuch nennt jetzt durchgehend die `make`-Befehle. `preflight.sh` prüft vorab nur lesend, und `start.sh` führt es zuerst aus. Fehlende Pflichtwerte werden gemeinsam gemeldet, bevor etwas angelegt oder gelöscht wird. |
 | 1.10 | v3 mit Mehrrechner-Betrieb | `make` ohne Ziel zeigt eine Übersicht aller Befehle (`make help`) statt die Tests zu starten. |
+| 1.11 | v3 mit Mehrrechner-Betrieb | Mit `VIPER_CLAUDE_TOKEN` (aus `claude setup-token`) ist Claude Code auf dem Server ohne erneute Anmeldung nutzbar. |

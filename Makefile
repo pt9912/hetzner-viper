@@ -26,7 +26,7 @@ build: ## build the container image (done automatically by the other targets)
 define RUN
 	@mkdir -p "$$HOME/.ssh" "$$HOME/.local/state/hetzner-claude"
 	docker run --rm -i $$(test -t 0 && echo -t) --user $$(id -u):$$(id -g) -e HOME="$$HOME" \
-	  -e HCLOUD_TOKEN -e CLOUDFLARE_API_TOKEN -e CLOUDFLARE_ZONE_ID -e VIPER_GH_TOKEN -e VIPER_GH_HOST \
+	  -e HCLOUD_TOKEN -e CLOUDFLARE_API_TOKEN -e CLOUDFLARE_ZONE_ID -e VIPER_GH_TOKEN -e VIPER_GH_HOST -e VIPER_CLAUDE_TOKEN \
 	  -v "$$HOME/.ssh:$$HOME/.ssh" -v "$$HOME/.local/state/hetzner-claude:$$HOME/.local/state/hetzner-claude" \
 	  -v "$(CURDIR)":/repo:ro $(RUN_IMAGE) $(1)
 endef

@@ -125,6 +125,15 @@ if [[ -n "${VIPER_GH_TOKEN:-}" ]]; then
 else
   info "no VIPER_GH_TOKEN: gh is not logged in on the server"
 fi
+if [[ -n "${VIPER_CLAUDE_TOKEN:-}" ]]; then
+  if [[ "$VIPER_CLAUDE_TOKEN" =~ [[:space:]] ]]; then
+    bad "VIPER_CLAUDE_TOKEN contains whitespace (copied with a line break?)"
+  else
+    ok "VIPER_CLAUDE_TOKEN set: Claude Code will be logged in on the server (validity is only seen when claude runs)"
+  fi
+else
+  info "no VIPER_CLAUDE_TOKEN: log in on the server with claude (/login) after each new server"
+fi
 if [[ -z "${REPO_URL:-}" ]]; then
   info "no repository to clone"
 elif [[ "$REPO_URL" =~ ^(ssh://|[^/]+@[^/]+:) ]]; then

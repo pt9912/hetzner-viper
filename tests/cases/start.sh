@@ -317,7 +317,7 @@ test_cloudflare_token_not_in_argv() {
 
 test_vscode_does_not_inherit_tokens() {
   run setup.sh >/dev/null
-  export VIPER_GH_TOKEN=ghp_x GH_TOKEN=ghp_local
+  export VIPER_GH_TOKEN=ghp_x GH_TOKEN=ghp_local VIPER_CLAUDE_TOKEN=sk-ant-oat01-x
   run start.sh web >/dev/null
   check "code launched" has '^code ' "$CALLS"
   check "no tokens in its environment" test ! -s "$MOCK_STATE/code-env"
@@ -391,4 +391,54 @@ test_ssh_config_has_keepalive() {
   run setup.sh >/dev/null
   run start.sh web >/dev/null
   check "keepalive" has 'ServerAliveInterval 15' "$HOME/.ssh/config_hetzner_claude-web"
+}
+
+# a home like Ubuntu's: .bashrc returns early for non-interactive shells
+ubuntu_home() {
+  local h="$MOCK_STATE/remote-home"
+  mkdir -p "$h"
+  printf 'case $- in\n    *i*) ;;\n      *) return;;\nesac\nexport FROM_BASHRC=1\n' > "$h/.bashrc"
+  printf 'if [ -n "$BASH_VERSION" ] && [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi\n' > "$h/.profile"
+}
+
+test_claude_token_reaches_noninteractive_and_login_shells() {
+  run setup.sh >/dev/null
+  ubuntu_home
+  export VIPER_CLAUDE_TOKEN='sk-ant-oat01-a$b"c'"'"'d'
+  run start.sh web >/dev/null
+  h="$MOCK_STATE/remote-home"
+  check "file is private" test "$(stat -c %a "$h/.config/viper/claude.env")" = 600
+  check "non-interactive ssh shell" test "$(HOME="$h" bash -c '. ~/.bashrc; printf %s "$CLAUDE_CODE_OAUTH_TOKEN"')" = "$VIPER_CLAUDE_TOKEN"
+  check "login shell" test "$(HOME="$h" bash -lc 'printf %s "$CLAUDE_CODE_OAUTH_TOKEN"')" = "$VIPER_CLAUDE_TOKEN"
+  check "rest of .bashrc kept" has '^export FROM_BASHRC=1' "$h/.bashrc"
+  check "token not on any command line" bash -c "! grep -qF 'sk-ant-oat01' '$CALLS'"
+  check "token not in user-data" bash -c "! grep -qF 'sk-ant-oat01' '$MOCK_STATE/hcloud/server/claude-web.user-data'"
+}
+
+test_claude_token_rerun_does_not_duplicate_and_updates() {
+  run setup.sh >/dev/null
+  ubuntu_home
+  VIPER_CLAUDE_TOKEN=first run start.sh web >/dev/null
+  VIPER_CLAUDE_TOKEN=second run start.sh web >/dev/null
+  h="$MOCK_STATE/remote-home"
+  check "one loader line in .bashrc" count_is 'viper/claude.env' "$h/.bashrc" 1
+  check "one loader line in .profile" count_is 'viper/claude.env' "$h/.profile" 1
+  check "new token" test "$(HOME="$h" bash -c '. ~/.bashrc; printf %s "$CLAUDE_CODE_OAUTH_TOKEN"')" = second
+}
+
+test_locally_exported_claude_token_is_not_copied() {
+  run setup.sh >/dev/null
+  export CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-local
+  run start.sh web >/dev/null
+  check "no login" test ! -e "$MOCK_STATE/remote-home/.config/viper/claude.env"
+  check "no tokens for VS Code" test ! -s "$MOCK_STATE/code-env"
+}
+
+test_claude_token_works_without_existing_bashrc_and_profile() {
+  run setup.sh >/dev/null
+  export VIPER_CLAUDE_TOKEN=sk-ant-oat01-x
+  run start.sh web >/dev/null
+  h="$MOCK_STATE/remote-home"
+  check "loader created" has 'viper/claude.env' "$h/.bashrc"
+  check "token loaded" test "$(HOME="$h" bash -c '. ~/.bashrc; printf %s "$CLAUDE_CODE_OAUTH_TOKEN"')" = sk-ant-oat01-x
 }

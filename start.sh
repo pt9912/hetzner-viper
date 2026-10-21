@@ -137,6 +137,20 @@ if [[ -n "${VIPER_GH_TOKEN:-}" ]]; then
   ssh -F "$SSH_CFG" "$SSH_ALIAS" "gh auth login --hostname $gh_host --with-token && gh auth setup-git --hostname $gh_host" <<<"$VIPER_GH_TOKEN"
   echo "gh: logged in to ${VIPER_GH_HOST:-github.com}"
 fi
+# Claude Code login for builder with a long-lived subscription token (`claude setup-token`).
+# The token goes through stdin into a 600 file; a line at the very top of .bashrc/.profile
+# (before the "not interactive: return" guard) loads it for ssh commands, tmux and VS Code.
+# A dedicated variable, so a CLAUDE_CODE_OAUTH_TOKEN exported locally is never copied.
+if [[ -n "${VIPER_CLAUDE_TOKEN:-}" ]]; then
+  claude_login='umask 077 && mkdir -p ~/.config/viper && IFS= read -r t &&
+    printf "export CLAUDE_CODE_OAUTH_TOKEN=%q\n" "$t" > ~/.config/viper/claude.env &&
+    line="[ -f ~/.config/viper/claude.env ] && . ~/.config/viper/claude.env" &&
+    for f in ~/.bashrc ~/.profile; do
+      grep -qxF "$line" "$f" 2>/dev/null || { { echo "$line"; [ ! -f "$f" ] || cat "$f"; } > "$f.viper" && mv "$f.viper" "$f"; }
+    done'
+  ssh -F "$SSH_CFG" "$SSH_ALIAS" "$claude_login" <<<"$VIPER_CLAUDE_TOKEN"
+  echo 'claude: logged in with VIPER_CLAUDE_TOKEN'
+fi
 WORKDIR="$WORKSPACE_DIR"
 if [[ -n "${REPO_URL:-}" ]]; then
   WORKDIR="$WORKSPACE_DIR/$(basename "${REPO_URL%.git}")"
@@ -163,5 +177,6 @@ fi
 echo "Ready: ssh $SSH_ALIAS (work dir: $WORKDIR)"
 # VS Code and its extensions must not inherit the API tokens from .env.local
 if command -v code >/dev/null; then
-  env -u HCLOUD_TOKEN -u CLOUDFLARE_API_TOKEN -u CLOUDFLARE_ZONE_ID -u VIPER_GH_TOKEN -u GH_TOKEN code --remote "ssh-remote+$SSH_ALIAS" "$WORKDIR" || true
+  env -u HCLOUD_TOKEN -u CLOUDFLARE_API_TOKEN -u CLOUDFLARE_ZONE_ID -u VIPER_GH_TOKEN -u GH_TOKEN \
+    -u VIPER_CLAUDE_TOKEN -u CLAUDE_CODE_OAUTH_TOKEN code --remote "ssh-remote+$SSH_ALIAS" "$WORKDIR" || true
 fi
