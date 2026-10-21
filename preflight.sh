@@ -7,6 +7,7 @@ MACHINE="${1:?Usage: ./preflight.sh <machine> [repo-url]}"; export MACHINE
 REPO_URL_ARG="${2:-}"
 # settings and local tools; exits listing every missing setting
 source "$(dirname "$0")/common.sh"
+start_transcript preflight
 [[ -z "$REPO_URL_ARG" ]] || REPO_URL="$REPO_URL_ARG"
 
 failures=0
@@ -114,7 +115,7 @@ echo "== GitHub"
 if [[ -n "${VIPER_GH_TOKEN:-}" ]]; then
   gh_host="${VIPER_GH_HOST:-github.com}"
   api="https://api.github.com"; [[ "$gh_host" == github.com ]] || api="https://$gh_host/api/v3"
-  headers=$(mktemp); trap 'rm -f "$headers"' EXIT
+  headers=$(mktemp); EXIT_CMDS+=('rm -f "$headers"')
   # token as header file: it never appears in curl's argv
   if user=$(curl -fsS -D "$headers" -H @<(printf 'Authorization: Bearer %s\n' "$VIPER_GH_TOKEN") "$api/user" 2>&1); then
     ok "VIPER_GH_TOKEN valid for $(jq -r '.login' <<<"$user") on $gh_host"
@@ -230,6 +231,8 @@ fi
 echo
 if (( failures > 0 )); then
   echo "Preflight: $failures problem(s); nothing was created."
+  [[ -z "${TRANSCRIPT_OWNER:-}" ]] || final_event "preflight: $failures problem(s)"
   exit 1
 fi
+[[ -z "${TRANSCRIPT_OWNER:-}" ]] || final_event "preflight OK"
 echo 'Preflight OK.'

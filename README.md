@@ -25,6 +25,7 @@ make up MACHINE=web REPO=https://example.org/org/web.git   # set up machine "web
 make check MACHINE=web                              # read-only: DNS, access by name like another device, server state
 make ssh MACHINE=web                                # shell on the machine (CMD="..." for one command)
 make down MACHINE=web                               # delete machine "web"
+make log [MACHINE=web] [FULL=1]                     # events of the machines, or one machine's full output
 ```
 
 Without the container, call the scripts directly: `./setup.sh`, `./preflight.sh web`, `./start.sh web <url>`, `./check.sh web`, `./connect.sh web`, `./stop.sh web`.

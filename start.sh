@@ -3,7 +3,9 @@ set -euo pipefail
 MACHINE="${1:?Usage: ./start.sh <machine> [repo-url]}"; export MACHINE
 REPO_URL_ARG="${2:-}"
 source "$(dirname "$0")/common.sh"
+start_transcript up
 [[ -z "$REPO_URL_ARG" ]] || REPO_URL="$REPO_URL_ARG"
+log_event "start ($SERVER_TYPE, $SERVER_LOCATION, $SERVER_IMAGE${REPO_URL:+, $REPO_URL})"
 # read-only checks first, so a wrong setting fails before anything is created
 if ! preflight=$(./preflight.sh "$MACHINE" "$REPO_URL_ARG"); then
   echo "$preflight" >&2
@@ -47,7 +49,7 @@ fi
 if ! hcloud_has server "$SERVER_NAME"; then
   TMP=$(mktemp -d)
   chmod 700 "$TMP"
-  trap 'rm -rf "$TMP"' EXIT
+  EXIT_CMDS+=('rm -rf "$TMP"')
   # -C: the default comment (local user@host) would end up in the user-data
   ssh-keygen -q -t ed25519 -N '' -C "$SERVER_NAME" -f "$TMP/ssh_host_ed25519_key"
   ssh-keygen -q -s "$CA" -I "$SERVER_NAME-$(date +%s)" -h -n "$DNS_HOST" -V -5m:+7d "$TMP/ssh_host_ed25519_key.pub"
@@ -81,6 +83,7 @@ PYGEN
     --user-data-from-file "$TMP/cloud-init.yaml"
   SERVER_ID=$(server_id)
   echo "$SERVER_ID" > "$ID_STATE"
+  log_event "server created id=$SERVER_ID"
   # a new server has none of the workspaces an earlier one with this name had
   rm -f "$WORKSPACE_STATE" "$READY_STATE"
   REUSED=0
@@ -88,6 +91,7 @@ else
   echo 'Existing server: reusing it.'
   SERVER_ID=$(server_id)
   forget_stale_pin "$SERVER_ID"
+  log_event "reusing server id=$SERVER_ID"
   # "reused" means set up by a completed run; a server whose first run was interrupted may
   # still be booting (transient ssh errors, the reboot after its updates still to come)
   REUSED=0
@@ -95,6 +99,7 @@ else
 fi
 IP=$(hcloud server ip "$SERVER_NAME")
 echo "$IP" > "$IP_STATE"
+log_event "ip=$IP dns=$DNS_HOST"
 write_ssh_config "$IP"
 ssh_include add || ssh_include_warning
 # The DNS name is for people (iPad, other clients); the scripts connect by IP and need not wait for it.
@@ -299,6 +304,7 @@ grep -qxF -- "$line" ~/.bashrc 2>/dev/null || printf '%s\n' "$line" >> ~/.bashrc
 CDLINE
 # from now on this server counts as set up (see REUSED)
 echo "$SERVER_ID" > "$READY_STATE"
+final_event "ready (work dir $WORKDIR)"
 echo "Ready: ssh $SSH_ALIAS (work dir: $WORKDIR)"
 # VS Code and its extensions must not inherit the API tokens from .env.local
 if command -v code >/dev/null; then

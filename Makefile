@@ -13,7 +13,7 @@ override REPO := $(value REPO)
 override CMD := $(value CMD)
 export MACHINE REPO CMD
 
-.PHONY: help build setup preflight up check ssh down
+.PHONY: help build setup preflight up check ssh down log
 
 help: ## show this help
 	@echo 'Usage: make <target> [MACHINE=<name>] [REPO=<url>] [CMD="<command>"] [FORCE=1]'
@@ -62,6 +62,15 @@ check: build ## read-only checks of a running machine: DNS, access by name, serv
 ssh: build ## shell or one command on the machine (MACHINE, [CMD])
 	$(call NEED_MACHINE,[CMD="<command>"])
 	$(call RUN,./connect.sh "$$MACHINE" $${CMD:+"$$CMD"})
+
+# runs on the host, no container and no tokens needed
+log: ## show the log: events of all machines, or of MACHINE; FULL=1 its complete output
+	@d="$$HOME/.local/state/hetzner-claude"; \
+	if [ -z "$$MACHINE" ]; then tail -n 50 "$$d/events.log" 2>/dev/null || echo 'no events yet'; exit 0; fi; \
+	p=$$(sed -n 's/^SERVER_PREFIX=//p' .env.local "machines/$$MACHINE.env.local" 2>/dev/null | tail -n1 | tr -d "\"'"); \
+	s="$${p:-claude}-$$MACHINE"; \
+	if [ -n "$(FULL)" ]; then cat "$$d/logs/$$s.log" 2>/dev/null || echo "no log for $$s"; \
+	else awk -v s="$$s" '$$2 == s' "$$d/events.log" 2>/dev/null | grep . || echo "no events for $$s"; fi
 
 down: build ## check for unsaved work and delete the machine (MACHINE, [FORCE=1])
 	$(call NEED_MACHINE,[FORCE=1])

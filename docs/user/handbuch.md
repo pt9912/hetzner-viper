@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.19  
+Version: 1.20  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -44,6 +44,7 @@ Bei den Anbietern:
 | `setup.sh` | Legt Ihren Login-Schlüssel und die lokale Host-CA an (einmalig). |
 | `preflight.sh <rechner>` | Prüft vorab nur lesend Einstellungen, Setup, Hetzner, Cloudflare und GitHub. Legt nichts an. `start.sh` führt es zuerst aus. |
 | `check.sh <rechner>` | Prüft einen laufenden Rechner nur lesend: DNS, Zugriff über den Namen wie ein anderes Gerät, Zustand des Servers. Im Container: `make check`. |
+| `make log [MACHINE=…] [FULL=1]` | Zeigt die lokalen Protokolle: Ereignisse aller Rechner, eines Rechners oder dessen vollständige Ausgabe. |
 | `connect.sh <rechner> [befehl]` | Öffnet eine Shell auf dem Rechner oder führt einen Befehl aus, mit der SSH-Konfiguration des Rechners. Im Container: `make ssh`. |
 | `start.sh <rechner>` | Richtet einen Rechner ein, setzt den DNS-Eintrag, legt das Arbeitsverzeichnis an und klont das Repository. |
 | `stop.sh <rechner>` | Prüft den Git-Stand, warnt vor ungesicherter Arbeit und löscht Server und DNS-Eintrag. |
@@ -230,6 +231,21 @@ Geprüft werden:
 * Haben spätere Updates auf dem Server einen Neustart nötig gemacht (Ubuntu meldet beim Login `*** System restart required ***`), warnt der Check. Starten Sie den Server dann mit `make ssh MACHINE=<rechner> CMD="sudo reboot"` neu. Laufende tmux-Sitzungen enden dabei, Dateien bleiben erhalten.
 * Direkt nach dem Anlegen kann die DNS-Prüfung für einige Minuten fehlschlagen, bis die Resolver den neuen Eintrag kennen.
 * Der lokale Resolver läuft bei `make check` im Container, nicht auf Ihrem Computer. Was Ihr Computer auflöst, prüfen Sie mit `getent hosts <name>` oder `ping <name>`.
+
+### Protokolle ansehen
+
+`start.sh` (`make up`), `stop.sh` (`make down`), `check.sh` (`make check`) und ein eigenständig aufgerufenes `preflight.sh` schreiben zwei Protokolle in `~/.local/state/hetzner-claude/` (Rechte `600`, ohne Tokens):
+
+* `events.log`: eine Zeile pro Ereignis mit Zeit (UTC), Server, Aktion und Ergebnis, etwa `server created id=…`, `ready`, `deleted`, `cancelled (unsaved work)` oder `FAILED (exit 1; …)`. Daraus sehen Sie, welche Server wann liefen.
+* `logs/<SERVER_PREFIX>-<rechner>.log`: die vollständige Ausgabe jedes Laufs, Läufe getrennt durch eine Zeile `===== <Zeit> <aktion> <server>`.
+
+#### Vorgehen
+
+* Alle Ereignisse (die letzten 50): `make log`
+* Ereignisse eines Rechners: `make log MACHINE=<rechner>`
+* Vollständige Ausgabe eines Rechners: `make log MACHINE=<rechner> FULL=1`
+
+`make log` läuft direkt auf Ihrem Rechner, ohne Container und ohne Tokens. Die Protokolle werden nicht automatisch gekürzt; löschen Sie sie bei Bedarf von Hand. Protokolle auf dem Server (cloud-init, Homebrew) verschwinden dagegen mit dem Server.
 
 ### Mit Claude Code arbeiten
 
@@ -743,3 +759,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.17 | v3 mit Mehrrechner-Betrieb | Ein abgebrochener erster `make up` wird beim erneuten Lauf wie ein neuer Server behandelt. `stop.sh` meldet einen abgelehnten Login-Schlüssel, kennt auch Arbeitsverzeichnisse anderer Computer und meldet Remotes auf dem Server selbst. `make ssh CMD=…` fordert im Terminal ein Terminal an (`tmux attach`). Ein Deploy-Key wird nicht mehr durch `VIPER_GH_TOKEN` umgangen. Der Check liest Fehler der Ersteinrichtung und akzeptiert nur eine echte OK-Antwort. Ein privater Schlüssel als iPad-Schlüssel wird abgelehnt. |
 | 1.18 | v3 mit Mehrrechner-Betrieb | Homebrew (`brew`) wird auf jedem neuen Server installiert (abschaltbar mit `VIPER_HOMEBREW=0`); `make check` prüft es. |
 | 1.19 | v3 mit Mehrrechner-Betrieb | Werkzeuge mit Homebrew: `VIPER_BREW_TAPS`, `VIPER_BREW_TRUST`, `VIPER_BREW_PACKAGES` und eine `Brewfile` im Repository; Reihenfolge Tap, Trust, Installation; Preflight prüft das Format, `make check` den Stand. |
+| 1.20 | v3 mit Mehrrechner-Betrieb | Protokolle: `events.log` (ein Ereignis pro Zeile) und `logs/<server>.log` (vollständige Ausgabe) in `~/.local/state/hetzner-claude/`; Anzeige mit `make log`. |

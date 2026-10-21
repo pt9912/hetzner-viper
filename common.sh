@@ -53,6 +53,45 @@ WORKSPACE_STATE="$STATE/workspace-$SERVER_NAME"
 # Server ID of the last start.sh run that completed: only such a server counts as set up.
 READY_STATE="$STATE/ready-$SERVER_NAME"
 
+# Logs (no tokens: the scripts never print them):
+#  - events.log: one line per event (time, server, action, what happened)
+#  - logs/<server>.log: the full output of every run of start/stop/check/preflight
+EVENTS_LOG="$STATE/events.log"
+LOG_DIR="$STATE/logs"
+mkdir -p "$LOG_DIR"; chmod 700 "$LOG_DIR"
+VIPER_ACTION="${VIPER_ACTION:-}"; FINAL_EVENT=0
+EXIT_CMDS=()
+
+log_event() {
+  ( umask 077; printf '%s %-24s %-9s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SERVER_NAME" "$VIPER_ACTION" "$*" >> "$EVENTS_LOG" )
+}
+# final_event <text>: the outcome of this run; without one, a failing exit is logged as FAILED
+final_event() { log_event "$*"; FINAL_EVENT=1; }
+
+# run_exit: cleanups registered in EXIT_CMDS, the FAILED event, then flush the transcript
+run_exit() {
+  local rc=$?
+  for c in "${EXIT_CMDS[@]}"; do eval "$c" || true; done
+  if [[ -n "${TRANSCRIPT_OWNER:-}" ]]; then
+    (( FINAL_EVENT || rc == 0 )) || log_event "FAILED (exit $rc; see logs/$SERVER_NAME.log)"
+    exec 1>&- 2>&-
+    wait "$TEE_OUT" "$TEE_ERR" 2>/dev/null || true
+  fi
+  exit "$rc"
+}
+trap run_exit EXIT
+
+# start_transcript <action>: copy all output of this run into logs/<server>.log. Scripts
+# started from it (preflight.sh, dns.sh) write into the same transcript and no own events.
+start_transcript() {
+  VIPER_ACTION="$1"
+  [[ -z "${VIPER_TRANSCRIPT:-}" ]] || return 0
+  export VIPER_TRANSCRIPT="$LOG_DIR/$SERVER_NAME.log" VIPER_ACTION; TRANSCRIPT_OWNER=1
+  ( umask 077; printf '\n===== %s %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$SERVER_NAME" >> "$VIPER_TRANSCRIPT" )
+  exec > >(tee -a "$VIPER_TRANSCRIPT"); TEE_OUT=$!
+  exec 2> >(tee -a "$VIPER_TRANSCRIPT" >&2); TEE_ERR=$!
+}
+
 # Connect by IP (the exact server we act on, independent of DNS). Trust only the host key
 # pinned for this very server: a key leaked from an earlier server (it is readable in the
 # user-data) is rejected, even though its certificate from the same CA is still valid.

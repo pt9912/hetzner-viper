@@ -5,6 +5,7 @@
 set -euo pipefail
 MACHINE="${1:?Usage: ./check.sh <machine>}"; export MACHINE
 source "$(dirname "$0")/common.sh"
+start_transcript check
 
 failures=0
 ok()   { echo "ok    $*"; }
@@ -209,6 +210,8 @@ info "memory: $(val mem); disk: $(val disk)"
 echo
 if (( failures > 0 )); then
   echo "Check: $failures problem(s)."
+  final_event "check: $failures problem(s)"
   exit 1
 fi
+final_event "check OK"
 echo 'Check OK.'

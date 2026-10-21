@@ -2,6 +2,7 @@
 set -euo pipefail
 MACHINE="${1:?Usage: ./stop.sh <machine> [--force]}"; export MACHINE
 source "$(dirname "$0")/common.sh"
+start_transcript down
 
 # Remove the local SSH config of this machine.
 cleanup_local() {
@@ -16,13 +17,14 @@ if ! hcloud_has server "$SERVER_NAME"; then
   old_ip=$(cat "$IP_STATE" 2>/dev/null || true)
   echo "Leftovers: local SSH config and pinned host key${old_ip:+, DNS record $DNS_HOST -> $old_ip}."
   read -r -p 'Type CLEANUP to remove them: ' answer
-  [[ "$answer" == CLEANUP ]] || { echo 'Cancelled'; exit 1; }
+  [[ "$answer" == CLEANUP ]] || { echo 'Cancelled'; final_event "cancelled (server not found, no CLEANUP)"; exit 1; }
   if [[ -n "$old_ip" ]]; then
     ./dns.sh delete "$old_ip" || echo 'WARNING: DNS removal failed; remove the stale record manually.' >&2
   else
     echo "No recorded IP: DNS record $DNS_HOST left untouched."
   fi
   cleanup_local
+  final_event "cleaned up (server not found in the project)"
   exit 0
 fi
 IP=$(hcloud server ip "$SERVER_NAME")
@@ -137,13 +139,15 @@ REMOTE
 echo "$report"
 if grep -q '^UNSAVED WORK' <<<"$report"; then
   read -r -p 'Unsaved work will be lost. Type DISCARD to continue: ' discard
-  [[ "$discard" == DISCARD ]] || { echo 'Cancelled: commit and push first'; exit 1; }
+  [[ "$discard" == DISCARD ]] || { echo 'Cancelled: commit and push first'; final_event "cancelled (unsaved work)"; exit 1; }
 fi
 }
 printf '\nServer %s (%s) and ALL its data (including %s) will be DESTROYED.\n' "$SERVER_NAME" "$IP" "${WSS[*]}"
 read -r -p 'Type DELETE to continue: ' confirm
-[[ "$confirm" == DELETE ]] || { echo 'Cancelled'; exit 1; }
+[[ "$confirm" == DELETE ]] || { echo 'Cancelled'; final_event "cancelled (no DELETE)"; exit 1; }
 hcloud server delete "$SERVER_NAME"
+log_event "server deleted id=$SERVER_ID ip=$IP$( (( SKIP )) && echo ' (--force, no git checks)')"
 ./dns.sh delete "$IP" || echo 'WARNING: DNS removal failed; remove the stale record manually.' >&2
 cleanup_local
+final_event "deleted"
 echo "Server $SERVER_NAME deleted."
