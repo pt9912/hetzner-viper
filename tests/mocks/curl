@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+"""Fake Cloudflare DNS API (records endpoint). State: $MOCK_STATE/cf.json."""
+import json, os, sys, urllib.parse
+args = sys.argv[1:]
+sf = os.path.join(os.environ['MOCK_STATE'], 'cf.json')
+with open(os.path.join(os.environ['MOCK_STATE'], 'calls.log'), 'a') as f:
+    f.write('curl ' + ' '.join(args) + '\n')
+recs = json.load(open(sf)) if os.path.exists(sf) else []
+method = args[args.index('-X') + 1] if '-X' in args else 'GET'
+url = [a for a in args if a.startswith('https://')][0]
+data = json.loads(args[args.index('--data') + 1]) if '--data' in args else None
+u = urllib.parse.urlparse(url)
+rid = u.path.rstrip('/').split('/')[-1] if not u.path.endswith('dns_records') else None
+def out(result):
+    json.dump(recs, open(sf, 'w'))
+    print(json.dumps({'success': True, 'result': result}))
+if method == 'GET':
+    q = urllib.parse.parse_qs(u.query)
+    print(json.dumps({'success': True, 'result': [r for r in recs if r['name'] == q['name'][0]]}))
+elif method == 'POST':
+    data['id'] = 'rec%d' % (len(recs) + 1); recs.append(data); out(data)
+elif method == 'PUT':
+    recs[:] = [dict(data, id=rid) if r['id'] == rid else r for r in recs]; out(data)
+elif method == 'DELETE':
+    recs[:] = [r for r in recs if r['id'] != rid]; out({'id': rid})

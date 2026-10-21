@@ -1,0 +1,122 @@
+# shellcheck shell=bash
+# Tests for setup.sh / start.sh. Sourced by run.sh; helpers: run, check, has, count_is.
+
+test_setup_creates_keys_and_ca_trust() {
+  run setup.sh >/dev/null
+  check "login key"  test -f "$HOME/.ssh/hetzner-build.pub"
+  check "host CA"    test -f "$HOME/.ssh/hetzner_claude_host_ca"
+  check "wildcard CA trust" has '^@cert-authority \*\.test\.invalid ssh-ed25519 ' "$HOME/.ssh/known_hosts_hetzner_claude_ca"
+}
+
+test_start_rejects_bad_machine_names() {
+  run setup.sh >/dev/null
+  ! run start.sh 2>/dev/null
+  ! run start.sh Bad_Name 2>/dev/null
+  ! run start.sh -x 2>/dev/null
+  check "nothing created" test ! -s <(grep '^hcloud' "$CALLS")
+}
+
+test_start_creates_all_resources_for_a_machine() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  check "server"   has 'hcloud server create --name claude-web ' "$CALLS"
+  check "no extra volume" bash -c "! grep -q -i volume '$CALLS'"
+  check "firewall" has 'hcloud firewall create --name claude-ssh' "$CALLS"
+  check "dns A record" has '"name": "web.test.invalid"' "$MOCK_STATE/cf.json"
+  check "managed marker" has 'managed by hetzner-claude' "$MOCK_STATE/cf.json"
+  check "ssh config" has 'HostName web.test.invalid' "$HOME/.ssh/config_hetzner_claude_web"
+  check "ssh include" has 'Include .*config_hetzner_claude_web' "$HOME/.ssh/config"
+  check "workspace dir created for builder" has "install -d -o builder -g builder '$T/mnt'" "$CALLS"
+}
+
+test_user_data_carries_signed_host_key_via_ssh_keys() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  ud="$MOCK_STATE/hcloud/server/claude-web.user-data"
+  python3 -I - "$ud" "$T" <<'PY'
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+assert 'ssh_keys' in d and set(d['ssh_keys']) == {'ed25519_private', 'ed25519_public', 'ed25519_certificate'}
+assert d['users'][0]['name'] == 'builder' and len(d['users']) == 1
+assert d['users'][0]['ssh_authorized_keys'][0].startswith('ssh-ed25519 ')
+assert not any(w['path'].startswith('/etc/ssh/ssh_host_') for w in d['write_files'])
+open(sys.argv[2] + '/cert.pub', 'w').write(d['ssh_keys']['ed25519_certificate'] + '\n')
+PY
+  ssh-keygen -L -f "$T/cert.pub" > "$T/cert.txt"
+  check "host cert type" has 'host certificate' "$T/cert.txt"
+  check "principal is machine DNS name" has 'web\.test\.invalid' "$T/cert.txt"
+  check "signed by our CA" hasf "$(ssh-keygen -lf "$HOME/.ssh/hetzner_claude_host_ca.pub" | awk '{print $2}')" "$T/cert.txt"
+}
+
+test_second_machine_shares_key_and_firewall() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  run start.sh api >/dev/null
+  check "one firewall"  count_is 'hcloud firewall create' "$CALLS" 1
+  check "one login key" count_is 'hcloud ssh-key create' "$CALLS" 1
+  check "two servers"   count_is 'hcloud server create' "$CALLS" 2
+  check "api dns" has '"name": "api.test.invalid"' "$MOCK_STATE/cf.json"
+  check "web dns kept" has '"name": "web.test.invalid"' "$MOCK_STATE/cf.json"
+  check "own ssh config" test -f "$HOME/.ssh/config_hetzner_claude_api"
+}
+
+test_restart_of_running_machine_is_idempotent() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  run start.sh web >/dev/null
+  check "server created once" count_is 'hcloud server create' "$CALLS" 1
+  check "one dns record" test "$(jq length "$MOCK_STATE/cf.json")" = 1
+}
+
+test_start_clones_repo_once() {
+  run setup.sh >/dev/null
+  git init -q --bare "$T/origin.git"
+  git clone -q "$T/origin.git" "$T/seed" 2>/dev/null
+  (cd "$T/seed" && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init && git push -q origin HEAD:main 2>/dev/null)
+  run start.sh web "$T/origin.git" >/dev/null
+  check "cloned into mount point" test -d "$T/mnt/origin/.git"
+  check "vscode opens clone" has "code --remote ssh-remote\+hetzner-claude-web $T/mnt/origin" "$CALLS"
+  out=$(run start.sh web "$T/origin.git")
+  check "second start does not reclone" bash -c "grep -q 'already present' <<<'$out'"
+}
+
+test_repo_from_machine_file_with_deploy_key() {
+  run setup.sh >/dev/null
+  git init -q --bare "$T/origin.git"
+  echo "key-material" > "$T/deploy"
+  printf 'REPO_URL=%s\nGIT_DEPLOY_KEY_FILE=%s\n' "$T/origin.git" "$T/deploy" > "$W/machines/web.env.local"
+  run start.sh web >/dev/null
+  check "key copied" test "$(cat "$MOCK_STATE/scp/deploy_key")" = key-material
+  check "repo dir" test -d "$T/mnt/origin/.git"
+  check "core.sshCommand set" has 'deploy_key' "$T/mnt/origin/.git/config"
+}
+
+test_machine_file_overrides_server_type() {
+  run setup.sh >/dev/null
+  echo 'SERVER_TYPE=cx11' > "$W/machines/small.env.local"
+  run start.sh small >/dev/null
+  check "override" has '--type cx11' "$CALLS"
+  run start.sh big >/dev/null
+  check "default elsewhere" has 'claude-big .*--type cx53' "$CALLS"
+}
+
+test_start_without_setup_fails_cleanly() {
+  ! run start.sh web 2>"$T/err"
+  check "hint" has 'Run ./setup.sh first' "$T/err"
+}
+
+test_dns_not_propagated_keeps_server() {
+  run setup.sh >/dev/null
+  MOCK_DNS_STALE=1 && export MOCK_DNS_STALE
+  ! run start.sh web 2>"$T/err"
+  check "message" has 'DNS not yet propagated' "$T/err"
+  check "server kept" test -f "$MOCK_STATE/hcloud/server/claude-web.json"
+}
+
+test_dns_refuses_foreign_record() {
+  run setup.sh >/dev/null
+  echo '[{"id":"x1","type":"A","name":"web.test.invalid","content":"198.51.100.1","comment":"mine"}]' > "$MOCK_STATE/cf.json"
+  ! MACHINE=web run dns.sh set 203.0.113.9 2>"$T/err"
+  check "refused" has 'not managed by this setup' "$T/err"
+  check "record untouched" has '198.51.100.1' "$MOCK_STATE/cf.json"
+}

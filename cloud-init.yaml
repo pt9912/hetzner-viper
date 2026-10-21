@@ -1,0 +1,51 @@
+#cloud-config
+package_update: true
+packages:
+  - docker.io
+  - git
+  - make
+  - build-essential
+  - curl
+  - ca-certificates
+  - tmux
+  - jq
+  - openssh-server
+  - psmisc
+users:
+  - name: builder
+    shell: /bin/bash
+    groups: [sudo, docker]
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: true
+ssh_pwauth: false
+
+disable_root: true
+
+write_files:
+  - path: /etc/ssh/sshd_config.d/01-keys-only.conf
+    owner: root:root
+    permissions: '0644'
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      ChallengeResponseAuthentication no
+      PubkeyAuthentication yes
+      PermitRootLogin no
+      PermitEmptyPasswords no
+      AuthenticationMethods publickey
+  - path: /etc/ssh/sshd_config.d/60-host-cert.conf
+    owner: root:root
+    permissions: '0644'
+    content: |
+      HostKey /etc/ssh/ssh_host_ed25519_key
+      HostCertificate /etc/ssh/ssh_host_ed25519_key-cert.pub
+
+runcmd:
+  - sshd -t
+  - systemctl reload ssh
+  - systemctl enable --now docker
+  - mkdir -p /home/builder/.ssh
+  - chown builder:builder /home/builder/.ssh
+  - chmod 700 /home/builder/.ssh
+  - su - builder -c 'curl -fsSL https://claude.ai/install.sh | bash'
+  - touch /var/tmp/claude-ready

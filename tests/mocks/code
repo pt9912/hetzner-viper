@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+echo "code $*" >> "$MOCK_STATE/calls.log"

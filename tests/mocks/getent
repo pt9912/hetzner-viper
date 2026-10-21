@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+[[ -z "${MOCK_DNS_STALE:-}" && -f "$MOCK_STATE/cf.json" ]] || exit 2
+ip=$(jq -r --arg n "$2" '.[]|select(.name==$n)|.content' "$MOCK_STATE/cf.json")
+[[ -n "$ip" ]] && echo "$ip STREAM $2"

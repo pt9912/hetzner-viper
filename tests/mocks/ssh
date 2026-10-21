@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Fake ssh. Logs the call; runs plain `bash -s ...` scripts locally (git clone / stop checks).
+echo "ssh $*" >> "$MOCK_STATE/calls.log"
+[[ -z "${MOCK_SSH_DOWN:-}" ]] || exit 255
+args=("$@"); i=0
+while (( i < ${#args[@]} )) && [[ "${args[i]}" != hetzner-* ]]; do i=$((i+1)); done
+cmd=("${args[@]:i+1}")
+case "${cmd[*]}" in
+  "sudo bash -s") cat > "$MOCK_STATE/remote-mount.sh" ;;
+  "bash -s"*) HOME="$MOCK_STATE/remote-home" bash "${cmd[@]:1}" ;;
+  chmod*) ;;
+esac
+exit 0

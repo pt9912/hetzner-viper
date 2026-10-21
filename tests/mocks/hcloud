@@ -1,0 +1,43 @@
+#!/usr/bin/env python3
+"""Stateful fake of the hcloud CLI. State lives in $MOCK_STATE/hcloud/<kind>/<name>.json."""
+import json, os, shutil, sys
+state = os.path.join(os.environ['MOCK_STATE'], 'hcloud')
+args = sys.argv[1:]
+with open(os.path.join(os.environ['MOCK_STATE'], 'calls.log'), 'a') as f:
+    f.write('hcloud ' + ' '.join(args) + '\n')
+
+def path(kind, name):
+    os.makedirs(os.path.join(state, kind), exist_ok=True)
+    return os.path.join(state, kind, name + '.json')
+
+def opt(flag):
+    return args[args.index(flag) + 1] if flag in args else None
+
+kind, action = args[0], args[1]
+name = opt('--name') if action in ('create',) else (args[2] if len(args) > 2 else None)
+if kind in ('ssh-key', 'firewall', 'server'):
+    p = path(kind, name)
+    if action == 'describe':
+        if not os.path.exists(p):
+            print(f'hcloud: {kind} not found: {name}', file=sys.stderr); sys.exit(1)
+        if opt('-o') == 'json':
+            print(open(p).read())
+    elif action == 'create':
+        data = {'name': name, 'args': args, 'id': 1000 + len(os.listdir(os.path.dirname(p)))}
+        if kind == 'server':
+            data['ip'] = '203.0.113.%d' % (10 + data['id'] % 200)
+            ud = opt('--user-data-from-file')
+            shutil.copy(ud, p.replace('.json', '.user-data'))
+        json.dump(data, open(p, 'w'))
+    elif action == 'add-rule':
+        pass
+    elif action == 'ip' and kind == 'server':
+        if not os.path.exists(p):
+            sys.exit(1)
+        print(json.load(open(p))['ip'])
+    elif action == 'delete':
+        os.remove(p)
+    else:
+        print('unsupported mock call: ' + ' '.join(args), file=sys.stderr); sys.exit(2)
+else:
+    print('unsupported mock call: ' + ' '.join(args), file=sys.stderr); sys.exit(2)

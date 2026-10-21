@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+echo "scp $*" >> "$MOCK_STATE/calls.log"
+mkdir -p "$MOCK_STATE/scp"; cp "${@: -2:1}" "$MOCK_STATE/scp/$(basename "${@: -1}")"

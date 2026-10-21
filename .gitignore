@@ -1,0 +1,5 @@
+.env.local
+*.key
+*.pem
+.env
+machines/*.env.local
