@@ -1,17 +1,30 @@
 #!/usr/bin/env bash
 # Fake ssh. Like real ssh, everything after the host is joined into ONE string that the
-# remote shell parses again; `bash -s ...` scripts and the readiness probe run locally.
+# remote shell parses again, and without -n stdin is consumed. `bash -s ...` scripts and
+# the readiness probe run locally in a sandbox.
 echo "ssh $*" >> "$MOCK_STATE/calls.log"
-[[ -z "${MOCK_SSH_DOWN:-}" ]] || exit 255
-args=("$@"); i=0
-while (( i < ${#args[@]} )) && [[ "${args[i]}" != hetzner-* ]]; do i=$((i+1)); done
+args=("$@"); i=0; no_stdin=0
+while (( i < ${#args[@]} )) && [[ "${args[i]}" != hetzner-* ]]; do
+  [[ "${args[i]}" == -n ]] && no_stdin=1
+  i=$((i+1))
+done
 remote="${args[*]:i+1}"
+consume() { (( no_stdin )) || cat >/dev/null; }
+[[ -z "${MOCK_SSH_DOWN:-}" ]] || { consume; exit 255; }
+export HOME="$MOCK_STATE/remote-home" VIPER_TMP_DIRS="$MOCK_STATE/remote-tmp"
+mkdir -p "$HOME" "$VIPER_TMP_DIRS"
 case "$remote" in
-  # readiness probe: run it against fake cloud-init/docker and a sandboxed marker file
+  # readiness probe: fake cloud-init/docker, sandboxed marker file
   "cloud-init status"*)
+    consume
     PATH="$(dirname "$0")/remote:$PATH" bash -c "${remote//\/var\/tmp\/claude-ready/$MOCK_STATE/claude-ready}"
     exit $? ;;
+  *install.sh*)
+    consume
+    [[ -z "${MOCK_INSTALL_FAIL:-}" ]] || exit 1
+    touch "$MOCK_STATE/claude-ready" ;;
   "gh auth login"*) cat > "$MOCK_STATE/gh-token" ;;
-  "bash -s"*) HOME="$MOCK_STATE/remote-home" bash -c "$remote"; exit $? ;;
+  "bash -s"*) (( no_stdin )) && exec </dev/null; bash -c "$remote"; exit $? ;;
+  *) consume ;;
 esac
 exit 0

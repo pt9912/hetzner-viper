@@ -12,13 +12,23 @@ IPAD_SSH_PUBLIC_KEY_FILE="${IPAD_SSH_PUBLIC_KEY_FILE:+${IPAD_SSH_PUBLIC_KEY_FILE
 for f in "${GIT_DEPLOY_KEY_FILE:-}" "${IPAD_SSH_PUBLIC_KEY_FILE:-}"; do
   [[ -z "$f" || -r "$f" ]] || { echo "File not readable: $f (in the container only ~/.ssh is visible)" >&2; exit 1; }
 done
-if ! hcloud_has ssh-key "$KEY_NAME"; then
+# Hetzner allows each public key only once per project: reuse it under whatever name it has.
+fingerprint=$(ssh-keygen -E md5 -lf "$SSH_KEY.pub" | awk '{print $2}' | sed 's/^MD5://')
+keys=$(hcloud ssh-key list -o noheader -o columns=name,fingerprint) || { echo 'hcloud ssh-key list failed (check HCLOUD_TOKEN / project / network)' >&2; exit 1; }
+existing=$(awk -v fp="$fingerprint" 'tolower($2) == tolower(fp) {print $1; exit}' <<<"$keys")
+if [[ -n "$existing" ]]; then
+  KEY_NAME="$existing"
+elif awk -v n="$KEY_NAME" '$1 == n {found=1} END {exit !found}' <<<"$keys"; then
+  echo "SSH key $KEY_NAME in Hetzner belongs to a different public key than $SSH_KEY.pub" >&2; exit 1
+else
   hcloud ssh-key create --name "$KEY_NAME" --public-key-from-file "$SSH_KEY.pub"
 fi
 if ! hcloud_has firewall "$FW_NAME"; then
   hcloud firewall create --name "$FW_NAME"
 fi
-if [[ "$(hcloud firewall describe "$FW_NAME" -o json | jq '.rules | length')" == 0 ]]; then
+# separate assignment: a failing describe must abort, not count as "has rules"
+rule_count=$(hcloud firewall describe "$FW_NAME" -o json | jq '.rules | length')
+if [[ "$rule_count" == 0 ]]; then
   hcloud firewall add-rule "$FW_NAME" --direction in --protocol tcp --port 22 --source-ips "${SSH_ALLOWED_CIDRS:-0.0.0.0/0,::/0}"
 else
   echo "Existing firewall $FW_NAME: verify that its rules permit your connection."
@@ -61,7 +71,7 @@ else
   echo 'Existing server: reusing it (trusted via host CA, or the host key pinned at creation).'
 fi
 IP=$(hcloud server ip "$SERVER_NAME")
-echo "$IP" > "$STATE/ip-$MACHINE"
+echo "$IP" > "$IP_STATE"
 write_ssh_config "$IP"
 touch "$HOME/.ssh/config"
 chmod 600 "$HOME/.ssh/config"
@@ -71,18 +81,27 @@ if ! grep -Fqx "Include $SSH_CFG" "$HOME/.ssh/config"; then
 fi
 # The DNS name is for people (iPad, other clients); the scripts connect by IP and need not wait for it.
 ./dns.sh set "$IP"
-echo 'Waiting for trusted SSH host certificate and cloud-init ...'
-ready=0
+echo 'Waiting for SSH and cloud-init ...'
+# The probe always exits 0 once connected; only connection failures are retried.
+# cloud-init exits 0 (done), 2 (done with warnings) or 1 (errors).
+probe='cloud-init status --wait >/dev/null 2>&1; echo "cloud-init=$?"; test -f /var/tmp/claude-ready && echo claude=ok; docker info >/dev/null 2>&1 && echo docker=ok; true'
+status=''
 for i in $(seq 1 120); do
-  if ssh -F "$SSH_CFG" -o BatchMode=yes -o ConnectTimeout=5 "$SSH_ALIAS" \
-    'cloud-init status --wait >/dev/null 2>&1; rc=$?; { [ $rc = 0 ] || [ $rc = 2 ]; } && test -f /var/tmp/claude-ready && docker info >/dev/null 2>&1' 2>/dev/null; then
-    ready=1; break
-  fi
+  status=$(ssh -n -F "$SSH_CFG" -o BatchMode=yes -o ConnectTimeout=5 "$SSH_ALIAS" "$probe" 2>/dev/null) && break
+  status=''
   sleep 5
 done
-[[ "$ready" == 1 ]] || { echo 'SSH/cloud-init not ready; server retained.' >&2; exit 1; }
+[[ -n "$status" ]] || { echo 'SSH not reachable; server retained.' >&2; exit 1; }
+# runcmd runs only once per server; a failed Claude install is repaired here instead.
+if ! grep -qx 'claude=ok' <<<"$status"; then
+  echo 'Claude Code is not installed yet; installing ...'
+  ssh -n -F "$SSH_CFG" "$SSH_ALIAS" "bash -o pipefail -c 'curl -fsSL https://claude.ai/install.sh | bash' && sudo touch /var/tmp/claude-ready" \
+    || { echo 'Claude Code installation failed; server retained. Rerun ./start.sh to try again.' >&2; exit 1; }
+fi
+grep -qx 'docker=ok' <<<"$status" || { echo 'Docker is not running; see /var/log/cloud-init-output.log on the server. Server retained.' >&2; exit 1; }
+grep -qx 'cloud-init=1' <<<"$status" && echo 'WARNING: cloud-init reported errors; see /var/log/cloud-init-output.log on the server.' >&2
 # Work directory on the server's own disk; it is deleted together with the server.
-ssh -F "$SSH_CFG" "$SSH_ALIAS" "sudo install -d -o builder -g builder $(printf %q "$WORKSPACE_DIR")"
+ssh -n -F "$SSH_CFG" "$SSH_ALIAS" "sudo install -d -o builder -g builder $(printf %q "$WORKSPACE_DIR")"
 echo "$WORKSPACE_DIR" > "$WORKSPACE_STATE"
 # GitHub CLI login for builder. The token goes through stdin (not argv, not user-data);
 # `gh auth setup-git` makes git use it for HTTPS clone/push.
@@ -96,7 +115,7 @@ if [[ -n "${REPO_URL:-}" ]]; then
   WORKDIR="$WORKSPACE_DIR/$(basename "${REPO_URL%.git}")"
   if [[ -n "${GIT_DEPLOY_KEY_FILE:-}" ]]; then
     scp -F "$SSH_CFG" -q "$GIT_DEPLOY_KEY_FILE" "$SSH_ALIAS:.ssh/deploy_key"
-    ssh -F "$SSH_CFG" "$SSH_ALIAS" 'chmod 600 ~/.ssh/deploy_key'
+    ssh -n -F "$SSH_CFG" "$SSH_ALIAS" 'chmod 600 ~/.ssh/deploy_key'
   fi
   # ssh passes one command string to the remote shell: quote each argument, keep empty ones
   ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$REPO_URL" "$WORKDIR" "${REPO_BRANCH:-}" "${GIT_DEPLOY_KEY_FILE:+1}")" <<'CLONE'

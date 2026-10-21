@@ -24,9 +24,9 @@ export HCLOUD_TOKEN=... CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ZONE_ID=...
 
 - `make test` runs the tests against mocks (offline, no cost); `make docker-test` runs the same tests in a container without network.
 - `make up MACHINE=web REPO=<url>` and `make down MACHINE=web` run the scripts inside a Docker container.
-- Several machines in parallel: `./start.sh api …` next to `web`. Each has its own server and DNS name `<name>.<DNS_DOMAIN>`.
+- Several machines in parallel: `./start.sh api …` next to `web`. Each has its own server and DNS name `<SERVER_PREFIX>-<name>.<DNS_DOMAIN>` (default prefix `claude`).
 - With `GH_TOKEN` (a GitHub PAT, ideally fine-grained per machine) the GitHub CLI `gh` is logged in on the server and `git` pushes over HTTPS, so the agent can also open pull requests.
-- `stop.sh` checks the Git state of all repositories and worktrees (uncommitted changes, commits on any branch that are on no remote, stash entries), lists ignored files, and additionally asks for `DISCARD` when there is unsaved work.
+- `stop.sh` checks the Git state of all repositories and worktrees in the workspace, the home directory and the temp directories (uncommitted changes, commits on any branch that are on no remote, stash entries), flags files outside any repository, lists ignored files, and additionally asks for `DISCARD` when there is unsaved work.
 
 The full guide with all tasks, settings and troubleshooting is the [user manual](docs/user/handbuch.md) (German).
 
@@ -49,7 +49,7 @@ Machines are disposable: everything that matters lives in the Git repository. Th
 
 - SSH with public key only (no password, no root login). By default port 22 is open to the whole internet. Restrict `SSH_ALLOWED_CIDRS` if you only work from fixed networks.
 - The user `builder` has passwordless sudo and Docker access, which equals root. Only use trusted repositories.
-- The server uses a CA-signed SSH host certificate (valid for seven days, no automatic renewal). For this, the private host key is transferred in the Hetzner user data, where project administrators and processes on the server can read it. The CA key stays local. The machine that ran `start.sh` additionally pins the host key, so connections keep working after the certificate expires.
+- The server uses a CA-signed SSH host certificate (valid for seven days, no automatic renewal). For this, the private host key is transferred in the Hetzner user data, where project administrators and processes on the server can read it. The CA key stays local. The machine that ran `start.sh` pins the host key of each server and trusts only that key, so a key leaked from an earlier server is rejected and connections keep working after the certificate expires.
 - The login key has no passphrase.
 - **Everything on the server is lost when it is deleted**, including the Claude login.
 - The scripts create paid resources. Never put API tokens into Git.

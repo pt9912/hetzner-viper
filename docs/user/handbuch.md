@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.7  
+Version: 1.8  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -54,7 +54,7 @@ Jeder Rechner hat einen Namen, den Sie beim Start angeben (`<rechner>`). Erlaubt
 | Ressource | Name |
 |---|---|
 | Server | `<SERVER_PREFIX>-<rechner>` |
-| DNS-Name | `<rechner>.<DNS_DOMAIN>` |
+| DNS-Name | `<SERVER_PREFIX>-<rechner>.<DNS_DOMAIN>` |
 | SSH-Alias | `hetzner-<SERVER_PREFIX>-<rechner>` |
 
 Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
@@ -103,7 +103,7 @@ Die erstmalige Einrichtung ist abgeschlossen und die drei Zugangsdaten sind gese
    ./start.sh web https://git.example.org/team/web.git
    ```
    Ohne URL wird `REPO_URL` aus `machines/web.env.local` verwendet (siehe Kapitel 4).
-2. Warten Sie. Das Skript legt Server, Firewall und DNS-Eintrag an und wartet auf den Abschluss der Servereinrichtung. Das dauert einige Minuten.
+2. Warten Sie. Das Skript legt Server, Firewall und DNS-Eintrag an und wartet auf den Abschluss der Servereinrichtung. Das dauert meist einige Minuten, höchstens etwa 20.
 3. VS Code öffnet sich automatisch mit dem geklonten Repository, sofern der Befehl `code` vorhanden ist. Sonst öffnen Sie die Verbindung `hetzner-claude-web` in VS Code Remote-SSH selbst.
 
 #### Ergebnis
@@ -114,7 +114,8 @@ Die Meldung `Ready: ssh hetzner-claude-web (work dir: …)` erscheint. Das Repos
 
 * Ein schon vorhandenes Repository wird beim erneuten Aufruf von `start.sh` für einen laufenden Server nicht erneut geklont.
 * Das Host-Zertifikat des Servers ist sieben Tage gültig. Bei jedem neuen Server wird ein frisches Zertifikat erstellt. Eine manuelle Prüfung des Fingerabdrucks ist nicht nötig.
-* Zusätzlich hinterlegt `start.sh` den Host-Schlüssel des Servers in `~/.ssh/known_hosts_hetzner_claude_<rechner>`. Damit funktionieren `ssh`, VS Code und `stop.sh` auch nach Ablauf des Zertifikats weiter.
+* Zusätzlich hinterlegt `start.sh` den Host-Schlüssel des Servers in `~/.ssh/known_hosts_hetzner_<SERVER_PREFIX>-<rechner>`. Die Skripte, `ssh` und VS Code vertrauen auf diesem Computer nur diesem Schlüssel. Ein Schlüssel eines früheren Servers wird abgelehnt, auch wenn sein Zertifikat noch gültig ist. Die Verbindung funktioniert auch nach Ablauf des Zertifikats. Fehlt der hinterlegte Schlüssel (Server auf einem anderen Computer angelegt), gilt die Host-CA.
+* Schlägt die Installation von Claude Code bei der Einrichtung fehl, holt `start.sh` sie beim nächsten Aufruf nach.
 * Die Skripte verbinden sich über die IP-Adresse des Servers. Den DNS-Eintrag brauchen nur Sie für andere Geräte (etwa das iPad). `start.sh` wartet deshalb nicht darauf, dass er weltweit sichtbar ist.
 
 ### Rechner im Container einrichten und beenden
@@ -142,7 +143,7 @@ Das Ergebnis ist dasselbe wie beim direkten Aufruf. Login-Schlüssel, Host-CA un
 * `make up` baut das Image bei Bedarf und übernimmt Ihre Benutzerkennung und Ihr Home-Verzeichnis. Das Image gilt daher nur für Ihren Benutzer.
 * Der Container sieht das Repository nur lesend.
 * Von Ihrem Home-Verzeichnis sieht der Container nur `~/.ssh`. Legen Sie Dateien für `GIT_DEPLOY_KEY_FILE` und `IPAD_SSH_PUBLIC_KEY_FILE` deshalb dort ab. Sonst bricht `start.sh` mit „File not readable“ ab, bevor etwas angelegt wird.
-* Die Skripte nutzen nur die SSH-Konfiguration des jeweiligen Rechners (`~/.ssh/config_hetzner_claude_<rechner>`). Einstellungen in Ihrer `~/.ssh/config` stören daher nicht.
+* Die Skripte nutzen nur die SSH-Konfiguration des jeweiligen Rechners (`~/.ssh/config_hetzner_<SERVER_PREFIX>-<rechner>`). Einstellungen in Ihrer `~/.ssh/config` stören daher nicht.
 
 ### Mit Claude Code arbeiten
 
@@ -250,7 +251,7 @@ Schließen Sie alle VS-Code-Fenster und Terminals, die auf dem Rechner geöffnet
 #### Vorgehen
 
 1. Führen Sie `./stop.sh <rechner>` aus.
-2. Lesen Sie die Ausgabe: Das Skript zeigt je Repository und je Worktree den Git-Stand, Commits, die auf keinem Remote liegen (auf allen lokalen Branches), und die tmux-Sitzungen. Es prüft das Arbeitsverzeichnis, mit dem der Rechner gestartet wurde. Gibt es ungesicherte Arbeit (uncommittete Änderungen, Commits auf keinem Remote, mit `git stash` beiseitegelegte Änderungen oder ein nicht lesbares Repository), steht `UNSAVED WORK` in der Ausgabe, und Sie müssen zusätzlich `DISCARD` eingeben, um fortzufahren. Von Git ignorierte Dateien (zum Beispiel `.env` oder Build-Verzeichnisse) werden unter **Ignored by git (also lost)** aufgelistet, blockieren aber nicht.
+2. Lesen Sie die Ausgabe: Das Skript zeigt je Repository und je Worktree den Git-Stand, Commits, die auf keinem Remote liegen (auf allen lokalen Branches), und die tmux-Sitzungen. Es sucht Repositories im Arbeitsverzeichnis, mit dem der Rechner gestartet wurde, im Home-Verzeichnis von `builder` und in `/tmp` und `/var/tmp`. Dateien und Ordner direkt im Arbeitsverzeichnis, die zu keinem Repository gehören, listet es unter **Not in any git repository (lost)** auf. Gibt es ungesicherte Arbeit (uncommittete Änderungen, Commits auf keinem Remote, mit `git stash` beiseitegelegte Änderungen, Dateien außerhalb eines Repositorys, ein fehlendes Arbeitsverzeichnis oder ein nicht lesbares Repository), steht `UNSAVED WORK` in der Ausgabe, und Sie müssen zusätzlich `DISCARD` eingeben, um fortzufahren. Von Git ignorierte Dateien (zum Beispiel `.env` oder Build-Verzeichnisse) werden unter **Ignored by git (also lost)** aufgelistet, blockieren aber nicht.
 3. Sichern Sie offene Änderungen (committen und pushen), falls nötig, und starten Sie `stop.sh` erneut.
 4. Geben Sie zur Bestätigung `DELETE` ein.
 
@@ -262,7 +263,7 @@ Server, DNS-Eintrag und die lokale SSH-Konfiguration des Rechners sind gelöscht
 
 * Auch Ihre Claude-Anmeldung und alle nicht gepushten Änderungen gehen verloren.
 * Das Skript bricht ab, wenn Sie `DELETE` nicht eingeben.
-* Haben Sie den Server schon in der Hetzner Console gelöscht, räumt `./stop.sh <rechner>` nur noch DNS-Eintrag und SSH-Konfiguration auf.
+* Findet `stop.sh` den Server im Hetzner-Projekt nicht (etwa weil Sie ihn in der Hetzner Console gelöscht haben), räumt es SSH-Konfiguration, hinterlegten Schlüssel und DNS-Eintrag erst nach Eingabe von `CLEANUP` auf. So richtet ein Token für das falsche Projekt keinen Schaden an. Den DNS-Eintrag löscht es nur, wenn er noch auf die zuletzt bekannte IP-Adresse zeigt.
 
 ### Einen nicht erreichbaren Rechner löschen
 
@@ -345,14 +346,34 @@ Die Skripte importieren und exportieren keine Daten. Ihre Arbeitsdateien liegen 
 **Ursache:** Die Hetzner-API hat nicht geantwortet oder das Token abgelehnt: Es ist abgelaufen, gehört zu einem anderen Projekt oder hat keine Schreibrechte, oder das Netz ist gestört. Die Skripte brechen dann ab, ohne etwas anzulegen, zu löschen oder aufzuräumen.  
 **Lösung:** Prüfen Sie `HCLOUD_TOKEN` und das Hetzner-Projekt und führen Sie den Befehl erneut aus.
 
-### Meldung: "SSH/cloud-init not ready; server retained."
+### Meldung: "SSH not reachable; server retained."
 
-**Ursache:** Der Server ist nach 10 Minuten nicht per SSH erreichbar oder die Einrichtung ist nicht abgeschlossen. Mögliche Gründe: Die Firewall blockiert Ihr Netz, die Servereinrichtung ist mit Fehlern abgebrochen, die Installation von Claude Code ist fehlgeschlagen oder das Zertifikat wird nicht akzeptiert. Warnungen von cloud-init allein führen nicht zu dieser Meldung.  
+**Ursache:** Der Server ist nach etwa 20 Minuten nicht per SSH erreichbar. Mögliche Gründe: Die Firewall blockiert Ihr Netz, der Server startet nicht, oder sein Host-Schlüssel passt nicht zum hinterlegten.  
 **Lösung:**
 1. Prüfen Sie die Firewall-Regel für Port 22 in der Hetzner Console.
 2. Öffnen Sie die Web-Konsole des Servers und lesen Sie `/var/log/cloud-init-output.log`.
 3. Starten Sie `./start.sh <rechner>` erneut, wenn die Ursache behoben ist.
 4. Hilft das nicht, löschen Sie den Rechner mit `./stop.sh <rechner> --force` und legen Sie ihn neu an.
+
+### Meldung: "Claude Code installation failed; server retained."
+
+**Ursache:** Die Installation von Claude Code ist bei der Einrichtung und beim Nachholen gescheitert, meist wegen eines Netzwerkproblems.  
+**Lösung:** Führen Sie `./start.sh <rechner>` erneut aus. Das Skript versucht die Installation dann noch einmal.
+
+### Meldung: "Docker is not running"
+
+**Ursache:** Die Servereinrichtung ist unvollständig, Docker läuft nicht.  
+**Lösung:** Lesen Sie `/var/log/cloud-init-output.log` auf dem Server. Meist hilft es, den Rechner mit `./stop.sh <rechner>` zu löschen und neu anzulegen.
+
+### Meldung: "WARNING: cloud-init reported errors"
+
+**Ursache:** cloud-init meldet Fehler, aber Claude Code und Docker laufen. Der Rechner ist nutzbar.  
+**Lösung:** Prüfen Sie bei Bedarf `/var/log/cloud-init-output.log` auf dem Server.
+
+### Meldung: "SSH key … belongs to a different public key"
+
+**Ursache:** Im Hetzner-Projekt gibt es schon einen SSH-Schlüssel namens `<SERVER_PREFIX>-login`, aber mit einem anderen Inhalt als Ihr Login-Schlüssel. Liegt Ihr Login-Schlüssel dagegen schon unter einem anderen Namen im Projekt, verwendet `start.sh` ihn einfach.  
+**Lösung:** Löschen oder benennen Sie den alten Schlüssel in der Hetzner Console um, oder setzen Sie ein anderes `SERVER_PREFIX`.
 
 ### Meldung: "File not readable: … (in the container only ~/.ssh is visible)"
 
@@ -409,7 +430,7 @@ Die Anmeldedaten liegen im Home-Verzeichnis des Servers und werden mit dem Serve
 Ja. Setzen Sie `SERVER_TYPE` in `machines/<rechner>.env.local`. Bei einem bereits laufenden Server wirkt die Änderung erst nach Löschen und Neustart.
 
 **Funktionieren bestehende Server und Volumes aus der Vorversion?**  
-Nein. Die Namen haben sich geändert, und es gibt keine separaten Volumes mehr. Löschen Sie alte Server mit der alten Version der Skripte und alte Volumes in der Hetzner Console, bevor Sie die neue Version verwenden.
+Nein. Die Namen haben sich geändert (seit Handbuch 1.8 auch DNS-Namen und lokale Dateinamen, jetzt mit Präfix), und es gibt keine separaten Volumes mehr. Löschen Sie alte Server mit der Version der Skripte, mit der Sie sie angelegt haben, und alte Volumes in der Hetzner Console, bevor Sie die neue Version verwenden.
 
 **Darf ich die Tokens in die README oder in Git schreiben?**  
 Nein. Verwenden Sie die Shell oder `.env.local`, die nicht eingecheckt wird.
@@ -446,3 +467,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.5 | v3 mit Mehrrechner-Betrieb | GitHub-CLI `gh` auf jedem Rechner. Ein PAT aus `GH_TOKEN` meldet `gh` an und wird für `git` über HTTPS genutzt. |
 | 1.6 | v3 mit Mehrrechner-Betrieb | Standard-Image ist Ubuntu 26.04 LTS. Bestehende `.env.local` mit `ubuntu-24.04` funktionieren weiter. |
 | 1.7 | v3 mit Mehrrechner-Betrieb | Klonen ohne `REPO_BRANCH` funktioniert. `stop.sh` erkennt ungepushte Commits auf allen Branches und in Worktrees und prüft das beim Start genutzte Arbeitsverzeichnis. Fehler der Hetzner-API führen zum Abbruch statt zum Aufräumen. Verbindung über die IP, keine Wartezeit auf DNS. Nach Ablauf des Zertifikats bleibt die Verbindung über den hinterlegten Host-Schlüssel möglich. Tokens erscheinen nicht mehr in Befehlszeilen und werden nicht an VS Code vererbt. |
+| 1.8 | v3 mit Mehrrechner-Betrieb | DNS-Name und lokale Dateien enthalten das Präfix (`claude-web.<domain>`). Die Skripte vertrauen nur dem hinterlegten Host-Schlüssel des jeweiligen Servers. `stop.sh` sucht Repositories auch im Home- und Temp-Verzeichnis, meldet Dateien außerhalb von Repositories und fragt vor dem Aufräumen eines nicht gefundenen Servers nach `CLEANUP`. `start.sh` holt eine fehlgeschlagene Claude-Installation nach und verwendet einen schon hochgeladenen SSH-Schlüssel weiter. Antworten können per Pipe übergeben werden. |

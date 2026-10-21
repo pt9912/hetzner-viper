@@ -17,7 +17,7 @@ Setup complete. Export credentials in your shell:
   export HCLOUD_TOKEN='...'
   export CLOUDFLARE_API_TOKEN='...'
   export CLOUDFLARE_ZONE_ID='...'
-Then run ./start.sh
+Then run ./start.sh <machine> [repo-url]
 Host CA public key for iPad SSH clients (only if they support OpenSSH host CAs):
 $(cat "$CA.pub")
 MSG

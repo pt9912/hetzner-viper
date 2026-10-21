@@ -10,9 +10,9 @@ test_setup_creates_keys_and_ca_trust() {
 
 test_start_rejects_bad_machine_names() {
   run setup.sh >/dev/null
-  ! run start.sh 2>/dev/null
-  ! run start.sh Bad_Name 2>/dev/null
-  ! run start.sh -x 2>/dev/null
+  fails run start.sh 2>/dev/null
+  fails run start.sh Bad_Name 2>/dev/null
+  fails run start.sh -x 2>/dev/null
   check "nothing created" test ! -s <(grep '^hcloud' "$CALLS")
 }
 
@@ -22,11 +22,11 @@ test_start_creates_all_resources_for_a_machine() {
   check "server"   has 'hcloud server create --name claude-web ' "$CALLS"
   check "no extra volume" bash -c "! grep -q -i volume '$CALLS'"
   check "firewall" has 'hcloud firewall create --name claude-ssh' "$CALLS"
-  check "dns A record" has '"name": "web.test.invalid"' "$MOCK_STATE/cf.json"
+  check "dns A record" has '"name": "claude-web.test.invalid"' "$MOCK_STATE/cf.json"
   check "managed marker" has 'managed by hetzner-claude' "$MOCK_STATE/cf.json"
-  check "ssh by IP" has 'HostName 203\.0\.113\.' "$HOME/.ssh/config_hetzner_claude_web"
-  check "host key checked for DNS name" has 'HostKeyAlias web\.test\.invalid' "$HOME/.ssh/config_hetzner_claude_web"
-  check "ssh include" has 'Include .*config_hetzner_claude_web' "$HOME/.ssh/config"
+  check "ssh by IP" has 'HostName 203\.0\.113\.' "$HOME/.ssh/config_hetzner_claude-web"
+  check "host key checked for DNS name" has 'HostKeyAlias claude-web\.test\.invalid' "$HOME/.ssh/config_hetzner_claude-web"
+  check "ssh include" has 'Include .*config_hetzner_claude-web' "$HOME/.ssh/config"
   check "workspace dir created for builder" has "install -d -o builder -g builder $T/mnt" "$CALLS"
 }
 
@@ -45,7 +45,7 @@ open(sys.argv[2] + '/cert.pub', 'w').write(d['ssh_keys']['ed25519_certificate'] 
 PY
   ssh-keygen -L -f "$T/cert.pub" > "$T/cert.txt"
   check "host cert type" has 'host certificate' "$T/cert.txt"
-  check "principal is machine DNS name" has 'web\.test\.invalid' "$T/cert.txt"
+  check "principal is machine DNS name" has 'claude-web\.test\.invalid' "$T/cert.txt"
   check "signed by our CA" hasf "$(ssh-keygen -lf "$HOME/.ssh/hetzner_claude_host_ca.pub" | awk '{print $2}')" "$T/cert.txt"
 }
 
@@ -56,9 +56,9 @@ test_second_machine_shares_key_and_firewall() {
   check "one firewall"  count_is 'hcloud firewall create' "$CALLS" 1
   check "one login key" count_is 'hcloud ssh-key create' "$CALLS" 1
   check "two servers"   count_is 'hcloud server create' "$CALLS" 2
-  check "api dns" has '"name": "api.test.invalid"' "$MOCK_STATE/cf.json"
-  check "web dns kept" has '"name": "web.test.invalid"' "$MOCK_STATE/cf.json"
-  check "own ssh config" test -f "$HOME/.ssh/config_hetzner_claude_api"
+  check "api dns" has '"name": "claude-api.test.invalid"' "$MOCK_STATE/cf.json"
+  check "web dns kept" has '"name": "claude-web.test.invalid"' "$MOCK_STATE/cf.json"
+  check "own ssh config" test -f "$HOME/.ssh/config_hetzner_claude-api"
 }
 
 test_restart_of_running_machine_is_idempotent() {
@@ -102,15 +102,15 @@ test_machine_file_overrides_server_type() {
 }
 
 test_start_without_setup_fails_cleanly() {
-  ! run start.sh web 2>"$T/err"
+  fails run start.sh web 2>"$T/err"
   check "hint" has 'Run ./setup.sh first' "$T/err"
 }
 
 
 test_dns_refuses_foreign_record() {
   run setup.sh >/dev/null
-  echo '[{"id":"x1","type":"A","name":"web.test.invalid","content":"198.51.100.1","comment":"mine"}]' > "$MOCK_STATE/cf.json"
-  ! MACHINE=web run dns.sh set 203.0.113.9 2>"$T/err"
+  echo '[{"id":"x1","type":"A","name":"claude-web.test.invalid","content":"198.51.100.1","comment":"mine"}]' > "$MOCK_STATE/cf.json"
+  MACHINE=web fails run dns.sh set 203.0.113.9 2>"$T/err"
   check "refused" has 'not managed by this setup' "$T/err"
   check "record untouched" has '198.51.100.1' "$MOCK_STATE/cf.json"
 }
@@ -121,18 +121,42 @@ test_ready_when_cloud_init_done_with_warnings() {
   run start.sh web >/dev/null
 }
 
-test_not_ready_when_cloud_init_failed() {
+test_cloud_init_errors_only_warn_when_everything_is_installed() {
   run setup.sh >/dev/null
   export MOCK_CLOUDINIT_RC=1
-  ! run start.sh web >/dev/null 2>"$T/err"
-  check "message" has 'not ready' "$T/err"
+  run start.sh web >/dev/null 2>"$T/err"
+  check "warning" has 'cloud-init reported errors' "$T/err"
 }
 
-test_not_ready_without_claude_marker() {
+test_docker_not_running_fails() {
+  run setup.sh >/dev/null
+  export MOCK_DOCKER_FAIL=1
+  fails run start.sh web >/dev/null 2>"$T/err"
+  check "message" has 'Docker is not running' "$T/err"
+}
+
+test_ssh_never_reachable_fails() {
+  run setup.sh >/dev/null
+  export MOCK_SSH_DOWN=1
+  fails run start.sh web >/dev/null 2>"$T/err"
+  check "message" has 'SSH not reachable' "$T/err"
+  check "server kept" test -f "$MOCK_STATE/hcloud/server/claude-web.json"
+}
+
+test_missing_claude_install_is_repaired_by_start() {
   run setup.sh >/dev/null
   rm "$MOCK_STATE/claude-ready"
-  ! run start.sh web >/dev/null 2>"$T/err"
-  check "message" has 'not ready' "$T/err"
+  run start.sh web >/dev/null
+  check "installer run over ssh" has 'install\.sh' "$CALLS"
+  check "marker now present" test -f "$MOCK_STATE/claude-ready"
+}
+
+test_failed_claude_install_reported() {
+  run setup.sh >/dev/null
+  rm "$MOCK_STATE/claude-ready"
+  export MOCK_INSTALL_FAIL=1
+  fails run start.sh web >/dev/null 2>"$T/err"
+  check "message" has 'installation failed' "$T/err"
 }
 
 test_cloud_init_marks_ready_only_after_successful_install() {
@@ -161,7 +185,7 @@ test_firewall_without_rules_gets_ssh_rule() {
 test_missing_deploy_key_fails_before_creating_anything() {
   run setup.sh >/dev/null
   printf 'REPO_URL=git@example.org:o/r.git\nGIT_DEPLOY_KEY_FILE=%s\n' "$T/nope" > "$W/machines/web.env.local"
-  ! run start.sh web >/dev/null 2>"$T/err"
+  fails run start.sh web >/dev/null 2>"$T/err"
   check "message" has 'File not readable' "$T/err"
   check "no server" test ! -f "$MOCK_STATE/hcloud/server/claude-web.json"
 }
@@ -173,7 +197,7 @@ test_scripts_use_own_ssh_config_only() {
   printf 'REPO_URL=%s\nGIT_DEPLOY_KEY_FILE=%s\n' "$T/origin.git" "$T/deploy" > "$W/machines/web.env.local"
   run start.sh web >/dev/null
   echo DELETE | run stop.sh web >/dev/null 2>&1 || true
-  check "every ssh/scp call passes -F" bash -c "! grep -E '^(ssh|scp) ' '$CALLS' | grep -v -- '-F $HOME/.ssh/config_hetzner_claude_web'"
+  check "every ssh/scp call passes -F" bash -c "! grep -E '^(ssh|scp) ' '$CALLS' | grep -v -- '-F $HOME/.ssh/config_hetzner_claude-web'"
 }
 
 test_gh_installed_by_cloud_init() {
@@ -225,19 +249,60 @@ test_clone_with_deploy_key_and_no_branch() {
   check "cloned" test -d "$T/mnt/origin/.git"
 }
 
-test_host_key_pinned_as_fallback_for_expired_cert() {
+test_scripts_trust_only_the_pinned_host_key() {
   run setup.sh >/dev/null
   run start.sh web >/dev/null
   pub=$(python3 -I -c "import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))['ssh_keys']['ed25519_public'])" "$MOCK_STATE/hcloud/server/claude-web.user-data" | cut -d' ' -f1,2)
-  check "pinned key = server key, for DNS name" test "$(cat "$HOME/.ssh/known_hosts_hetzner_claude_web")" = "web.test.invalid $pub"
-  check "pin file used" has 'UserKnownHostsFile .*known_hosts_hetzner_claude_ca .*known_hosts_hetzner_claude_web' "$HOME/.ssh/config_hetzner_claude_web"
-  check "plain key allowed as fallback" has 'HostKeyAlgorithms ssh-ed25519-cert-v01@openssh.com,ssh-ed25519' "$HOME/.ssh/config_hetzner_claude_web"
+  check "pinned key = server key, for DNS name" test "$(cat "$HOME/.ssh/known_hosts_hetzner_claude-web")" = "claude-web.test.invalid $pub"
+  check "only the pin is trusted" has "UserKnownHostsFile $HOME/.ssh/known_hosts_hetzner_claude-web\$" "$HOME/.ssh/config_hetzner_claude-web"
+  check "plain key allowed (cert may expire)" has 'HostKeyAlgorithms ssh-ed25519-cert-v01@openssh.com,ssh-ed25519' "$HOME/.ssh/config_hetzner_claude-web"
+}
+
+test_without_pin_the_host_ca_is_trusted() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  rm "$HOME/.ssh/known_hosts_hetzner_claude-web"   # e.g. server created on another computer
+  run start.sh web >/dev/null
+  check "CA file used" has "UserKnownHostsFile $HOME/.ssh/known_hosts_hetzner_claude_ca\$" "$HOME/.ssh/config_hetzner_claude-web"
+}
+
+test_existing_public_key_is_reused_under_its_name() {
+  run setup.sh >/dev/null
+  hcloud ssh-key create --name my-laptop --public-key-from-file "$HOME/.ssh/hetzner-build.pub" >/dev/null
+  run start.sh web >/dev/null
+  check "no new key" count_is 'hcloud ssh-key create' "$CALLS" 1
+  check "server uses existing key" has '--ssh-key my-laptop' "$CALLS"
+}
+
+test_key_name_taken_by_other_public_key_fails() {
+  run setup.sh >/dev/null
+  ssh-keygen -q -t ed25519 -N '' -f "$T/other"
+  hcloud ssh-key create --name claude-login --public-key-from-file "$T/other.pub" >/dev/null
+  fails run start.sh web >/dev/null 2>"$T/err"
+  check "message" has 'belongs to a different public key' "$T/err"
+}
+
+test_firewall_describe_error_aborts() {
+  run setup.sh >/dev/null
+  export MOCK_DESCRIBE_FAIL=1
+  fails run start.sh web >/dev/null 2>&1
+  check "no rule-less server" test ! -f "$MOCK_STATE/hcloud/server/claude-web.json"
+}
+
+test_same_machine_name_under_two_prefixes_does_not_collide() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  echo 'SERVER_PREFIX=alice' > "$W/machines/web.env.local"
+  run start.sh web >/dev/null
+  check "two dns records" test "$(jq length "$MOCK_STATE/cf.json")" = 2
+  check "own config" test -f "$HOME/.ssh/config_hetzner_alice-web"
+  check "first config untouched" has 'claude-web\.test\.invalid' "$HOME/.ssh/config_hetzner_claude-web"
 }
 
 test_hcloud_error_aborts_start_without_creating() {
   run setup.sh >/dev/null
   export MOCK_HCLOUD_FAIL=1
-  ! run start.sh web >/dev/null 2>"$T/err"
+  fails run start.sh web >/dev/null 2>"$T/err"
   check "message" has 'list failed' "$T/err"
   check "no dns" test ! -f "$MOCK_STATE/cf.json"
 }
@@ -246,7 +311,7 @@ test_cloudflare_token_not_in_argv() {
   run setup.sh >/dev/null
   export CLOUDFLARE_API_TOKEN=cf_secret_42
   run start.sh web >/dev/null
-  check "dns written" has 'web\.test\.invalid' "$MOCK_STATE/cf.json"
+  check "dns written" has 'claude-web\.test\.invalid' "$MOCK_STATE/cf.json"
   check "token not on any command line" bash -c "! grep -q cf_secret_42 '$CALLS'"
 }
 

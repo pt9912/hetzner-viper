@@ -16,7 +16,7 @@ new_env() {  # fresh sandbox: copy of the scripts, own HOME and mock state
   printf 'DNS_DOMAIN=test.invalid\nWORKSPACE_DIR=%s\n' "$T/mnt" >> "$T/work/.env.local"
   export HOME="$T/home" MOCK_STATE="$T/state" PATH="$MOCKS:$PATH"
   export HCLOUD_TOKEN=t CLOUDFLARE_API_TOKEN=t CLOUDFLARE_ZONE_ID=z
-  unset MOCK_SSH_DOWN MOCK_DNS_STALE MOCK_CLOUDINIT_RC MOCK_HCLOUD_FAIL MOCK_CF_FAIL GH_TOKEN GH_HOST
+  unset MOCK_SSH_DOWN MOCK_DNS_STALE MOCK_CLOUDINIT_RC MOCK_HCLOUD_FAIL MOCK_CF_FAIL MOCK_INSTALL_FAIL MOCK_DOCKER_FAIL MOCK_DESCRIBE_FAIL GH_TOKEN GH_HOST
   touch "$T/state/claude-ready"
   : > "$MOCK_STATE/calls.log"
   W="$T/work"; CALLS="$MOCK_STATE/calls.log"
@@ -24,6 +24,10 @@ new_env() {  # fresh sandbox: copy of the scripts, own HOME and mock state
 check() {  # check "description" command...
   local d="$1"; shift
   "$@" || { echo "ASSERT FAILED: $d"; return 1; }
+}
+# fails cmd...: the command must fail. (A bare `! cmd` is ignored by set -e and asserts nothing.)
+fails() {
+  if "$@"; then echo "ASSERT FAILED: expected failure: $*" >&3; return 1; fi
 }
 has() { grep -qE -- "$1" "$2"; }
 hasf() { grep -qF -- "$1" "$2"; }
@@ -35,7 +39,7 @@ for t in "$ROOT"/tests/cases/*.sh; do
   while IFS= read -r fn; do
     [[ -z "$FILTER" || "$fn" == *"$FILTER"* ]] || continue
     new_env
-    out=$( (set -e; "$fn") 2>&1 ); rc=$?
+    out=$( (set -e; "$fn" 3>&2) 2>&1 ); rc=$?
     if (( rc == 0 )); then PASS=$((PASS+1)); echo "ok   $fn"
     else FAIL=$((FAIL+1)); echo "FAIL $fn"; echo "$out" | tail -25 | sed 's/^/    /'; fi
     rm -rf "$T"

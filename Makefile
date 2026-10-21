@@ -6,6 +6,9 @@ RUN_IMAGE  ?= hetzner-claude-run
 
 include tests/tests.mk
 
+# passed to the recipe shell as environment, expanded there in double quotes (URLs with & ; ?)
+export MACHINE REPO
+
 .PHONY: build setup up down
 
 build:
@@ -26,8 +29,8 @@ setup: build
 
 up: build
 	@test -n "$(MACHINE)" || { echo 'Usage: make up MACHINE=<name> [REPO=<url>]' >&2; exit 1; }
-	$(call RUN,./start.sh $(MACHINE) $(REPO))
+	$(call RUN,./start.sh "$$MACHINE" "$$REPO")
 
 down: build
 	@test -n "$(MACHINE)" || { echo 'Usage: make down MACHINE=<name> [FORCE=1]' >&2; exit 1; }
-	$(call RUN,./stop.sh $(MACHINE) $(if $(FORCE),--force))
+	$(call RUN,./stop.sh "$$MACHINE" $(if $(FORCE),--force))
