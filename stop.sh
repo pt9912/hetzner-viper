@@ -15,6 +15,15 @@ if ! hcloud_has server "$SERVER_NAME"; then
   # delete DNS only if it still points to the IP this machine had.
   echo "Server $SERVER_NAME not found in this Hetzner project."
   old_ip=$(cat "$IP_STATE" 2>/dev/null || true)
+  left=0
+  for f in "$SSH_CFG" "$KNOWN_PIN" "$IP_STATE" "$ID_STATE" "$WORKSPACE_STATE" "$READY_STATE" "$REPO_STATE"; do
+    [[ ! -e "$f" ]] || left=1
+  done
+  if (( ! left )); then
+    echo 'Nothing left to clean up.'
+    final_event "nothing to clean up (server not found, no local files)"
+    exit 0
+  fi
   echo "Leftovers: local SSH config and pinned host key${old_ip:+, DNS record $DNS_HOST -> $old_ip}."
   read -r -p 'Type CLEANUP to remove them: ' answer
   [[ "$answer" == CLEANUP ]] || { echo 'Cancelled'; final_event "cancelled (server not found, no CLEANUP)"; exit 1; }

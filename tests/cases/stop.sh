@@ -71,8 +71,18 @@ test_stop_unreachable_needs_force() {
 
 test_stop_of_absent_server_asks_before_cleanup() {
   run setup.sh >/dev/null
+  mkdir -p "$HOME/.local/state/hetzner-claude"
+  echo 10.0.0.9 > "$HOME/.local/state/hetzner-claude/ip-claude-ghost"
   echo no | fails run stop.sh ghost >/dev/null 2>&1
+  check "kept without CLEANUP" test -f "$HOME/.local/state/hetzner-claude/ip-claude-ghost"
   echo CLEANUP | run stop.sh ghost >/dev/null
+  check "removed with CLEANUP" test ! -f "$HOME/.local/state/hetzner-claude/ip-claude-ghost"
+}
+
+test_stop_of_absent_server_without_leftovers_does_not_ask() {
+  run setup.sh >/dev/null
+  run stop.sh ghost >"$T/out" </dev/null
+  check "nothing to do" has 'Nothing left to clean up' "$T/out"
 }
 
 # repo with upstream, everything committed and pushed
