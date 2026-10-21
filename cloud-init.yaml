@@ -3,6 +3,7 @@ package_update: true
 packages:
   - docker.io
   - git
+  - gh
   - make
   - build-essential
   - curl
@@ -36,7 +37,7 @@ write_files:
 
 runcmd:
   - sshd -t
-  - systemctl reload ssh
+  - systemctl try-reload-or-restart ssh
   - systemctl enable --now docker
   - mkdir -p /home/builder/.ssh
   - chown builder:builder /home/builder/.ssh

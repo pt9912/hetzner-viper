@@ -88,6 +88,12 @@ done
 [[ "$ready" == 1 ]] || { echo 'SSH/cloud-init not ready; server retained.' >&2; exit 1; }
 # Work directory on the server's own disk; it is deleted together with the server.
 ssh -F "$SSH_CFG" "$SSH_ALIAS" "sudo install -d -o builder -g builder '$WORKSPACE_DIR'"
+# GitHub CLI login for builder. The token goes through stdin (not argv, not user-data);
+# `gh auth setup-git` makes git use it for HTTPS clone/push.
+if [[ -n "${GH_TOKEN:-}" ]]; then
+  ssh -F "$SSH_CFG" "$SSH_ALIAS" "gh auth login --hostname '${GH_HOST:-github.com}' --with-token && gh auth setup-git --hostname '${GH_HOST:-github.com}'" <<<"$GH_TOKEN"
+  echo "gh: logged in to ${GH_HOST:-github.com}"
+fi
 WORKDIR="$WORKSPACE_DIR"
 if [[ -n "${REPO_URL:-}" ]]; then
   WORKDIR="$WORKSPACE_DIR/$(basename "${REPO_URL%.git}")"

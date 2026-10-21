@@ -151,6 +151,7 @@ install = [c for c in d['runcmd'] if 'install.sh' in c]
 assert len(install) == 1 and 'pipefail' in install[0] and install[0].endswith('&& touch /var/tmp/claude-ready'), install
 assert not any(c == 'touch /var/tmp/claude-ready' for c in d['runcmd'])
 assert not any('60-host-cert' in w['path'] for w in d['write_files'])
+assert 'systemctl try-reload-or-restart ssh' in d['runcmd']
 PY
 }
 
@@ -179,4 +180,38 @@ test_scripts_use_own_ssh_config_only() {
   run start.sh web >/dev/null
   echo DELETE | run stop.sh web >/dev/null 2>&1 || true
   check "every ssh/scp call passes -F" bash -c "! grep -E '^(ssh|scp) ' '$CALLS' | grep -v -- '-F $HOME/.ssh/config_hetzner_claude_web'"
+}
+
+test_gh_installed_by_cloud_init() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  python3 -I -c "import sys,yaml; assert 'gh' in yaml.safe_load(open(sys.argv[1]))['packages']" "$MOCK_STATE/hcloud/server/claude-web.user-data"
+}
+
+test_gh_token_passed_via_stdin_before_clone() {
+  run setup.sh >/dev/null
+  git init -q --bare "$T/origin.git"
+  export GH_TOKEN=ghp_secret123
+  run start.sh web "$T/origin.git" >/dev/null
+  check "token reached gh" test "$(cat "$MOCK_STATE/gh-token")" = ghp_secret123
+  check "git uses gh credentials" has 'gh auth setup-git' "$CALLS"
+  check "token not in any command line" bash -c "! grep -q ghp_secret123 '$CALLS'"
+  check "token not in user-data" bash -c "! grep -q ghp_secret123 '$MOCK_STATE/hcloud/server/claude-web.user-data'"
+  check "login before clone" bash -c "grep -n -E 'gh auth login|bash -s -- $T/origin.git' '$CALLS' | head -1 | grep -q 'gh auth login'"
+}
+
+test_gh_token_per_machine() {
+  run setup.sh >/dev/null
+  echo 'GH_TOKEN=ghp_web_only' > "$W/machines/web.env.local"
+  run start.sh web >/dev/null
+  check "machine token used" test "$(cat "$MOCK_STATE/gh-token")" = ghp_web_only
+  rm "$MOCK_STATE/gh-token"
+  run start.sh api >/dev/null
+  check "other machine gets no token" test ! -f "$MOCK_STATE/gh-token"
+}
+
+test_no_gh_login_without_token() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  check "no gh call" bash -c "! grep -q 'gh auth' '$CALLS'"
 }

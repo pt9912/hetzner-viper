@@ -11,6 +11,7 @@ case "${cmd[*]}" in
     probe="${cmd[*]}"
     PATH="$(dirname "$0")/remote:$PATH" bash -c "${probe//\/var\/tmp\/claude-ready/$MOCK_STATE/claude-ready}"
     exit $? ;;
+  "gh auth login"*) cat > "$MOCK_STATE/gh-token" ;;
   "sudo bash -s") cat > "$MOCK_STATE/remote-mount.sh" ;;
   "bash -s"*) HOME="$MOCK_STATE/remote-home" bash "${cmd[@]:1}" ;;
   chmod*) ;;

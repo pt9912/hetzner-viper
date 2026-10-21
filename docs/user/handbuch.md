@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.4  
+Version: 1.6  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -198,6 +198,32 @@ Das Repository wird geklont. Der Schlüssel liegt auf dem Server unter `~/.ssh/d
 * Beim ersten Kontakt mit dem Git-Dienst wird dessen Host-Schlüssel ohne Rückfrage übernommen. Bei HTTPS-Adressen ist kein Schlüssel nötig.
 * Der Schlüssel wird bei jedem Start erneut auf den Server kopiert.
 
+### GitHub-CLI und Token auf dem Rechner nutzen
+
+Auf jedem Rechner ist die GitHub-CLI `gh` installiert. Mit einem Personal Access Token (PAT) können Claude Code und Sie damit Pull Requests anlegen, Issues lesen und per HTTPS pushen.
+
+#### Voraussetzung
+
+Sie haben bei GitHub ein PAT erzeugt. Empfohlen ist ein **fein granulares** Token, das nur für das Repository des Rechners gilt, mit kurzer Laufzeit und nur den nötigen Rechten (zum Beispiel **Contents** und **Pull requests**: Lesen und Schreiben).
+
+#### Vorgehen
+
+1. Tragen Sie das Token als `GH_TOKEN` ein:
+   * für einen einzelnen Rechner in `machines/<rechner>.env.local` (empfohlen), oder
+   * für alle Rechner in `.env.local` oder als `export GH_TOKEN=...` in der Shell.
+2. Für GitHub Enterprise setzen Sie zusätzlich `GH_HOST` auf den Hostnamen.
+3. Starten Sie den Rechner mit `./start.sh <rechner>` bzw. `make up MACHINE=<rechner>`.
+
+#### Ergebnis
+
+Die Meldung `gh: logged in to github.com` erscheint. Auf dem Server ist `gh` angemeldet, und `git` nutzt das Token für HTTPS-Adressen. Private Repositories können Sie daher auch per HTTPS-URL klonen lassen.
+
+#### Hinweise
+
+* Das Token wird per SSH über die Standardeingabe übertragen. Es steht weder in den Hetzner-User-Data noch in einer Befehlszeile.
+* Auf dem Server liegt das Token unverschlüsselt in `~/.config/gh/hosts.yml`. Claude Code und jeder Prozess des Benutzers `builder` können es lesen. Vergeben Sie deshalb nur die Rechte, die der Agent braucht.
+* Mit dem Löschen des Servers ist das Token dort entfernt. Bei GitHub bleibt es gültig, bis es abläuft oder Sie es widerrufen.
+
 ### Vom iPad aus verbinden
 
 #### Vorgehen
@@ -255,7 +281,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `SERVER_PREFIX` | Namensanfang aller Ressourcen | `claude` |
 | `SERVER_TYPE` | Hetzner-Servertyp | `cx53` |
 | `SERVER_LOCATION` | Standort | `fsn1` |
-| `SERVER_IMAGE` | Betriebssystem-Image | `ubuntu-24.04` |
+| `SERVER_IMAGE` | Betriebssystem-Image | `ubuntu-26.04` |
 | `DNS_DOMAIN` | Ihre Domain, Pflichtangabe | leer |
 | `SSH_KEY` | Pfad Ihres Login-Schlüssels | `~/.ssh/hetzner-build` |
 | `SSH_ALLOWED_CIDRS` | Netze, die Port 22 erreichen dürfen | `0.0.0.0/0,::/0` |
@@ -264,6 +290,8 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `REPO_URL` | Repository, das beim Start geklont wird | leer |
 | `REPO_BRANCH` | Zweig, der geklont wird | Standardzweig |
 | `GIT_DEPLOY_KEY_FILE` | Deploy-Key für private SSH-Repositories | leer |
+| `GH_TOKEN` | GitHub-PAT für `gh` und `git` über HTTPS auf dem Server | leer |
+| `GH_HOST` | GitHub-Host (für GitHub Enterprise) | `github.com` |
 | `HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID` | Zugangsdaten (Shell oder `.env.local`) | leer |
 
 ### Firewall und Anmeldung
@@ -331,6 +359,11 @@ Die Skripte importieren und exportieren keine Daten. Ihre Arbeitsdateien liegen 
 **Ursache:** Die Datei aus `GIT_DEPLOY_KEY_FILE` oder `IPAD_SSH_PUBLIC_KEY_FILE` fehlt oder ist nicht lesbar. Im Container ist außerhalb von `~/.ssh` keine Datei Ihres Home-Verzeichnisses sichtbar.  
 **Lösung:** Prüfen Sie den Pfad. Beim Lauf im Container legen Sie die Datei unter `~/.ssh` ab und tragen diesen Pfad ein. Es wurde noch nichts angelegt.
 
+### Meldung: "error validating token" beim Start
+
+**Ursache:** `gh` hat das Token aus `GH_TOKEN` abgelehnt: Es ist abgelaufen, widerrufen oder falsch kopiert. Der Server ist schon angelegt.  
+**Lösung:** Korrigieren Sie `GH_TOKEN` und führen Sie `./start.sh <rechner>` erneut aus. Der vorhandene Server wird weiterverwendet.
+
 ### Meldung: "Git check on the server failed. NOT deleting server"
 
 **Ursache:** `stop.sh` konnte die Git-Prüfung auf dem Server nicht ausführen, etwa wegen eines Verbindungsabbruchs.  
@@ -389,6 +422,7 @@ Nein. Verwenden Sie die Shell oder `.env.local`, die nicht eingecheckt wird.
 | Arbeitsverzeichnis | Verzeichnis auf dem Server, in dem die Repositories liegen (`WORKSPACE_DIR`) |
 | Host-CA | Lokale Zertifizierungsstelle, mit der der Server-Schlüssel signiert wird |
 | Host-Zertifikat | Beglaubigung des Server-Schlüssels, sieben Tage gültig |
+| PAT | Personal Access Token: Zugangsschlüssel für die GitHub-API anstelle eines Passworts |
 | Deploy-Key | SSH-Schlüssel, der nur für ein Repository gilt |
 | cloud-init | Automatische Ersteinrichtung des Servers beim ersten Start |
 | tmux | Programm, das Terminal-Sitzungen dauerhaft hält |
@@ -408,3 +442,5 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.2 | v3 mit Mehrrechner-Betrieb | Kein separater Datenträger mehr: Die Dateien liegen auf der Serverplatte und werden mit dem Server gelöscht. `stop.sh` warnt vor ungepushter Arbeit. |
 | 1.3 | v3 mit Mehrrechner-Betrieb | `stop.sh` fragt bei ungesicherter Arbeit zusätzlich nach `DISCARD`. |
 | 1.4 | v3 mit Mehrrechner-Betrieb | `start.sh` akzeptiert eine Einrichtung mit Warnungen und meldet „Ready“ nur nach erfolgreicher Installation von Claude Code. `stop.sh` erkennt auch Stash-Einträge, listet ignorierte Dateien auf und räumt DNS und SSH-Konfiguration auch bei schon gelöschtem Server auf. Schlüsseldateien werden vor dem Anlegen geprüft. |
+| 1.5 | v3 mit Mehrrechner-Betrieb | GitHub-CLI `gh` auf jedem Rechner. Ein PAT aus `GH_TOKEN` meldet `gh` an und wird für `git` über HTTPS genutzt. |
+| 1.6 | v3 mit Mehrrechner-Betrieb | Standard-Image ist Ubuntu 26.04 LTS. Bestehende `.env.local` mit `ubuntu-24.04` funktionieren weiter. |
