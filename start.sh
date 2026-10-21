@@ -228,13 +228,29 @@ fi
 [[ -z "$use_key" ]] || git -C "$dir" config core.sshCommand "$GIT_SSH_COMMAND"
 CLONE
 fi
+# Homebrew (official installer, as builder; skipped if already there). Not fatal: a failure
+# is reported, and make check shows it.
+if [[ "$VIPER_HOMEBREW" == 1 ]]; then
+  echo 'Homebrew: installing (skipped if present) ...'
+  if ! ssh -n -F "$SSH_CFG" "$SSH_ALIAS" "test -x $BREW || { mkdir -p ~/.config/viper && f=\$(mktemp) &&
+      curl -fsSL -o \"\$f\" https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh &&
+      NONINTERACTIVE=1 bash \"\$f\" </dev/null >~/.config/viper/homebrew-install.log 2>&1; rc=\$?; rm -f \"\$f\";
+      [ \$rc = 0 ] || tail -n 15 ~/.config/viper/homebrew-install.log; exit \$rc; }"; then
+    echo "WARNING: Homebrew installation failed (log on the server: ~/.config/viper/homebrew-install.log); rerun ./start.sh $MACHINE" >&2
+  fi
+fi
 # Interactive shells (make ssh, tmux, a plain ssh login) that start in the home directory
 # change to the work directory: the line goes at the end of .bashrc, which non-interactive
 # shells (ssh commands, the scripts) never reach because of Ubuntu's early return.
-ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$WORKDIR" "$WORKSPACE_DIR")" <<'CDLINE'
+ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$WORKDIR" "$WORKSPACE_DIR" "$BREW")" <<'CDLINE'
 set -eu
 mkdir -p ~/.config/viper
 printf '%s\n' "$1" > ~/.config/viper/workdir
+# brew in every shell (also non-interactive ones, e.g. the agent's commands): top of the files
+brew_line="[ -x $3 ] && eval \"\$($3 shellenv)\""
+for f in ~/.bashrc ~/.profile; do
+  grep -qxF -- "$brew_line" "$f" 2>/dev/null || { { echo "$brew_line"; [ ! -f "$f" ] || cat "$f"; } > "$f.viper" && mv "$f.viper" "$f"; }
+done
 grep -qxF -- "$2" ~/.config/viper/workspaces 2>/dev/null || printf '%s\n' "$2" >> ~/.config/viper/workspaces
 line='if [ "$PWD" = "$HOME" ] && [ -f ~/.config/viper/workdir ]; then cd "$(cat ~/.config/viper/workdir)" 2>/dev/null || true; fi  # viper: start in the work directory'
 grep -qxF -- "$line" ~/.bashrc 2>/dev/null || printf '%s\n' "$line" >> ~/.bashrc

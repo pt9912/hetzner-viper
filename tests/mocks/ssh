@@ -29,6 +29,8 @@ case "$remote" in
     # the pending reboot happens right after this probe, unless the test keeps the flag
     [[ -f "$MOCK_STATE/reboot-required.keep" ]] || rm -f "$MOCK_STATE/reboot-required"
     exit $rc ;;
+  # Homebrew's installer (MOCK_BREW_FAIL: it fails); must come before Claude's install.sh
+  *Homebrew/install*) consume; [[ -z "${MOCK_BREW_FAIL:-}" ]] || { echo 'Error: Failed to download'; exit 1; } ;;
   *install.sh*)
     consume
     [[ -z "${MOCK_INSTALL_FAIL:-}" ]] || exit 1

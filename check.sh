@@ -68,9 +68,9 @@ echo "== server ($SERVER_NAME, $IP)"
 WORKDIR="$WORKSPACE_DIR"
 [[ -z "${REPO_URL:-}" ]] || WORKDIR="$WORKSPACE_DIR/$(basename "${REPO_URL%.git}")"
 # key=value lines; nothing is changed on the server
-if ! out=$(ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$WORKDIR" "${VIPER_CLAUDE_TOKEN:+1}${VIPER_ANTHROPIC_BASE_URL:+1}")" <<'PROBE'
+if ! out=$(ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$WORKDIR" "${VIPER_CLAUDE_TOKEN:+1}${VIPER_ANTHROPIC_BASE_URL:+1}" "$BREW")" <<'PROBE'
 set -uo pipefail
-dir="$1"; ask_claude="$2"
+dir="$1"; ask_claude="$2"; brew="$3"
 export LC_ALL=C PATH="$HOME/.local/bin:$PATH"
 echo "cloudinit=$(cloud-init status 2>/dev/null | sed -n 's/^status: //p')"
 # errors of the first boot stay recorded here, also once cloud-init is disabled
@@ -91,6 +91,8 @@ fi
 echo "gh_version=$(gh --version 2>/dev/null | head -n1)"
 if gh auth status >/dev/null 2>&1; then echo gh_auth=yes; else echo gh_auth=no; fi
 if docker info >/dev/null 2>&1; then echo docker=ok; else echo docker=no; fi
+echo "brew_version=$("$brew" --version 2>/dev/null | head -n1)"
+if bash -c '. ~/.bashrc >/dev/null 2>&1; command -v brew' >/dev/null 2>&1; then echo brew_path=yes; else echo brew_path=no; fi
 if [ -d "$dir/.git" ]; then
   echo "repo=$(git -C "$dir" log --oneline -1 2>/dev/null || echo '(no commits yet)')"
   echo "repo_changes=$(git -C "$dir" status --short | wc -l)"
@@ -148,6 +150,15 @@ else
   info "$(val gh_version): not logged in (no VIPER_GH_TOKEN)"
 fi
 if [[ "$(val docker)" == ok ]]; then ok "docker running"; else bad "docker not running"; fi
+if [[ "$VIPER_HOMEBREW" == 1 ]]; then
+  if [[ -z "$(val brew_version)" ]]; then
+    bad "Homebrew not installed (rerun ./start.sh $MACHINE; log: ~/.config/viper/homebrew-install.log)"
+  elif [[ "$(val brew_path)" != yes ]]; then
+    bad "$(val brew_version) installed but not in the shells' PATH (rerun ./start.sh $MACHINE)"
+  else
+    ok "$(val brew_version)"
+  fi
+fi
 if [[ -n "${REPO_URL:-}" ]]; then
   if [[ -n "$(val repo)" ]]; then
     ok "repository $WORKDIR at $(val repo) ($(val repo_changes) uncommitted changes)"

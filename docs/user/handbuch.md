@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.17  
+Version: 1.18  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -217,7 +217,7 @@ Geprüft werden:
 
 * **DNS:** Der Name `<SERVER_PREFIX>-<rechner>.<DNS_DOMAIN>` löst bei den öffentlichen Resolvern von Cloudflare (1.1.1.1) und Google (8.8.8.8) auf die IP-Adresse des Servers auf. Zusätzlich zeigt der Check, was Ihr Computer auflöst.
 * **Zugriff wie ein anderes Gerät:** eine SSH-Verbindung über den DNS-Namen, bei der nur der Host-CA vertraut wird, nicht dem hinterlegten Schlüssel. So sieht das iPad oder ein zweiter Computer den Server, und dabei wird geprüft, dass das Zertifikat für den Namen gilt. Der Check zeigt auch, bis wann das Zertifikat gültig ist.
-* **Server:** cloud-init ist fertig. Claude Code ist installiert und, wenn `VIPER_CLAUDE_TOKEN` gesetzt ist, angemeldet und antwortet. `gh` ist installiert und, wenn `VIPER_GH_TOKEN` gesetzt ist, angemeldet. Docker läuft, das Repository ist geklont, und die SSH-Härtung wirkt. Dazu kommen freier Speicher und Plattenplatz.
+* **Server:** cloud-init ist fertig. Claude Code ist installiert und, wenn `VIPER_CLAUDE_TOKEN` gesetzt ist, angemeldet und antwortet. `gh` ist installiert und, wenn `VIPER_GH_TOKEN` gesetzt ist, angemeldet. Docker läuft, Homebrew ist installiert und im `PATH` (wenn `VIPER_HOMEBREW=1`), das Repository ist geklont, und die SSH-Härtung wirkt. Dazu kommen freier Speicher und Plattenplatz.
 
 #### Ergebnis
 
@@ -251,6 +251,7 @@ Claude Code läuft in einer Sitzung, die einen Verbindungsabbruch übersteht.
 
 #### Hinweise
 
+* Homebrew (`brew`) wird beim ersten Einrichten mit dem offiziellen Installationsskript nach `/home/linuxbrew/.linuxbrew` installiert und ist in allen Shells verfügbar, auch für Claude Code. Das kostet ein bis zwei Minuten. Mit `VIPER_HOMEBREW=0` (etwa in `machines/<rechner>.env.local`) entfällt es. Scheitert die Installation, warnt `start.sh` nur; ein erneuter `make up` versucht es wieder.
 * Interaktive Shells starten im Arbeitsverzeichnis des Rechners (beim geklonten Repository), wenn sie im Home-Verzeichnis beginnen würden. Das gilt für `make ssh`, tmux und einen normalen SSH-Login. VS-Code-Terminals öffnen ohnehin im Projektordner, und einzelne SSH-Befehle sind nicht betroffen.
 * Ohne `VIPER_CLAUDE_TOKEN` müssen Sie das Anmelden bei Claude nach jedem neuen Server wiederholen, weil `/home/builder/.claude` mit dem Server gelöscht wird. Mit Token entfällt das (siehe „Claude Code ohne erneute Anmeldung nutzen“).
 
@@ -441,6 +442,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `SSH_KEY` | Pfad Ihres Login-Schlüssels | `~/.ssh/hetzner-build` |
 | `SSH_ALLOWED_CIDRS` | Netze, die Port 22 erreichen dürfen | `0.0.0.0/0,::/0` |
 | `IPAD_SSH_PUBLIC_KEY_FILE` | Öffentlicher Schlüssel des iPads | leer |
+| `VIPER_HOMEBREW` | Homebrew (`brew`) auf dem Server installieren: `1` oder `0` | `1` |
 | `WORKSPACE_DIR` | Verzeichnis auf dem Server, in das die Repositories geklont werden | `/Development` |
 | `REPO_URL` | Repository, das beim Start geklont wird | leer |
 | `REPO_BRANCH` | Zweig, der geklont wird | Standardzweig |
@@ -674,3 +676,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.15 | v3 mit Mehrrechner-Betrieb | Andere Modelle über eine Anthropic-kompatible Schnittstelle (Ollama-Cloud, vLLM, Gateway): `VIPER_ANTHROPIC_BASE_URL`, `VIPER_ANTHROPIC_AUTH_TOKEN`, `VIPER_CLAUDE_MODEL`; der Preflight testet Schlüssel und Modell. |
 | 1.16 | v3 mit Mehrrechner-Betrieb | Neue Server spielen beim Einrichten alle Updates ein und starten bei Bedarf einmal neu; `start.sh` wartet darauf, `make check` warnt bei später nötigem Neustart. Interaktive Shells starten im Arbeitsverzeichnis. cloud-init schaltet sich nach der Ersteinrichtung ab (sonst Fehlermeldungen nach jedem Neustart). `make ssh CMD=…` und `make up REPO=…` übernehmen `$` unverändert. |
 | 1.17 | v3 mit Mehrrechner-Betrieb | Ein abgebrochener erster `make up` wird beim erneuten Lauf wie ein neuer Server behandelt. `stop.sh` meldet einen abgelehnten Login-Schlüssel, kennt auch Arbeitsverzeichnisse anderer Computer und meldet Remotes auf dem Server selbst. `make ssh CMD=…` fordert im Terminal ein Terminal an (`tmux attach`). Ein Deploy-Key wird nicht mehr durch `VIPER_GH_TOKEN` umgangen. Der Check liest Fehler der Ersteinrichtung und akzeptiert nur eine echte OK-Antwort. Ein privater Schlüssel als iPad-Schlüssel wird abgelehnt. |
+| 1.18 | v3 mit Mehrrechner-Betrieb | Homebrew (`brew`) wird auf jedem neuen Server installiert (abschaltbar mit `VIPER_HOMEBREW=0`); `make check` prüft es. |

@@ -103,3 +103,12 @@ test_check_reports_first_boot_errors_although_cloud_init_is_disabled() {
   run check.sh web >"$T/out"
   check "warned" has 'WARN  cloud-init reported 1 error\(s\) at the first boot, e.g.: No valid DHCP lease' "$T/out"
 }
+
+test_check_reports_homebrew() {
+  up_web
+  run check.sh web >"$T/out"
+  check "brew ok" has 'ok    Homebrew 4\.9\.0' "$T/out"
+  rm "$VIPER_BREW"
+  fails run check.sh web >"$T/out2"
+  check "missing brew" has 'FAIL  Homebrew not installed' "$T/out2"
+}

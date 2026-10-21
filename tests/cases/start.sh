@@ -629,3 +629,32 @@ test_connect_requests_a_terminal_for_commands_in_a_terminal() {
   script -qec "$W/connect.sh web 'tmux attach -t claude'" /dev/null >/dev/null 2>&1
   check "terminal requested in a terminal" has 'terminal requested' "$CALLS"
 }
+
+test_homebrew_is_installed_and_on_the_path() {
+  run setup.sh >/dev/null
+  ubuntu_home
+  run start.sh web >"$T/out"
+  check "installer run" has 'raw\.githubusercontent\.com/Homebrew/install/HEAD/install\.sh' "$CALLS"
+  check "non-interactive" has 'NONINTERACTIVE=1' "$CALLS"
+  h="$MOCK_STATE/remote-home"
+  check "brew in non-interactive shells" bash -c "HOME='$h' bash -c '. ~/.bashrc; command -v brew' | grep -q linuxbrew"
+  check "brew in login shells" bash -c "HOME='$h' bash -lc 'command -v brew' | grep -q linuxbrew"
+  run start.sh web >/dev/null
+  check "path line once" count_is 'shellenv' "$h/.bashrc" 1
+}
+
+test_homebrew_can_be_skipped() {
+  run setup.sh >/dev/null
+  echo 'VIPER_HOMEBREW=0' > "$W/machines/web.env.local"
+  run start.sh web >/dev/null
+  check "no installer" bash -c "! grep -q 'Homebrew/install' '$CALLS'"
+  run check.sh web >"$T/check"
+  check "check does not expect it" bash -c "! grep -q 'Homebrew' '$T/check'"
+}
+
+test_failed_homebrew_install_only_warns() {
+  run setup.sh >/dev/null
+  MOCK_BREW_FAIL=1 run start.sh web >"$T/out" 2>"$T/err"
+  check "warning" has 'WARNING: Homebrew installation failed' "$T/err"
+  check "setup completed" has '^Ready: ssh hetzner-claude-web' "$T/out"
+}

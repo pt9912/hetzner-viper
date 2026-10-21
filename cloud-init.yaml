@@ -20,6 +20,9 @@ packages:
   - jq
   - openssh-server
   - psmisc
+  # Homebrew on Linux needs these besides build-essential, curl and git
+  - procps
+  - file
 users:
   - name: builder
     shell: /bin/bash

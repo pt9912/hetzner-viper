@@ -23,6 +23,9 @@ SSH_KEY="${SSH_KEY/#\~/$HOME}"
 SERVER_TYPE="${SERVER_TYPE:-cx53}"
 SERVER_LOCATION="${SERVER_LOCATION:-fsn1}"
 SERVER_IMAGE="${SERVER_IMAGE:-ubuntu-26.04}"
+VIPER_HOMEBREW="${VIPER_HOMEBREW:-1}"
+# where Homebrew's installer puts brew on Linux (VIPER_BREW only exists for the offline tests)
+BREW="${VIPER_BREW:-/home/linuxbrew/.linuxbrew/bin/brew}"
 WORKSPACE_DIR="${WORKSPACE_DIR:-/Development}"
 SERVER_PREFIX="${SERVER_PREFIX:-claude}"
 [[ "$SERVER_PREFIX" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || { echo "SERVER_PREFIX: lowercase letters, digits, hyphens: $SERVER_PREFIX" >&2; exit 1; }

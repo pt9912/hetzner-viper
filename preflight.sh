@@ -180,6 +180,8 @@ else
   info "no VIPER_CLAUDE_TOKEN or VIPER_ANTHROPIC_BASE_URL: log in on the server with claude (/login) after each new server"
 fi
 
+if [[ "$VIPER_HOMEBREW" == 1 ]]; then info "Homebrew will be installed on the server (VIPER_HOMEBREW=0 to skip; about 1-2 minutes)"; fi
+
 echo "== repository"
 if [[ -z "${REPO_URL:-}" ]]; then
   info "no repository to clone"
