@@ -30,14 +30,19 @@ case "$remote" in
     [[ -f "$MOCK_STATE/reboot-required.keep" ]] || rm -f "$MOCK_STATE/reboot-required"
     exit $rc ;;
   # Homebrew's installer (MOCK_BREW_FAIL: it fails); must come before Claude's install.sh
-  *Homebrew/install*) consume; [[ -z "${MOCK_BREW_FAIL:-}" ]] || { echo 'Error: Failed to download'; exit 1; } ;;
+  *Homebrew/install*) consume; [[ -z "${MOCK_BREW_FAIL:-}" ]] || { echo 'Error: Failed to download'; exit 1; }
+    # the installer puts brew where common.sh expects it (VIPER_BREW)
+    [[ -e "$VIPER_BREW" ]] || { mkdir -p "$(dirname "$VIPER_BREW")"; ln -s "$(dirname "$0")/remote/brew" "$VIPER_BREW"; } ;;
   *install.sh*)
     consume
     [[ -z "${MOCK_INSTALL_FAIL:-}" ]] || exit 1
     touch "$MOCK_STATE/claude-ready" ;;
   # Claude token login: run it for real in the sandbox home (stdin = token)
   *viper/claude.env*) (( no_stdin )) && exec </dev/null; bash -c "$remote"; exit $? ;;
-  "gh auth login"*) if (( no_stdin )); then : > "$MOCK_STATE/gh-token"; else cat > "$MOCK_STATE/gh-token"; fi ;;
+  # creating the workspace (sudo install -d ...) and recording it: run it in the sandbox
+  "sudo install -d"*) consume; PATH="$(dirname "$0")/remote:$PATH" bash -c "$remote"; exit $? ;;
+  "gh auth login"*) [[ -z "${MOCK_GH_LOGIN_FAIL:-}" ]] || { consume; echo 'error validating token' >&2; exit 1; }
+    if (( no_stdin )); then : > "$MOCK_STATE/gh-token"; else cat > "$MOCK_STATE/gh-token"; fi ;;
   # host key read over a CA-verified connection (pin_from_server)
   "cat /etc/ssh/ssh_host_ed25519_key.pub") consume; cat "$MOCK_STATE/remote-hostkey.pub" 2>/dev/null ;;
   # MOCK_SSH_SKIP_SCRIPT: ssh succeeds but the remote script does not run (e.g. .bashrc exits)

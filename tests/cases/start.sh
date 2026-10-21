@@ -687,3 +687,45 @@ test_workspace_is_recorded_on_the_server_before_later_steps() {
   run start.sh web >/dev/null
   check "with the workspace directory creation" has 'sudo install -d -o builder -g builder .* ~/\.config/viper/workspaces' "$CALLS"
 }
+
+test_repo_given_once_is_remembered() {
+  run setup.sh >/dev/null
+  git init -q --bare "$T/origin.git"
+  run start.sh web "$T/origin.git" >/dev/null
+  run start.sh web >"$T/out"            # e.g. to refresh a token, without REPO=
+  check "remembered" has 'Repository \(remembered from an earlier start\)' "$T/out"
+  check "work dir kept" test "$(cat "$MOCK_STATE/remote-home/.config/viper/workdir")" = "$T/mnt/origin"
+  run check.sh web >"$T/check"
+  check "check checks it" has 'ok    repository .*/origin at ' "$T/check"
+  printf 'DISCARD\nDELETE\n' | run stop.sh web >/dev/null 2>&1   # its remote is a local path: DISCARD
+  check "forgotten with the machine" test ! -e "$HOME/.local/state/hetzner-claude/repo-claude-web"
+}
+
+test_workspace_recorded_on_server_survives_a_later_failure() {
+  run setup.sh >/dev/null
+  echo 'VIPER_GH_TOKEN=ghp_x' > "$W/machines/web.env.local"
+  MOCK_GH_LOGIN_FAIL=1 fails run start.sh web >/dev/null 2>&1     # fails right after the workspace step
+  check "recorded on the server" test "$(cat "$MOCK_STATE/remote-home/.config/viper/workspaces")" = "$T/mnt"
+}
+
+test_homebrew_installer_runs_when_brew_is_missing() {
+  run setup.sh >/dev/null
+  rm "$VIPER_BREW"                                               # a fresh server has no brew
+  run start.sh web >"$T/out"
+  check "installed by the (fake) installer" test -x "$VIPER_BREW"
+  check "and reported" has '^homebrew: Homebrew ' "$HOME/.local/state/hetzner-claude/logs/claude-web.log"
+}
+
+test_old_server_counts_as_set_up_on_another_computer() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  rm "$HOME/.local/state/hetzner-claude/ready-claude-web" "$MOCK_STATE/remote-home/.config/viper/ready"
+  python3 -I - "$MOCK_STATE/hcloud/server/claude-web.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); d['created'] = '2026-01-01T00:00:00+00:00'; json.dump(d, open(sys.argv[1], 'w'))
+PY
+  : > "$CALLS"
+  MOCK_SSH_HOSTKEY_FAIL=1 fails run start.sh web >/dev/null 2>"$T/err"
+  check "fails fast" count_is 'cloud-init status' "$CALLS" 1
+  check "named" has 'host key is not trusted' "$T/err"
+}

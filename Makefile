@@ -16,7 +16,7 @@ export MACHINE REPO CMD
 .PHONY: help build setup preflight up check ssh down log
 
 help: ## show this help
-	@echo 'Usage: make <target> [MACHINE=<name>] [REPO=<url>] [CMD="<command>"] [FORCE=1]'
+	@echo 'Usage: make <target> [MACHINE=<name>] [REPO=<url>] [CMD="<command>"] [FORCE=1] [FULL=1]'
 	@echo
 	@awk -F ':.*## ' '/^[a-z-]+:.*## / { printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 	@echo
@@ -35,7 +35,7 @@ SSH_CONFIG_MOUNT := $(if $(filter-out $(HOME)/.ssh/%,$(SSH_CONFIG_TARGET)),-v "$
 define RUN
 	@mkdir -p "$$HOME/.ssh" "$$HOME/.local/state/hetzner-claude"
 	docker run --rm -i $$(test -t 0 && echo -t) --user $$(id -u):$$(id -g) -e HOME="$$HOME" \
-	  $$(test -e /etc/localtime && echo -v /etc/localtime:/etc/localtime:ro) $${TZ:+-e TZ} \
+	  $$(test -e /etc/localtime && echo -v /etc/localtime:/etc/host-localtime:ro) -e TZ="$${TZ:-$$(test -e /etc/localtime && echo :/etc/host-localtime)}" \
 	  -e HCLOUD_TOKEN -e CLOUDFLARE_API_TOKEN -e CLOUDFLARE_ZONE_ID -e VIPER_GH_TOKEN -e VIPER_GH_HOST -e VIPER_CLAUDE_TOKEN -e VIPER_ANTHROPIC_BASE_URL -e VIPER_ANTHROPIC_AUTH_TOKEN -e VIPER_CLAUDE_MODEL -e VIPER_CLAUDE_MAX_CONTEXT_TOKENS -e VIPER_HOMEBREW -e VIPER_BREW_TAPS -e VIPER_BREW_TRUST -e VIPER_BREW_PACKAGES -e VIPER_BREWFILE \
 	  -v "$$HOME/.ssh:$$HOME/.ssh" -v "$$HOME/.local/state/hetzner-claude:$$HOME/.local/state/hetzner-claude" $(SSH_CONFIG_MOUNT) \
 	  -v "$(CURDIR)":/repo:ro $(RUN_IMAGE) $(1)

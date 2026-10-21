@@ -8,7 +8,7 @@ REPO_URL_ARG="${2:-}"
 # settings and local tools; exits listing every missing setting
 source "$(dirname "$0")/common.sh"
 start_transcript preflight
-[[ -z "$REPO_URL_ARG" ]] || REPO_URL="$REPO_URL_ARG"
+resolve_repo_url "$REPO_URL_ARG"
 # shown and logged only without credentials
 REPO_SHOWN=$(redact_url "${REPO_URL:-}")
 
@@ -150,9 +150,9 @@ if [[ -n "${VIPER_ANTHROPIC_BASE_URL:-}" ]]; then
   [[ -z "${VIPER_CLAUDE_TOKEN:-}" ]] || bad "set either VIPER_CLAUDE_TOKEN or VIPER_ANTHROPIC_BASE_URL, not both (the API token would take precedence over the subscription)"
   for v in VIPER_ANTHROPIC_AUTH_TOKEN VIPER_CLAUDE_MODEL; do [[ -n "${!v:-}" ]] || bad "$v is required with VIPER_ANTHROPIC_BASE_URL"; done
   [[ -z "${VIPER_CLAUDE_MAX_CONTEXT_TOKENS:-}" || "$VIPER_CLAUDE_MAX_CONTEXT_TOKENS" =~ ^[0-9]+$ ]] || bad "VIPER_CLAUDE_MAX_CONTEXT_TOKENS must be a number of tokens"
-  base="${VIPER_ANTHROPIC_BASE_URL%/}"
+  base="${VIPER_ANTHROPIC_BASE_URL%/}"; base_shown=$(redact_url "$base")
   if [[ ! "$base" =~ ^https?:// ]]; then
-    bad "VIPER_ANTHROPIC_BASE_URL must start with https:// (or http://): $base"
+    bad "VIPER_ANTHROPIC_BASE_URL must start with https:// (or http://): $base_shown"
   elif [[ -n "${VIPER_ANTHROPIC_AUTH_TOKEN:-}" && -n "${VIPER_CLAUDE_MODEL:-}" ]]; then
     [[ "$base" == https://* ]] || warn "VIPER_ANTHROPIC_BASE_URL is not https: prompts and the token travel unencrypted"
     # the request Claude Code makes (Bearer token, Messages API); costs a few tokens.
@@ -164,13 +164,13 @@ if [[ -n "${VIPER_ANTHROPIC_BASE_URL:-}" ]]; then
       code="${resp##*$'\n'}"; resp="${resp%$'\n'*}"
       msg=$(jq -r '.error.message? // .error? // .message? // empty' <<<"$resp" 2>/dev/null | head -c 200 || true)
       case "$code" in
-        200) ok "$base answers with model $model_id (Anthropic Messages API)" ;;
-        401|403) bad "$base rejects VIPER_ANTHROPIC_AUTH_TOKEN (HTTP $code${msg:+: $msg})" ;;
-        404) bad "$base: model $model_id or the Messages API not found (HTTP 404${msg:+: $msg})" ;;
-        *) bad "$base: HTTP $code${msg:+: $msg}" ;;
+        200) ok "$base_shown answers with model $model_id (Anthropic Messages API)" ;;
+        401|403) bad "$base_shown rejects VIPER_ANTHROPIC_AUTH_TOKEN (HTTP $code${msg:+: $msg})" ;;
+        404) bad "$base_shown: model $model_id or the Messages API not found (HTTP 404${msg:+: $msg})" ;;
+        *) bad "$base_shown: HTTP $code${msg:+: $msg}" ;;
       esac
     else
-      bad "$base not reachable: $(tail -n1 <<<"$resp")"
+      bad "$base_shown not reachable: $(tail -n1 <<<"$resp")"
     fi
   fi
 elif [[ -n "${VIPER_CLAUDE_TOKEN:-}" ]]; then
@@ -193,14 +193,18 @@ if (( ${#brew_taps[@]} + ${#brew_trust[@]} + ${#brew_pkgs[@]} > 0 )); then
       bad "VIPER_BREW_TRUST: not a tap (owner/repo) or formula (owner/repo/name), optionally with cask:/command:: $t"
   done
   for t in "${brew_taps[@]}"; do
-    [[ "$t" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(=(https://|ssh://|git@)[^[:space:]]+)?$ ]] ||
-      bad "VIPER_BREW_TAPS: not a tap (owner/repo or owner/repo=URL): $t"
+    if [[ ! "$t" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(=(https://|ssh://|git@)[^[:space:]]+)?$ ]]; then
+      bad "VIPER_BREW_TAPS: not a tap (owner/repo or owner/repo=URL): $(redact_taps "$t")"
+    elif [[ "$t" =~ =https?://[^/@]+@ ]]; then
+      # the token would be stored in the tap's .git/config on the server and shown in logs
+      bad "VIPER_BREW_TAPS: credentials in the tap URL ($(redact_taps "$t")): use a deploy key (ssh URL) or a public tap"
+    fi
   done
   for p in "${brew_pkgs[@]}"; do
     [[ "$p" =~ ^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/)?[A-Za-z0-9][A-Za-z0-9@+_.-]*$ ]] ||
       bad "VIPER_BREW_PACKAGES: not a formula (name or owner/repo/name): $p"
   done
-  info "Homebrew taps: ${brew_taps[*]:-none}; trust: ${brew_trust[*]:-none}; formulae: ${brew_pkgs[*]:-none}"
+  info "Homebrew taps: $( (( ${#brew_taps[@]} )) && redact_taps "${brew_taps[@]}" || echo none); trust: ${brew_trust[*]:-none}; formulae: ${brew_pkgs[*]:-none}"
 fi
 if [[ "${VIPER_BREWFILE:-0}" == 1 ]]; then
   [[ "$VIPER_HOMEBREW" == 1 ]] || bad "VIPER_BREWFILE=1 needs VIPER_HOMEBREW=1"

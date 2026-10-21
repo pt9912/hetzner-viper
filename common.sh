@@ -52,6 +52,16 @@ ID_STATE="$STATE/id-$SERVER_NAME"
 WORKSPACE_STATE="$STATE/workspace-$SERVER_NAME"
 # Server ID of the last start.sh run that completed: only such a server counts as set up.
 READY_STATE="$STATE/ready-$SERVER_NAME"
+# Repository the server was started with (e.g. given once as REPO=...), for later runs.
+REPO_STATE="$STATE/repo-$SERVER_NAME"
+
+# resolve_repo_url <arg>: the repository of this machine: the argument, else REPO_URL from the
+# config files, else the one this server was started with.
+resolve_repo_url() {
+  if [[ -n "${1:-}" ]]; then REPO_URL="$1"
+  elif [[ -z "${REPO_URL:-}" && -s "$REPO_STATE" ]]; then REPO_URL=$(cat "$REPO_STATE"); REPO_REMEMBERED=1
+  fi
+}
 
 # Logs (no tokens: the scripts never print them):
 #  - events.log: one line per event (time, server, action, what happened)
@@ -92,6 +102,12 @@ trap on_signal INT TERM HUP
 
 # redact_url <url>: hide credentials in a URL (https://user:token@host -> https://***@host)
 redact_url() { sed -E 's#^([a-z+]+://)[^/@]+@#\1***@#' <<<"$1"; }
+# redact_taps <entries...>: the same for "owner/repo=URL" tap entries, as one line
+redact_taps() {
+  local t out=()
+  for t in "$@"; do if [[ "$t" == *=* ]]; then out+=("${t%%=*}=$(redact_url "${t#*=}")"); else out+=("$t"); fi; done
+  echo "${out[*]}"
+}
 
 # start_transcript <action>: copy all output of this run into logs/<server>.log. Scripts
 # started from it (preflight.sh, dns.sh) write into the same transcript and no own events.

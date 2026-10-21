@@ -4,10 +4,10 @@ MACHINE="${1:?Usage: ./start.sh <machine> [repo-url]}"; export MACHINE
 REPO_URL_ARG="${2:-}"
 source "$(dirname "$0")/common.sh"
 start_transcript up
-[[ -z "$REPO_URL_ARG" ]] || REPO_URL="$REPO_URL_ARG"
+resolve_repo_url "$REPO_URL_ARG"
 log_event "start ($SERVER_TYPE, $SERVER_LOCATION, $SERVER_IMAGE${REPO_URL:+, $(redact_url "$REPO_URL")})"
 # read-only checks first, so a wrong setting fails before anything is created
-if ! preflight=$(./preflight.sh "$MACHINE" "$REPO_URL_ARG"); then
+if ! preflight=$(./preflight.sh "$MACHINE" "${REPO_URL:-}"); then
   echo "$preflight" >&2
   exit 1
 fi
@@ -96,6 +96,10 @@ else
   # still be booting (transient ssh errors, the reboot after its updates still to come)
   REUSED=0
   [[ "$(cat "$READY_STATE" 2>/dev/null)" == "$SERVER_ID" ]] && REUSED=1
+  # a server older than 30 minutes is long past its first boot (also for another computer
+  # without the local marker): permanent ssh errors then end the wait at once
+  created=$(hcloud server describe "$SERVER_NAME" -o json | jq -r '.created // empty')
+  if [[ -n "$created" ]] && (( $(date +%s) - $(date -d "$created" +%s 2>/dev/null || date +%s) > 1800 )); then REUSED=1; fi
 fi
 IP=$(hcloud server ip "$SERVER_NAME")
 echo "$IP" > "$IP_STATE"
@@ -203,7 +207,7 @@ if [[ -n "${VIPER_ANTHROPIC_BASE_URL:-}" ]]; then
     claude_env+=$(printf '\nexport %s=%q' "$v" "$VIPER_CLAUDE_MODEL")
   done
   [[ -z "${VIPER_CLAUDE_MAX_CONTEXT_TOKENS:-}" ]] || claude_env+=$(printf '\nexport CLAUDE_CODE_MAX_CONTEXT_TOKENS=%q' "$VIPER_CLAUDE_MAX_CONTEXT_TOKENS")
-  claude_login_msg="claude: using model $VIPER_CLAUDE_MODEL at $VIPER_ANTHROPIC_BASE_URL"
+  claude_login_msg="claude: using model $VIPER_CLAUDE_MODEL at $(redact_url "$VIPER_ANTHROPIC_BASE_URL")"
 elif [[ -n "${VIPER_CLAUDE_TOKEN:-}" ]]; then
   claude_env=$(printf 'export CLAUDE_CODE_OAUTH_TOKEN=%q' "$VIPER_CLAUDE_TOKEN")
   claude_login_msg='claude: logged in with VIPER_CLAUDE_TOKEN'
@@ -219,6 +223,9 @@ if [[ -n "$claude_env" ]]; then
 fi
 WORKDIR="$WORKSPACE_DIR"
 if [[ -n "${REPO_URL:-}" ]]; then
+  # remembered for later runs of start/check (e.g. refreshing a token without REPO=)
+  [[ -n "${REPO_REMEMBERED:-}" ]] && echo "Repository (remembered from an earlier start): $(redact_url "$REPO_URL")"
+  ( umask 077; printf '%s\n' "$REPO_URL" > "$REPO_STATE" )
   WORKDIR="$WORKSPACE_DIR/$(basename "${REPO_URL%.git}")"
   if [[ -n "${GIT_DEPLOY_KEY_FILE:-}" ]]; then
     scp -F "$SSH_CFG" -q "$GIT_DEPLOY_KEY_FILE" "$SSH_ALIAS:.ssh/deploy_key"
@@ -236,6 +243,8 @@ if [[ -d "$dir/.git" ]]; then
   echo "Repository already present: $dir"
 else
   git clone ${branch:+--branch "$branch"} -- "$url" "$dir"
+  # tags that came with the clone: stop.sh only counts tags created later as unsaved work
+  git -C "$dir" for-each-ref --format='%(refname)' refs/tags > "$dir/.git/viper-clone-tags"
 fi
 [[ -z "$use_key" ]] || git -C "$dir" config core.sshCommand "$GIT_SSH_COMMAND"
 CLONE

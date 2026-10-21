@@ -328,3 +328,24 @@ test_stop_refuses_when_the_check_did_not_complete() {
   check "refused" has 'git check on the server did not complete' "$T/err"
   check "server kept" test -f "$MOCK_STATE/hcloud/server/claude-web.json"
 }
+
+test_stop_does_not_flag_tags_that_came_with_the_clone() {
+  run setup.sh >/dev/null
+  git init -q --bare "$T/up.git"; git clone -q "$T/up.git" "$T/seed" 2>/dev/null
+  (cd "$T/seed" && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m main && git push -q origin HEAD 2>/dev/null \
+    && git checkout -q --detach && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m release-only \
+    && git tag v1.0 && git push -q origin v1.0 2>/dev/null)
+  run start.sh web "$T/up.git" >/dev/null
+  git -C "$T/mnt/up" remote set-url origin https://git.example.invalid/up.git   # a remote off the server
+  out=$(echo DELETE | run stop.sh web 2>&1) || true
+  check "no unsaved work for the upstream tag" bash -c "! grep -q 'UNSAVED WORK' <<<'$out'"
+  check "deleted" test ! -f "$MOCK_STATE/hcloud/server/claude-web.json"
+}
+
+test_stop_ignored_list_despite_git_config() {
+  boot; pushed_repo
+  git -C "$T/mnt/proj" config status.showUntrackedFiles no
+  mkdir "$T/mnt/proj/build"; echo x > "$T/mnt/proj/build/out"
+  out=$(echo DELETE | run stop.sh web 2>&1)
+  check "ignored listed" bash -c "grep -q 'Ignored by git' <<<'$out' && grep -q 'build/' <<<'$out'"
+}

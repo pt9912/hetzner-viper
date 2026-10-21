@@ -86,3 +86,12 @@ test_vscode_does_not_inherit_the_gateway_token() {
   run start.sh web >/dev/null
   check "no tokens for VS Code" test ! -s "$MOCK_STATE/code-env"
 }
+
+test_gateway_url_with_credentials_is_not_shown() {
+  run setup.sh >/dev/null
+  printf 'VIPER_ANTHROPIC_BASE_URL=https://user:gw_secret_5@llm.test.invalid\nVIPER_ANTHROPIC_AUTH_TOKEN=k\nVIPER_CLAUDE_MODEL=m\n' > "$W/machines/web.env.local"
+  run start.sh web >"$T/out" 2>&1 || true
+  run check.sh web >>"$T/out" 2>&1 || true
+  check "redacted" has 'https://\*\*\*@llm\.test\.invalid' "$T/out"
+  check "never shown or logged" bash -c "! grep -rq gw_secret_5 '$T/out' '$HOME/.local/state/hetzner-claude'"
+}

@@ -6,6 +6,7 @@ set -euo pipefail
 MACHINE="${1:?Usage: ./check.sh <machine>}"; export MACHINE
 source "$(dirname "$0")/common.sh"
 start_transcript check
+resolve_repo_url ""
 
 failures=0
 ok()   { echo "ok    $*"; }
@@ -149,9 +150,9 @@ if [[ -z "$(val claude_version)" ]]; then
   bad "Claude Code not installed"
 elif [[ -n "${VIPER_ANTHROPIC_BASE_URL:-}" ]]; then
   if [[ "$(val claude_auth)" != "gateway $VIPER_CLAUDE_MODEL $VIPER_ANTHROPIC_BASE_URL" ]]; then
-    bad "Claude Code $(val claude_version): not configured for $VIPER_CLAUDE_MODEL at $VIPER_ANTHROPIC_BASE_URL (has: $(val claude_auth); rerun ./start.sh $MACHINE)"
+    bad "Claude Code $(val claude_version): not configured for $VIPER_CLAUDE_MODEL at $(redact_url "$VIPER_ANTHROPIC_BASE_URL") (has: $(val claude_auth | sed -E 's#([a-z+]+://)[^/@ ]+@#\1***@#'); rerun ./start.sh $MACHINE)"
   elif answered_ok; then
-    ok "Claude Code $(val claude_version): model $VIPER_CLAUDE_MODEL at $VIPER_ANTHROPIC_BASE_URL answers"
+    ok "Claude Code $(val claude_version): model $VIPER_CLAUDE_MODEL at $(redact_url "$VIPER_ANTHROPIC_BASE_URL") answers"
   else
     bad "Claude Code $(val claude_version): no answer from $VIPER_CLAUDE_MODEL: $(val claude_answer)"
   fi
@@ -186,7 +187,8 @@ if [[ "$VIPER_HOMEBREW" == 1 ]]; then
     if [[ -n "$(val brew_missing)" ]]; then
       bad "Homebrew: missing $(val brew_missing) (rerun ./start.sh $MACHINE; log: ~/.config/viper/brew-packages.log)"
     elif [[ -n "${VIPER_BREW_TAPS:-}${VIPER_BREW_TRUST:-}${VIPER_BREW_PACKAGES:-}" ]]; then
-      ok "Homebrew: taps, trust entries and formulae present (${VIPER_BREW_TAPS:-}${VIPER_BREW_TAPS:+; }${VIPER_BREW_TRUST:+trust }${VIPER_BREW_TRUST:-}${VIPER_BREW_TRUST:+; }${VIPER_BREW_PACKAGES:-})"
+      read -r -d '' -a shown_taps <<<"${VIPER_BREW_TAPS:-}" || true
+      ok "Homebrew: taps, trust entries and formulae present ($( (( ${#shown_taps[@]} )) && redact_taps "${shown_taps[@]}")${VIPER_BREW_TAPS:+; }${VIPER_BREW_TRUST:+trust }${VIPER_BREW_TRUST:-}${VIPER_BREW_TRUST:+; }${VIPER_BREW_PACKAGES:-})"
     fi
     case "$(val brewfile)" in
       ok) ok "Homebrew: Brewfile of the repository satisfied" ;;

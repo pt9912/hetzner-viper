@@ -87,3 +87,11 @@ test_check_flags_a_trusted_tap_that_is_not_tapped() {
   fails run check.sh web >"$T/out"
   check "likely typo" has 'FAIL  Homebrew: missing untapped:acme/tpyo' "$T/out"
 }
+
+test_credentials_in_tap_urls_are_refused_and_not_shown() {
+  run setup.sh >/dev/null
+  printf 'VIPER_BREW_TAPS="acme/tools=https://oauth2:tap_secret_7@git.example.invalid/tools.git"\n' > "$W/machines/web.env.local"
+  fails run preflight.sh web >"$T/out"
+  check "refused" has 'credentials in the tap URL \(acme/tools=https://\*\*\*@git\.example\.invalid/tools\.git\)' "$T/out"
+  check "never shown or logged" bash -c "! grep -rq tap_secret_7 '$T/out' '$HOME/.local/state/hetzner-claude'"
+}

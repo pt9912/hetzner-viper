@@ -7,7 +7,7 @@ start_transcript down
 # Remove the local SSH config of this machine.
 cleanup_local() {
   ssh_include remove || ssh_include_warning
-  rm -f "$SSH_CFG" "$KNOWN_PIN" "$IP_STATE" "$ID_STATE" "$WORKSPACE_STATE" "$READY_STATE"
+  rm -f "$SSH_CFG" "$KNOWN_PIN" "$IP_STATE" "$ID_STATE" "$WORKSPACE_STATE" "$READY_STATE" "$REPO_STATE"
 }
 
 if ! hcloud_has server "$SERVER_NAME"; then
@@ -87,10 +87,10 @@ check_tree() {
   hidden=$(git -C "$t" ls-files -v 2>/dev/null | grep -E '^([a-z]|S) ' || true)
   [[ -z "$hidden" ]] || { printf 'Hidden from git status (assume-unchanged / skip-worktree):\n%s\n' "$hidden"; unsaved=1; }
   if ! git -C "$t" symbolic-ref -q HEAD >/dev/null; then
-    detached=$(git -C "$t" log --oneline HEAD --not --remotes --branches)
+    detached=$(git -C "$t" log --oneline HEAD --not --remotes --branches --tags)
     [[ -z "$detached" ]] || { printf 'Detached commits not on any branch or remote:\n%s\n' "$detached"; unsaved=1; }
   fi
-  ignored=$(git -C "$t" status --short --ignored | grep '^!!' || true)
+  ignored=$(git -C "$t" -c status.showUntrackedFiles=normal status --porcelain --ignored --ignore-submodules=none | grep '^!!' || true)
   [[ -z "$ignored" ]] || printf 'Ignored by git (also lost):\n%s\n' "$ignored"
 }
 
@@ -107,7 +107,13 @@ check_repo() {
     check_tree "$tree"
   done < <(git -C "$repo" worktree list --porcelain | sed -n 's/^worktree //p')
   # commits on any local branch that are not on any remote (also branches without upstream)
-  unpushed=$(git -C "$repo" log --oneline --branches --tags --not --remotes)
+  # Tags count only if created here: not among those that came with the clone (recorded by
+  # start.sh) and not on any remote (asked with a time limit; unknown if offline).
+  local_tags=$(git -C "$repo" for-each-ref --format='%(refname)' refs/tags)
+  remote_tags=$(for r in $(git -C "$repo" remote); do timeout 20 git -C "$repo" ls-remote --tags "$r" 2>/dev/null </dev/null | awk '{print $2}' | sed 's/\^{}$//'; done)
+  new_tags=$(comm -23 <(sort -u <<<"$local_tags") <(sort -u <(cat "$common/viper-clone-tags" 2>/dev/null; printf '%s\n' "$remote_tags")) | grep . || true)
+  # shellcheck disable=SC2086  # ref names have no spaces
+  unpushed=$(git -C "$repo" log --oneline --branches $new_tags --not --remotes)
   [[ -z "$unpushed" ]] || { printf 'Commits not on any remote (branches and tags):\n%s\n' "$unpushed"; unsaved=1; }
   # a remote that is a path on this server is deleted together with it
   while read -r name url; do

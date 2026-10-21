@@ -118,15 +118,19 @@ test_inventory_of_the_server_is_logged() {
 test_log_times_are_local_with_offset() {
   run setup.sh >/dev/null
   TZ=Europe/Berlin run preflight.sh web >/dev/null
-  check "local time with offset" has '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2} claude-web ' <(events)
+  check "local time with Berlin's offset" has '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\+0[12]:00 claude-web ' <(events)
   check "transcript header too" has '^===== [0-9-]{10}T[0-9:]{8}[+-][0-9]{2}:[0-9]{2} preflight claude-web$' <(transcript)
 }
 
 test_make_passes_the_local_timezone_to_the_container() {
   mk_tz() { make -s --no-print-directory -C "$ROOT" "$@" >/dev/null 2>&1; }
   TZ=Europe/Berlin mk_tz preflight MACHINE=web
+  check "TZ passed as set" bash -c "grep -A1 -x -- '-e' '$MOCK_STATE/docker-call-1' | grep -qx TZ=Europe/Berlin"
   if [[ -e /etc/localtime ]]; then
-    check "localtime mounted read-only" bash -c "grep -A1 -x -- '-v' '$MOCK_STATE/docker-call-1' | grep -qx '/etc/localtime:/etc/localtime:ro'"
+    rm -f "$MOCK_STATE"/docker-call-*
+    env -u TZ make -s --no-print-directory -C "$ROOT" preflight MACHINE=web >/dev/null 2>&1
+    # mounted at a neutral path: the image's own zone files (e.g. UTC) stay untouched
+    check "host zone mounted read-only" bash -c "grep -A1 -x -- '-v' '$MOCK_STATE/docker-call-1' | grep -qx '/etc/localtime:/etc/host-localtime:ro'"
+    check "and used via TZ" bash -c "grep -A1 -x -- '-e' '$MOCK_STATE/docker-call-1' | grep -qx 'TZ=:/etc/host-localtime'"
   fi
-  check "TZ passed" bash -c "grep -A1 -x -- '-e' '$MOCK_STATE/docker-call-1' | grep -qx TZ"
 }

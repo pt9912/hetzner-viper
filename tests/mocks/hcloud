@@ -66,6 +66,8 @@ if kind in ('ssh-key', 'firewall', 'server'):
             print(open(p).read())
     elif action == 'create':
         data = {'name': name, 'args': args, 'id': 1000 + len(os.listdir(os.path.dirname(p)))}
+        import datetime
+        data['created'] = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+00:00')
         if kind == 'ssh-key':
             data['fingerprint'] = fingerprint(opt('--public-key-from-file'))
             d = os.path.dirname(p)
