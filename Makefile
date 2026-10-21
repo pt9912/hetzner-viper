@@ -9,7 +9,7 @@ include tests/tests.mk
 # passed to the recipe shell as environment, expanded there in double quotes (URLs with & ; ?)
 export MACHINE REPO CMD
 
-.PHONY: help build setup preflight up ssh down
+.PHONY: help build setup preflight up check ssh down
 
 help: ## show this help
 	@echo 'Usage: make <target> [MACHINE=<name>] [REPO=<url>] [CMD="<command>"] [FORCE=1]'
@@ -45,6 +45,10 @@ preflight: build ## read-only checks, creates nothing (MACHINE, [REPO])
 up: build ## create the machine and clone the repo (MACHINE, [REPO])
 	$(call NEED_MACHINE,[REPO=<url>])
 	$(call RUN,./start.sh "$$MACHINE" "$$REPO")
+
+check: build ## read-only checks of a running machine: DNS, access by name, server state (MACHINE)
+	$(call NEED_MACHINE,)
+	$(call RUN,./check.sh "$$MACHINE")
 
 ssh: build ## shell or one command on the machine (MACHINE, [CMD])
 	$(call NEED_MACHINE,[CMD="<command>"])

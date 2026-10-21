@@ -33,11 +33,15 @@ fi
 if ! hcloud_has firewall "$FW_NAME"; then
   hcloud firewall create --name "$FW_NAME"
 fi
+# Inbound SSH (TCP 22) and ICMP (ping, for diagnosis) from SSH_ALLOWED_CIDRS; a missing rule
+# is added (also to an existing firewall), other rules are left alone.
 # separate assignment: a failing describe must abort, not count as "has rules"
-rule_count=$(hcloud firewall describe "$FW_NAME" -o json | jq '.rules | length')
-if [[ "$rule_count" == 0 ]]; then
-  hcloud firewall add-rule "$FW_NAME" --direction in --protocol tcp --port 22 --source-ips "${SSH_ALLOWED_CIDRS:-0.0.0.0/0,::/0}"
-else
+rules=$(hcloud firewall describe "$FW_NAME" -o json | jq -c '.rules')
+has_rule() { jq -e --arg p "$1" --arg port "${2:-}" 'any(.[]; .direction == "in" and .protocol == $p and (($port == "") or .port == $port))' <<<"$rules" >/dev/null; }
+cidrs="${SSH_ALLOWED_CIDRS:-0.0.0.0/0,::/0}"
+has_rule tcp 22 || hcloud firewall add-rule "$FW_NAME" --direction in --protocol tcp --port 22 --source-ips "$cidrs"
+has_rule icmp || hcloud firewall add-rule "$FW_NAME" --direction in --protocol icmp --source-ips "$cidrs"
+if has_rule tcp 22 && has_rule icmp; then
   echo "Existing firewall $FW_NAME: verify that its rules permit your connection."
 fi
 if ! hcloud_has server "$SERVER_NAME"; then

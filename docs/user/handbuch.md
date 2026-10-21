@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.11  
+Version: 1.13  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -43,6 +43,7 @@ Bei den Anbietern:
 |---|---|
 | `setup.sh` | Legt Ihren Login-Schlüssel und die lokale Host-CA an (einmalig). |
 | `preflight.sh <rechner>` | Prüft vorab nur lesend Einstellungen, Setup, Hetzner, Cloudflare und GitHub. Legt nichts an. `start.sh` führt es zuerst aus. |
+| `check.sh <rechner>` | Prüft einen laufenden Rechner nur lesend: DNS, Zugriff über den Namen wie ein anderes Gerät, Zustand des Servers. Im Container: `make check`. |
 | `connect.sh <rechner> [befehl]` | Öffnet eine Shell auf dem Rechner oder führt einen Befehl aus, mit der SSH-Konfiguration des Rechners. Im Container: `make ssh`. |
 | `start.sh <rechner>` | Richtet einen Rechner ein, setzt den DNS-Eintrag, legt das Arbeitsverzeichnis an und klont das Repository. |
 | `stop.sh <rechner>` | Prüft den Git-Stand, warnt vor ungesicherter Arbeit und löscht Server und DNS-Eintrag. |
@@ -134,13 +135,10 @@ Die erstmalige Einrichtung ist abgeschlossen. Am besten nutzen Sie ein eigenes H
 1. Tragen Sie in die Einstellungsdatei des Testrechners `machines/test.env.local` die Zeile `SERVER_TYPE=cpx02` ein. Gibt es die Datei noch nicht, kopieren Sie vorher `machines/example.env.local.example` dorthin. Dort können Sie auch `REPO_URL` setzen, dann brauchen Sie die URL in den folgenden Befehlen nicht. `cpx02` hat 1 vCPU, 1 GB RAM und 20 GB Platte.
 2. Prüfen Sie vorab: `make preflight MACHINE=test` (mit URL: `make preflight MACHINE=test REPO=https://github.com/<konto>/<repo>.git`). Meldet die Prüfung, dass `cpx02` in `fsn1` derzeit nicht bestellbar ist, ergänzen Sie in derselben Datei `SERVER_LOCATION=nbg1` oder `hel1`, oder nehmen Sie `SERVER_TYPE=cpx12` (2 GB RAM).
 3. Starten Sie den Rechner: `make up MACHINE=test` (oder mit `REPO=…` wie oben).
-4. Prüfen Sie den Rechner:
-   ```bash
-   make ssh MACHINE=test CMD="bash -lc 'claude --version; gh --version | head -n1; docker info >/dev/null && echo docker ok; ls /Development'"
-   ```
+4. Prüfen Sie den Rechner: `make check MACHINE=test` (siehe „Einen laufenden Rechner prüfen“).
 5. Löschen Sie den Rechner wieder: `make down MACHINE=test` und bestätigen Sie mit `DELETE`.
 
-Ohne Container lauten die Befehle `./preflight.sh test`, `./start.sh test`, `./connect.sh test "<befehl>"` und `./stop.sh test`.
+Ohne Container lauten die Befehle `./preflight.sh test`, `./start.sh test`, `./check.sh test` und `./stop.sh test`.
 
 #### Ergebnis
 
@@ -207,6 +205,28 @@ Das Ergebnis ist dasselbe wie beim direkten Aufruf. Login-Schlüssel, Host-CA un
 * Der Container sieht das Repository nur lesend.
 * Von Ihrem Home-Verzeichnis sieht der Container nur `~/.ssh`. Legen Sie Dateien für `GIT_DEPLOY_KEY_FILE` und `IPAD_SSH_PUBLIC_KEY_FILE` deshalb dort ab. Sonst bricht `start.sh` mit „File not readable“ ab, bevor etwas angelegt wird.
 * Die Skripte nutzen nur die SSH-Konfiguration des jeweiligen Rechners (`~/.ssh/config_hetzner_<SERVER_PREFIX>-<rechner>`). Einstellungen in Ihrer `~/.ssh/config` stören daher nicht.
+
+### Einen laufenden Rechner prüfen
+
+#### Vorgehen
+
+Führen Sie `make check MACHINE=<rechner>` aus (ohne Container: `./check.sh <rechner>`). Jede Zeile beginnt mit `ok`, `info`, `WARN` oder `FAIL`.
+
+Geprüft werden:
+
+* **DNS:** Der Name `<SERVER_PREFIX>-<rechner>.<DNS_DOMAIN>` löst bei den öffentlichen Resolvern von Cloudflare (1.1.1.1) und Google (8.8.8.8) auf die IP-Adresse des Servers auf. Zusätzlich zeigt der Check, was Ihr Computer auflöst.
+* **Zugriff wie ein anderes Gerät:** eine SSH-Verbindung über den DNS-Namen, bei der nur der Host-CA vertraut wird, nicht dem hinterlegten Schlüssel. So sieht das iPad oder ein zweiter Computer den Server, und dabei wird geprüft, dass das Zertifikat für den Namen gilt. Der Check zeigt auch, bis wann das Zertifikat gültig ist.
+* **Server:** cloud-init ist fertig. Claude Code ist installiert und, wenn `VIPER_CLAUDE_TOKEN` gesetzt ist, angemeldet und antwortet. `gh` ist installiert und, wenn `VIPER_GH_TOKEN` gesetzt ist, angemeldet. Docker läuft, das Repository ist geklont, und die SSH-Härtung wirkt. Dazu kommen freier Speicher und Plattenplatz.
+
+#### Ergebnis
+
+`Check OK.` oder eine Liste der Probleme. Der Check ändert nichts.
+
+#### Hinweise
+
+* Mit gesetztem `VIPER_CLAUDE_TOKEN` stellt der Check Claude Code eine kurze Testanfrage. Sie zählt zu Ihrem Abo.
+* Direkt nach dem Anlegen kann die DNS-Prüfung für einige Minuten fehlschlagen, bis die Resolver den neuen Eintrag kennen.
+* Der lokale Resolver läuft bei `make check` im Container, nicht auf Ihrem Computer. Was Ihr Computer auflöst, prüfen Sie mit `getent hosts <name>` oder `ping <name>`.
 
 ### Mit Claude Code arbeiten
 
@@ -392,7 +412,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 
 ### Firewall und Anmeldung
 
-* Die Firewall erhält ihre Regel aus `SSH_ALLOWED_CIDRS` nur, solange sie noch keine Regeln hat (beim ersten Anlegen oder wenn das Anlegen der Regel zuvor gescheitert ist). Bei einer Firewall mit Regeln ändern Sie die Regel für Port 22 in der Hetzner Console.
+* Die Firewall erlaubt eingehend SSH (TCP-Port 22) und ICMP (`ping`), beides aus den Netzen in `SSH_ALLOWED_CIDRS`. Fehlt eine der beiden Regeln, ergänzt `start.sh` sie, auch in einer schon vorhandenen Firewall. Andere Regeln lässt es unverändert. Eine bestehende Regel ändert es nicht: Wollen Sie die Netze nachträglich einschränken, ändern Sie die Regeln in der Hetzner Console.
 * Standardmäßig ist SSH aus dem ganzen Internet erreichbar. Anmeldung ist nur mit SSH-Schlüssel möglich. Passwörter und Root-Login sind abgeschaltet. Schränken Sie die Netze ein, wenn Sie nur von festen Adressen arbeiten. Eine Alternative ist ein VPN.
 * Ausgehende Verbindungen des Servers sind nicht eingeschränkt.
 
@@ -527,6 +547,16 @@ Die Skripte importieren und exportieren keine Daten. Ihre Arbeitsdateien liegen 
 **Ursache:** Der DNS-Eintrag konnte nicht gelöscht werden, der Server ist aber gelöscht.  
 **Lösung:** Entfernen Sie den A-Record in Cloudflare von Hand.
 
+### `ping <rechner>.<domain>`: "Name oder Dienst nicht bekannt"
+
+**Ursache:** Ihr DNS-Server merkt sich, dass es den Namen nicht gibt. Das passiert, wenn der Name abgefragt wurde, während der DNS-Eintrag nicht existierte, etwa zwischen `make down` und `make up`. Die Zone erlaubt das Zwischenspeichern dieser negativen Antwort für bis zu 30 Minuten (`make check` nennt den genauen Wert). Oft betrifft das den DNS-Server eines VPNs, während öffentliche Resolver den Namen schon auflösen.  
+**Lösung:** Prüfen Sie mit `make check MACHINE=<rechner>`, ob Cloudflare 1.1.1.1 und Google 8.8.8.8 den Namen richtig auflösen. Dann liegt es nur an Ihrem DNS-Server: warten Sie bis zu 30 Minuten, oder nutzen Sie vorübergehend einen anderen DNS-Server (zum Beispiel ohne VPN). `resolvectl flush-caches` leert nur den Cache Ihres Computers, nicht den des DNS-Servers.
+
+### `ping` bekommt keine Antwort
+
+**Ursache:** Die Firewall des Rechners lässt kein ICMP durch. Ältere Firewalls hatten nur die SSH-Regel.  
+**Lösung:** Führen Sie `make up MACHINE=<rechner>` aus. Das ergänzt die ICMP-Regel in der Firewall, der Server bleibt dabei bestehen. Ob der Rechner erreichbar ist, zeigt auch ohne Ping `make check MACHINE=<rechner>`.
+
 ### Verbindung wird nach einigen Tagen abgelehnt
 
 **Ursache:** Das Host-Zertifikat ist nach sieben Tagen abgelaufen. Eine automatische Erneuerung gibt es nicht. Computer mit hinterlegtem Host-Schlüssel verbinden sich weiter. Das ist der Computer, der den Rechner angelegt hat, und jeder andere, der innerhalb der sieben Tage einmal `start.sh` oder `stop.sh` ausgeführt hat (dabei wird der Schlüssel über die noch gültige CA-Prüfung nachgetragen). Betroffen sind Geräte, die nur der Host-CA vertrauen, etwa das iPad, und Computer, die den Rechner nie innerhalb der Gültigkeit erreicht haben.  
@@ -588,3 +618,5 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.9 | v3 mit Mehrrechner-Betrieb | Das GitHub-Token heißt jetzt `VIPER_GH_TOKEN` (statt `GH_TOKEN`), ein lokal exportiertes `GH_TOKEN` wird nicht mehr übernommen. Ein abgelehnter Host-Schlüssel wird als solcher gemeldet statt als „nicht erreichbar“, und `stop.sh --force` prüft einen erreichbaren Server trotzdem. Hinterlegte Schlüssel werden bei neuer Server-ID verworfen und nach einer CA-geprüften Verbindung nachgetragen. Eine als Symlink verwaltete `~/.ssh/config` bleibt erhalten. Die Bestellbarkeit wird über die Standortangaben des Servertyps geprüft (die frühere Rechenzentrums-Abfrage hat Hetzner abgeschaltet). Neu: Abschnitt „Erster Testlauf mit einem kleinen Server“ und `make ssh` (bzw. `connect.sh`) für Verbindungen ohne lokalen SSH-Client; das Handbuch nennt jetzt durchgehend die `make`-Befehle. `preflight.sh` prüft vorab nur lesend, und `start.sh` führt es zuerst aus. Fehlende Pflichtwerte werden gemeinsam gemeldet, bevor etwas angelegt oder gelöscht wird. |
 | 1.10 | v3 mit Mehrrechner-Betrieb | `make` ohne Ziel zeigt eine Übersicht aller Befehle (`make help`) statt die Tests zu starten. |
 | 1.11 | v3 mit Mehrrechner-Betrieb | Mit `VIPER_CLAUDE_TOKEN` (aus `claude setup-token`) ist Claude Code auf dem Server ohne erneute Anmeldung nutzbar. |
+| 1.12 | v3 mit Mehrrechner-Betrieb | `make check` prüft einen laufenden Rechner: DNS bei öffentlichen Resolvern, Zugriff über den Namen mit der Host-CA wie ein anderes Gerät (mit Ablaufdatum des Zertifikats) und den Zustand des Servers. |
+| 1.13 | v3 mit Mehrrechner-Betrieb | Die Firewall erlaubt zusätzlich ICMP (`ping`); fehlende Regeln werden auch in einer vorhandenen Firewall ergänzt. `make check` benennt den gefragten Resolver und erklärt zwischengespeicherte negative DNS-Antworten. |

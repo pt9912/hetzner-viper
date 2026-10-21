@@ -6,6 +6,14 @@ sf = os.path.join(os.environ['MOCK_STATE'], 'cf.json')
 with open(os.path.join(os.environ['MOCK_STATE'], 'calls.log'), 'a') as f:
     f.write('curl ' + ' '.join(args) + '\n')
 recs = json.load(open(sf)) if os.path.exists(sf) else []
+# DNS over HTTPS (check.sh): answers from the fake Cloudflare zone; MOCK_DNS_STALE: no answer yet
+doh = [a for a in args if a.startswith(('https://cloudflare-dns.com/', 'https://dns.google/'))]
+if doh:
+    name = urllib.parse.parse_qs(urllib.parse.urlparse(doh[0]).query)['name'][0]
+    if urllib.parse.parse_qs(urllib.parse.urlparse(doh[0]).query).get('type') == ['SOA']:
+        print(json.dumps({'Status': 0, 'Answer': [{'type': 6, 'data': 'ns.test.invalid. dns.test.invalid. 1 10000 2400 604800 1800'}]})); sys.exit(0)
+    ans = [] if os.environ.get('MOCK_DNS_STALE') else [{'type': 1, 'data': r['content']} for r in recs if r['name'] == name]
+    print(json.dumps({'Status': 0 if ans else 3, 'Answer': ans})); sys.exit(0)
 # like the real API with -f: no valid bearer header (or MOCK_CF_FAIL) -> HTTP error, exit 22
 headers = [args[i + 1] for i, a in enumerate(args) if a == '-H']
 auth = [open(h[1:]).read() if h.startswith('@') else h for h in headers]

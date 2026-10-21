@@ -22,11 +22,12 @@ make                                                # list all targets (make hel
 make setup                                          # create login key and local host CA
 make preflight MACHINE=web                          # read-only checks: settings, Hetzner, Cloudflare, GitHub
 make up MACHINE=web REPO=https://example.org/org/web.git   # set up machine "web", clone the repo
+make check MACHINE=web                              # read-only: DNS, access by name like another device, server state
 make ssh MACHINE=web                                # shell on the machine (CMD="..." for one command)
 make down MACHINE=web                               # delete machine "web"
 ```
 
-Without the container, call the scripts directly: `./setup.sh`, `./preflight.sh web`, `./start.sh web <url>`, `./connect.sh web`, `./stop.sh web`.
+Without the container, call the scripts directly: `./setup.sh`, `./preflight.sh web`, `./start.sh web <url>`, `./check.sh web`, `./connect.sh web`, `./stop.sh web`.
 
 - `make preflight MACHINE=<name>` (or `./preflight.sh <name> [repo-url]`) checks everything read-only before anything is created: settings, local setup, Hetzner token, server type available at the location, image, Cloudflare zone and record, GitHub token and repository access. `start.sh` runs it first.
 - `make test` runs the tests against mocks (offline, no cost); `make docker-test` runs the same tests in a container without network.

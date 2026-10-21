@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+"""Fake ssh-keyscan -c: prints the host certificate from the fake server's user-data."""
+import os, sys, yaml
+host = sys.argv[-1]
+ud = os.path.join(os.environ['MOCK_STATE'], 'hcloud', 'server', host.split('.')[0] + '.user-data')
+if os.path.exists(ud):
+    # like the real ssh-keyscan -c: "<type> <base64>" without the host name
+    print(' '.join(yaml.safe_load(open(ud))['ssh_keys']['ed25519_certificate'].split()[:2]))

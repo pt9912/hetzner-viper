@@ -1,5 +1,5 @@
 # Test targets, included by the top-level Makefile.
-TEST_SCRIPTS = common.sh connect.sh dns.sh preflight.sh setup.sh start.sh stop.sh tests/run.sh tests/cases/*.sh tests/mocks/ssh tests/mocks/scp tests/mocks/code tests/mocks/docker
+TEST_SCRIPTS = check.sh common.sh connect.sh dns.sh preflight.sh setup.sh start.sh stop.sh tests/run.sh tests/cases/*.sh tests/mocks/ssh tests/mocks/scp tests/mocks/code tests/mocks/docker tests/mocks/remote/claude tests/mocks/remote/gh tests/mocks/remote/sudo
 
 .PHONY: test lint docker-test
 

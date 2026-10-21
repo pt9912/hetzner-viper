@@ -10,13 +10,13 @@ PASS=0; FAIL=0
 new_env() {  # fresh sandbox: copy of the scripts, own HOME and mock state
   T=$(mktemp -d)
   mkdir -p "$T/work" "$T/home" "$T/state" "$T/mnt"
-  (cd "$ROOT" && cp -r cloud-init.yaml common.sh connect.sh dns.sh preflight.sh setup.sh start.sh stop.sh .env.local.example machines "$T/work/")
+  (cd "$ROOT" && cp -r check.sh cloud-init.yaml common.sh connect.sh dns.sh preflight.sh setup.sh start.sh stop.sh .env.local.example machines "$T/work/")
   rm -f "$T/work/machines/"*.env.local
   cp "$T/work/.env.local.example" "$T/work/.env.local"
   printf 'DNS_DOMAIN=test.invalid\nWORKSPACE_DIR=%s\n' "$T/mnt" >> "$T/work/.env.local"
   export HOME="$T/home" MOCK_STATE="$T/state" PATH="$MOCKS:$PATH"
   export HCLOUD_TOKEN=t CLOUDFLARE_API_TOKEN=t CLOUDFLARE_ZONE_ID=z
-  unset MOCK_SSH_DOWN MOCK_DNS_STALE MOCK_CLOUDINIT_RC MOCK_HCLOUD_FAIL MOCK_CF_FAIL MOCK_INSTALL_FAIL MOCK_DOCKER_FAIL MOCK_DESCRIBE_FAIL MOCK_SSH_HOSTKEY_FAIL MOCK_SOLD_OUT MOCK_DEPRECATED MOCK_CF_ZONE MOCK_GH_BAD MOCK_GH_SCOPES MOCK_GH_NOREPO GH_TOKEN GH_HOST VIPER_GH_TOKEN VIPER_GH_HOST VIPER_CLAUDE_TOKEN CLAUDE_CODE_OAUTH_TOKEN
+  unset MOCK_SSH_DOWN MOCK_DNS_STALE MOCK_CLOUDINIT_RC MOCK_HCLOUD_FAIL MOCK_CF_FAIL MOCK_INSTALL_FAIL MOCK_DOCKER_FAIL MOCK_DESCRIBE_FAIL MOCK_SSH_HOSTKEY_FAIL MOCK_CA_FAIL MOCK_SSHD_WEAK MOCK_SOLD_OUT MOCK_DEPRECATED MOCK_CF_ZONE MOCK_GH_BAD MOCK_GH_SCOPES MOCK_GH_NOREPO GH_TOKEN GH_HOST VIPER_GH_TOKEN VIPER_GH_HOST VIPER_CLAUDE_TOKEN CLAUDE_CODE_OAUTH_TOKEN
   touch "$T/state/claude-ready"
   : > "$MOCK_STATE/calls.log"
   W="$T/work"; CALLS="$MOCK_STATE/calls.log"

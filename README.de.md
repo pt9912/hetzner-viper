@@ -22,11 +22,12 @@ make                                                # alle Targets anzeigen (mak
 make setup                                          # Login-Key und lokale Host-CA anlegen
 make preflight MACHINE=web                          # nur lesende Prüfung: Einstellungen, Hetzner, Cloudflare, GitHub
 make up MACHINE=web REPO=https://example.org/org/web.git   # Rechner "web" einrichten, Repo klonen
+make check MACHINE=web                              # nur lesend: DNS, Zugriff über den Namen wie ein anderes Gerät, Server-Zustand
 make ssh MACHINE=web                                # Shell auf dem Rechner (CMD="..." für einen Befehl)
 make down MACHINE=web                               # Rechner "web" löschen
 ```
 
-Ohne Container rufen Sie die Skripte direkt auf: `./setup.sh`, `./preflight.sh web`, `./start.sh web <url>`, `./connect.sh web`, `./stop.sh web`.
+Ohne Container rufen Sie die Skripte direkt auf: `./setup.sh`, `./preflight.sh web`, `./start.sh web <url>`, `./check.sh web`, `./connect.sh web`, `./stop.sh web`.
 
 - `make preflight MACHINE=<name>` (oder `./preflight.sh <name> [repo-url]`) prüft vorab nur lesend, bevor etwas angelegt wird: Einstellungen, lokales Setup, Hetzner-Token, Bestellbarkeit des Servertyps am Standort, Image, Cloudflare-Zone und -Eintrag, GitHub-Token und Repo-Zugriff. `start.sh` führt es zuerst aus.
 - `make test` führt die Tests gegen Mocks aus (offline, ohne Kosten), `make docker-test` dieselben im Container ohne Netz.

@@ -12,6 +12,10 @@ remote="${args[*]:i+1}"
 consume() { (( no_stdin )) || cat >/dev/null; }
 [[ -z "${MOCK_SSH_DOWN:-}" ]] || { consume; echo 'ssh: connect to host 203.0.113.10 port 22: Connection timed out' >&2; exit 255; }
 [[ -z "${MOCK_SSH_HOSTKEY_FAIL:-}" ]] || { consume; echo 'Host key verification failed.' >&2; exit 255; }
+# connection like another device (only the host CA is trusted): MOCK_CA_FAIL = expired certificate
+if [[ "$*" == *known_hosts_hetzner_claude_ca* && -n "${MOCK_CA_FAIL:-}" ]]; then
+  consume; echo 'Certificate invalid: expired' >&2; echo 'Host key verification failed.' >&2; exit 255
+fi
 export HOME="$MOCK_STATE/remote-home" VIPER_TMP_DIRS="$MOCK_STATE/remote-tmp"
 mkdir -p "$HOME" "$VIPER_TMP_DIRS"
 case "$remote" in
@@ -29,7 +33,7 @@ case "$remote" in
   "gh auth login"*) if (( no_stdin )); then : > "$MOCK_STATE/gh-token"; else cat > "$MOCK_STATE/gh-token"; fi ;;
   # host key read over a CA-verified connection (pin_from_server)
   "cat /etc/ssh/ssh_host_ed25519_key.pub") consume; cat "$MOCK_STATE/remote-hostkey.pub" 2>/dev/null ;;
-  "bash -s"*) (( no_stdin )) && exec </dev/null; bash -c "$remote"; exit $? ;;
+  "bash -s"*) (( no_stdin )) && exec </dev/null; PATH="$(dirname "$0")/remote:$PATH" bash -c "$remote"; exit $? ;;
   *) consume ;;
 esac
 exit 0

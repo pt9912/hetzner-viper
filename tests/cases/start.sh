@@ -173,13 +173,25 @@ assert 'systemctl try-reload-or-restart ssh' in d['runcmd']
 PY
 }
 
-test_firewall_without_rules_gets_ssh_rule() {
+test_firewall_without_rules_gets_ssh_and_icmp_rules() {
   run setup.sh >/dev/null
   hcloud firewall create --name claude-ssh >/dev/null
   run start.sh web >/dev/null
-  check "rule added" count_is 'hcloud firewall add-rule claude-ssh' "$CALLS" 1
+  check "ssh rule" count_is 'hcloud firewall add-rule claude-ssh --direction in --protocol tcp --port 22' "$CALLS" 1
+  check "icmp rule" count_is 'hcloud firewall add-rule claude-ssh --direction in --protocol icmp' "$CALLS" 1
   run start.sh api >/dev/null
-  check "no second rule" count_is 'hcloud firewall add-rule claude-ssh' "$CALLS" 1
+  check "no further rules" count_is 'hcloud firewall add-rule' "$CALLS" 2
+}
+
+test_existing_firewall_with_only_ssh_gets_icmp() {
+  run setup.sh >/dev/null
+  hcloud firewall create --name claude-ssh >/dev/null
+  hcloud firewall add-rule claude-ssh --direction in --protocol tcp --port 22 --source-ips 10.0.0.0/8 >/dev/null
+  : > "$CALLS"
+  echo 'SSH_ALLOWED_CIDRS=10.0.0.0/8' >> "$W/.env.local"
+  run start.sh web >/dev/null
+  check "icmp added with the same networks" has 'add-rule claude-ssh --direction in --protocol icmp --source-ips 10\.0\.0\.0/8' "$CALLS"
+  check "ssh rule not duplicated" bash -c "! grep -q 'protocol tcp' '$CALLS'"
 }
 
 test_missing_deploy_key_fails_before_creating_anything() {

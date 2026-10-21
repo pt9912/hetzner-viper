@@ -80,7 +80,11 @@ if kind in ('ssh-key', 'firewall', 'server'):
             shutil.copy(ud, p.replace('.json', '.user-data'))
         json.dump(data, open(p, 'w'))
     elif action == 'add-rule':
-        data = json.load(open(p)); data['rules'].append(args[3:]); json.dump(data, open(p, 'w'))
+        # stored like the real API: direction, protocol, port (tcp/udp only), source_ips
+        data = json.load(open(p))
+        data['rules'].append({'direction': opt('--direction'), 'protocol': opt('--protocol'), 'port': opt('--port'),
+                              'source_ips': (opt('--source-ips') or '').split(','), 'destination_ips': [], 'description': None})
+        json.dump(data, open(p, 'w'))
     elif action == 'ip' and kind == 'server':
         if not os.path.exists(p):
             sys.exit(1)

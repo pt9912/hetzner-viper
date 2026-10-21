@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Fake gh on the server: logged in once start.sh sent a token
+case "$1 $2" in
+  "--version "*) echo 'gh version 2.46.0 (2025-12-13 Ubuntu 2.46.0-4)' ;;
+  "auth status") [[ -s "$MOCK_STATE/gh-token" ]] ;;
+esac
