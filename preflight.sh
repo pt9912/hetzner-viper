@@ -103,7 +103,7 @@ fi
 echo "== Cloudflare DNS"
 ./dns.sh check || failures=$((failures + 1))
 
-echo "== GitHub and repository"
+echo "== GitHub"
 if [[ -n "${VIPER_GH_TOKEN:-}" ]]; then
   gh_host="${VIPER_GH_HOST:-github.com}"
   api="https://api.github.com"; [[ "$gh_host" == github.com ]] || api="https://$gh_host/api/v3"
@@ -133,15 +133,45 @@ if [[ -n "${VIPER_GH_TOKEN:-}" ]]; then
 else
   info "no VIPER_GH_TOKEN: gh is not logged in on the server"
 fi
-if [[ -n "${VIPER_CLAUDE_TOKEN:-}" ]]; then
+echo "== Claude Code"
+if [[ -n "${VIPER_ANTHROPIC_BASE_URL:-}" ]]; then
+  [[ -z "${VIPER_CLAUDE_TOKEN:-}" ]] || bad "set either VIPER_CLAUDE_TOKEN or VIPER_ANTHROPIC_BASE_URL, not both (the API token would take precedence over the subscription)"
+  for v in VIPER_ANTHROPIC_AUTH_TOKEN VIPER_CLAUDE_MODEL; do [[ -n "${!v:-}" ]] || bad "$v is required with VIPER_ANTHROPIC_BASE_URL"; done
+  [[ -z "${VIPER_CLAUDE_MAX_CONTEXT_TOKENS:-}" || "$VIPER_CLAUDE_MAX_CONTEXT_TOKENS" =~ ^[0-9]+$ ]] || bad "VIPER_CLAUDE_MAX_CONTEXT_TOKENS must be a number of tokens"
+  base="${VIPER_ANTHROPIC_BASE_URL%/}"
+  if [[ ! "$base" =~ ^https?:// ]]; then
+    bad "VIPER_ANTHROPIC_BASE_URL must start with https:// (or http://): $base"
+  elif [[ -n "${VIPER_ANTHROPIC_AUTH_TOKEN:-}" && -n "${VIPER_CLAUDE_MODEL:-}" ]]; then
+    [[ "$base" == https://* ]] || warn "VIPER_ANTHROPIC_BASE_URL is not https: prompts and the token travel unencrypted"
+    # the request Claude Code makes (Bearer token, Messages API); costs a few tokens.
+    # A suffix like [1m] is a Claude Code marker, not part of the model ID.
+    model_id="${VIPER_CLAUDE_MODEL%%\[*}"
+    body=$(jq -n --arg m "$model_id" '{model: $m, max_tokens: 16, messages: [{role: "user", content: "Reply with exactly: OK"}]}')
+    if resp=$(curl -sS --max-time 90 -w '\n%{http_code}' -X POST -H @<(printf 'Authorization: Bearer %s\n' "$VIPER_ANTHROPIC_AUTH_TOKEN") \
+           -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' --data "$body" "$base/v1/messages" 2>&1); then
+      code="${resp##*$'\n'}"; resp="${resp%$'\n'*}"
+      msg=$(jq -r '.error.message? // .error? // .message? // empty' <<<"$resp" 2>/dev/null | head -c 200 || true)
+      case "$code" in
+        200) ok "$base answers with model $model_id (Anthropic Messages API)" ;;
+        401|403) bad "$base rejects VIPER_ANTHROPIC_AUTH_TOKEN (HTTP $code${msg:+: $msg})" ;;
+        404) bad "$base: model $model_id or the Messages API not found (HTTP 404${msg:+: $msg})" ;;
+        *) bad "$base: HTTP $code${msg:+: $msg}" ;;
+      esac
+    else
+      bad "$base not reachable: $(tail -n1 <<<"$resp")"
+    fi
+  fi
+elif [[ -n "${VIPER_CLAUDE_TOKEN:-}" ]]; then
   if [[ "$VIPER_CLAUDE_TOKEN" =~ [[:space:]] ]]; then
     bad "VIPER_CLAUDE_TOKEN contains whitespace (copied with a line break?)"
   else
     ok "VIPER_CLAUDE_TOKEN set: Claude Code will be logged in on the server (validity is only seen when claude runs)"
   fi
 else
-  info "no VIPER_CLAUDE_TOKEN: log in on the server with claude (/login) after each new server"
+  info "no VIPER_CLAUDE_TOKEN or VIPER_ANTHROPIC_BASE_URL: log in on the server with claude (/login) after each new server"
 fi
+
+echo "== repository"
 if [[ -z "${REPO_URL:-}" ]]; then
   info "no repository to clone"
 elif [[ "$REPO_URL" == -* ]]; then

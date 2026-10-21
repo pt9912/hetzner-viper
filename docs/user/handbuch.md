@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.14  
+Version: 1.15  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -341,6 +341,40 @@ Die Meldung `claude: logged in with VIPER_CLAUDE_TOKEN` erscheint. `claude` ist 
 * Setzen Sie auf dem Server kein `ANTHROPIC_API_KEY`: Ein API-Key hat Vorrang vor dem Token und würde über API-Guthaben abrechnen.
 * Ist das Token abgelaufen, erzeugen Sie mit `claude setup-token` ein neues, tragen es ein und führen `make up MACHINE=<rechner>` erneut aus.
 
+### Andere Modelle nutzen (Ollama, vLLM, Gateway)
+
+Statt der Anthropic-Modelle kann Claude Code auf dem Server ein anderes Modell nutzen, das über eine Anthropic-kompatible Schnittstelle (Messages API) erreichbar ist. Beispiele sind Ollamas Cloud-Modelle, ein eigener vLLM-Server (etwa auf RunPod) oder ein LLM-Gateway.
+
+#### Voraussetzung
+
+* Sie haben Zugang zu einem solchen Dienst und einen API-Schlüssel dafür. Bei Ollama erzeugen Sie ihn unter `https://ollama.com/settings/keys`.
+* `VIPER_CLAUDE_TOKEN` ist für diesen Rechner nicht gesetzt. Beides zusammen lehnt der Preflight ab, weil der API-Schlüssel sonst Vorrang vor dem Abo hätte.
+
+#### Vorgehen
+
+1. Tragen Sie in `machines/<rechner>.env.local` ein (Werte nicht in Chats oder Tickets kopieren):
+   ```
+   VIPER_ANTHROPIC_BASE_URL=https://ollama.com
+   VIPER_ANTHROPIC_AUTH_TOKEN=<Ihr Ollama-API-Schlüssel>
+   VIPER_CLAUDE_MODEL=<Modellname>
+   ```
+   Für einen vLLM-Server setzen Sie dessen Adresse (zum Beispiel `https://<pod-id>-8000.proxy.runpod.net`), den vLLM-API-Schlüssel und den dort ausgelieferten Modellnamen (`--served-model-name`).
+2. Optional: `VIPER_CLAUDE_MAX_CONTEXT_TOKENS=<Tokens>` setzt das Kontextfenster, das Claude Code für das Modell annimmt (sonst 200.000), etwa `1048576` für 1M. Ohne diese Angabe zeigt Claude Code beim Start die Warnung `unrecognized_model`; sie ist harmlos und bedeutet nur, dass es 200.000 Tokens annimmt.
+3. Prüfen Sie vorab: `make preflight MACHINE=<rechner>`. Der Preflight stellt dem Modell eine kurze Anfrage, genau wie Claude Code sie stellt, und meldet einen falschen Schlüssel oder Modellnamen.
+4. Starten Sie den Rechner: `make up MACHINE=<rechner>`. Bei einem laufenden Rechner reicht derselbe Befehl.
+
+#### Ergebnis
+
+Die Meldung `claude: using model <Modell> at <Adresse>` erscheint. `claude` nutzt auf dem Server dieses Modell, auch für Hintergrundaufgaben und Subagents. `make check MACHINE=<rechner>` zeigt `model <Modell> at <Adresse> answers`.
+
+#### Hinweise
+
+* **Modellnamen:** Über `https://ollama.com` heißen Cloud-Modelle ohne das Suffix `:cloud`, das ein lokales Ollama verwendet. Welcher Name stimmt, zeigt der Preflight. Ein Suffix wie `[1m]` ist eine Markierung von Claude Code und gehört nicht zum Modellnamen; für Fremdmodelle setzen Sie das Fenster besser mit `VIPER_CLAUDE_MAX_CONTEXT_TOKENS`.
+* **Abrechnung** erfolgt beim Anbieter des Modells, nicht über Ihr Claude-Abo.
+* **Einschränkungen:** Das Modell muss Tools (Funktionsaufrufe) beherrschen. Laut Ollama funktionieren gehostete Websuche und manche erweiterten Tool-Funktionen nicht vollständig. Remote Control ist mit einer anderen Adresse als `api.anthropic.com` abgeschaltet. Qualität und Verhalten bei langen Aufgaben hängen stark vom Modell ab.
+* Der Schlüssel wird wie das Abo-Token per SSH über die Standardeingabe übertragen und liegt auf dem Server in `~/.config/viper/claude.env` (Rechte `600`). Claude Code und jeder Prozess von `builder` können ihn lesen.
+* Wechseln Sie zurück zum Abo, entfernen Sie die drei Einstellungen, setzen Sie `VIPER_CLAUDE_TOKEN` und führen Sie `make up MACHINE=<rechner>` erneut aus.
+
 ### Vom iPad aus verbinden
 
 #### Vorgehen
@@ -410,6 +444,10 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `VIPER_GH_TOKEN` | GitHub-PAT für `gh` und `git` über HTTPS auf dem Server | leer |
 | `VIPER_GH_HOST` | GitHub-Host (für GitHub Enterprise) | `github.com` |
 | `VIPER_CLAUDE_TOKEN` | Langlebiges Token Ihres Claude-Abos aus `claude setup-token` (ein Jahr gültig) | leer |
+| `VIPER_ANTHROPIC_BASE_URL` | Adresse einer Anthropic-kompatiblen Schnittstelle für ein anderes Modell (z. B. `https://ollama.com`) | leer |
+| `VIPER_ANTHROPIC_AUTH_TOKEN` | API-Schlüssel für diese Schnittstelle | leer |
+| `VIPER_CLAUDE_MODEL` | Modellname bei diesem Anbieter | leer |
+| `VIPER_CLAUDE_MAX_CONTEXT_TOKENS` | Kontextfenster, das Claude Code für das Modell annimmt | 200.000 |
 | `HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID` | Zugangsdaten (Shell oder `.env.local`), Pflichtangaben | leer |
 
 ### Firewall und Anmeldung
@@ -629,3 +667,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.12 | v3 mit Mehrrechner-Betrieb | `make check` prüft einen laufenden Rechner: DNS bei öffentlichen Resolvern, Zugriff über den Namen mit der Host-CA wie ein anderes Gerät (mit Ablaufdatum des Zertifikats) und den Zustand des Servers. |
 | 1.13 | v3 mit Mehrrechner-Betrieb | Die Firewall erlaubt zusätzlich ICMP (`ping`); fehlende Regeln werden auch in einer vorhandenen Firewall ergänzt. `make check` benennt den gefragten Resolver und erklärt zwischengespeicherte negative DNS-Antworten. |
 | 1.14 | v3 mit Mehrrechner-Betrieb | `stop.sh` prüft alle Arbeitsverzeichnisse, mit denen ein Rechner je gestartet wurde. SSH-Adressen ohne Deploy-Key: mit `VIPER_GH_TOKEN` über HTTPS geklont, sonst vom Preflight abgelehnt. Keine Agent- oder X11-Weiterleitung zum Server. Ein Symlink als `~/.ssh/config` funktioniert im Container. Beim Wiederverwenden eines Servers enden Host-Key- und Anmeldefehler sofort. Klassische GitHub-Tokens mit `admin:org`/`write:org` werden akzeptiert. |
+| 1.15 | v3 mit Mehrrechner-Betrieb | Andere Modelle über eine Anthropic-kompatible Schnittstelle (Ollama-Cloud, vLLM, Gateway): `VIPER_ANTHROPIC_BASE_URL`, `VIPER_ANTHROPIC_AUTH_TOKEN`, `VIPER_CLAUDE_MODEL`; der Preflight testet Schlüssel und Modell. |

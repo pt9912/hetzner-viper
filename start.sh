@@ -156,19 +156,35 @@ if [[ -n "${VIPER_GH_TOKEN:-}" ]]; then
     git config --global --add url.$https.insteadOf $scp_form && git config --global --add url.$https.insteadOf $ssh_form" <<<"$VIPER_GH_TOKEN"
   echo "gh: logged in to $host (SSH URLs of $host are cloned over HTTPS)"
 fi
-# Claude Code login for builder with a long-lived subscription token (`claude setup-token`).
-# The token goes through stdin into a 600 file; a line at the very top of .bashrc/.profile
+# Claude Code login for builder, one of:
+#  - VIPER_CLAUDE_TOKEN: long-lived subscription token (`claude setup-token`)
+#  - VIPER_ANTHROPIC_BASE_URL + VIPER_ANTHROPIC_AUTH_TOKEN + VIPER_CLAUDE_MODEL: another model
+#    behind an Anthropic-compatible API (Ollama's cloud, a vLLM server, a gateway); aliases,
+#    background tasks and subagents use that model too
+# The settings go through stdin into a 600 file; a line at the very top of .bashrc/.profile
 # (before the "not interactive: return" guard) loads it for ssh commands, tmux and VS Code.
-# A dedicated variable, so a CLAUDE_CODE_OAUTH_TOKEN exported locally is never copied.
-if [[ -n "${VIPER_CLAUDE_TOKEN:-}" ]]; then
-  claude_login='umask 077 && mkdir -p ~/.config/viper && IFS= read -r t &&
-    printf "export CLAUDE_CODE_OAUTH_TOKEN=%q\n" "$t" > ~/.config/viper/claude.env &&
+# Dedicated variables, so credentials exported locally are never copied to a server.
+claude_env=''
+if [[ -n "${VIPER_ANTHROPIC_BASE_URL:-}" ]]; then
+  claude_env=$(printf 'export ANTHROPIC_BASE_URL=%q\nexport ANTHROPIC_AUTH_TOKEN=%q\nexport ANTHROPIC_API_KEY=""\nunset CLAUDE_CODE_OAUTH_TOKEN' \
+    "$VIPER_ANTHROPIC_BASE_URL" "$VIPER_ANTHROPIC_AUTH_TOKEN")
+  for v in ANTHROPIC_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL CLAUDE_CODE_SUBAGENT_MODEL; do
+    claude_env+=$(printf '\nexport %s=%q' "$v" "$VIPER_CLAUDE_MODEL")
+  done
+  [[ -z "${VIPER_CLAUDE_MAX_CONTEXT_TOKENS:-}" ]] || claude_env+=$(printf '\nexport CLAUDE_CODE_MAX_CONTEXT_TOKENS=%q' "$VIPER_CLAUDE_MAX_CONTEXT_TOKENS")
+  claude_login_msg="claude: using model $VIPER_CLAUDE_MODEL at $VIPER_ANTHROPIC_BASE_URL"
+elif [[ -n "${VIPER_CLAUDE_TOKEN:-}" ]]; then
+  claude_env=$(printf 'export CLAUDE_CODE_OAUTH_TOKEN=%q' "$VIPER_CLAUDE_TOKEN")
+  claude_login_msg='claude: logged in with VIPER_CLAUDE_TOKEN'
+fi
+if [[ -n "$claude_env" ]]; then
+  claude_login='umask 077 && mkdir -p ~/.config/viper && cat > ~/.config/viper/claude.env &&
     line="[ -f ~/.config/viper/claude.env ] && . ~/.config/viper/claude.env" &&
     for f in ~/.bashrc ~/.profile; do
       grep -qxF "$line" "$f" 2>/dev/null || { { echo "$line"; [ ! -f "$f" ] || cat "$f"; } > "$f.viper" && mv "$f.viper" "$f"; }
     done'
-  ssh -F "$SSH_CFG" "$SSH_ALIAS" "$claude_login" <<<"$VIPER_CLAUDE_TOKEN"
-  echo 'claude: logged in with VIPER_CLAUDE_TOKEN'
+  ssh -F "$SSH_CFG" "$SSH_ALIAS" "$claude_login" <<<"$claude_env"
+  echo "$claude_login_msg"
 fi
 WORKDIR="$WORKSPACE_DIR"
 if [[ -n "${REPO_URL:-}" ]]; then
@@ -197,5 +213,5 @@ echo "Ready: ssh $SSH_ALIAS (work dir: $WORKDIR)"
 # VS Code and its extensions must not inherit the API tokens from .env.local
 if command -v code >/dev/null; then
   env -u HCLOUD_TOKEN -u CLOUDFLARE_API_TOKEN -u CLOUDFLARE_ZONE_ID -u VIPER_GH_TOKEN -u GH_TOKEN \
-    -u VIPER_CLAUDE_TOKEN -u CLAUDE_CODE_OAUTH_TOKEN code --remote "ssh-remote+$SSH_ALIAS" "$WORKDIR" || true
+    -u VIPER_CLAUDE_TOKEN -u CLAUDE_CODE_OAUTH_TOKEN -u VIPER_ANTHROPIC_AUTH_TOKEN code --remote "ssh-remote+$SSH_ALIAS" "$WORKDIR" || true
 fi

@@ -68,14 +68,16 @@ echo "== server ($SERVER_NAME, $IP)"
 WORKDIR="$WORKSPACE_DIR"
 [[ -z "${REPO_URL:-}" ]] || WORKDIR="$WORKSPACE_DIR/$(basename "${REPO_URL%.git}")"
 # key=value lines; nothing is changed on the server
-if ! out=$(ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$WORKDIR" "${VIPER_CLAUDE_TOKEN:+1}")" <<'PROBE'
+if ! out=$(ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$WORKDIR" "${VIPER_CLAUDE_TOKEN:+1}${VIPER_ANTHROPIC_BASE_URL:+1}")" <<'PROBE'
 set -uo pipefail
 dir="$1"; ask_claude="$2"
 export LC_ALL=C PATH="$HOME/.local/bin:$PATH"
 echo "cloudinit=$(cloud-init status 2>/dev/null | sed -n 's/^status: //p')"
 echo "claude_version=$(claude --version 2>/dev/null | head -n1)"
 # the same loader ssh commands, tmux and VS Code terminals use
-if bash -c '. ~/.bashrc >/dev/null 2>&1; [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]'; then echo claude_token=yes; else echo claude_token=no; fi
+echo "claude_auth=$(bash -c '. ~/.bashrc >/dev/null 2>&1
+  if [ -n "${ANTHROPIC_BASE_URL:-}" ]; then echo "gateway ${ANTHROPIC_MODEL:-} ${ANTHROPIC_BASE_URL}"
+  elif [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then echo token; else echo none; fi')"
 if [ -n "$ask_claude" ]; then
   # </dev/null: claude -p reads stdin as extra prompt and would swallow the rest of this script
   answer=$(cd "$dir" 2>/dev/null || cd; bash -c '. ~/.bashrc >/dev/null 2>&1; timeout 120 claude -p "Reply with exactly: OK"' </dev/null 2>&1 | tail -n1)
@@ -105,8 +107,16 @@ case "$(val cloudinit)" in
 esac
 if [[ -z "$(val claude_version)" ]]; then
   bad "Claude Code not installed"
+elif [[ -n "${VIPER_ANTHROPIC_BASE_URL:-}" ]]; then
+  if [[ "$(val claude_auth)" != "gateway $VIPER_CLAUDE_MODEL $VIPER_ANTHROPIC_BASE_URL" ]]; then
+    bad "Claude Code $(val claude_version): not configured for $VIPER_CLAUDE_MODEL at $VIPER_ANTHROPIC_BASE_URL (has: $(val claude_auth); rerun ./start.sh $MACHINE)"
+  elif [[ "$(val claude_answer)" == *OK* ]]; then
+    ok "Claude Code $(val claude_version): model $VIPER_CLAUDE_MODEL at $VIPER_ANTHROPIC_BASE_URL answers"
+  else
+    bad "Claude Code $(val claude_version): no answer from $VIPER_CLAUDE_MODEL: $(val claude_answer)"
+  fi
 elif [[ -n "${VIPER_CLAUDE_TOKEN:-}" ]]; then
-  if [[ "$(val claude_token)" != yes ]]; then
+  if [[ "$(val claude_auth)" != token ]]; then
     bad "Claude Code $(val claude_version): token not loaded in shells (rerun ./start.sh $MACHINE)"
   elif [[ "$(val claude_answer)" == *OK* ]]; then
     ok "Claude Code $(val claude_version): logged in via VIPER_CLAUDE_TOKEN and answers"
@@ -114,7 +124,7 @@ elif [[ -n "${VIPER_CLAUDE_TOKEN:-}" ]]; then
     bad "Claude Code $(val claude_version): no answer with the token: $(val claude_answer)"
   fi
 else
-  info "Claude Code $(val claude_version): no VIPER_CLAUDE_TOKEN, log in with claude (/login)"
+  info "Claude Code $(val claude_version): no VIPER_CLAUDE_TOKEN or VIPER_ANTHROPIC_BASE_URL, log in with claude (/login)"
 fi
 if [[ -z "$(val gh_version)" ]]; then
   bad "gh not installed"

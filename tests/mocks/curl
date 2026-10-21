@@ -1,11 +1,25 @@
 #!/usr/bin/env python3
-"""Fake Cloudflare DNS API (records endpoint). State: $MOCK_STATE/cf.json."""
+"""Fake HTTP APIs: Cloudflare DNS records (state: $MOCK_STATE/cf.json), DNS over HTTPS,
+GitHub and an Anthropic-compatible Messages API."""
 import json, os, sys, urllib.parse
 args = sys.argv[1:]
 sf = os.path.join(os.environ['MOCK_STATE'], 'cf.json')
 with open(os.path.join(os.environ['MOCK_STATE'], 'calls.log'), 'a') as f:
     f.write('curl ' + ' '.join(args) + '\n')
 recs = json.load(open(sf)) if os.path.exists(sf) else []
+# Anthropic Messages API of another provider (preflight.sh): like curl -w '\n%{http_code}'
+llm = [a for a in args if a.endswith('/v1/messages')]
+if llm:
+    hdrs = [args[i + 1] for i, a in enumerate(args) if a == '-H']
+    auth = ''.join(open(h[1:]).read() if h.startswith('@') else h for h in hdrs)
+    model = json.loads(args[args.index('--data') + 1])['model']
+    if 'Authorization: Bearer ' not in auth or os.environ.get('MOCK_LLM_BAD_TOKEN'):
+        code, out = 401, {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid api key'}}
+    elif os.environ.get('MOCK_LLM_BAD_MODEL') == model:
+        code, out = 404, {'type': 'error', 'error': {'type': 'not_found_error', 'message': f"model '{model}' not found"}}
+    else:
+        code, out = 200, {'type': 'message', 'content': [{'type': 'text', 'text': 'OK'}]}
+    print(json.dumps(out) + ('\n' + str(code) if '-w' in args else '')); sys.exit(0)
 # DNS over HTTPS (check.sh): answers from the fake Cloudflare zone; MOCK_DNS_STALE: no answer yet
 doh = [a for a in args if a.startswith(('https://cloudflare-dns.com/', 'https://dns.google/'))]
 if doh:
