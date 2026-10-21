@@ -120,7 +120,8 @@ if [[ -n "${VIPER_GH_TOKEN:-}" ]]; then
   headers=$(mktemp); EXIT_CMDS+=('rm -f "$headers"')
   # token as header file: it never appears in curl's argv
   if user=$(curl -fsS -D "$headers" -H @<(printf 'Authorization: Bearer %s\n' "$VIPER_GH_TOKEN") "$api/user" 2>&1); then
-    ok "VIPER_GH_TOKEN valid for $(jq -r '.login' <<<"$user") on $gh_host"
+    login=$(jq -r '.login' <<<"$user")
+    ok "VIPER_GH_TOKEN valid for $login on $gh_host"
     scopes=$(awk -F': ' 'tolower($1) == "x-oauth-scopes" {gsub("\r", "", $2); print $2}' "$headers")
     if [[ -n "$scopes" ]]; then
       # gh's minimum: repo, and read:org or a broader org scope (write:org, admin:org)
@@ -135,6 +136,16 @@ if [[ -n "${VIPER_GH_TOKEN:-}" ]]; then
       repo="${BASH_REMATCH[2]}/${BASH_REMATCH[3]%.git}"
       if curl -fsS -o /dev/null -H @<(printf 'Authorization: Bearer %s\n' "$VIPER_GH_TOKEN") "$api/repos/$repo" 2>/dev/null; then
         ok "token can access $repo"
+        # the first step of a git push: the ref list of git-receive-pack needs write access
+        # (fine-grained: Contents read and write); nothing is written
+        code=$(curl -sS -o /dev/null -w '%{http_code}' \
+          -H @<(printf 'Authorization: Basic %s\n' "$(printf '%s:%s' "$login" "$VIPER_GH_TOKEN" | base64 -w0)") \
+          "https://$gh_host/$repo.git/info/refs?service=git-receive-pack" 2>/dev/null) || true
+        case "$code" in
+          200) ok "token can push to $repo" ;;
+          401|403|404) bad "token cannot push to $repo (fine-grained token: Contents must be Read and write)" ;;
+          *) warn "push permission for $repo not checked (HTTP ${code:-error})" ;;
+        esac
       else
         bad "token cannot access $repo (fine-grained token without this repository?)"
       fi

@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.23  
+Version: 1.24  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -110,7 +110,7 @@ Geprüft werden:
 * **Lokales Setup:** Login-Schlüssel und Host-CA sind vorhanden, die CA gilt für `*.<DNS_DOMAIN>`, die Dateien aus `GIT_DEPLOY_KEY_FILE` und `IPAD_SSH_PUBLIC_KEY_FILE` sind lesbar.
 * **Hetzner:** Das Token kann das Projekt lesen. Servertyp, Standort und Image (für die Architektur des Typs) existieren. Der Servertyp ist am Standort derzeit bestellbar. Der Login-Schlüssel kollidiert nicht mit einem anderen Schlüssel gleichen Namens.
 * **Cloudflare:** Die Zone ist lesbar, `DNS_DOMAIN` liegt darin, und es gibt keinen fremden DNS-Eintrag für den Rechner.
-* **GitHub (wenn `VIPER_GH_TOKEN` gesetzt ist):** Das Token ist gültig, ein klassisches Token hat die Scopes `repo` und `read:org`, und es hat Zugriff auf ein GitHub-Repository aus `REPO_URL`.
+* **GitHub (wenn `VIPER_GH_TOKEN` gesetzt ist):** Das Token ist gültig, ein klassisches Token hat die Scopes `repo` und `read:org`, und es hat Zugriff auf ein GitHub-Repository aus `REPO_URL` und darf dorthin pushen.
 * **Repository:** Ein HTTPS- oder lokales Repository ist erreichbar. Eine SSH-Adresse braucht `GIT_DEPLOY_KEY_FILE` (dann prüft erst der Clone auf dem Server den Zugriff) oder, für GitHub, `VIPER_GH_TOKEN` (dann wird über HTTPS geklont); sonst lehnt der Preflight sie ab.
 
 #### Ergebnis
@@ -314,17 +314,44 @@ Auf jedem Rechner ist die GitHub-CLI `gh` installiert. Mit einem Personal Access
 
 #### Voraussetzung
 
-Sie haben bei GitHub ein PAT erzeugt. Empfohlen ist ein **fein granulares** Token, das nur für das Repository des Rechners gilt, mit kurzer Laufzeit und nur den nötigen Rechten (zum Beispiel **Contents** und **Pull requests**: Lesen und Schreiben).
+Sie haben ein GitHub-Konto mit Schreibrecht auf das Repository des Rechners.
 
 #### Vorgehen
 
-1. Tragen Sie das Token als `VIPER_GH_TOKEN` ein:
+1. Legen Sie bei GitHub ein **fein granulares** Token an: **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**.
+   * **Token name:** frei wählbar, zum Beispiel `viper-<repo>`. Nehmen Sie ein eigenes Token pro Rechner.
+   * **Resource owner:** das Konto oder die Organisation, der das Repository gehört. Eine Organisation muss das Token unter Umständen erst freigeben; bis dahin steht es auf „pending“.
+   * **Expiration:** kurz, zum Beispiel 30 oder 90 Tage.
+   * **Repository access:** **Only select repositories** und das Repository des Rechners. „Public repositories“ erlaubt nur Lesen und reicht nicht.
+   * **Permissions:** unter **Repository permissions** die Rechte aus den Tabellen unten. **Account permissions** braucht es nicht.
+2. Tragen Sie das Token (es beginnt mit `github_pat_`) als `VIPER_GH_TOKEN` ein:
    * für einen einzelnen Rechner in `machines/<rechner>.env.local` (empfohlen), oder
    * für alle Rechner in `.env.local` oder als `export VIPER_GH_TOKEN=...` in der Shell.
-2. Für GitHub Enterprise setzen Sie zusätzlich `VIPER_GH_HOST` auf den Hostnamen.
 
-Die Skripte lesen bewusst nicht `GH_TOKEN`. Ein Token, das Sie für Ihr lokales `gh` exportiert haben, landet so nie ungewollt auf einem Server.
-3. Starten Sie den Rechner mit `./start.sh <rechner>` bzw. `make up MACHINE=<rechner>`.
+   Für GitHub Enterprise setzen Sie zusätzlich `VIPER_GH_HOST` auf den Hostnamen.
+3. Prüfen Sie vorab: `make preflight MACHINE=<rechner> REPO=<url>`. Unter `== GitHub` stehen dann `VIPER_GH_TOKEN valid for …`, `token can access <konto>/<repo>` und `token can push to <konto>/<repo>`.
+4. Starten Sie den Rechner mit `./start.sh <rechner>` bzw. `make up MACHINE=<rechner>`.
+
+Diese Rechte braucht das Token immer:
+
+| Berechtigung | Stufe | Wofür |
+|---|---|---|
+| **Contents** | Read and write | Klonen, Pullen und Pushen per HTTPS |
+| **Pull requests** | Read and write | `gh pr create`, `gh pr view`, Kommentare, Mergen |
+| **Metadata** | Read-only | Pflicht, GitHub setzt es selbst |
+
+Diese Rechte vergeben Sie nur bei Bedarf:
+
+| Berechtigung | Stufe | Wofür |
+|---|---|---|
+| Issues | Read and write (nur lesen: Read-only) | `gh issue …`, Kommentare an Issues |
+| Actions | Read-only | `gh run list`, `gh run view`: Ergebnisse der CI ansehen |
+| Commit statuses | Read-only | Status einzelner Commits lesen |
+| Workflows | Read and write | Änderungen an Dateien unter `.github/workflows/` pushen; ohne dieses Recht lehnt GitHub solche Pushes ab |
+
+Alle anderen Berechtigungen bleiben auf „No access“. Die Liste der Berechtigungen je API-Endpunkt finden Sie bei GitHub unter „Permissions required for fine-grained personal access tokens“; Git über HTTPS steht dort nicht, dafür gilt **Contents**.
+
+Ein klassisches Token braucht die Scopes `repo` und `read:org` (für Workflow-Dateien zusätzlich `workflow`). Es gilt für alle Repositories Ihres Kontos; nehmen Sie deshalb besser ein fein granulares.
 
 #### Ergebnis
 
@@ -332,6 +359,9 @@ Die Meldung `gh: logged in to github.com` erscheint. Auf dem Server ist `gh` ang
 
 #### Hinweise
 
+* Die Skripte lesen bewusst nicht `GH_TOKEN`. Ein Token, das Sie für Ihr lokales `gh` exportiert haben, landet so nie ungewollt auf einem Server.
+* Mit **Contents: Read and write** darf der Agent auf jeden Branch pushen, auch direkt auf `main`, und er darf Force-Pushes ausführen und Branches löschen. Weitere Einstellungen sind dafür nicht nötig. Soll er nur über Pull Requests arbeiten, schützen Sie `main` im Repository unter **Settings → Rules → Rulesets**, etwa mit „Require a pull request before merging“, „Block force pushes“ und „Restrict deletions“. Bei privaten Repositories gibt es Rulesets erst ab GitHub Pro bzw. Team.
+* Der Preflight prüft das Schreibrecht, ohne etwas zu schreiben: Er ruft die Liste der Referenzen ab, mit der jeder `git push` beginnt. Das Recht **Workflows** und Regeln für einzelne Branches prüft er nicht.
 * Das Token wird per SSH über die Standardeingabe übertragen. Es steht weder in den Hetzner-User-Data noch in einer Befehlszeile.
 * Auf dem Server liegt das Token unverschlüsselt in `~/.config/gh/hosts.yml`. Claude Code und jeder Prozess des Benutzers `builder` können es lesen. Vergeben Sie deshalb nur die Rechte, die der Agent braucht.
 * Mit dem Löschen des Servers ist das Token dort entfernt. Bei GitHub bleibt es gültig, bis es abläuft oder Sie es widerrufen.
@@ -580,6 +610,7 @@ Die Skripte importieren und exportieren keine Daten. Ihre Arbeitsdateien liegen 
 * `server type … does not exist`, `location … does not exist`, `image … does not exist`: Tippfehler oder ein Wert, den Hetzner nicht anbietet. Die gültigen Werte zeigen `hcloud server-type list`, `hcloud location list` und `hcloud image list --type system`.
 * `DNS_DOMAIN … is not in Cloudflare zone …`: `CLOUDFLARE_ZONE_ID` gehört zu einer anderen Domain.
 * `repository … not reachable without credentials`: Das Repository ist privat. Setzen Sie `VIPER_GH_TOKEN` (GitHub) oder nutzen Sie eine SSH-URL mit `GIT_DEPLOY_KEY_FILE`.
+* `token cannot access …`: Das fein granulare Token gilt nicht für dieses Repository oder gehört zu einem anderen Resource owner. `token cannot push to …`: Das Token darf nur lesen; setzen Sie **Contents** auf „Read and write“ (Abschnitt „GitHub-CLI und Token auf dem Rechner nutzen“). Die Rechte eines vorhandenen Tokens können Sie bei GitHub nachträglich ändern (**Edit**); ein neues Token ist nicht nötig.
 
 **Lösung:** Beheben Sie die genannten Punkte und führen Sie `./preflight.sh <rechner>` erneut aus.
 
@@ -766,3 +797,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.21 | v3 mit Mehrrechner-Betrieb | `stop.sh` findet neue Dateien unabhängig von Git-Einstellungen, meldet ausgeblendete Dateien und Commits nur hinter Tags und löscht nichts bei unvollständiger Prüfung. Eingerichtet-Vermerk auch auf dem Server; Warten auf einen Neustart höchstens etwa drei Minuten. `Brewfile` nur mit `VIPER_BREWFILE=1`. Protokolle: `interrupted`, keine Zugangsdaten aus Repo-URLs (abgelehnt), Bestandsliste des Servers nach jedem `make up`. `FORCE`/`FULL` nur mit `1`. |
 | 1.22 | v3 mit Mehrrechner-Betrieb | Protokolle mit lokaler Uhrzeit und Abstand zu UTC; der `make`-Container übernimmt die Zeitzone des Rechners. |
 | 1.23 | v3 mit Mehrrechner-Betrieb | Ein per `REPO=` angegebenes Repository wird für den Rechner gemerkt. Tags aus dem Clone gelten nicht als ungesicherte Arbeit. Zugangsdaten in Tap-URLs werden abgelehnt, Adressen mit Zugangsdaten nirgends angezeigt. Ein älterer Server gilt auch auf anderen Computern als eingerichtet. Die Zeitzone des Rechners wird im Container sauber übernommen. |
+| 1.24 | v3 mit Mehrrechner-Betrieb | Schritt-für-Schritt-Anleitung und Rechtetabelle für das fein granulare GitHub-Token; der Preflight prüft, ob `VIPER_GH_TOKEN` in das Repository pushen darf. |

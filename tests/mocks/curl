@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fake HTTP APIs: Cloudflare DNS records (state: $MOCK_STATE/cf.json), DNS over HTTPS,
 GitHub and an Anthropic-compatible Messages API."""
-import json, os, sys, urllib.parse
+import base64, json, os, sys, urllib.parse
 args = sys.argv[1:]
 sf = os.path.join(os.environ['MOCK_STATE'], 'cf.json')
 with open(os.path.join(os.environ['MOCK_STATE'], 'calls.log'), 'a') as f:
@@ -28,9 +28,15 @@ if doh:
         print(json.dumps({'Status': 0, 'Answer': [{'type': 6, 'data': 'ns.test.invalid. dns.test.invalid. 1 10000 2400 604800 1800'}]})); sys.exit(0)
     ans = [] if os.environ.get('MOCK_DNS_STALE') else [{'type': 1, 'data': r['content']} for r in recs if r['name'] == name]
     print(json.dumps({'Status': 0 if ans else 3, 'Answer': ans})); sys.exit(0)
-# like the real API with -f: no valid bearer header (or MOCK_CF_FAIL) -> HTTP error, exit 22
 headers = [args[i + 1] for i, a in enumerate(args) if a == '-H']
 auth = [open(h[1:]).read() if h.startswith('@') else h for h in headers]
+# git over HTTPS (preflight.sh): the push ref list needs Basic <login>:<token> with write
+# access, like curl -w '%{http_code}'; MOCK_GH_READONLY: the token may only read
+if any(a.endswith('/info/refs?service=git-receive-pack') for a in args):
+    basic = [a.split('Basic ', 1)[1].strip() for a in auth if a.startswith('Authorization: Basic ')]
+    good = basic and base64.b64decode(basic[0]).decode() == 'tester:' + os.environ.get('VIPER_GH_TOKEN', '')
+    print(401 if not good else 403 if os.environ.get('MOCK_GH_READONLY') else 200, end=''); sys.exit(0)
+# like the real API with -f: no valid bearer header (or MOCK_CF_FAIL) -> HTTP error, exit 22
 # MOCK_CF_WRITE_FAIL: the token may read but not edit (preflight passes, start.sh fails at DNS)
 if os.environ.get('MOCK_CF_WRITE_FAIL') and ('-X' in args and args[args.index('-X') + 1] in ('POST', 'PUT', 'DELETE')):
     print('curl: (22) The requested URL returned error: 403', file=sys.stderr); sys.exit(22)
