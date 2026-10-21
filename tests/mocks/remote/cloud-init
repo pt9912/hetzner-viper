@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Fake cloud-init on the server: exit code from MOCK_CLOUDINIT_RC (2 = done with warnings)
+exit "${MOCK_CLOUDINIT_RC:-0}"

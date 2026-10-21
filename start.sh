@@ -7,17 +7,21 @@ source "$(dirname "$0")/common.sh"
 : "${CLOUDFLARE_ZONE_ID:?Set CLOUDFLARE_ZONE_ID}"
 CA="$HOME/.ssh/hetzner_claude_host_ca"
 [[ -f "$CA" && -f "$SSH_KEY.pub" ]] || { echo 'Run ./setup.sh first' >&2; exit 1; }
+GIT_DEPLOY_KEY_FILE="${GIT_DEPLOY_KEY_FILE:+${GIT_DEPLOY_KEY_FILE/#\~/$HOME}}"
+IPAD_SSH_PUBLIC_KEY_FILE="${IPAD_SSH_PUBLIC_KEY_FILE:+${IPAD_SSH_PUBLIC_KEY_FILE/#\~/$HOME}}"
+for f in "${GIT_DEPLOY_KEY_FILE:-}" "${IPAD_SSH_PUBLIC_KEY_FILE:-}"; do
+  [[ -z "$f" || -r "$f" ]] || { echo "File not readable: $f (in the container only ~/.ssh is visible)" >&2; exit 1; }
+done
 if ! hcloud ssh-key describe "$KEY_NAME" >/dev/null 2>&1; then
   hcloud ssh-key create --name "$KEY_NAME" --public-key-from-file "$SSH_KEY.pub"
 fi
 if ! hcloud firewall describe "$FW_NAME" >/dev/null 2>&1; then
-  if [[ -z "${SSH_ALLOWED_CIDRS:-}" ]]; then
-    SSH_ALLOWED_CIDRS="0.0.0.0/0,::/0"
-  fi
   hcloud firewall create --name "$FW_NAME"
-  hcloud firewall add-rule "$FW_NAME" --direction in --protocol tcp --port 22 --source-ips "$SSH_ALLOWED_CIDRS"
+fi
+if [[ "$(hcloud firewall describe "$FW_NAME" -o json | jq '.rules | length')" == 0 ]]; then
+  hcloud firewall add-rule "$FW_NAME" --direction in --protocol tcp --port 22 --source-ips "${SSH_ALLOWED_CIDRS:-0.0.0.0/0,::/0}"
 else
-  echo "Existing firewall $FW_NAME: verify that SSH_ALLOWED_CIDRS permits your iPad connection."
+  echo "Existing firewall $FW_NAME: verify that its rules permit your connection."
 fi
 if ! hcloud server describe "$SERVER_NAME" >/dev/null 2>&1; then
   TMP=$(mktemp -d)
@@ -56,19 +60,7 @@ else
 fi
 IP=$(hcloud server ip "$SERVER_NAME")
 echo "$IP" > "$STATE/ip-$MACHINE"
-SSH_CFG="$HOME/.ssh/config_hetzner_claude_$MACHINE"
-cat > "$SSH_CFG" <<CFG
-Host $SSH_ALIAS
-    HostName $DNS_HOST
-    User builder
-    IdentityFile $SSH_KEY
-    IdentitiesOnly yes
-    StrictHostKeyChecking yes
-    CheckHostIP no
-    UserKnownHostsFile $HOME/.ssh/known_hosts_hetzner_claude_ca
-    HostKeyAlgorithms ssh-ed25519-cert-v01@openssh.com
-CFG
-chmod 600 "$SSH_CFG"
+write_ssh_config
 touch "$HOME/.ssh/config"
 chmod 600 "$HOME/.ssh/config"
 if ! grep -Fqx "Include $SSH_CFG" "$HOME/.ssh/config"; then
@@ -87,23 +79,23 @@ done
 echo 'Waiting for trusted SSH host certificate and cloud-init ...'
 ready=0
 for i in $(seq 1 120); do
-  if ssh -o BatchMode=yes -o ConnectTimeout=5 "$SSH_ALIAS" \
-    'cloud-init status --wait >/dev/null 2>&1 && test -f /var/tmp/claude-ready && docker info >/dev/null 2>&1' 2>/dev/null; then
+  if ssh -F "$SSH_CFG" -o BatchMode=yes -o ConnectTimeout=5 "$SSH_ALIAS" \
+    'cloud-init status --wait >/dev/null 2>&1; rc=$?; { [ $rc = 0 ] || [ $rc = 2 ]; } && test -f /var/tmp/claude-ready && docker info >/dev/null 2>&1' 2>/dev/null; then
     ready=1; break
   fi
   sleep 5
 done
 [[ "$ready" == 1 ]] || { echo 'SSH/cloud-init not ready; server retained.' >&2; exit 1; }
 # Work directory on the server's own disk; it is deleted together with the server.
-ssh "$SSH_ALIAS" "sudo install -d -o builder -g builder '$WORKSPACE_DIR'"
+ssh -F "$SSH_CFG" "$SSH_ALIAS" "sudo install -d -o builder -g builder '$WORKSPACE_DIR'"
 WORKDIR="$WORKSPACE_DIR"
 if [[ -n "${REPO_URL:-}" ]]; then
   WORKDIR="$WORKSPACE_DIR/$(basename "${REPO_URL%.git}")"
   if [[ -n "${GIT_DEPLOY_KEY_FILE:-}" ]]; then
-    scp -q "${GIT_DEPLOY_KEY_FILE/#\~/$HOME}" "$SSH_ALIAS:.ssh/deploy_key"
-    ssh "$SSH_ALIAS" 'chmod 600 ~/.ssh/deploy_key'
+    scp -F "$SSH_CFG" -q "$GIT_DEPLOY_KEY_FILE" "$SSH_ALIAS:.ssh/deploy_key"
+    ssh -F "$SSH_CFG" "$SSH_ALIAS" 'chmod 600 ~/.ssh/deploy_key'
   fi
-  ssh "$SSH_ALIAS" bash -s -- "$REPO_URL" "$WORKDIR" "${REPO_BRANCH:-}" "${GIT_DEPLOY_KEY_FILE:+1}" <<'CLONE'
+  ssh -F "$SSH_CFG" "$SSH_ALIAS" bash -s -- "$REPO_URL" "$WORKDIR" "${REPO_BRANCH:-}" "${GIT_DEPLOY_KEY_FILE:+1}" <<'CLONE'
 set -euo pipefail
 url="$1"; dir="$2"; branch="$3"; use_key="$4"
 if [[ -n "$use_key" ]]; then

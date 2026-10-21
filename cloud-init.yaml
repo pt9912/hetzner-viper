@@ -33,12 +33,6 @@ write_files:
       PermitRootLogin no
       PermitEmptyPasswords no
       AuthenticationMethods publickey
-  - path: /etc/ssh/sshd_config.d/60-host-cert.conf
-    owner: root:root
-    permissions: '0644'
-    content: |
-      HostKey /etc/ssh/ssh_host_ed25519_key
-      HostCertificate /etc/ssh/ssh_host_ed25519_key-cert.pub
 
 runcmd:
   - sshd -t
@@ -47,5 +41,4 @@ runcmd:
   - mkdir -p /home/builder/.ssh
   - chown builder:builder /home/builder/.ssh
   - chmod 700 /home/builder/.ssh
-  - su - builder -c 'curl -fsSL https://claude.ai/install.sh | bash'
-  - touch /var/tmp/claude-ready
+  - su - builder -c 'set -o pipefail; curl -fsSL https://claude.ai/install.sh | bash' && touch /var/tmp/claude-ready

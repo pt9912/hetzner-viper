@@ -1,6 +1,6 @@
-# Benutzerhandbuch: Hetzner Claude Code Worker
+# Benutzerhandbuch: Hetzner Viper
 
-Version: 1.3  
+Version: 1.4  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -8,7 +8,7 @@ Stand: 21.10.2026
 
 ### Zweck der Software
 
-Die Skripte in diesem Repository richten mit einem Befehl einen entfernten Arbeitsrechner bei Hetzner Cloud ein. Auf diesem Rechner läuft Claude Code. Sie arbeiten darauf über VS Code (Remote-SSH) oder über ein SSH-Terminal, zum Beispiel vom iPad.
+Die Skripte in diesem Repository richten mit einem Befehl einen entfernten Arbeitsrechner bei Hetzner Cloud ein. Auf diesem Rechner arbeitet der Code-Agent Claude Code als „virtuelle Person“ (VIPER: VIrtual PERson) in Ihrem Repository. Sie arbeiten darauf über VS Code (Remote-SSH) oder über ein SSH-Terminal, zum Beispiel vom iPad.
 
 Pro Git-Repository richten Sie einen eigenen Rechner ein. Beim Einrichten wird das Repository automatisch geklont. Wenn Sie fertig sind, löschen Sie den Rechner wieder. Alle Dateien auf dem Rechner werden dabei gelöscht. Sichern Sie Ihre Arbeit deshalb vorher mit `git push`.
 
@@ -139,6 +139,8 @@ Das Ergebnis ist dasselbe wie beim direkten Aufruf. Login-Schlüssel, Host-CA un
 * VS Code wird aus dem Container nicht gestartet. Öffnen Sie die Verbindung `hetzner-claude-web` selbst.
 * `make up` baut das Image bei Bedarf und übernimmt Ihre Benutzerkennung und Ihr Home-Verzeichnis. Das Image gilt daher nur für Ihren Benutzer.
 * Der Container sieht das Repository nur lesend.
+* Von Ihrem Home-Verzeichnis sieht der Container nur `~/.ssh`. Legen Sie Dateien für `GIT_DEPLOY_KEY_FILE` und `IPAD_SSH_PUBLIC_KEY_FILE` deshalb dort ab. Sonst bricht `start.sh` mit „File not readable“ ab, bevor etwas angelegt wird.
+* Die Skripte nutzen nur die SSH-Konfiguration des jeweiligen Rechners (`~/.ssh/config_hetzner_claude_<rechner>`). Einstellungen in Ihrer `~/.ssh/config` stören daher nicht.
 
 ### Mit Claude Code arbeiten
 
@@ -220,18 +222,19 @@ Schließen Sie alle VS-Code-Fenster und Terminals, die auf dem Rechner geöffnet
 #### Vorgehen
 
 1. Führen Sie `./stop.sh <rechner>` aus.
-2. Lesen Sie die Ausgabe: Das Skript zeigt je Repository den Git-Stand, nicht gepushte Commits, tmux-Sitzungen. Gibt es ungesicherte Arbeit (uncommittete oder nicht gepushte Änderungen, Repository ohne Upstream), steht `UNSAVED WORK` in der Ausgabe, und Sie müssen zusätzlich `DISCARD` eingeben, um fortzufahren.
+2. Lesen Sie die Ausgabe: Das Skript zeigt je Repository den Git-Stand, nicht gepushte Commits, tmux-Sitzungen. Gibt es ungesicherte Arbeit (uncommittete, nicht gepushte oder mit `git stash` beiseitegelegte Änderungen, Repository ohne Upstream oder ein nicht lesbares Repository), steht `UNSAVED WORK` in der Ausgabe, und Sie müssen zusätzlich `DISCARD` eingeben, um fortzufahren. Von Git ignorierte Dateien (zum Beispiel `.env` oder Build-Verzeichnisse) werden unter **Ignored by git (also lost)** aufgelistet, blockieren aber nicht.
 3. Sichern Sie offene Änderungen (committen und pushen), falls nötig, und starten Sie `stop.sh` erneut.
 4. Geben Sie zur Bestätigung `DELETE` ein.
 
 #### Ergebnis
 
-Server und DNS-Eintrag sind gelöscht. Alle Dateien auf dem Server sind weg. Beim nächsten `./start.sh <rechner>` wird das Repository neu geklont.
+Server, DNS-Eintrag und die lokale SSH-Konfiguration des Rechners sind gelöscht. Alle Dateien auf dem Server sind weg. Beim nächsten `./start.sh <rechner>` wird das Repository neu geklont.
 
 #### Hinweise
 
 * Auch Ihre Claude-Anmeldung und alle nicht gepushten Änderungen gehen verloren.
 * Das Skript bricht ab, wenn Sie `DELETE` nicht eingeben.
+* Haben Sie den Server schon in der Hetzner Console gelöscht, räumt `./stop.sh <rechner>` nur noch DNS-Eintrag und SSH-Konfiguration auf.
 
 ### Einen nicht erreichbaren Rechner löschen
 
@@ -265,7 +268,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 
 ### Firewall und Anmeldung
 
-* Die Firewall wird nur beim ersten Anlegen aus `SSH_ALLOWED_CIDRS` befüllt. Bei einer schon vorhandenen Firewall ändern Sie die Regel für Port 22 in der Hetzner Console.
+* Die Firewall erhält ihre Regel aus `SSH_ALLOWED_CIDRS` nur, solange sie noch keine Regeln hat (beim ersten Anlegen oder wenn das Anlegen der Regel zuvor gescheitert ist). Bei einer Firewall mit Regeln ändern Sie die Regel für Port 22 in der Hetzner Console.
 * Standardmäßig ist SSH aus dem ganzen Internet erreichbar. Anmeldung ist nur mit SSH-Schlüssel möglich. Passwörter und Root-Login sind abgeschaltet. Schränken Sie die Netze ein, wenn Sie nur von festen Adressen arbeiten. Eine Alternative ist ein VPN.
 * Ausgehende Verbindungen des Servers sind nicht eingeschränkt.
 
@@ -316,12 +319,22 @@ Die Skripte importieren und exportieren keine Daten. Ihre Arbeitsdateien liegen 
 
 ### Meldung: "SSH/cloud-init not ready; server retained."
 
-**Ursache:** Der Server ist nach 10 Minuten nicht per SSH erreichbar oder die Einrichtung ist nicht abgeschlossen. Mögliche Gründe: Die Firewall blockiert Ihr Netz, die Servereinrichtung ist fehlgeschlagen oder das Zertifikat wird nicht akzeptiert.  
+**Ursache:** Der Server ist nach 10 Minuten nicht per SSH erreichbar oder die Einrichtung ist nicht abgeschlossen. Mögliche Gründe: Die Firewall blockiert Ihr Netz, die Servereinrichtung ist mit Fehlern abgebrochen, die Installation von Claude Code ist fehlgeschlagen oder das Zertifikat wird nicht akzeptiert. Warnungen von cloud-init allein führen nicht zu dieser Meldung.  
 **Lösung:**
 1. Prüfen Sie die Firewall-Regel für Port 22 in der Hetzner Console.
 2. Öffnen Sie die Web-Konsole des Servers und lesen Sie `/var/log/cloud-init-output.log`.
 3. Starten Sie `./start.sh <rechner>` erneut, wenn die Ursache behoben ist.
 4. Hilft das nicht, löschen Sie den Rechner mit `./stop.sh <rechner> --force` und legen Sie ihn neu an.
+
+### Meldung: "File not readable: … (in the container only ~/.ssh is visible)"
+
+**Ursache:** Die Datei aus `GIT_DEPLOY_KEY_FILE` oder `IPAD_SSH_PUBLIC_KEY_FILE` fehlt oder ist nicht lesbar. Im Container ist außerhalb von `~/.ssh` keine Datei Ihres Home-Verzeichnisses sichtbar.  
+**Lösung:** Prüfen Sie den Pfad. Beim Lauf im Container legen Sie die Datei unter `~/.ssh` ab und tragen diesen Pfad ein. Es wurde noch nichts angelegt.
+
+### Meldung: "Git check on the server failed. NOT deleting server"
+
+**Ursache:** `stop.sh` konnte die Git-Prüfung auf dem Server nicht ausführen, etwa wegen eines Verbindungsabbruchs.  
+**Lösung:** Führen Sie `./stop.sh <rechner>` erneut aus. Ist der Server dauerhaft nicht erreichbar, nutzen Sie `./stop.sh <rechner> --force`.
 
 ### Meldung: "Existing DNS record is not managed by this setup; refusing overwrite"
 
@@ -394,3 +407,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.1 | v3 mit Mehrrechner-Betrieb | Ausführung im Container mit `make up` und `make down`. Behoben: Auf einem frischen System fehlte die SSH-Einbindung in `~/.ssh/config`. |
 | 1.2 | v3 mit Mehrrechner-Betrieb | Kein separater Datenträger mehr: Die Dateien liegen auf der Serverplatte und werden mit dem Server gelöscht. `stop.sh` warnt vor ungepushter Arbeit. |
 | 1.3 | v3 mit Mehrrechner-Betrieb | `stop.sh` fragt bei ungesicherter Arbeit zusätzlich nach `DISCARD`. |
+| 1.4 | v3 mit Mehrrechner-Betrieb | `start.sh` akzeptiert eine Einrichtung mit Warnungen und meldet „Ready“ nur nach erfolgreicher Installation von Claude Code. `stop.sh` erkennt auch Stash-Einträge, listet ignorierte Dateien auf und räumt DNS und SSH-Konfiguration auch bei schon gelöschtem Server auf. Schlüsseldateien werden vor dem Anlegen geprüft. |

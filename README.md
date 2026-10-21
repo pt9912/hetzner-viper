@@ -1,8 +1,10 @@
-# Hetzner Claude Worker
+# Hetzner Viper
 
-## Was ist Hetzner Claude Worker?
+**VIPER** steht für **VI**rtual **PER**son: ein Code-Agent, der wie eine weitere Person im Team auf einem eigenen Rechner in Ihrem Repository arbeitet.
 
-Eine Sammlung von Bash-Skripten, die mit einem Befehl einen entfernten Linux-Rechner bei Hetzner Cloud einrichten, auf dem [Claude Code](https://claude.com/claude-code) läuft. Pro Git-Repository gibt es einen eigenen Rechner. Das Repository wird beim Einrichten automatisch geklont. Gearbeitet wird per SSH, VS Code Remote-SSH oder vom iPad. Wer fertig ist, löscht den Rechner wieder, und es entstehen keine laufenden Kosten.
+## Was ist Hetzner Viper?
+
+Eine Sammlung von Bash-Skripten, die mit einem Befehl einen entfernten Linux-Rechner bei Hetzner Cloud einrichten. Auf diesem Rechner arbeitet der Code-Agent [Claude Code](https://github.com/anthropics/claude-code) remote in Ihrem Repository: Er liest und ändert Code, führt Builds und Tests aus und committet. Pro Git-Repository gibt es einen eigenen Rechner. Das Repository wird beim Einrichten automatisch geklont. Sie steuern den Agenten per SSH, VS Code Remote-SSH oder vom iPad, in einer tmux-Sitzung, die Verbindungsabbrüche übersteht. Wer fertig ist, löscht den Rechner wieder, und es entstehen keine laufenden Kosten.
 
 Zielgruppe sind Entwicklerinnen und Entwickler mit eigenem Hetzner- und Cloudflare-Konto.
 
@@ -18,16 +20,16 @@ export HCLOUD_TOKEN=... CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ZONE_ID=...
 ./stop.sh web                                    # Rechner "web" löschen
 ```
 
-- `make test` führt 22 Tests gegen Mocks aus (offline, ohne Kosten), `make docker-test` dieselben im Container ohne Netz.
+- `make test` führt die Tests gegen Mocks aus (offline, ohne Kosten), `make docker-test` dieselben im Container ohne Netz.
 - `make up MACHINE=web REPO=<url>` und `make down MACHINE=web` führen die Skripte in einem Docker-Container aus.
 - Mehrere Rechner parallel: `./start.sh api …` neben `web`. Jeder hat eigenen Server und DNS-Namen `<name>.<DNS_DOMAIN>`.
-- `stop.sh` prüft den Git-Stand und fragt bei ungepushter Arbeit zusätzlich nach `DISCARD`.
+- `stop.sh` prüft den Git-Stand (auch Stash-Einträge), listet ignorierte Dateien auf und fragt bei ungesicherter Arbeit zusätzlich nach `DISCARD`.
 
 Die vollständige Anleitung mit allen Aufgaben, Einstellungen und der Fehlerbehebung steht im [Benutzerhandbuch](docs/user/handbuch.md).
 
-## Warum Hetzner Claude Worker?
+## Warum Hetzner Viper?
 
-Claude Code soll auf einem Rechner laufen, der nicht der eigene Laptop ist: mit viel Leistung, dauerhaft erreichbar per tmux und vom iPad bedienbar. Ein Dauerbetrieb lohnt sich dafür nicht. Von Hand sind Server, Firewall, DNS, SSH-Härtung und Repository-Setup bei jedem Start mühsam und fehleranfällig. Die Skripte machen daraus einen Befehl zum Starten und einen zum Löschen.
+Ein Code-Agent wie Claude Code soll auf einem Rechner arbeiten, der nicht der eigene Laptop ist: mit viel Leistung, isoliert von den eigenen Daten und Zugängen, dauerhaft erreichbar per tmux und vom iPad bedienbar. Ein Dauerbetrieb lohnt sich dafür nicht. Von Hand sind Server, Firewall, DNS, SSH-Härtung und Repository-Setup bei jedem Start mühsam und fehleranfällig. Die Skripte machen daraus einen Befehl zum Starten und einen zum Löschen.
 
 ## Kerngedanke
 
@@ -35,7 +37,7 @@ Rechner sind Wegwerfware: Alles, was zählt, liegt im Git-Repository. Deshalb gi
 
 ## Was macht es vertrauenswürdig?
 
-- **Tests:** `make test` (Syntaxprüfung, `shellcheck` falls installiert, 22 Mock-Tests in [`tests/`](tests/)). Sie decken Einrichtung, Mehrrechner-Betrieb, Git-Clone, DNS-Schutz und die Sicherheitsabfragen von `stop.sh` ab.
+- **Tests:** `make test` (Syntaxprüfung, `shellcheck` falls installiert, Mock-Tests in [`tests/`](tests/)). Sie decken Einrichtung, Bereitschaftsprüfung, Mehrrechner-Betrieb, Git-Clone, Firewall- und DNS-Schutz sowie die Sicherheitsabfragen von `stop.sh` ab. Die erzeugte cloud-init-Konfiguration wurde einmalig mit `cloud-init schema` (cloud-init 26.2, Ubuntu 24.04) geprüft, die `hcloud`-Aufrufe gegen die Hilfe der CLI v1.70.1.
 - **Schutz fremder Ressourcen:** `dns.sh` ändert und löscht nur DNS-Einträge, die es selbst angelegt hat.
 - **Handbuch:** [`docs/user/handbuch.md`](docs/user/handbuch.md) mit Versions- und Änderungshistorie.
 - **Lizenz:** MIT, siehe [`LICENSE`](LICENSE).

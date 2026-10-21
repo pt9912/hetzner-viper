@@ -23,3 +23,20 @@ FW_NAME="$SERVER_PREFIX-ssh"
 STATE="$HOME/.local/state/hetzner-claude"
 mkdir -p "$STATE" "$HOME/.ssh"
 chmod 700 "$STATE" "$HOME/.ssh"
+# The scripts always pass this file with -F, so the user's ~/.ssh/config cannot interfere.
+SSH_CFG="$HOME/.ssh/config_hetzner_claude_$MACHINE"
+
+write_ssh_config() {
+  cat > "$SSH_CFG" <<CFG
+Host $SSH_ALIAS
+    HostName $DNS_HOST
+    User builder
+    IdentityFile $SSH_KEY
+    IdentitiesOnly yes
+    StrictHostKeyChecking yes
+    CheckHostIP no
+    UserKnownHostsFile $HOME/.ssh/known_hosts_hetzner_claude_ca
+    HostKeyAlgorithms ssh-ed25519-cert-v01@openssh.com
+CFG
+  chmod 600 "$SSH_CFG"
+}

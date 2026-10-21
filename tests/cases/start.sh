@@ -120,3 +120,63 @@ test_dns_refuses_foreign_record() {
   check "refused" has 'not managed by this setup' "$T/err"
   check "record untouched" has '198.51.100.1' "$MOCK_STATE/cf.json"
 }
+
+test_ready_when_cloud_init_done_with_warnings() {
+  run setup.sh >/dev/null
+  export MOCK_CLOUDINIT_RC=2
+  run start.sh web >/dev/null
+}
+
+test_not_ready_when_cloud_init_failed() {
+  run setup.sh >/dev/null
+  export MOCK_CLOUDINIT_RC=1
+  ! run start.sh web >/dev/null 2>"$T/err"
+  check "message" has 'not ready' "$T/err"
+}
+
+test_not_ready_without_claude_marker() {
+  run setup.sh >/dev/null
+  rm "$MOCK_STATE/claude-ready"
+  ! run start.sh web >/dev/null 2>"$T/err"
+  check "message" has 'not ready' "$T/err"
+}
+
+test_cloud_init_marks_ready_only_after_successful_install() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  python3 -I - "$MOCK_STATE/hcloud/server/claude-web.user-data" <<'PY'
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+install = [c for c in d['runcmd'] if 'install.sh' in c]
+assert len(install) == 1 and 'pipefail' in install[0] and install[0].endswith('&& touch /var/tmp/claude-ready'), install
+assert not any(c == 'touch /var/tmp/claude-ready' for c in d['runcmd'])
+assert not any('60-host-cert' in w['path'] for w in d['write_files'])
+PY
+}
+
+test_firewall_without_rules_gets_ssh_rule() {
+  run setup.sh >/dev/null
+  hcloud firewall create --name claude-ssh >/dev/null
+  run start.sh web >/dev/null
+  check "rule added" count_is 'hcloud firewall add-rule claude-ssh' "$CALLS" 1
+  run start.sh api >/dev/null
+  check "no second rule" count_is 'hcloud firewall add-rule claude-ssh' "$CALLS" 1
+}
+
+test_missing_deploy_key_fails_before_creating_anything() {
+  run setup.sh >/dev/null
+  printf 'REPO_URL=git@example.org:o/r.git\nGIT_DEPLOY_KEY_FILE=%s\n' "$T/nope" > "$W/machines/web.env.local"
+  ! run start.sh web >/dev/null 2>"$T/err"
+  check "message" has 'File not readable' "$T/err"
+  check "no server" test ! -f "$MOCK_STATE/hcloud/server/claude-web.json"
+}
+
+test_scripts_use_own_ssh_config_only() {
+  run setup.sh >/dev/null
+  git init -q --bare "$T/origin.git"
+  echo k > "$T/deploy"
+  printf 'REPO_URL=%s\nGIT_DEPLOY_KEY_FILE=%s\n' "$T/origin.git" "$T/deploy" > "$W/machines/web.env.local"
+  run start.sh web >/dev/null
+  echo DELETE | run stop.sh web >/dev/null 2>&1 || true
+  check "every ssh/scp call passes -F" bash -c "! grep -E '^(ssh|scp) ' '$CALLS' | grep -v -- '-F $HOME/.ssh/config_hetzner_claude_web'"
+}

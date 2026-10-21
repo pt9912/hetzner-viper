@@ -6,6 +6,11 @@ args=("$@"); i=0
 while (( i < ${#args[@]} )) && [[ "${args[i]}" != hetzner-* ]]; do i=$((i+1)); done
 cmd=("${args[@]:i+1}")
 case "${cmd[*]}" in
+  # readiness probe: run it locally against fake cloud-init/docker and a sandboxed marker file
+  "cloud-init status"*)
+    probe="${cmd[*]}"
+    PATH="$(dirname "$0")/remote:$PATH" bash -c "${probe//\/var\/tmp\/claude-ready/$MOCK_STATE/claude-ready}"
+    exit $? ;;
   "sudo bash -s") cat > "$MOCK_STATE/remote-mount.sh" ;;
   "bash -s"*) HOME="$MOCK_STATE/remote-home" bash "${cmd[@]:1}" ;;
   chmod*) ;;

@@ -74,3 +74,52 @@ test_stop_of_absent_server_is_a_noop() {
   out=$(run stop.sh ghost)
   check "message" bash -c "grep -q 'already absent' <<<'$out'"
 }
+
+# repo with upstream, everything committed and pushed
+pushed_repo() {
+  git init -q --bare "$T/origin.git"
+  git clone -q "$T/origin.git" "$T/mnt/proj" 2>/dev/null
+  (cd "$T/mnt/proj" && echo 'build/' > .gitignore && git add .gitignore \
+    && git -c user.email=t@t -c user.name=t commit -q -m init && git push -q -u origin HEAD 2>/dev/null)
+}
+
+test_stop_flags_stash_as_unsaved() {
+  boot; pushed_repo
+  (cd "$T/mnt/proj" && echo y >> .gitignore && git -c user.email=t@t -c user.name=t stash -q)
+  out=$(printf 'no\n' | run stop.sh web 2>&1) || true
+  check "stash listed" bash -c "grep -q 'stash@{0}' <<<'$out'"
+  check "warning" bash -c "grep -q 'UNSAVED WORK' <<<'$out'"
+}
+
+test_stop_lists_ignored_files_without_blocking() {
+  boot; pushed_repo
+  mkdir "$T/mnt/proj/build"; echo x > "$T/mnt/proj/build/out"
+  out=$(echo DELETE | run stop.sh web 2>&1)
+  check "ignored listed" bash -c "grep -q 'Ignored by git' <<<'$out' && grep -q 'build/' <<<'$out'"
+  check "no unsaved warning" bash -c "! grep -q 'UNSAVED WORK' <<<'$out'"
+  check "deleted" test ! -f "$MOCK_STATE/hcloud/server/claude-web.json"
+}
+
+test_stop_reports_broken_repo_as_unsaved() {
+  boot
+  mkdir -p "$T/mnt/broken/.git"
+  out=$(printf 'no\n' | run stop.sh web 2>&1) || true
+  check "error shown" bash -c "grep -q 'cannot read git status' <<<'$out'"
+  check "warning" bash -c "grep -q 'UNSAVED WORK' <<<'$out'"
+  check "server kept" test -f "$MOCK_STATE/hcloud/server/claude-web.json"
+}
+
+test_stop_removes_local_ssh_config() {
+  boot
+  echo DELETE | run stop.sh web >/dev/null
+  check "config file gone" test ! -f "$HOME/.ssh/config_hetzner_claude_web"
+  check "include gone" bash -c "! grep -q config_hetzner_claude_web '$HOME/.ssh/config'"
+}
+
+test_stop_of_absent_server_cleans_up_leftovers() {
+  boot
+  rm "$MOCK_STATE/hcloud/server/claude-web.json"   # deleted in the Hetzner console
+  run stop.sh web >/dev/null
+  check "dns removed" test "$(jq length "$MOCK_STATE/cf.json")" = 0
+  check "config file gone" test ! -f "$HOME/.ssh/config_hetzner_claude_web"
+}
