@@ -1,10 +1,6 @@
-# Everything runs in a container (ssh, hcloud, jq, ... come from the Dockerfile):
-# make setup                                     login key and host CA (once)
-# make preflight MACHINE=web [REPO=<url>]        read-only checks (nothing is created)
-# make up MACHINE=web [REPO=<url>]               create the machine, clone the repo
-# make ssh MACHINE=web [CMD='<command>']         shell (or one command) on the machine
-# make down MACHINE=web [FORCE=1]                delete the machine
-# make test | docker-test                        offline tests (see tests/tests.mk)
+# Everything runs in a container (ssh, hcloud, jq, ... come from the Dockerfile).
+# `make` without a target shows the help; descriptions are the `## ` comments below.
+.DEFAULT_GOAL := help
 TEST_IMAGE ?= hetzner-claude-tests
 RUN_IMAGE  ?= hetzner-claude-run
 
@@ -13,9 +9,16 @@ include tests/tests.mk
 # passed to the recipe shell as environment, expanded there in double quotes (URLs with & ; ?)
 export MACHINE REPO CMD
 
-.PHONY: build setup preflight up ssh down
+.PHONY: help build setup preflight up ssh down
 
-build:
+help: ## show this help
+	@echo 'Usage: make <target> [MACHINE=<name>] [REPO=<url>] [CMD="<command>"] [FORCE=1]'
+	@echo
+	@awk -F ':.*## ' '/^[a-z-]+:.*## / { printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@echo
+	@echo 'Example: make preflight MACHINE=web && make up MACHINE=web REPO=https://github.com/<owner>/<repo>.git'
+
+build: ## build the container image (done automatically by the other targets)
 	docker build --target run --build-arg USER_UID=$$(id -u) --build-arg USER_HOME="$$HOME" -t $(RUN_IMAGE) .
 
 # Runs as the host user with the host's ~/.ssh and state directory mounted at the same
@@ -32,21 +35,21 @@ define NEED_MACHINE
 	@test -n "$(MACHINE)" || { echo 'Usage: make $@ MACHINE=<name> $(1)' >&2; exit 1; }
 endef
 
-setup: build
+setup: build ## create login key and host CA (once)
 	$(call RUN,./setup.sh)
 
-preflight: build
+preflight: build ## read-only checks, creates nothing (MACHINE, [REPO])
 	$(call NEED_MACHINE,[REPO=<url>])
 	$(call RUN,./preflight.sh "$$MACHINE" "$$REPO")
 
-up: build
+up: build ## create the machine and clone the repo (MACHINE, [REPO])
 	$(call NEED_MACHINE,[REPO=<url>])
 	$(call RUN,./start.sh "$$MACHINE" "$$REPO")
 
-ssh: build
+ssh: build ## shell or one command on the machine (MACHINE, [CMD])
 	$(call NEED_MACHINE,[CMD="<command>"])
 	$(call RUN,./connect.sh "$$MACHINE" $${CMD:+"$$CMD"})
 
-down: build
+down: build ## check for unsaved work and delete the machine (MACHINE, [FORCE=1])
 	$(call NEED_MACHINE,[FORCE=1])
 	$(call RUN,./stop.sh "$$MACHINE" $(if $(FORCE),--force))

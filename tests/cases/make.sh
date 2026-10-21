@@ -49,3 +49,18 @@ test_connect_uses_the_machine_config() {
   run connect.sh web 'ls -la' </dev/null
   check "own config, pinned alias" has "^ssh -F $HOME/.ssh/config_hetzner_claude-web hetzner-claude-web ls -la$" "$CALLS"
 }
+
+test_make_without_target_shows_help_only() {
+  make -s --no-print-directory -C "$ROOT" >"$T/help" 2>&1
+  for target in help setup preflight up ssh down test lint docker-test; do
+    check "$target described" has "^  $target +[^ ]" "$T/help"
+  done
+  check "nothing run" bash -c "! ls '$MOCK_STATE'/docker-call-* >/dev/null 2>&1"
+}
+
+test_every_make_target_has_a_description() {
+  # targets defined in the makefiles vs. targets listed by help
+  defined=$(grep -hoE '^[a-z-]+:' "$ROOT/Makefile" "$ROOT/tests/tests.mk" | tr -d : | sort -u)
+  listed=$(make -s --no-print-directory -C "$ROOT" help | awk '/^  [a-z]/ {print $1}' | sort -u)
+  check "help lists all targets" test "$defined" = "$listed"
+}

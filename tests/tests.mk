@@ -4,14 +4,14 @@ TEST_SCRIPTS = common.sh connect.sh dns.sh preflight.sh setup.sh start.sh stop.s
 .PHONY: test lint docker-test
 
 # Offline tests against fake hcloud/curl/ssh (no network, no cost)
-test: lint
+test: lint ## offline tests against mocks (no network, no cost)
 	tests/run.sh
 
-lint:
+lint: ## bash -n and shellcheck (if installed)
 	@for f in $(TEST_SCRIPTS); do bash -n $$f || exit 1; done
 	@if command -v shellcheck >/dev/null; then shellcheck -S error $(TEST_SCRIPTS); else echo 'shellcheck not installed, skipped'; fi
 
 # Same tests in a clean container without network access
-docker-test:
+docker-test: ## the offline tests in a container without network, incl. a real sshd
 	docker build --target test -t $(TEST_IMAGE) .
 	docker run --rm --network none -v "$(CURDIR)":/repo:ro $(TEST_IMAGE)

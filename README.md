@@ -18,6 +18,7 @@ Everything runs in a Docker container via `make`, so locally you only need Docke
 
 ```bash
 cp .env.local.example .env.local   # set DNS_DOMAIN and the tokens, then: chmod 600 .env.local
+make                                                # list all targets (make help)
 make setup                                          # create login key and local host CA
 make preflight MACHINE=web                          # read-only checks: settings, Hetzner, Cloudflare, GitHub
 make up MACHINE=web REPO=https://example.org/org/web.git   # set up machine "web", clone the repo
