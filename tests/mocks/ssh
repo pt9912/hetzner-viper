@@ -40,7 +40,9 @@ case "$remote" in
   "gh auth login"*) if (( no_stdin )); then : > "$MOCK_STATE/gh-token"; else cat > "$MOCK_STATE/gh-token"; fi ;;
   # host key read over a CA-verified connection (pin_from_server)
   "cat /etc/ssh/ssh_host_ed25519_key.pub") consume; cat "$MOCK_STATE/remote-hostkey.pub" 2>/dev/null ;;
-  "bash -s"*) (( no_stdin )) && exec </dev/null; PATH="$(dirname "$0")/remote:$PATH" bash -c "$remote"; exit $? ;;
+  # MOCK_SSH_SKIP_SCRIPT: ssh succeeds but the remote script does not run (e.g. .bashrc exits)
+  "bash -s"*) [[ -z "${MOCK_SSH_SKIP_SCRIPT:-}" ]] || { consume; exit 0; }
+              (( no_stdin )) && exec </dev/null; PATH="$(dirname "$0")/remote:$PATH" bash -c "$remote"; exit $? ;;
   *) consume ;;
 esac
 exit 0

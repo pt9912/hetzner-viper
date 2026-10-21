@@ -28,7 +28,9 @@ print(json.dumps(e))' "$d/brew-trust"
       add "$d/brew-trust" "${2#--} $3"
     fi ;;
   install) shift; rc=0; for p in "$@"; do [[ "$p" == -* ]] || install_formula "$p" || rc=1; done; exit $rc ;;
-  list) for p in "${@: -1}"; do grep -qxF -- "$p" "$d/brew-formulae" && echo "$p 1.0"; done; grep -qxF -- "${*: -1}" "$d/brew-formulae" ;;
+  leaves) cat "$d/brew-formulae" ;;
+  list) if [[ "$2" == --versions ]]; then shift 2; for p in "$@"; do grep -qxF -- "$p" "$d/brew-formulae" && echo "$p 1.0"; done; exit 0; fi
+        for p in "${@: -1}"; do grep -qxF -- "$p" "$d/brew-formulae" && echo "$p 1.0"; done; grep -qxF -- "${*: -1}" "$d/brew-formulae" ;;
   bundle)
     file=$(sed -n 's/^--file=//p' <<<"$(printf '%s\n' "$@")")
     while read -r kind name _; do

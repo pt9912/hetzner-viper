@@ -75,12 +75,17 @@ declare -A seen
 
 # One working tree: uncommitted changes, detached commits, ignored files.
 check_tree() {
-  local t="$1" dirty detached ignored
+  local t="$1" dirty hidden detached ignored
   echo "== $t =="
-  if ! dirty=$(git -C "$t" status --short 2>&1); then
+  # fixed options: repo or user config (status.showUntrackedFiles=no, submodule ignore) must
+  # not hide anything here
+  if ! dirty=$(git -C "$t" -c status.showUntrackedFiles=all status --porcelain --untracked-files=all --ignore-submodules=none 2>&1); then
     echo "ERROR: cannot read git status: $dirty"; unsaved=1; return
   fi
   [[ -z "$dirty" ]] || { echo "$dirty"; unsaved=1; }
+  # files marked assume-unchanged (lowercase tag) or skip-worktree (S) are hidden from status
+  hidden=$(git -C "$t" ls-files -v 2>/dev/null | grep -E '^([a-z]|S) ' || true)
+  [[ -z "$hidden" ]] || { printf 'Hidden from git status (assume-unchanged / skip-worktree):\n%s\n' "$hidden"; unsaved=1; }
   if ! git -C "$t" symbolic-ref -q HEAD >/dev/null; then
     detached=$(git -C "$t" log --oneline HEAD --not --remotes --branches)
     [[ -z "$detached" ]] || { printf 'Detached commits not on any branch or remote:\n%s\n' "$detached"; unsaved=1; }
@@ -102,8 +107,8 @@ check_repo() {
     check_tree "$tree"
   done < <(git -C "$repo" worktree list --porcelain | sed -n 's/^worktree //p')
   # commits on any local branch that are not on any remote (also branches without upstream)
-  unpushed=$(git -C "$repo" log --oneline --branches --not --remotes)
-  [[ -z "$unpushed" ]] || { printf 'Commits not on any remote:\n%s\n' "$unpushed"; unsaved=1; }
+  unpushed=$(git -C "$repo" log --oneline --branches --tags --not --remotes)
+  [[ -z "$unpushed" ]] || { printf 'Commits not on any remote (branches and tags):\n%s\n' "$unpushed"; unsaved=1; }
   # a remote that is a path on this server is deleted together with it
   while read -r name url; do
     case "$url" in
@@ -134,15 +139,19 @@ done < <(find "${ws[@]}" "$HOME" ${VIPER_TMP_DIRS:-/tmp /var/tmp} -xdev \
 echo '== tmux sessions =='
 tmux ls 2>/dev/null || true
 (( unsaved == 0 )) || echo 'UNSAVED WORK: uncommitted, unpushed, stashed or unversioned data exists and will be lost.'
+# without this line the check did not run to the end (e.g. a shell startup file exited)
+echo '== end of check =='
 REMOTE
 ) || { echo 'Git check on the server failed. NOT deleting server (use --force to skip checks).' >&2; exit 1; }
-echo "$report"
+# report, warning and prompts on one stream (stderr, like read -p), so they stay in order
+echo "$report" >&2
+grep -qx '== end of check ==' <<<"$report" || { echo 'The git check on the server did not complete. NOT deleting server (use --force to skip checks).' >&2; final_event "refused (git check incomplete)"; exit 1; }
 if grep -q '^UNSAVED WORK' <<<"$report"; then
   read -r -p 'Unsaved work will be lost. Type DISCARD to continue: ' discard
   [[ "$discard" == DISCARD ]] || { echo 'Cancelled: commit and push first'; final_event "cancelled (unsaved work)"; exit 1; }
 fi
 }
-printf '\nServer %s (%s) and ALL its data (including %s) will be DESTROYED.\n' "$SERVER_NAME" "$IP" "${WSS[*]}"
+printf '\nServer %s (%s) and ALL its data (including %s) will be DESTROYED.\n' "$SERVER_NAME" "$IP" "${WSS[*]}" >&2
 read -r -p 'Type DELETE to continue: ' confirm
 [[ "$confirm" == DELETE ]] || { echo 'Cancelled'; final_event "cancelled (no DELETE)"; exit 1; }
 hcloud server delete "$SERVER_NAME"

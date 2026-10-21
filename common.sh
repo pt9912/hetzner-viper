@@ -80,13 +80,26 @@ run_exit() {
   exit "$rc"
 }
 trap run_exit EXIT
+# Ctrl-C, a closed terminal or kill: in the EXIT trap $? would be 0, so record it here
+on_signal() {
+  [[ -z "${TRANSCRIPT_OWNER:-}" ]] || { log_event "interrupted"; FINAL_EVENT=1; }
+  exit 130
+}
+trap on_signal INT TERM HUP
+
+# redact_url <url>: hide credentials in a URL (https://user:token@host -> https://***@host)
+redact_url() { sed -E 's#^([a-z+]+://)[^/@]+@#\1***@#' <<<"$1"; }
 
 # start_transcript <action>: copy all output of this run into logs/<server>.log. Scripts
 # started from it (preflight.sh, dns.sh) write into the same transcript and no own events.
 start_transcript() {
   VIPER_ACTION="$1"
-  [[ -z "${VIPER_TRANSCRIPT:-}" ]] || return 0
-  export VIPER_TRANSCRIPT="$LOG_DIR/$SERVER_NAME.log" VIPER_ACTION; TRANSCRIPT_OWNER=1
+  # nested only while the run that opened the transcript is still alive (not, say, in a
+  # VS Code terminal that inherited the variables from an earlier start.sh)
+  if [[ -n "${VIPER_TRANSCRIPT:-}" && -n "${VIPER_TRANSCRIPT_PID:-}" ]] && kill -0 "$VIPER_TRANSCRIPT_PID" 2>/dev/null; then
+    return 0
+  fi
+  export VIPER_TRANSCRIPT="$LOG_DIR/$SERVER_NAME.log" VIPER_ACTION VIPER_TRANSCRIPT_PID=$$; TRANSCRIPT_OWNER=1
   ( umask 077; printf '\n===== %s %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$SERVER_NAME" >> "$VIPER_TRANSCRIPT" )
   exec > >(tee -a "$VIPER_TRANSCRIPT"); TEE_OUT=$!
   exec 2> >(tee -a "$VIPER_TRANSCRIPT" >&2); TEE_ERR=$!

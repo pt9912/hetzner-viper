@@ -28,6 +28,11 @@ test_brewfile_of_the_repository_is_applied() {
   (cd "$T/seed" && git add Brewfile && git -c user.email=t@t -c user.name=t commit -q -m brewfile && git push -q origin HEAD 2>/dev/null)
   echo "REPO_URL=$T/origin.git" > "$W/machines/web.env.local"
   run start.sh web >"$T/out"
+  check "not applied without VIPER_BREWFILE=1" bash -c "! grep -q 'brew bundle' '$MOCK_STATE/brew.log'"
+  echo 'VIPER_BREWFILE=1' >> "$W/machines/web.env.local"
+  run preflight.sh web >"$T/pre"
+  check "preflight warns it is code" has 'WARN  the repository.s Brewfile will be applied: it is Ruby code' "$T/pre"
+  run start.sh web >"$T/out"
   check "applied" has "^brew: $T/mnt/origin/Brewfile applied$" "$T/out"
   check "bundle with --no-upgrade" has 'brew bundle install --no-upgrade --file=' "$MOCK_STATE/brew.log"
   run check.sh web >"$T/check"
@@ -73,4 +78,12 @@ test_brew_lists_may_span_several_lines() {
   printf 'VIPER_BREW_PACKAGES="ripgrep\n  fd\n  jq"\n' > "$W/machines/web.env.local"
   run start.sh web >"$T/out"
   check "all three" has '^brew: installed ripgrep fd jq$' "$T/out"
+}
+
+test_check_flags_a_trusted_tap_that_is_not_tapped() {
+  run setup.sh >/dev/null
+  printf 'VIPER_BREW_TRUST="acme/tpyo"\n' > "$W/machines/web.env.local"
+  run start.sh web >/dev/null
+  fails run check.sh web >"$T/out"
+  check "likely typo" has 'FAIL  Homebrew: missing untapped:acme/tpyo' "$T/out"
 }

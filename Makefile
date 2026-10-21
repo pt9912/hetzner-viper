@@ -35,7 +35,7 @@ SSH_CONFIG_MOUNT := $(if $(filter-out $(HOME)/.ssh/%,$(SSH_CONFIG_TARGET)),-v "$
 define RUN
 	@mkdir -p "$$HOME/.ssh" "$$HOME/.local/state/hetzner-claude"
 	docker run --rm -i $$(test -t 0 && echo -t) --user $$(id -u):$$(id -g) -e HOME="$$HOME" \
-	  -e HCLOUD_TOKEN -e CLOUDFLARE_API_TOKEN -e CLOUDFLARE_ZONE_ID -e VIPER_GH_TOKEN -e VIPER_GH_HOST -e VIPER_CLAUDE_TOKEN -e VIPER_ANTHROPIC_BASE_URL -e VIPER_ANTHROPIC_AUTH_TOKEN -e VIPER_CLAUDE_MODEL -e VIPER_CLAUDE_MAX_CONTEXT_TOKENS -e VIPER_HOMEBREW -e VIPER_BREW_TAPS -e VIPER_BREW_TRUST -e VIPER_BREW_PACKAGES \
+	  -e HCLOUD_TOKEN -e CLOUDFLARE_API_TOKEN -e CLOUDFLARE_ZONE_ID -e VIPER_GH_TOKEN -e VIPER_GH_HOST -e VIPER_CLAUDE_TOKEN -e VIPER_ANTHROPIC_BASE_URL -e VIPER_ANTHROPIC_AUTH_TOKEN -e VIPER_CLAUDE_MODEL -e VIPER_CLAUDE_MAX_CONTEXT_TOKENS -e VIPER_HOMEBREW -e VIPER_BREW_TAPS -e VIPER_BREW_TRUST -e VIPER_BREW_PACKAGES -e VIPER_BREWFILE \
 	  -v "$$HOME/.ssh:$$HOME/.ssh" -v "$$HOME/.local/state/hetzner-claude:$$HOME/.local/state/hetzner-claude" $(SSH_CONFIG_MOUNT) \
 	  -v "$(CURDIR)":/repo:ro $(RUN_IMAGE) $(1)
 endef
@@ -69,9 +69,9 @@ log: ## show the log: events of all machines, or of MACHINE; FULL=1 its complete
 	if [ -z "$$MACHINE" ]; then tail -n 50 "$$d/events.log" 2>/dev/null || echo 'no events yet'; exit 0; fi; \
 	p=$$(sed -n 's/^SERVER_PREFIX=//p' .env.local "machines/$$MACHINE.env.local" 2>/dev/null | tail -n1 | tr -d "\"'"); \
 	s="$${p:-claude}-$$MACHINE"; \
-	if [ -n "$(FULL)" ]; then cat "$$d/logs/$$s.log" 2>/dev/null || echo "no log for $$s"; \
+	if [ "$(FULL)" = 1 ]; then cat "$$d/logs/$$s.log" 2>/dev/null || echo "no log for $$s"; \
 	else awk -v s="$$s" '$$2 == s' "$$d/events.log" 2>/dev/null | grep . || echo "no events for $$s"; fi
 
 down: build ## check for unsaved work and delete the machine (MACHINE, [FORCE=1])
 	$(call NEED_MACHINE,[FORCE=1])
-	$(call RUN,./stop.sh "$$MACHINE" $(if $(FORCE),--force))
+	$(call RUN,./stop.sh "$$MACHINE" $(if $(filter 1 yes true,$(FORCE)),--force))

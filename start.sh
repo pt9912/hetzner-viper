@@ -5,7 +5,7 @@ REPO_URL_ARG="${2:-}"
 source "$(dirname "$0")/common.sh"
 start_transcript up
 [[ -z "$REPO_URL_ARG" ]] || REPO_URL="$REPO_URL_ARG"
-log_event "start ($SERVER_TYPE, $SERVER_LOCATION, $SERVER_IMAGE${REPO_URL:+, $REPO_URL})"
+log_event "start ($SERVER_TYPE, $SERVER_LOCATION, $SERVER_IMAGE${REPO_URL:+, $(redact_url "$REPO_URL")})"
 # read-only checks first, so a wrong setting fails before anything is created
 if ! preflight=$(./preflight.sh "$MACHINE" "$REPO_URL_ARG"); then
   echo "$preflight" >&2
@@ -109,15 +109,19 @@ echo 'Waiting for SSH and cloud-init ...'
 # cloud-init exits 0 (done), 2 (done with warnings) or 1 (errors).
 # reboot=pending: updates were installed and cloud-init is about to restart the server.
 # (VIPER_REBOOT_FILE only exists for the offline tests; ssh does not forward it.)
-probe='cloud-init status --wait >/dev/null 2>&1; echo "cloud-init=$?"; test -f /var/tmp/claude-ready && echo claude=ok; docker info >/dev/null 2>&1 && echo docker=ok; test -f "${VIPER_REBOOT_FILE:-/var/run/reboot-required}" && echo reboot=pending; true'
+probe='cloud-init status --wait >/dev/null 2>&1; echo "cloud-init=$?"; test -f /var/tmp/claude-ready && echo claude=ok; docker info >/dev/null 2>&1 && echo docker=ok; test -f "${VIPER_REBOOT_FILE:-/var/run/reboot-required}" && echo reboot=pending; echo "ready=$(cat ~/.config/viper/ready 2>/dev/null)"; true'
 # While a new server boots, sshd may briefly present a key other than the provisioned one
 # and builder may not exist yet, so host-key and auth errors are retried too. A reused
 # server is already up: those errors are permanent there and end the wait at once.
-status=''; err=''; announced=0
+status=''; err=''; announced=0; reboot_waits=0
 for i in $(seq 1 120); do
   if status=$(ssh -n -F "$SSH_CFG" -o BatchMode=yes -o ConnectTimeout=5 "$SSH_ALIAS" "$probe" 2>"$STATE/ssh-err-$SERVER_NAME"); then
-    # a new server restarts once after its updates: wait for it instead of working into it
-    if (( ! REUSED )) && grep -qx 'reboot=pending' <<<"$status"; then
+    # set up by a completed run (from this or another computer): the server records it itself
+    [[ "$(sed -n 's/^ready=//p' <<<"$status")" == "$SERVER_ID" ]] && REUSED=1
+    # A new server restarts once after its updates: wait for it instead of working into it.
+    # The post-upgrade reboot follows cloud-init within a minute or so; after ~3 minutes the
+    # flag is from something else (e.g. later unattended upgrades): carry on with a warning.
+    if (( ! REUSED )) && grep -qx 'reboot=pending' <<<"$status" && (( ++reboot_waits <= 36 )); then
       (( announced )) || { echo 'Updates need a reboot; waiting for the server to restart ...'; announced=1; }
       status=''; err='the server did not come back after the reboot for its updates'
       sleep 5; continue
@@ -157,7 +161,10 @@ grep -qx 'docker=ok' <<<"$status" || { echo 'Docker is not running; see /var/log
 grep -qx 'cloud-init=1' <<<"$status" && echo 'WARNING: cloud-init reported errors; see /var/log/cloud-init-output.log on the server.' >&2
 grep -qx 'reboot=pending' <<<"$status" && echo "WARNING: updates on the server need a reboot: make ssh MACHINE=$MACHINE CMD='sudo reboot'" >&2
 # Work directory on the server's own disk; it is deleted together with the server.
-ssh -n -F "$SSH_CFG" "$SSH_ALIAS" "sudo install -d -o builder -g builder $(printf %q "$WORKSPACE_DIR")"
+# Record the workspace on the server right away (also if a later step fails), so stop.sh from
+# any computer checks it.
+ws_q=$(printf %q "$WORKSPACE_DIR")
+ssh -n -F "$SSH_CFG" "$SSH_ALIAS" "sudo install -d -o builder -g builder $ws_q && mkdir -p ~/.config/viper && { grep -qxF -- $ws_q ~/.config/viper/workspaces 2>/dev/null || printf '%s\n' $ws_q >> ~/.config/viper/workspaces; }"
 # remember every workspace this server was started with (here and, below, on the server
 # itself, so stop.sh from another computer knows them too): stop.sh checks all of them
 grep -qxF -- "$WORKSPACE_DIR" "$WORKSPACE_STATE" 2>/dev/null || echo "$WORKSPACE_DIR" >> "$WORKSPACE_STATE"
@@ -248,7 +255,8 @@ fi
 # a tap outside GitHub), VIPER_BREW_TRUST (brew trust: "owner/repo" = a tap, "owner/repo/name"
 # = a formula, or "cask:…"/"command:…"), VIPER_BREW_PACKAGES ("name" or "owner/repo/name") and
 # a Brewfile in the cloned repository (tap/brew lines, trusted: options; brew bundle).
-brewfile=''; [[ -z "${REPO_URL:-}" ]] || brewfile="$WORKDIR/Brewfile"
+# The Brewfile is Ruby from the repository and may make trust decisions: only with VIPER_BREWFILE=1.
+brewfile=''; [[ "${VIPER_BREWFILE:-0}" != 1 || -z "${REPO_URL:-}" ]] || brewfile="$WORKDIR/Brewfile"
 read -r -d '' -a brew_taps <<<"${VIPER_BREW_TAPS:-}" || true; read -r -d '' -a brew_trust <<<"${VIPER_BREW_TRUST:-}" || true
 read -r -d '' -a brew_pkgs <<<"${VIPER_BREW_PACKAGES:-}" || true
 if [[ "$VIPER_HOMEBREW" == 1 ]] && (( ${#brew_taps[@]} + ${#brew_trust[@]} + ${#brew_pkgs[@]} > 0 )) || [[ "$VIPER_HOMEBREW" == 1 && -n "$brewfile" ]]; then
@@ -289,7 +297,7 @@ fi
 # Interactive shells (make ssh, tmux, a plain ssh login) that start in the home directory
 # change to the work directory: the line goes at the end of .bashrc, which non-interactive
 # shells (ssh commands, the scripts) never reach because of Ubuntu's early return.
-ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$WORKDIR" "$WORKSPACE_DIR" "$BREW")" <<'CDLINE'
+ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$WORKDIR" "$WORKSPACE_DIR" "$BREW" "$SERVER_ID")" <<'CDLINE'
 set -eu
 mkdir -p ~/.config/viper
 printf '%s\n' "$1" > ~/.config/viper/workdir
@@ -301,13 +309,38 @@ done
 grep -qxF -- "$2" ~/.config/viper/workspaces 2>/dev/null || printf '%s\n' "$2" >> ~/.config/viper/workspaces
 line='if [ "$PWD" = "$HOME" ] && [ -f ~/.config/viper/workdir ]; then cd "$(cat ~/.config/viper/workdir)" 2>/dev/null || true; fi  # viper: start in the work directory'
 grep -qxF -- "$line" ~/.bashrc 2>/dev/null || printf '%s\n' "$line" >> ~/.bashrc
+# last step of a completed run: the server counts as set up (see REUSED), for any computer
+printf '%s\n' "$4" > ~/.config/viper/ready
 CDLINE
 # from now on this server counts as set up (see REUSED)
 echo "$SERVER_ID" > "$READY_STATE"
+# What is installed, for the log (logs/<server>.log): the server and its own logs are gone
+# once it is deleted. Packages of cloud-init.yaml, tools and Homebrew (taps, trust, the
+# formulae installed on request). Informative only.
+apt_pkgs=$(awk '/^packages:/ {f = 1; next} /^[a-z_]+:/ {f = 0} f && /^  - / {print $2}' cloud-init.yaml)
+echo '== installed on the server =='
+ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$BREW" $apt_pkgs)" <<'INVENTORY' || echo '(inventory not available)'
+brew="$1"; shift
+export LC_ALL=C PATH="$HOME/.local/bin:$PATH"
+. /etc/os-release 2>/dev/null; echo "os: ${PRETTY_NAME:-?}, kernel $(uname -r)"
+echo "apt: $(dpkg-query -W -f='${Package} ${Version}, ' "$@" 2>/dev/null | sed 's/, $//')"
+echo "claude: $(claude --version 2>/dev/null | head -n1)"
+echo "gh: $(gh --version 2>/dev/null | head -n1)"
+echo "docker: $(docker --version 2>/dev/null)"
+if [ -x "$brew" ]; then
+  eval "$("$brew" shellenv)"; export HOMEBREW_NO_AUTO_UPDATE=1
+  echo "homebrew: $(brew --version 2>/dev/null </dev/null | head -n1)"
+  echo "brew taps: $(brew tap 2>/dev/null </dev/null | tr '\n' ' ')"
+  echo "brew trusted: $(brew trust --json=v1 2>/dev/null </dev/null | jq -c '{taps, formulae, casks, commands} | with_entries(select(.value | length > 0))' 2>/dev/null)"
+  leaves=$(brew leaves 2>/dev/null </dev/null)
+  echo "brew formulae (installed on request): $( [ -z "$leaves" ] || brew list --versions $leaves 2>/dev/null </dev/null | tr '\n' ',' | sed 's/,$//; s/,/, /g')"
+fi
+INVENTORY
 final_event "ready (work dir $WORKDIR)"
 echo "Ready: ssh $SSH_ALIAS (work dir: $WORKDIR)"
 # VS Code and its extensions must not inherit the API tokens from .env.local
 if command -v code >/dev/null; then
   env -u HCLOUD_TOKEN -u CLOUDFLARE_API_TOKEN -u CLOUDFLARE_ZONE_ID -u VIPER_GH_TOKEN -u GH_TOKEN \
+    -u VIPER_TRANSCRIPT -u VIPER_TRANSCRIPT_PID -u VIPER_ACTION \
     -u VIPER_CLAUDE_TOKEN -u CLAUDE_CODE_OAUTH_TOKEN -u VIPER_ANTHROPIC_AUTH_TOKEN code --remote "ssh-remote+$SSH_ALIAS" "$WORKDIR" || true
 fi

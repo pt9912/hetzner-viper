@@ -42,7 +42,7 @@ test_check_and_preflight_are_logged() {
   events > "$T/ev"
   check "preflight" has ' claude-web +preflight +preflight OK$' "$T/ev"
   check "check" has ' claude-web +check +check OK$' "$T/ev"
-  check "no nested preflight event in up" bash -c "! grep -qE ' up +preflight' '$T/ev'"
+  check "preflight logged once (only the standalone run)" count_is 'preflight OK$' "$T/ev" 1
 }
 
 test_logs_contain_no_tokens() {
@@ -64,4 +64,53 @@ test_make_log_shows_events() {
   check "only web" bash -c "grep -q ' claude-web ' '$T/web' && ! grep -q ' claude-api ' '$T/web'"
   make -s --no-print-directory -I "$ROOT" -f "$ROOT/Makefile" -C "$W" log MACHINE=web FULL=1 > "$T/full"
   check "full output" has '^Ready: ssh hetzner-claude-web' "$T/full"
+}
+
+test_interruption_is_logged() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  # interrupted while stop.sh waits at its prompt (TERM: a test runner may start us with
+  # SIGINT ignored, which bash cannot trap; a real Ctrl-C in a terminal goes the same way)
+  /bin/sleep 5 | timeout -s TERM 2 "$W/stop.sh" web >/dev/null 2>&1 || true
+  check "interrupted" has ' claude-web +down +interrupted$' <(events)
+  check "not reported as FAILED" bash -c "! grep -q ' down .*FAILED' '$HOME/.local/state/hetzner-claude/events.log'"
+}
+
+test_credentials_in_repo_url_are_refused_and_never_logged() {
+  run setup.sh >/dev/null
+  fails run start.sh web 'https://oauth2:tok_secret_9@git.example.invalid/o/r.git' >/dev/null 2>"$T/err"
+  check "refused" has 'REPO_URL contains credentials \(https://\*\*\*@git\.example\.invalid/o/r\.git\)' "$T/err"
+  check "not in events or transcript" bash -c "! grep -rq tok_secret_9 '$HOME/.local/state/hetzner-claude'"
+  check "no server" test ! -f "$MOCK_STATE/hcloud/server/claude-web.json"
+}
+
+test_stale_transcript_variables_do_not_suppress_logging() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  export VIPER_TRANSCRIPT=/nonexistent/x.log VIPER_TRANSCRIPT_PID=999999 VIPER_ACTION=up   # e.g. inherited by a VS Code terminal
+  echo DELETE | run stop.sh web >/dev/null
+  check "own transcript" bash -c "grep -q '^===== .* down claude-web$' '$HOME/.local/state/hetzner-claude/logs/claude-web.log'"
+  check "own events" has ' claude-web +down +deleted$' <(events)
+}
+
+test_make_force_and_full_need_1() {
+  mkdir -p "$HOME/.local/state/hetzner-claude/logs"; echo x > "$HOME/.local/state/hetzner-claude/logs/claude-web.log"
+  make -s --no-print-directory -I "$ROOT" -f "$ROOT/Makefile" -C "$W" log MACHINE=web FULL=0 > "$T/out"
+  check "FULL=0 shows events, not the log" bash -c "! grep -qx x '$T/out'"
+  make -s --no-print-directory -I "$ROOT" -f "$ROOT/Makefile" -C "$W" down MACHINE=web FORCE=0 >/dev/null 2>&1 || true
+  check "FORCE=0 passes no --force" bash -c "! grep -qx -- --force '$MOCK_STATE'/docker-call-1"
+}
+
+test_inventory_of_the_server_is_logged() {
+  run setup.sh >/dev/null
+  printf 'VIPER_BREW_TAPS="acme/tools"\nVIPER_BREW_TRUST="acme/tools"\nVIPER_BREW_PACKAGES="ripgrep acme/tools/widget"\n' > "$W/machines/web.env.local"
+  run start.sh web >/dev/null
+  transcript > "$T/tr"
+  check "section" has '^== installed on the server ==$' "$T/tr"
+  check "os" has '^os: .*, kernel ' "$T/tr"
+  check "apt list asked for the cloud-init packages" has 'bash -s -- .* docker\.io git gh make build-essential' "$CALLS"
+  check "homebrew" has '^homebrew: Homebrew ' "$T/tr"
+  check "taps" has '^brew taps: .*acme/tools' "$T/tr"
+  check "trusted" has '^brew trusted: \{"taps":\["acme/tools"\]\}' "$T/tr"
+  check "formulae with versions" has '^brew formulae \(installed on request\): ripgrep 1\.0, widget 1\.0$' "$T/tr"
 }

@@ -69,7 +69,7 @@ echo "== server ($SERVER_NAME, $IP)"
 WORKDIR="$WORKSPACE_DIR"
 [[ -z "${REPO_URL:-}" ]] || WORKDIR="$WORKSPACE_DIR/$(basename "${REPO_URL%.git}")"
 # key=value lines; nothing is changed on the server
-if ! out=$(ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$WORKDIR" "${VIPER_CLAUDE_TOKEN:+1}${VIPER_ANTHROPIC_BASE_URL:+1}" "$BREW" "${VIPER_BREW_TAPS:-}" "${VIPER_BREW_PACKAGES:-}" "${REPO_URL:+$WORKDIR/Brewfile}" "${VIPER_BREW_TRUST:-}")" <<'PROBE'
+if ! out=$(ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$WORKDIR" "${VIPER_CLAUDE_TOKEN:+1}${VIPER_ANTHROPIC_BASE_URL:+1}" "$BREW" "${VIPER_BREW_TAPS:-}" "${VIPER_BREW_PACKAGES:-}" "$( [[ "${VIPER_BREWFILE:-0}" != 1 || -z "${REPO_URL:-}" ]] || echo "$WORKDIR/Brewfile")" "${VIPER_BREW_TRUST:-}")" <<'PROBE'
 set -uo pipefail
 dir="$1"; ask_claude="$2"; brew="$3"; taps_in="$4"; pkgs_in="$5"; brewfile="$6"; trust_in="$7"
 export LC_ALL=C PATH="$HOME/.local/bin:$PATH"
@@ -110,6 +110,8 @@ if [ -x "$brew" ]; then
       key=$(case "$kind" in tap) echo taps ;; formula) echo formulae ;; cask) echo casks ;; command) echo commands ;; esac)
       jq -e --arg k "$key" --arg n "$name" '(.[$k] // []) | map(ascii_downcase) | index($n | ascii_downcase)' <<<"$trusted" >/dev/null 2>&1 ||
         missing="$missing trust:$name"
+      # brew trust accepts any name: a trusted tap that is not tapped is likely a typo
+      if [ "$kind" = tap ] && ! brew tap 2>/dev/null </dev/null | grep -qixF -- "$name"; then missing="$missing untapped:$name"; fi
     done
   fi
   echo "brew_missing=${missing# }"
@@ -119,7 +121,7 @@ if [ -x "$brew" ]; then
 fi
 if [ -d "$dir/.git" ]; then
   echo "repo=$(git -C "$dir" log --oneline -1 2>/dev/null || echo '(no commits yet)')"
-  echo "repo_changes=$(git -C "$dir" status --short | wc -l)"
+  echo "repo_changes=$(git -C "$dir" -c status.showUntrackedFiles=all status --porcelain --untracked-files=all --ignore-submodules=none | wc -l)"
 fi
 if [ -f "${VIPER_REBOOT_FILE:-/var/run/reboot-required}" ]; then echo reboot=required; fi
 echo "sshd=$(sudo sshd -T 2>/dev/null | grep -iE '^(passwordauthentication|permitrootlogin|authenticationmethods) ' | sort | tr '\n' ';')"

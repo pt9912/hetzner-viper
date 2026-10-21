@@ -658,3 +658,32 @@ test_failed_homebrew_install_only_warns() {
   check "warning" has 'WARNING: Homebrew installation failed' "$T/err"
   check "setup completed" has '^Ready: ssh hetzner-claude-web' "$T/out"
 }
+
+test_ready_marker_on_the_server_counts_for_another_computer() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  check "server marker" test "$(cat "$MOCK_STATE/remote-home/.config/viper/ready")" = "$(cat "$HOME/.local/state/hetzner-claude/id-claude-web")"
+  rm "$HOME/.local/state/hetzner-claude/ready-claude-web"     # like a second computer
+  touch "$MOCK_STATE/reboot-required" "$MOCK_STATE/reboot-required.keep"   # later unattended upgrades
+  : > "$CALLS"
+  run start.sh web >/dev/null 2>"$T/err"
+  check "no waiting" count_is 'cloud-init status' "$CALLS" 1
+  check "only a warning" has 'updates on the server need a reboot' "$T/err"
+}
+
+test_wait_for_a_pending_reboot_is_capped() {
+  run setup.sh >/dev/null
+  MOCK_CF_WRITE_FAIL=1 fails run start.sh web >/dev/null 2>&1        # interrupted first run, no marker
+  touch "$MOCK_STATE/reboot-required" "$MOCK_STATE/reboot-required.keep"   # the reboot never comes
+  : > "$CALLS"
+  run start.sh web >"$T/out" 2>"$T/err"
+  check "capped" count_is 'cloud-init status' "$CALLS" 37
+  check "then carries on" has '^Ready: ssh hetzner-claude-web' "$T/out"
+  check "with a warning" has 'updates on the server need a reboot' "$T/err"
+}
+
+test_workspace_is_recorded_on_the_server_before_later_steps() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  check "with the workspace directory creation" has 'sudo install -d -o builder -g builder .* ~/\.config/viper/workspaces' "$CALLS"
+}

@@ -9,6 +9,8 @@ REPO_URL_ARG="${2:-}"
 source "$(dirname "$0")/common.sh"
 start_transcript preflight
 [[ -z "$REPO_URL_ARG" ]] || REPO_URL="$REPO_URL_ARG"
+# shown and logged only without credentials
+REPO_SHOWN=$(redact_url "${REPO_URL:-}")
 
 failures=0
 ok()   { echo "ok    $*"; }
@@ -200,29 +202,36 @@ if (( ${#brew_taps[@]} + ${#brew_trust[@]} + ${#brew_pkgs[@]} > 0 )); then
   done
   info "Homebrew taps: ${brew_taps[*]:-none}; trust: ${brew_trust[*]:-none}; formulae: ${brew_pkgs[*]:-none}"
 fi
-[[ "$VIPER_HOMEBREW" != 1 || -z "${REPO_URL:-}" ]] || info "a Brewfile in the repository (if any) is applied with brew bundle"
+if [[ "${VIPER_BREWFILE:-0}" == 1 ]]; then
+  [[ "$VIPER_HOMEBREW" == 1 ]] || bad "VIPER_BREWFILE=1 needs VIPER_HOMEBREW=1"
+  [[ -n "${REPO_URL:-}" ]] || info "VIPER_BREWFILE=1 without a repository: nothing to apply"
+  [[ -z "${REPO_URL:-}" ]] || warn "the repository's Brewfile will be applied: it is Ruby code run by brew bundle, and its trusted: entries change Homebrew's trust store"
+fi
 
 echo "== repository"
 if [[ -z "${REPO_URL:-}" ]]; then
   info "no repository to clone"
 elif [[ "$REPO_URL" == -* ]]; then
-  bad "REPO_URL must not start with '-': $REPO_URL"
+  bad "REPO_URL must not start with '-': $REPO_SHOWN"
+elif [[ "$REPO_URL" =~ ^[a-z+]+://[^/@]+@ && ! "$REPO_URL" =~ ^ssh://[^/@:]+@ ]]; then
+  # a token in the URL would end up in .git/config on the server and in logs
+  bad "REPO_URL contains credentials ($REPO_SHOWN): use VIPER_GH_TOKEN or GIT_DEPLOY_KEY_FILE instead"
 elif [[ "$REPO_URL" =~ ^(ssh://|[^/]+@[^/]+:) ]]; then
   gh_host="${VIPER_GH_HOST:-github.com}"
   if [[ -n "${GIT_DEPLOY_KEY_FILE:-}" ]]; then
-    info "SSH repository $REPO_URL with deploy key: access is only checked by the clone on the server"
+    info "SSH repository $REPO_SHOWN with deploy key: access is only checked by the clone on the server"
   elif [[ -n "${VIPER_GH_TOKEN:-}" && ( "$REPO_URL" == "git@$gh_host:"* || "$REPO_URL" == "ssh://git@$gh_host/"* ) ]]; then
-    ok "SSH repository $REPO_URL will be cloned over HTTPS with VIPER_GH_TOKEN"
+    ok "SSH repository $REPO_SHOWN will be cloned over HTTPS with VIPER_GH_TOKEN"
   else
-    bad "SSH repository $REPO_URL needs GIT_DEPLOY_KEY_FILE (the server has no SSH key for the git host); or use an HTTPS URL, or VIPER_GH_TOKEN for $gh_host"
+    bad "SSH repository $REPO_SHOWN needs GIT_DEPLOY_KEY_FILE (the server has no SSH key for the git host); or use an HTTPS URL, or VIPER_GH_TOKEN for $gh_host"
   fi
 elif [[ -n "${VIPER_GH_TOKEN:-}" && "$REPO_URL" == "https://${VIPER_GH_HOST:-github.com}/"* ]]; then
   : # checked through the GitHub API above
 elif command -v git >/dev/null; then
   if GIT_TERMINAL_PROMPT=0 git ls-remote -- "$REPO_URL" >/dev/null 2>&1; then
-    ok "repository $REPO_URL reachable"
+    ok "repository $REPO_SHOWN reachable"
   else
-    bad "repository $REPO_URL not reachable without credentials (private? set VIPER_GH_TOKEN or GIT_DEPLOY_KEY_FILE)"
+    bad "repository $REPO_SHOWN not reachable without credentials (private? set VIPER_GH_TOKEN or GIT_DEPLOY_KEY_FILE)"
   fi
 else
   info "git not installed locally: repository not checked"

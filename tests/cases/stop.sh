@@ -293,3 +293,38 @@ test_stop_flags_remote_on_the_server_itself() {
   check "named" bash -c "grep -q 'Remote origin is on this server' <<<'$out'"
   check "warning" bash -c "grep -q 'UNSAVED WORK' <<<'$out'"
 }
+
+test_stop_sees_untracked_files_despite_git_config() {
+  boot; pushed_repo
+  git -C "$T/mnt/proj" config status.showUntrackedFiles no
+  echo new > "$T/mnt/proj/new_module.py"
+  out=$(printf 'no\n' | run stop.sh web 2>&1) || true
+  check "listed" bash -c "grep -qx '?? new_module.py' <<<'$out'"
+  check "warning" bash -c "grep -q 'UNSAVED WORK' <<<'$out'"
+}
+
+test_stop_flags_files_hidden_by_assume_unchanged() {
+  boot; pushed_repo
+  git -C "$T/mnt/proj" update-index --assume-unchanged .gitignore
+  echo changed >> "$T/mnt/proj/.gitignore"
+  out=$(printf 'no\n' | run stop.sh web 2>&1) || true
+  check "hidden listed" bash -c "grep -q 'Hidden from git status' <<<'$out'"
+  check "warning" bash -c "grep -q 'UNSAVED WORK' <<<'$out'"
+}
+
+test_stop_flags_commits_only_reachable_from_a_tag() {
+  boot; pushed_repo
+  (cd "$T/mnt/proj" && git checkout -q --detach && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m tagged-only \
+    && git tag v9 && git checkout -q -)
+  out=$(printf 'no\n' | run stop.sh web 2>&1) || true
+  check "tag commit listed" bash -c "grep -q 'tagged-only' <<<'$out'"
+  check "warning" bash -c "grep -q 'UNSAVED WORK' <<<'$out'"
+}
+
+test_stop_refuses_when_the_check_did_not_complete() {
+  boot
+  export MOCK_SSH_SKIP_SCRIPT=1
+  echo DELETE | fails run stop.sh web >/dev/null 2>"$T/err"
+  check "refused" has 'git check on the server did not complete' "$T/err"
+  check "server kept" test -f "$MOCK_STATE/hcloud/server/claude-web.json"
+}

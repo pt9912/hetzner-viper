@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.20  
+Version: 1.21  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -148,7 +148,7 @@ Sie wissen, dass Tokens, DNS, SSH-Vertrauen, Einrichtung, Clone und Löschen in 
 #### Hinweise
 
 * 1 GB RAM reicht für den Funktionstest. Für echte Arbeit des Agenten mit Builds und Tests ist der Speicher zu knapp. Nutzen Sie dafür einen größeren Typ.
-* Bricht `make up` ab, bleibt der Server bestehen. Führen Sie `make up MACHINE=test` nach dem Beheben erneut aus, oder löschen Sie ihn mit `make down MACHINE=test`. Ein Server gilt erst nach einem vollständig gelaufenen `make up` als eingerichtet; bis dahin wartet ein erneuter Lauf wie bei einem neuen Server, auch auf den Neustart nach den Updates.
+* Bricht `make up` ab, bleibt der Server bestehen. Führen Sie `make up MACHINE=test` nach dem Beheben erneut aus, oder löschen Sie ihn mit `make down MACHINE=test`. Ein Server gilt erst nach einem vollständig gelaufenen `make up` als eingerichtet (vermerkt lokal und auf dem Server, gilt also auch für andere Computer); bis dahin wartet ein erneuter Lauf wie bei einem neuen Server, auch auf den Neustart nach den Updates, aber höchstens etwa drei Minuten.
 
 ### Einen Rechner für ein Repository einrichten
 
@@ -236,8 +236,8 @@ Geprüft werden:
 
 `start.sh` (`make up`), `stop.sh` (`make down`), `check.sh` (`make check`) und ein eigenständig aufgerufenes `preflight.sh` schreiben zwei Protokolle in `~/.local/state/hetzner-claude/` (Rechte `600`, ohne Tokens):
 
-* `events.log`: eine Zeile pro Ereignis mit Zeit (UTC), Server, Aktion und Ergebnis, etwa `server created id=…`, `ready`, `deleted`, `cancelled (unsaved work)` oder `FAILED (exit 1; …)`. Daraus sehen Sie, welche Server wann liefen.
-* `logs/<SERVER_PREFIX>-<rechner>.log`: die vollständige Ausgabe jedes Laufs, Läufe getrennt durch eine Zeile `===== <Zeit> <aktion> <server>`.
+* `events.log`: eine Zeile pro Ereignis mit Zeit (UTC), Server, Aktion und Ergebnis, etwa `server created id=…`, `ready`, `deleted`, `cancelled (unsaved work)`, `interrupted` (Strg-C, geschlossenes Terminal) oder `FAILED (exit 1; …)`. Daraus sehen Sie, welche Server wann liefen.
+* `logs/<SERVER_PREFIX>-<rechner>.log`: die vollständige Ausgabe jedes Laufs, Läufe getrennt durch eine Zeile `===== <Zeit> <aktion> <server>`. Am Ende jedes `make up` steht dort unter `== installed on the server ==`, was auf dem Server installiert ist: Betriebssystem und Kernel, die apt-Pakete aus `cloud-init.yaml` mit Version, Claude Code, `gh`, Docker sowie Homebrew mit Taps, vertrauten Einträgen und den angeforderten Formeln samt Version. Das Protokoll von Homebrew selbst (`~/.config/viper/brew-packages.log`) bleibt auf dem Server.
 
 #### Vorgehen
 
@@ -245,7 +245,7 @@ Geprüft werden:
 * Ereignisse eines Rechners: `make log MACHINE=<rechner>`
 * Vollständige Ausgabe eines Rechners: `make log MACHINE=<rechner> FULL=1`
 
-`make log` läuft direkt auf Ihrem Rechner, ohne Container und ohne Tokens. Die Protokolle werden nicht automatisch gekürzt; löschen Sie sie bei Bedarf von Hand. Protokolle auf dem Server (cloud-init, Homebrew) verschwinden dagegen mit dem Server.
+`make log` läuft direkt auf Ihrem Rechner, ohne Container und ohne Tokens. `FULL` und (bei `make down`) `FORCE` wirken nur mit dem Wert `1`. Eine Repo-URL mit Zugangsdaten (`https://user:token@…`) lehnt der Preflight ab, damit das Token weder in die Protokolle noch auf den Server gelangt. Die Protokolle werden nicht automatisch gekürzt; löschen Sie sie bei Bedarf von Hand. Protokolle auf dem Server (cloud-init, Homebrew) verschwinden dagegen mit dem Server.
 
 ### Mit Claude Code arbeiten
 
@@ -411,7 +411,6 @@ Auf jedem Rechner ist Homebrew (`brew`) installiert, sofern Sie es nicht mit `VI
 1. Tragen Sie in `machines/<rechner>.env.local` (oder für alle Rechner in `.env.local`) ein. Jede Einstellung ist eine Liste: Einträge trennen Sie mit Leerzeichen oder Zeilenumbrüchen, und den ganzen Wert setzen Sie in doppelte Anführungszeichen (sonst bricht das Einlesen der Datei ab):
    ```
    VIPER_BREW_TAPS="hashicorp/tap"
-   VIPER_BREW_TRUST="hashicorp/tap"
    VIPER_BREW_PACKAGES="ripgrep fd hashicorp/tap/terraform"
    ```
    Lange Listen dürfen über mehrere Zeilen gehen:
@@ -424,12 +423,14 @@ Auf jedem Rechner ist Homebrew (`brew`) installiert, sofern Sie es nicht mit `VI
    ```
    Kommas sind keine Trenner; der Preflight meldet einen Eintrag wie `ripgrep,fd` als ungültig.
    * `VIPER_BREW_TAPS`: `owner/repo` für einen Tap auf GitHub, `owner/repo=URL` für einen Tap anderswo (z. B. `meinefirma/tools=https://git.example.com/tools.git`).
-   * `VIPER_BREW_TRUST`: `owner/repo` vertraut dem ganzen Tap, `owner/repo/name` einer einzelnen Formel. Mit `cask:` oder `command:` davor vertrauen Sie einem Cask oder einem externen Befehl.
+   * `VIPER_BREW_TRUST`: `owner/repo` vertraut dem ganzen Tap, `owner/repo/name` einer einzelnen Formel. Mit `cask:` oder `command:` davor vertrauen Sie einem Cask oder einem externen Befehl. Meist ist das nicht nötig: Wer `owner/repo/name` installiert, vertraut damit genau dieser Formel. Vertrauen Sie so wenig wie möglich, also lieber einer Formel als einem ganzen Tap. `brew trust` nimmt auch Tippfehler an; `make check` meldet einen vertrauten, aber nicht eingebundenen Tap als `untapped:…`.
    * `VIPER_BREW_PACKAGES`: `name` aus dem Hauptkatalog oder `owner/repo/name` aus einem Tap.
 2. Prüfen Sie vorab mit `make preflight MACHINE=<rechner>`. Er meldet Einträge im falschen Format.
 3. Starten Sie den Rechner mit `make up MACHINE=<rechner>`. `start.sh` führt die Schritte in der Reihenfolge Tap, Trust, Installation aus und meldet jeden Schritt (`brew: tap …`, `brew: trusted …`, `brew: installed …`).
 
 #### Vorgehen mit einer Brewfile im Repository
+
+Eine `Brewfile` wird nur angewendet, wenn Sie `VIPER_BREWFILE=1` setzen. Sie ist Ruby-Code aus dem Repository, den `brew bundle` ausführt; ihre `trusted:`-Angaben bleiben dauerhaft in Homebrews Trust-Speicher, und sie kann auch andere Paketarten installieren. Setzen Sie die Option deshalb nur für Repositories, deren Inhalt Sie vertrauen. Der Preflight weist mit `WARN` darauf hin.
 
 Legen Sie im Repository eine Datei `Brewfile` an. Homebrew unterscheidet dort selbst zwischen Taps und Formeln, und der Trust steht direkt am Tap:
 ```ruby
@@ -437,7 +438,7 @@ tap "hashicorp/tap", trusted: true
 brew "ripgrep"
 brew "hashicorp/tap/terraform"
 ```
-Statt dem ganzen Tap können Sie einzelnen Formeln vertrauen: `tap "hashicorp/tap", trusted: { formulae: ["terraform"] }`. Nach dem Klonen führt `start.sh` `brew bundle install --no-upgrade` mit dieser Datei aus. So bekommt jeder Rechner dieses Projekts dieselben Werkzeuge, versioniert mit dem Code.
+Statt dem ganzen Tap können Sie einzelnen Formeln vertrauen: `tap "hashicorp/tap", trusted: { formulae: ["terraform"] }`. Mit `VIPER_BREWFILE=1` führt `start.sh` nach dem Klonen `brew bundle install --no-upgrade` mit dieser Datei aus, und `make check` prüft sie mit `brew bundle check`. So bekommt jeder Rechner dieses Projekts dieselben Werkzeuge, versioniert mit dem Code.
 
 #### Ergebnis
 
@@ -475,7 +476,7 @@ Schließen Sie alle VS-Code-Fenster und Terminals, die auf dem Rechner geöffnet
 #### Vorgehen
 
 1. Führen Sie `./stop.sh <rechner>` aus.
-2. Lesen Sie die Ausgabe: Das Skript zeigt je Repository und je Worktree den Git-Stand, Commits, die auf keinem Remote liegen (auf allen lokalen Branches), und die tmux-Sitzungen. Es sucht Repositories in allen Arbeitsverzeichnissen, mit denen der Rechner je gestartet wurde (auch wenn Sie `WORKSPACE_DIR` später geändert haben oder den Rechner von einem anderen Computer aus gestartet haben; der Server führt die Liste selbst mit), im Home-Verzeichnis von `builder` und in `/tmp` und `/var/tmp`. Dateien und Ordner direkt im Arbeitsverzeichnis, die zu keinem Repository gehören, listet es unter **Not in any git repository (lost)** auf. Dateien außerhalb von Repositories im Home-Verzeichnis oder in `/tmp` prüft es nicht. Liegt ein Remote eines Repositorys auf dem Server selbst (etwa ein lokales Bare-Repository), meldet es auch das, weil dorthin gepushte Commits mit dem Server verloren gehen. Gibt es ungesicherte Arbeit (uncommittete Änderungen, Commits auf keinem Remote, mit `git stash` beiseitegelegte Änderungen, Dateien außerhalb eines Repositorys, ein fehlendes Arbeitsverzeichnis oder ein nicht lesbares Repository), steht `UNSAVED WORK` in der Ausgabe, und Sie müssen zusätzlich `DISCARD` eingeben, um fortzufahren. Von Git ignorierte Dateien (zum Beispiel `.env` oder Build-Verzeichnisse) werden unter **Ignored by git (also lost)** aufgelistet, blockieren aber nicht.
+2. Lesen Sie die Ausgabe: Das Skript zeigt je Repository und je Worktree den Git-Stand, Commits, die auf keinem Remote liegen (auf allen lokalen Branches), und die tmux-Sitzungen. Es sucht Repositories in allen Arbeitsverzeichnissen, mit denen der Rechner je gestartet wurde (auch wenn Sie `WORKSPACE_DIR` später geändert haben oder den Rechner von einem anderen Computer aus gestartet haben; der Server führt die Liste selbst mit), im Home-Verzeichnis von `builder` und in `/tmp` und `/var/tmp`. Dateien und Ordner direkt im Arbeitsverzeichnis, die zu keinem Repository gehören, listet es unter **Not in any git repository (lost)** auf. Dateien außerhalb von Repositories im Home-Verzeichnis oder in `/tmp` prüft es nicht. Neue Dateien findet es unabhängig von Git-Einstellungen wie `status.showUntrackedFiles=no`; Dateien, die per `assume-unchanged` oder `skip-worktree` aus `git status` ausgeblendet sind, meldet es eigens, ebenso Commits, die nur über einen Tag erreichbar sind. Bricht die Prüfung auf dem Server vorzeitig ab, löscht es nichts. Liegt ein Remote eines Repositorys auf dem Server selbst (etwa ein lokales Bare-Repository), meldet es auch das, weil dorthin gepushte Commits mit dem Server verloren gehen. Gibt es ungesicherte Arbeit (uncommittete Änderungen, Commits auf keinem Remote, mit `git stash` beiseitegelegte Änderungen, Dateien außerhalb eines Repositorys, ein fehlendes Arbeitsverzeichnis oder ein nicht lesbares Repository), steht `UNSAVED WORK` in der Ausgabe, und Sie müssen zusätzlich `DISCARD` eingeben, um fortzufahren. Von Git ignorierte Dateien (zum Beispiel `.env` oder Build-Verzeichnisse) werden unter **Ignored by git (also lost)** aufgelistet, blockieren aber nicht.
 3. Sichern Sie offene Änderungen (committen und pushen), falls nötig, und starten Sie `stop.sh` erneut.
 4. Geben Sie zur Bestätigung `DELETE` ein.
 
@@ -517,6 +518,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `VIPER_BREW_TAPS` | Homebrew-Taps (`owner/repo` oder `owner/repo=URL`), mit Leerzeichen getrennt | leer |
 | `VIPER_BREW_TRUST` | Einträge für `brew trust`: `owner/repo` (Tap), `owner/repo/name` (Formel), `cask:…`, `command:…` | leer |
 | `VIPER_BREW_PACKAGES` | Zu installierende Formeln (`name` oder `owner/repo/name`) | leer |
+| `VIPER_BREWFILE` | `1`: eine `Brewfile` im geklonten Repository mit `brew bundle` anwenden | `0` |
 | `WORKSPACE_DIR` | Verzeichnis auf dem Server, in das die Repositories geklont werden | `/Development` |
 | `REPO_URL` | Repository, das beim Start geklont wird | leer |
 | `REPO_BRANCH` | Zweig, der geklont wird | Standardzweig |
@@ -563,7 +565,7 @@ Die Skripte importieren und exportieren keine Daten. Ihre Arbeitsdateien liegen 
 ### Meldung: "Missing settings: …"
 
 **Ursache:** Pflichtwerte fehlen: `DNS_DOMAIN`, `HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN` oder `CLOUDFLARE_ZONE_ID`. Die Meldung nennt alle fehlenden auf einmal. Es wurde nichts angelegt oder gelöscht.  
-**Lösung:** Tragen Sie die Werte in `.env.local` oder `machines/<rechner>.env.local` ein. Die drei Tokens (`HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`) können Sie auch in der Shell exportieren; andere Einstellungen erreichen den `make`-Container nur über die Dateien. Beachten Sie: Eine leere Zeile `HCLOUD_TOKEN=` in `.env.local` überschreibt den Wert aus der Shell.
+**Lösung:** Tragen Sie die Werte in `.env.local` oder `machines/<rechner>.env.local` ein. Die drei Tokens (`HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`) und alle `VIPER_*`-Einstellungen können Sie auch in der Shell exportieren; andere Einstellungen (etwa `DNS_DOMAIN`, `SERVER_TYPE`) erreichen den `make`-Container nur über die Dateien. Steht eine Einstellung in einer Datei, hat sie Vorrang vor der Shell. Beachten Sie: Eine leere Zeile `HCLOUD_TOKEN=` in `.env.local` überschreibt den Wert aus der Shell.
 
 ### Meldung: "DNS_DOMAIN must be a domain like example.com"
 
@@ -760,3 +762,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.18 | v3 mit Mehrrechner-Betrieb | Homebrew (`brew`) wird auf jedem neuen Server installiert (abschaltbar mit `VIPER_HOMEBREW=0`); `make check` prüft es. |
 | 1.19 | v3 mit Mehrrechner-Betrieb | Werkzeuge mit Homebrew: `VIPER_BREW_TAPS`, `VIPER_BREW_TRUST`, `VIPER_BREW_PACKAGES` und eine `Brewfile` im Repository; Reihenfolge Tap, Trust, Installation; Preflight prüft das Format, `make check` den Stand. |
 | 1.20 | v3 mit Mehrrechner-Betrieb | Protokolle: `events.log` (ein Ereignis pro Zeile) und `logs/<server>.log` (vollständige Ausgabe) in `~/.local/state/hetzner-claude/`; Anzeige mit `make log`. |
+| 1.21 | v3 mit Mehrrechner-Betrieb | `stop.sh` findet neue Dateien unabhängig von Git-Einstellungen, meldet ausgeblendete Dateien und Commits nur hinter Tags und löscht nichts bei unvollständiger Prüfung. Eingerichtet-Vermerk auch auf dem Server; Warten auf einen Neustart höchstens etwa drei Minuten. `Brewfile` nur mit `VIPER_BREWFILE=1`. Protokolle: `interrupted`, keine Zugangsdaten aus Repo-URLs (abgelehnt), Bestandsliste des Servers nach jedem `make up`. `FORCE`/`FULL` nur mit `1`. |
