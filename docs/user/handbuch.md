@@ -294,7 +294,7 @@ Die Meldung `gh: logged in to github.com` erscheint. Auf dem Server ist `gh` ang
 
 ### Claude Code ohne erneute Anmeldung nutzen
 
-Ohne weitere Einstellung melden Sie sich nach jedem neuen Server auf dem Rechner bei Claude an (`claude`, dann `/login`). Mit einem langlebigen Token Ihres Claude-Abos (Pro, Max oder Team) erledigt `start.sh` das für Sie.
+Ohne weitere Einstellung melden Sie sich nach jedem neuen Server auf dem Rechner bei Claude an (`claude`, dann `/login`). Mit einem langlebigen Token Ihres Claude-Abos (Pro, Max, Team oder Enterprise) erledigt `start.sh` das für Sie. Die Nutzung auf dem Server zählt dann zu Ihrem Abo, nicht zu API-Guthaben.
 
 #### Voraussetzung
 
@@ -308,13 +308,15 @@ Sie haben ein Claude-Abo und auf einem Rechner mit Browser Claude Code installie
 
 #### Ergebnis
 
-Die Meldung `claude: logged in with VIPER_CLAUDE_TOKEN` erscheint. `claude` ist auf dem Server in SSH-Befehlen, in tmux und im VS-Code-Terminal angemeldet. Prüfen können Sie das mit `make ssh MACHINE=<rechner> CMD="bash -lc 'claude -p \"Antworte nur mit OK\"'"`.
+Die Meldung `claude: logged in with VIPER_CLAUDE_TOKEN` erscheint. `claude` ist auf dem Server in SSH-Befehlen, in tmux und im VS-Code-Terminal angemeldet. In Claude Code zeigt `/status` im Tab **Status** dann `Auth token: CLAUDE_CODE_OAUTH_TOKEN`. Prüfen können Sie das mit `make ssh MACHINE=<rechner> CMD="bash -lc 'claude -p \"Antworte nur mit OK\"'"`.
 
 #### Hinweise
 
 * Das Token wird per SSH über die Standardeingabe übertragen. Es steht weder in den Hetzner-User-Data noch in einer Befehlszeile. Auf dem Server liegt es in `~/.config/viper/claude.env` (Rechte `600`), geladen von einer Zeile am Anfang von `~/.bashrc` und `~/.profile`.
-* Claude Code und jeder Prozess des Benutzers `builder` können das Token lesen. Es gilt lange und gibt Zugriff auf Ihr Abo. Behandeln Sie es wie ein Passwort und geben Sie es nicht in Chats oder Tickets weiter.
+* Claude Code und jeder Prozess des Benutzers `builder` können das Token lesen. Es gilt ein Jahr und gibt Zugriff auf Ihr Abo. Behandeln Sie es wie ein Passwort und geben Sie es nicht in Chats oder Tickets weiter.
 * Die Skripte lesen bewusst nicht `CLAUDE_CODE_OAUTH_TOKEN`. Ein lokal gesetztes Token landet so nicht ungewollt auf einem Server.
+* Das Token kann nur Modell-Anfragen stellen. Remote-Control-Sitzungen und claude.ai-Connectors gehen damit nicht, lokal konfigurierte MCP-Server schon. `claude --bare` liest das Token nicht.
+* Setzen Sie auf dem Server kein `ANTHROPIC_API_KEY`: Ein API-Key hat Vorrang vor dem Token und würde über API-Guthaben abrechnen.
 * Ist das Token abgelaufen, erzeugen Sie mit `claude setup-token` ein neues, tragen es ein und führen `make up MACHINE=<rechner>` erneut aus.
 
 ### Vom iPad aus verbinden
@@ -385,7 +387,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `GIT_DEPLOY_KEY_FILE` | Deploy-Key für private SSH-Repositories | leer |
 | `VIPER_GH_TOKEN` | GitHub-PAT für `gh` und `git` über HTTPS auf dem Server | leer |
 | `VIPER_GH_HOST` | GitHub-Host (für GitHub Enterprise) | `github.com` |
-| `VIPER_CLAUDE_TOKEN` | Langlebiges Token Ihres Claude-Abos aus `claude setup-token` | leer |
+| `VIPER_CLAUDE_TOKEN` | Langlebiges Token Ihres Claude-Abos aus `claude setup-token` (ein Jahr gültig) | leer |
 | `HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID` | Zugangsdaten (Shell oder `.env.local`), Pflichtangaben | leer |
 
 ### Firewall und Anmeldung
