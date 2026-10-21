@@ -24,9 +24,10 @@ test_start_creates_all_resources_for_a_machine() {
   check "firewall" has 'hcloud firewall create --name claude-ssh' "$CALLS"
   check "dns A record" has '"name": "web.test.invalid"' "$MOCK_STATE/cf.json"
   check "managed marker" has 'managed by hetzner-claude' "$MOCK_STATE/cf.json"
-  check "ssh config" has 'HostName web.test.invalid' "$HOME/.ssh/config_hetzner_claude_web"
+  check "ssh by IP" has 'HostName 203\.0\.113\.' "$HOME/.ssh/config_hetzner_claude_web"
+  check "host key checked for DNS name" has 'HostKeyAlias web\.test\.invalid' "$HOME/.ssh/config_hetzner_claude_web"
   check "ssh include" has 'Include .*config_hetzner_claude_web' "$HOME/.ssh/config"
-  check "workspace dir created for builder" has "install -d -o builder -g builder '$T/mnt'" "$CALLS"
+  check "workspace dir created for builder" has "install -d -o builder -g builder $T/mnt" "$CALLS"
 }
 
 test_user_data_carries_signed_host_key_via_ssh_keys() {
@@ -105,13 +106,6 @@ test_start_without_setup_fails_cleanly() {
   check "hint" has 'Run ./setup.sh first' "$T/err"
 }
 
-test_dns_not_propagated_keeps_server() {
-  run setup.sh >/dev/null
-  MOCK_DNS_STALE=1 && export MOCK_DNS_STALE
-  ! run start.sh web 2>"$T/err"
-  check "message" has 'DNS not yet propagated' "$T/err"
-  check "server kept" test -f "$MOCK_STATE/hcloud/server/claude-web.json"
-}
 
 test_dns_refuses_foreign_record() {
   run setup.sh >/dev/null
@@ -214,4 +208,52 @@ test_no_gh_login_without_token() {
   run setup.sh >/dev/null
   run start.sh web >/dev/null
   check "no gh call" bash -c "! grep -q 'gh auth' '$CALLS'"
+}
+
+test_clone_without_branch_and_with_odd_path() {
+  run setup.sh >/dev/null
+  git init -q --bare "$T/my repo;x.git"
+  run start.sh web "$T/my repo;x.git" >/dev/null
+  check "cloned despite empty branch arg and metacharacters" test -d "$T/mnt/my repo;x/.git"
+}
+
+test_clone_with_deploy_key_and_no_branch() {
+  run setup.sh >/dev/null
+  git init -q --bare "$T/origin.git"; echo k > "$T/deploy"
+  printf 'REPO_URL=%s\nGIT_DEPLOY_KEY_FILE=%s\n' "$T/origin.git" "$T/deploy" > "$W/machines/web.env.local"
+  run start.sh web >/dev/null
+  check "cloned" test -d "$T/mnt/origin/.git"
+}
+
+test_host_key_pinned_as_fallback_for_expired_cert() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  pub=$(python3 -I -c "import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))['ssh_keys']['ed25519_public'])" "$MOCK_STATE/hcloud/server/claude-web.user-data" | cut -d' ' -f1,2)
+  check "pinned key = server key, for DNS name" test "$(cat "$HOME/.ssh/known_hosts_hetzner_claude_web")" = "web.test.invalid $pub"
+  check "pin file used" has 'UserKnownHostsFile .*known_hosts_hetzner_claude_ca .*known_hosts_hetzner_claude_web' "$HOME/.ssh/config_hetzner_claude_web"
+  check "plain key allowed as fallback" has 'HostKeyAlgorithms ssh-ed25519-cert-v01@openssh.com,ssh-ed25519' "$HOME/.ssh/config_hetzner_claude_web"
+}
+
+test_hcloud_error_aborts_start_without_creating() {
+  run setup.sh >/dev/null
+  export MOCK_HCLOUD_FAIL=1
+  ! run start.sh web >/dev/null 2>"$T/err"
+  check "message" has 'list failed' "$T/err"
+  check "no dns" test ! -f "$MOCK_STATE/cf.json"
+}
+
+test_cloudflare_token_not_in_argv() {
+  run setup.sh >/dev/null
+  export CLOUDFLARE_API_TOKEN=cf_secret_42
+  run start.sh web >/dev/null
+  check "dns written" has 'web\.test\.invalid' "$MOCK_STATE/cf.json"
+  check "token not on any command line" bash -c "! grep -q cf_secret_42 '$CALLS'"
+}
+
+test_vscode_does_not_inherit_tokens() {
+  run setup.sh >/dev/null
+  export GH_TOKEN=ghp_x
+  run start.sh web >/dev/null
+  check "code launched" has '^code ' "$CALLS"
+  check "no tokens in its environment" test ! -s "$MOCK_STATE/code-env"
 }

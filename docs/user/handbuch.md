@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.6  
+Version: 1.7  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -18,7 +18,7 @@ Dieses Handbuch richtet sich an Entwicklerinnen und Entwickler, die auf einem Li
 
 ### Voraussetzungen
 
-Auf Ihrem lokalen Linux-Rechner:
+Auf Ihrem lokalen Rechner (nur Linux ist erprobt; unter macOS bitte den Container-Lauf nutzen):
 
 * `bash`, `curl`, `jq`, `python3`, OpenSSH-Client
 * die Hetzner-Kommandozeile `hcloud`
@@ -114,6 +114,8 @@ Die Meldung `Ready: ssh hetzner-claude-web (work dir: …)` erscheint. Das Repos
 
 * Ein schon vorhandenes Repository wird beim erneuten Aufruf von `start.sh` für einen laufenden Server nicht erneut geklont.
 * Das Host-Zertifikat des Servers ist sieben Tage gültig. Bei jedem neuen Server wird ein frisches Zertifikat erstellt. Eine manuelle Prüfung des Fingerabdrucks ist nicht nötig.
+* Zusätzlich hinterlegt `start.sh` den Host-Schlüssel des Servers in `~/.ssh/known_hosts_hetzner_claude_<rechner>`. Damit funktionieren `ssh`, VS Code und `stop.sh` auch nach Ablauf des Zertifikats weiter.
+* Die Skripte verbinden sich über die IP-Adresse des Servers. Den DNS-Eintrag brauchen nur Sie für andere Geräte (etwa das iPad). `start.sh` wartet deshalb nicht darauf, dass er weltweit sichtbar ist.
 
 ### Rechner im Container einrichten und beenden
 
@@ -248,7 +250,7 @@ Schließen Sie alle VS-Code-Fenster und Terminals, die auf dem Rechner geöffnet
 #### Vorgehen
 
 1. Führen Sie `./stop.sh <rechner>` aus.
-2. Lesen Sie die Ausgabe: Das Skript zeigt je Repository den Git-Stand, nicht gepushte Commits, tmux-Sitzungen. Gibt es ungesicherte Arbeit (uncommittete, nicht gepushte oder mit `git stash` beiseitegelegte Änderungen, Repository ohne Upstream oder ein nicht lesbares Repository), steht `UNSAVED WORK` in der Ausgabe, und Sie müssen zusätzlich `DISCARD` eingeben, um fortzufahren. Von Git ignorierte Dateien (zum Beispiel `.env` oder Build-Verzeichnisse) werden unter **Ignored by git (also lost)** aufgelistet, blockieren aber nicht.
+2. Lesen Sie die Ausgabe: Das Skript zeigt je Repository und je Worktree den Git-Stand, Commits, die auf keinem Remote liegen (auf allen lokalen Branches), und die tmux-Sitzungen. Es prüft das Arbeitsverzeichnis, mit dem der Rechner gestartet wurde. Gibt es ungesicherte Arbeit (uncommittete Änderungen, Commits auf keinem Remote, mit `git stash` beiseitegelegte Änderungen oder ein nicht lesbares Repository), steht `UNSAVED WORK` in der Ausgabe, und Sie müssen zusätzlich `DISCARD` eingeben, um fortzufahren. Von Git ignorierte Dateien (zum Beispiel `.env` oder Build-Verzeichnisse) werden unter **Ignored by git (also lost)** aufgelistet, blockieren aber nicht.
 3. Sichern Sie offene Änderungen (committen und pushen), falls nötig, und starten Sie `stop.sh` erneut.
 4. Geben Sie zur Bestätigung `DELETE` ein.
 
@@ -338,12 +340,10 @@ Die Skripte importieren und exportieren keine Daten. Ihre Arbeitsdateien liegen 
 **Ursache:** Login-Schlüssel oder Host-CA fehlen.  
 **Lösung:** Führen Sie `./setup.sh` aus.
 
-### Meldung: "DNS not yet propagated; server retained."
+### Meldung: "hcloud … list failed (check HCLOUD_TOKEN / project / network)"
 
-**Ursache:** Der DNS-Name zeigt noch nicht auf die neue IP-Adresse (nach 5 Minuten Wartezeit).  
-**Lösung:**
-1. Prüfen Sie in Cloudflare, ob der A-Record angelegt wurde.
-2. Warten Sie kurz und führen Sie `./start.sh <rechner>` erneut aus. Der vorhandene Server wird weiterverwendet.
+**Ursache:** Die Hetzner-API hat nicht geantwortet oder das Token abgelehnt: Es ist abgelaufen, gehört zu einem anderen Projekt oder hat keine Schreibrechte, oder das Netz ist gestört. Die Skripte brechen dann ab, ohne etwas anzulegen, zu löschen oder aufzuräumen.  
+**Lösung:** Prüfen Sie `HCLOUD_TOKEN` und das Hetzner-Projekt und führen Sie den Befehl erneut aus.
 
 ### Meldung: "SSH/cloud-init not ready; server retained."
 
@@ -361,7 +361,7 @@ Die Skripte importieren und exportieren keine Daten. Ihre Arbeitsdateien liegen 
 
 ### Meldung: "error validating token" beim Start
 
-**Ursache:** `gh` hat das Token aus `GH_TOKEN` abgelehnt: Es ist abgelaufen, widerrufen oder falsch kopiert. Der Server ist schon angelegt.  
+**Ursache:** `gh` hat das Token aus `GH_TOKEN` abgelehnt: Es ist abgelaufen, widerrufen oder falsch kopiert. Ein klassisches Token (nicht fein granular) braucht außerdem mindestens die Scopes `repo` und `read:org`. Der Server ist schon angelegt.  
 **Lösung:** Korrigieren Sie `GH_TOKEN` und führen Sie `./start.sh <rechner>` erneut aus. Der vorhandene Server wird weiterverwendet.
 
 ### Meldung: "Git check on the server failed. NOT deleting server"
@@ -391,8 +391,8 @@ Die Skripte importieren und exportieren keine Daten. Ihre Arbeitsdateien liegen 
 
 ### Verbindung wird nach einigen Tagen abgelehnt
 
-**Ursache:** Das Host-Zertifikat ist nach sieben Tagen abgelaufen. Eine automatische Erneuerung gibt es nicht.  
-**Lösung:** Pushen Sie Ihre Arbeit, beenden Sie den Rechner mit `./stop.sh <rechner>` und starten Sie ihn neu.
+**Ursache:** Das Host-Zertifikat ist nach sieben Tagen abgelaufen. Eine automatische Erneuerung gibt es nicht. Auf dem Rechner, auf dem Sie `start.sh` ausgeführt haben, greift dann der hinterlegte Host-Schlüssel, und die Verbindung funktioniert weiter. Betroffen sind Geräte, die nur der Host-CA vertrauen, etwa das iPad.  
+**Lösung:** Arbeiten Sie vom Rechner aus, auf dem Sie `start.sh` ausgeführt haben, pushen Sie dort Ihre Arbeit, beenden Sie den Rechner mit `./stop.sh <rechner>` und starten Sie ihn neu.
 
 ## 8. FAQ
 
@@ -422,6 +422,7 @@ Nein. Verwenden Sie die Shell oder `.env.local`, die nicht eingecheckt wird.
 | Arbeitsverzeichnis | Verzeichnis auf dem Server, in dem die Repositories liegen (`WORKSPACE_DIR`) |
 | Host-CA | Lokale Zertifizierungsstelle, mit der der Server-Schlüssel signiert wird |
 | Host-Zertifikat | Beglaubigung des Server-Schlüssels, sieben Tage gültig |
+| Hinterlegter Host-Schlüssel | Öffentlicher Schlüssel des Servers, den `start.sh` beim Anlegen speichert; Rückfall nach Ablauf des Zertifikats |
 | PAT | Personal Access Token: Zugangsschlüssel für die GitHub-API anstelle eines Passworts |
 | Deploy-Key | SSH-Schlüssel, der nur für ein Repository gilt |
 | cloud-init | Automatische Ersteinrichtung des Servers beim ersten Start |
@@ -444,3 +445,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.4 | v3 mit Mehrrechner-Betrieb | `start.sh` akzeptiert eine Einrichtung mit Warnungen und meldet „Ready“ nur nach erfolgreicher Installation von Claude Code. `stop.sh` erkennt auch Stash-Einträge, listet ignorierte Dateien auf und räumt DNS und SSH-Konfiguration auch bei schon gelöschtem Server auf. Schlüsseldateien werden vor dem Anlegen geprüft. |
 | 1.5 | v3 mit Mehrrechner-Betrieb | GitHub-CLI `gh` auf jedem Rechner. Ein PAT aus `GH_TOKEN` meldet `gh` an und wird für `git` über HTTPS genutzt. |
 | 1.6 | v3 mit Mehrrechner-Betrieb | Standard-Image ist Ubuntu 26.04 LTS. Bestehende `.env.local` mit `ubuntu-24.04` funktionieren weiter. |
+| 1.7 | v3 mit Mehrrechner-Betrieb | Klonen ohne `REPO_BRANCH` funktioniert. `stop.sh` erkennt ungepushte Commits auf allen Branches und in Worktrees und prüft das beim Start genutzte Arbeitsverzeichnis. Fehler der Hetzner-API führen zum Abbruch statt zum Aufräumen. Verbindung über die IP, keine Wartezeit auf DNS. Nach Ablauf des Zertifikats bleibt die Verbindung über den hinterlegten Host-Schlüssel möglich. Tokens erscheinen nicht mehr in Befehlszeilen und werden nicht an VS Code vererbt. |

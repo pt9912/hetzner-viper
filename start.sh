@@ -12,10 +12,10 @@ IPAD_SSH_PUBLIC_KEY_FILE="${IPAD_SSH_PUBLIC_KEY_FILE:+${IPAD_SSH_PUBLIC_KEY_FILE
 for f in "${GIT_DEPLOY_KEY_FILE:-}" "${IPAD_SSH_PUBLIC_KEY_FILE:-}"; do
   [[ -z "$f" || -r "$f" ]] || { echo "File not readable: $f (in the container only ~/.ssh is visible)" >&2; exit 1; }
 done
-if ! hcloud ssh-key describe "$KEY_NAME" >/dev/null 2>&1; then
+if ! hcloud_has ssh-key "$KEY_NAME"; then
   hcloud ssh-key create --name "$KEY_NAME" --public-key-from-file "$SSH_KEY.pub"
 fi
-if ! hcloud firewall describe "$FW_NAME" >/dev/null 2>&1; then
+if ! hcloud_has firewall "$FW_NAME"; then
   hcloud firewall create --name "$FW_NAME"
 fi
 if [[ "$(hcloud firewall describe "$FW_NAME" -o json | jq '.rules | length')" == 0 ]]; then
@@ -23,7 +23,7 @@ if [[ "$(hcloud firewall describe "$FW_NAME" -o json | jq '.rules | length')" ==
 else
   echo "Existing firewall $FW_NAME: verify that its rules permit your connection."
 fi
-if ! hcloud server describe "$SERVER_NAME" >/dev/null 2>&1; then
+if ! hcloud_has server "$SERVER_NAME"; then
   TMP=$(mktemp -d)
   chmod 700 "$TMP"
   trap 'rm -rf "$TMP"' EXIT
@@ -52,30 +52,25 @@ extra += '  ed25519_certificate: ' + json.dumps(rd('ssh_host_ed25519_key-cert.pu
 open(dest,'w').write(s+extra)
 PYGEN
   chmod 600 "$TMP/cloud-init.yaml"
+  printf '%s %s\n' "$DNS_HOST" "$(cut -d' ' -f1,2 "$TMP/ssh_host_ed25519_key.pub")" > "$KNOWN_PIN"
+  chmod 600 "$KNOWN_PIN"
   hcloud server create --name "$SERVER_NAME" --type "$SERVER_TYPE" --location "$SERVER_LOCATION" \
     --image "$SERVER_IMAGE" --ssh-key "$KEY_NAME" --firewall "$FW_NAME" \
     --user-data-from-file "$TMP/cloud-init.yaml"
 else
-  echo 'Existing server: requires a previously CA-signed host certificate.'
+  echo 'Existing server: reusing it (trusted via host CA, or the host key pinned at creation).'
 fi
 IP=$(hcloud server ip "$SERVER_NAME")
 echo "$IP" > "$STATE/ip-$MACHINE"
-write_ssh_config
+write_ssh_config "$IP"
 touch "$HOME/.ssh/config"
 chmod 600 "$HOME/.ssh/config"
 if ! grep -Fqx "Include $SSH_CFG" "$HOME/.ssh/config"; then
   { echo "Include $SSH_CFG"; cat "$HOME/.ssh/config"; } > "$HOME/.ssh/config.new" && mv "$HOME/.ssh/config.new" "$HOME/.ssh/config"
   chmod 600 "$HOME/.ssh/config"
 fi
+# The DNS name is for people (iPad, other clients); the scripts connect by IP and need not wait for it.
 ./dns.sh set "$IP"
-echo "Waiting for DNS: $DNS_HOST -> $IP"
-RESOLVED=''
-for i in $(seq 1 60); do
-  RESOLVED=$(getent ahostsv4 "$DNS_HOST" 2>/dev/null | awk 'NR==1{print $1}' || true)
-  [[ "$RESOLVED" == "$IP" ]] && break
-  sleep 5
-done
-[[ "$RESOLVED" == "$IP" ]] || { echo 'DNS not yet propagated; server retained.' >&2; exit 1; }
 echo 'Waiting for trusted SSH host certificate and cloud-init ...'
 ready=0
 for i in $(seq 1 120); do
@@ -87,11 +82,13 @@ for i in $(seq 1 120); do
 done
 [[ "$ready" == 1 ]] || { echo 'SSH/cloud-init not ready; server retained.' >&2; exit 1; }
 # Work directory on the server's own disk; it is deleted together with the server.
-ssh -F "$SSH_CFG" "$SSH_ALIAS" "sudo install -d -o builder -g builder '$WORKSPACE_DIR'"
+ssh -F "$SSH_CFG" "$SSH_ALIAS" "sudo install -d -o builder -g builder $(printf %q "$WORKSPACE_DIR")"
+echo "$WORKSPACE_DIR" > "$WORKSPACE_STATE"
 # GitHub CLI login for builder. The token goes through stdin (not argv, not user-data);
 # `gh auth setup-git` makes git use it for HTTPS clone/push.
 if [[ -n "${GH_TOKEN:-}" ]]; then
-  ssh -F "$SSH_CFG" "$SSH_ALIAS" "gh auth login --hostname '${GH_HOST:-github.com}' --with-token && gh auth setup-git --hostname '${GH_HOST:-github.com}'" <<<"$GH_TOKEN"
+  gh_host=$(printf %q "${GH_HOST:-github.com}")
+  ssh -F "$SSH_CFG" "$SSH_ALIAS" "gh auth login --hostname $gh_host --with-token && gh auth setup-git --hostname $gh_host" <<<"$GH_TOKEN"
   echo "gh: logged in to ${GH_HOST:-github.com}"
 fi
 WORKDIR="$WORKSPACE_DIR"
@@ -101,7 +98,8 @@ if [[ -n "${REPO_URL:-}" ]]; then
     scp -F "$SSH_CFG" -q "$GIT_DEPLOY_KEY_FILE" "$SSH_ALIAS:.ssh/deploy_key"
     ssh -F "$SSH_CFG" "$SSH_ALIAS" 'chmod 600 ~/.ssh/deploy_key'
   fi
-  ssh -F "$SSH_CFG" "$SSH_ALIAS" bash -s -- "$REPO_URL" "$WORKDIR" "${REPO_BRANCH:-}" "${GIT_DEPLOY_KEY_FILE:+1}" <<'CLONE'
+  # ssh passes one command string to the remote shell: quote each argument, keep empty ones
+  ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$REPO_URL" "$WORKDIR" "${REPO_BRANCH:-}" "${GIT_DEPLOY_KEY_FILE:+1}")" <<'CLONE'
 set -euo pipefail
 url="$1"; dir="$2"; branch="$3"; use_key="$4"
 if [[ -n "$use_key" ]]; then
@@ -117,4 +115,7 @@ fi
 CLONE
 fi
 echo "Ready: ssh $SSH_ALIAS (work dir: $WORKDIR)"
-if command -v code >/dev/null; then code --remote "ssh-remote+$SSH_ALIAS" "$WORKDIR" || true; fi
+# VS Code and its extensions must not inherit the API tokens from .env.local
+if command -v code >/dev/null; then
+  env -u HCLOUD_TOKEN -u CLOUDFLARE_API_TOKEN -u CLOUDFLARE_ZONE_ID -u GH_TOKEN code --remote "ssh-remote+$SSH_ALIAS" "$WORKDIR" || true
+fi

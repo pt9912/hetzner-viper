@@ -4,17 +4,19 @@ set -euo pipefail
 source "$(dirname "$0")/common.sh"
 : "${CLOUDFLARE_ZONE_ID:?Set CLOUDFLARE_ZONE_ID (your DNS zone)}"
 api="https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/dns_records"
+# The token is passed as a header file (printf is a builtin), so it never appears in curl's argv.
 cf() {
   local method="$1" url="$2" payload="${3:-}" response
   if [[ -n "$payload" ]]; then
-    response=$(curl -fsS -X "$method" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data "$payload" "$url")
+    response=$(curl -fsS -X "$method" -H @<(printf 'Authorization: Bearer %s\n' "$CLOUDFLARE_API_TOKEN") -H 'Content-Type: application/json' --data "$payload" "$url") || return 1
   else
-    response=$(curl -fsS -X "$method" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$url")
+    response=$(curl -fsS -X "$method" -H @<(printf 'Authorization: Bearer %s\n' "$CLOUDFLARE_API_TOKEN") "$url") || return 1
   fi
-  jq -e '.success == true' <<<"$response" >/dev/null || { echo "$response" | jq . >&2; return 1; }
+  # explicit checks: set -e does not apply inside $(...), and jq -e on empty input differs between versions
+  [[ -n "$response" ]] && jq -e '.success == true' <<<"$response" >/dev/null || { echo "Cloudflare API error: $response" >&2; return 1; }
   printf '%s\n' "$response"
 }
-records=$(cf GET "$api?type=A&name=$DNS_HOST&per_page=100")
+records=$(cf GET "$api?type=A&name=$DNS_HOST&per_page=100") || { echo "Cloudflare lookup of $DNS_HOST failed" >&2; exit 1; }
 count=$(jq '.result|length' <<<"$records")
 (( count <= 1 )) || { echo 'Multiple A records; refusing to modify' >&2; exit 1; }
 id=$(jq -r '.result[0].id // empty' <<<"$records")

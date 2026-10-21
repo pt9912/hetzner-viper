@@ -104,7 +104,7 @@ test_stop_reports_broken_repo_as_unsaved() {
   boot
   mkdir -p "$T/mnt/broken/.git"
   out=$(printf 'no\n' | run stop.sh web 2>&1) || true
-  check "error shown" bash -c "grep -q 'cannot read git status' <<<'$out'"
+  check "error shown" bash -c "grep -q 'ERROR: cannot read git' <<<'$out'"
   check "warning" bash -c "grep -q 'UNSAVED WORK' <<<'$out'"
   check "server kept" test -f "$MOCK_STATE/hcloud/server/claude-web.json"
 }
@@ -122,4 +122,53 @@ test_stop_of_absent_server_cleans_up_leftovers() {
   run stop.sh web >/dev/null
   check "dns removed" test "$(jq length "$MOCK_STATE/cf.json")" = 0
   check "config file gone" test ! -f "$HOME/.ssh/config_hetzner_claude_web"
+}
+
+test_stop_flags_unpushed_commits_on_other_branch() {
+  boot; pushed_repo
+  (cd "$T/mnt/proj" && git checkout -q -b feature && echo f > f && git add f \
+    && git -c user.email=t@t -c user.name=t commit -q -m wip && git checkout -q -)
+  out=$(printf 'no\n' | run stop.sh web 2>&1) || true
+  check "commit listed" bash -c "grep -q 'wip' <<<'$out'"
+  check "warning" bash -c "grep -q 'UNSAVED WORK' <<<'$out'"
+}
+
+test_stop_checks_linked_worktrees() {
+  boot; pushed_repo
+  git -C "$T/mnt/proj" worktree add -q "$T/elsewhere" -b wt 2>/dev/null
+  echo dirty > "$T/elsewhere/new"
+  out=$(printf 'no\n' | run stop.sh web 2>&1) || true
+  check "worktree checked" bash -c "grep -q '== $T/elsewhere ==' <<<'$out'"
+  check "warning" bash -c "grep -q 'UNSAVED WORK' <<<'$out'"
+}
+
+test_stop_clean_pushed_repo_needs_no_discard() {
+  boot; pushed_repo
+  echo DELETE | run stop.sh web >/dev/null
+  check "deleted" test ! -f "$MOCK_STATE/hcloud/server/claude-web.json"
+}
+
+test_stop_hcloud_error_keeps_everything() {
+  boot
+  export MOCK_HCLOUD_FAIL=1
+  ! echo DELETE | run stop.sh web >/dev/null 2>"$T/err"
+  check "message" has 'list failed' "$T/err"
+  check "dns kept" test "$(jq length "$MOCK_STATE/cf.json")" = 1
+  check "ssh config kept" test -f "$HOME/.ssh/config_hetzner_claude_web"
+}
+
+test_stop_checks_workspace_from_start() {
+  boot
+  git init -q "$T/mnt/proj"; echo x > "$T/mnt/proj/file"
+  echo "WORKSPACE_DIR=$T/other" >> "$W/.env.local"
+  out=$(printf 'no\n' | run stop.sh web 2>&1) || true
+  check "old workspace checked" bash -c "grep -q 'UNSAVED WORK' <<<'$out'"
+}
+
+test_stop_dns_failure_still_deletes_with_warning() {
+  boot
+  export MOCK_CF_FAIL=1
+  echo DELETE | run stop.sh web >/dev/null 2>"$T/err"
+  check "deleted" test ! -f "$MOCK_STATE/hcloud/server/claude-web.json"
+  check "warning" has 'DNS removal failed' "$T/err"
 }

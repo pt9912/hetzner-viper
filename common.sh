@@ -25,18 +25,34 @@ mkdir -p "$STATE" "$HOME/.ssh"
 chmod 700 "$STATE" "$HOME/.ssh"
 # The scripts always pass this file with -F, so the user's ~/.ssh/config cannot interfere.
 SSH_CFG="$HOME/.ssh/config_hetzner_claude_$MACHINE"
+# Host key of this machine's server, pinned at creation; fallback once the 7-day certificate expires.
+KNOWN_PIN="$HOME/.ssh/known_hosts_hetzner_claude_$MACHINE"
+# Workspace directory the server was started with (stop.sh must check that one).
+WORKSPACE_STATE="$STATE/workspace-$MACHINE"
 
+# Connect by IP (the exact server we act on, independent of DNS); the host key and the
+# certificate principal are still checked against the DNS name via HostKeyAlias.
 write_ssh_config() {
+  local ip="$1"
   cat > "$SSH_CFG" <<CFG
 Host $SSH_ALIAS
-    HostName $DNS_HOST
+    HostName $ip
+    HostKeyAlias $DNS_HOST
     User builder
     IdentityFile $SSH_KEY
     IdentitiesOnly yes
     StrictHostKeyChecking yes
     CheckHostIP no
-    UserKnownHostsFile $HOME/.ssh/known_hosts_hetzner_claude_ca
-    HostKeyAlgorithms ssh-ed25519-cert-v01@openssh.com
+    UserKnownHostsFile $HOME/.ssh/known_hosts_hetzner_claude_ca $KNOWN_PIN
+    HostKeyAlgorithms ssh-ed25519-cert-v01@openssh.com,ssh-ed25519
 CFG
   chmod 600 "$SSH_CFG"
+}
+
+# hcloud_has <ssh-key|firewall|server> <name>: true if it exists. Any hcloud error
+# (token, project, network) aborts instead of being mistaken for "does not exist".
+hcloud_has() {
+  local names
+  names=$(hcloud "$1" list -o noheader -o columns=name) || { echo "hcloud $1 list failed (check HCLOUD_TOKEN / project / network)" >&2; exit 1; }
+  grep -Fqx -- "$2" <<<"$names"
 }

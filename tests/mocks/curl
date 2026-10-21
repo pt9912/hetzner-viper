@@ -6,6 +6,11 @@ sf = os.path.join(os.environ['MOCK_STATE'], 'cf.json')
 with open(os.path.join(os.environ['MOCK_STATE'], 'calls.log'), 'a') as f:
     f.write('curl ' + ' '.join(args) + '\n')
 recs = json.load(open(sf)) if os.path.exists(sf) else []
+# like the real API with -f: no valid bearer header (or MOCK_CF_FAIL) -> HTTP error, exit 22
+headers = [args[i + 1] for i, a in enumerate(args) if a == '-H']
+auth = [open(h[1:]).read() if h.startswith('@') else h for h in headers]
+if os.environ.get('MOCK_CF_FAIL') or not any(a.startswith('Authorization: Bearer ') for a in auth):
+    print('curl: (22) The requested URL returned error: 403', file=sys.stderr); sys.exit(22)
 method = args[args.index('-X') + 1] if '-X' in args else 'GET'
 url = [a for a in args if a.startswith('https://')][0]
 data = json.loads(args[args.index('--data') + 1]) if '--data' in args else None

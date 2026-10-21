@@ -16,7 +16,7 @@ new_env() {  # fresh sandbox: copy of the scripts, own HOME and mock state
   printf 'DNS_DOMAIN=test.invalid\nWORKSPACE_DIR=%s\n' "$T/mnt" >> "$T/work/.env.local"
   export HOME="$T/home" MOCK_STATE="$T/state" PATH="$MOCKS:$PATH"
   export HCLOUD_TOKEN=t CLOUDFLARE_API_TOKEN=t CLOUDFLARE_ZONE_ID=z
-  unset MOCK_SSH_DOWN MOCK_DNS_STALE MOCK_CLOUDINIT_RC GH_TOKEN GH_HOST
+  unset MOCK_SSH_DOWN MOCK_DNS_STALE MOCK_CLOUDINIT_RC MOCK_HCLOUD_FAIL MOCK_CF_FAIL GH_TOKEN GH_HOST
   touch "$T/state/claude-ready"
   : > "$MOCK_STATE/calls.log"
   W="$T/work"; CALLS="$MOCK_STATE/calls.log"

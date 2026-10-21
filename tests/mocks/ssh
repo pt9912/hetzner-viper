@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
-# Fake ssh. Logs the call; runs plain `bash -s ...` scripts locally (git clone / stop checks).
+# Fake ssh. Like real ssh, everything after the host is joined into ONE string that the
+# remote shell parses again; `bash -s ...` scripts and the readiness probe run locally.
 echo "ssh $*" >> "$MOCK_STATE/calls.log"
 [[ -z "${MOCK_SSH_DOWN:-}" ]] || exit 255
 args=("$@"); i=0
 while (( i < ${#args[@]} )) && [[ "${args[i]}" != hetzner-* ]]; do i=$((i+1)); done
-cmd=("${args[@]:i+1}")
-case "${cmd[*]}" in
-  # readiness probe: run it locally against fake cloud-init/docker and a sandboxed marker file
+remote="${args[*]:i+1}"
+case "$remote" in
+  # readiness probe: run it against fake cloud-init/docker and a sandboxed marker file
   "cloud-init status"*)
-    probe="${cmd[*]}"
-    PATH="$(dirname "$0")/remote:$PATH" bash -c "${probe//\/var\/tmp\/claude-ready/$MOCK_STATE/claude-ready}"
+    PATH="$(dirname "$0")/remote:$PATH" bash -c "${remote//\/var\/tmp\/claude-ready/$MOCK_STATE/claude-ready}"
     exit $? ;;
   "gh auth login"*) cat > "$MOCK_STATE/gh-token" ;;
-  "sudo bash -s") cat > "$MOCK_STATE/remote-mount.sh" ;;
-  "bash -s"*) HOME="$MOCK_STATE/remote-home" bash "${cmd[@]:1}" ;;
-  chmod*) ;;
+  "bash -s"*) HOME="$MOCK_STATE/remote-home" bash -c "$remote"; exit $? ;;
 esac
 exit 0
