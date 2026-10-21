@@ -31,6 +31,9 @@ if doh:
 # like the real API with -f: no valid bearer header (or MOCK_CF_FAIL) -> HTTP error, exit 22
 headers = [args[i + 1] for i, a in enumerate(args) if a == '-H']
 auth = [open(h[1:]).read() if h.startswith('@') else h for h in headers]
+# MOCK_CF_WRITE_FAIL: the token may read but not edit (preflight passes, start.sh fails at DNS)
+if os.environ.get('MOCK_CF_WRITE_FAIL') and ('-X' in args and args[args.index('-X') + 1] in ('POST', 'PUT', 'DELETE')):
+    print('curl: (22) The requested URL returned error: 403', file=sys.stderr); sys.exit(22)
 if os.environ.get('MOCK_CF_FAIL') or not any(a.startswith('Authorization: Bearer ') for a in auth):
     print('curl: (22) The requested URL returned error: 403', file=sys.stderr); sys.exit(22)
 method = args[args.index('-X') + 1] if '-X' in args else 'GET'

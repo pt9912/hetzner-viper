@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.16  
+Version: 1.17  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -110,7 +110,7 @@ Geprüft werden:
 * **Hetzner:** Das Token kann das Projekt lesen. Servertyp, Standort und Image (für die Architektur des Typs) existieren. Der Servertyp ist am Standort derzeit bestellbar. Der Login-Schlüssel kollidiert nicht mit einem anderen Schlüssel gleichen Namens.
 * **Cloudflare:** Die Zone ist lesbar, `DNS_DOMAIN` liegt darin, und es gibt keinen fremden DNS-Eintrag für den Rechner.
 * **GitHub (wenn `VIPER_GH_TOKEN` gesetzt ist):** Das Token ist gültig, ein klassisches Token hat die Scopes `repo` und `read:org`, und es hat Zugriff auf ein GitHub-Repository aus `REPO_URL`.
-* **Repository:** Ein HTTPS- oder lokales Repository ist erreichbar. SSH-Repositories prüft erst der Clone auf dem Server.
+* **Repository:** Ein HTTPS- oder lokales Repository ist erreichbar. Eine SSH-Adresse braucht `GIT_DEPLOY_KEY_FILE` (dann prüft erst der Clone auf dem Server den Zugriff) oder, für GitHub, `VIPER_GH_TOKEN` (dann wird über HTTPS geklont); sonst lehnt der Preflight sie ab.
 
 #### Ergebnis
 
@@ -147,7 +147,7 @@ Sie wissen, dass Tokens, DNS, SSH-Vertrauen, Einrichtung, Clone und Löschen in 
 #### Hinweise
 
 * 1 GB RAM reicht für den Funktionstest. Für echte Arbeit des Agenten mit Builds und Tests ist der Speicher zu knapp. Nutzen Sie dafür einen größeren Typ.
-* Bricht `make up` ab, bleibt der Server bestehen. Führen Sie `make up MACHINE=test` nach dem Beheben erneut aus, oder löschen Sie ihn mit `make down MACHINE=test`.
+* Bricht `make up` ab, bleibt der Server bestehen. Führen Sie `make up MACHINE=test` nach dem Beheben erneut aus, oder löschen Sie ihn mit `make down MACHINE=test`. Ein Server gilt erst nach einem vollständig gelaufenen `make up` als eingerichtet; bis dahin wartet ein erneuter Lauf wie bei einem neuen Server, auch auf den Neustart nach den Updates.
 
 ### Einen Rechner für ein Repository einrichten
 
@@ -225,7 +225,8 @@ Geprüft werden:
 
 #### Hinweise
 
-* Mit gesetztem `VIPER_CLAUDE_TOKEN` stellt der Check Claude Code eine kurze Testanfrage. Sie zählt zu Ihrem Abo.
+* Mit gesetztem `VIPER_CLAUDE_TOKEN` oder `VIPER_ANTHROPIC_BASE_URL` stellt der Check Claude Code eine kurze Testanfrage. Sie zählt zu Ihrem Abo bzw. wird beim anderen Anbieter abgerechnet.
+* Fehler der Ersteinrichtung liest der Check aus `/var/lib/cloud/data/result.json`, auch wenn cloud-init danach abgeschaltet ist.
 * Haben spätere Updates auf dem Server einen Neustart nötig gemacht (Ubuntu meldet beim Login `*** System restart required ***`), warnt der Check. Starten Sie den Server dann mit `make ssh MACHINE=<rechner> CMD="sudo reboot"` neu. Laufende tmux-Sitzungen enden dabei, Dateien bleiben erhalten.
 * Direkt nach dem Anlegen kann die DNS-Prüfung für einige Minuten fehlschlagen, bis die Resolver den neuen Eintrag kennen.
 * Der lokale Resolver läuft bei `make check` im Container, nicht auf Ihrem Computer. Was Ihr Computer auflöst, prüfen Sie mit `getent hosts <name>` oder `ping <name>`.
@@ -242,7 +243,7 @@ Geprüft werden:
    claude
    ```
 4. Zum Verlassen der Sitzung drücken Sie **Strg+B**, dann **D**. Die Sitzung läuft weiter.
-5. Verbinden Sie sich später erneut, etwa mit `make ssh MACHINE=<rechner> CMD="tmux attach -t claude"` oder von einem beliebigen SSH-Client mit `tmux attach -t claude`.
+5. Verbinden Sie sich später erneut, etwa mit `make ssh MACHINE=<rechner> CMD="tmux attach -t claude"` (bei einem Befehl im Terminal fordert `make ssh` ein Terminal an, das tmux braucht) oder von einem beliebigen SSH-Client mit `tmux attach -t claude`.
 
 #### Ergebnis
 
@@ -285,6 +286,7 @@ Das Repository wird geklont. Der Schlüssel liegt auf dem Server unter `~/.ssh/d
 #### Hinweise
 
 * Beim ersten Kontakt mit dem Git-Dienst wird dessen Host-Schlüssel ohne Rückfrage übernommen. Bei HTTPS-Adressen ist kein Schlüssel nötig.
+* Ist zusätzlich `VIPER_GH_TOKEN` gesetzt, bleibt es beim Deploy-Key: Die Umschreibung auf HTTPS entfällt dann.
 * Ohne `GIT_DEPLOY_KEY_FILE` hat der Server keinen SSH-Schlüssel für den Git-Dienst. Eine SSH-Adresse lehnt der Preflight dann ab. Ausnahme: Mit `VIPER_GH_TOKEN` werden SSH-Adressen von GitHub (bzw. `VIPER_GH_HOST`) automatisch über HTTPS mit dem Token geklont (`git config url.…insteadOf`).
 * Der Schlüssel wird bei jedem Start erneut auf den Server kopiert.
 
@@ -384,7 +386,7 @@ Die Meldung `claude: using model <Modell> at <Adresse>` erscheint. `claude` nutz
 1. Erzeugen Sie auf dem iPad ein SSH-Schlüsselpaar und speichern Sie den öffentlichen Schlüssel als Datei auf Ihrem lokalen Rechner.
 2. Tragen Sie den Pfad bei `IPAD_SSH_PUBLIC_KEY_FILE` in `.env.local` ein.
 3. Starten Sie einen neuen Rechner. Der Schlüssel wird für den Benutzer `builder` hinterlegt.
-4. Verbinden Sie sich mit Benutzer `builder` und dem DNS-Namen des Rechners.
+4. Verbinden Sie sich mit Benutzer `builder` und dem DNS-Namen des Rechners. `IPAD_SSH_PUBLIC_KEY_FILE` muss der **öffentliche** Schlüssel sein (`.pub`); einen privaten lehnt der Preflight ab, weil die Datei in die User-Data des Servers kommt.
 
 #### Hinweise
 
@@ -401,7 +403,7 @@ Schließen Sie alle VS-Code-Fenster und Terminals, die auf dem Rechner geöffnet
 #### Vorgehen
 
 1. Führen Sie `./stop.sh <rechner>` aus.
-2. Lesen Sie die Ausgabe: Das Skript zeigt je Repository und je Worktree den Git-Stand, Commits, die auf keinem Remote liegen (auf allen lokalen Branches), und die tmux-Sitzungen. Es sucht Repositories in allen Arbeitsverzeichnissen, mit denen der Rechner je gestartet wurde (auch wenn Sie `WORKSPACE_DIR` später geändert haben), im Home-Verzeichnis von `builder` und in `/tmp` und `/var/tmp`. Dateien und Ordner direkt im Arbeitsverzeichnis, die zu keinem Repository gehören, listet es unter **Not in any git repository (lost)** auf. Dateien außerhalb von Repositories im Home-Verzeichnis oder in `/tmp` prüft es nicht. Gibt es ungesicherte Arbeit (uncommittete Änderungen, Commits auf keinem Remote, mit `git stash` beiseitegelegte Änderungen, Dateien außerhalb eines Repositorys, ein fehlendes Arbeitsverzeichnis oder ein nicht lesbares Repository), steht `UNSAVED WORK` in der Ausgabe, und Sie müssen zusätzlich `DISCARD` eingeben, um fortzufahren. Von Git ignorierte Dateien (zum Beispiel `.env` oder Build-Verzeichnisse) werden unter **Ignored by git (also lost)** aufgelistet, blockieren aber nicht.
+2. Lesen Sie die Ausgabe: Das Skript zeigt je Repository und je Worktree den Git-Stand, Commits, die auf keinem Remote liegen (auf allen lokalen Branches), und die tmux-Sitzungen. Es sucht Repositories in allen Arbeitsverzeichnissen, mit denen der Rechner je gestartet wurde (auch wenn Sie `WORKSPACE_DIR` später geändert haben oder den Rechner von einem anderen Computer aus gestartet haben; der Server führt die Liste selbst mit), im Home-Verzeichnis von `builder` und in `/tmp` und `/var/tmp`. Dateien und Ordner direkt im Arbeitsverzeichnis, die zu keinem Repository gehören, listet es unter **Not in any git repository (lost)** auf. Dateien außerhalb von Repositories im Home-Verzeichnis oder in `/tmp` prüft es nicht. Liegt ein Remote eines Repositorys auf dem Server selbst (etwa ein lokales Bare-Repository), meldet es auch das, weil dorthin gepushte Commits mit dem Server verloren gehen. Gibt es ungesicherte Arbeit (uncommittete Änderungen, Commits auf keinem Remote, mit `git stash` beiseitegelegte Änderungen, Dateien außerhalb eines Repositorys, ein fehlendes Arbeitsverzeichnis oder ein nicht lesbares Repository), steht `UNSAVED WORK` in der Ausgabe, und Sie müssen zusätzlich `DISCARD` eingeben, um fortzufahren. Von Git ignorierte Dateien (zum Beispiel `.env` oder Build-Verzeichnisse) werden unter **Ignored by git (also lost)** aufgelistet, blockieren aber nicht.
 3. Sichern Sie offene Änderungen (committen und pushen), falls nötig, und starten Sie `stop.sh` erneut.
 4. Geben Sie zur Bestätigung `DELETE` ein.
 
@@ -648,7 +650,7 @@ Nein. Verwenden Sie die Shell oder `.env.local`, die nicht eingecheckt wird.
 
 ## 10. Support und Kontakt
 
-Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapitel 7. Für Hetzner und Cloudflare gelten deren Dokumentation und Support. Beachten Sie: Die Skripte wurden nicht gegen ein echtes Hetzner- und Cloudflare-Konto getestet. Probieren Sie sie in einem Testprojekt aus und prüfen Sie `hcloud --help`, falls Ihre Version abweicht.
+Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapitel 7. Für Hetzner und Cloudflare gelten deren Dokumentation und Support. Beachten Sie: Echt gelaufen sind Einrichtung, Wiederverwenden, Neuanlegen, Check und Löschen auf Hetzner Cloud mit Cloudflare-DNS sowie Claude über das Abo-Token und Ollamas Cloud. Noch nicht echt gelaufen sind `VIPER_GH_TOKEN`/gh, Deploy-Keys, das iPad und ein vLLM-Server. Probieren Sie Neues in einem Testprojekt und mit `make preflight` aus.
 
 ## 11. Änderungshistorie
 
@@ -671,3 +673,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.14 | v3 mit Mehrrechner-Betrieb | `stop.sh` prüft alle Arbeitsverzeichnisse, mit denen ein Rechner je gestartet wurde. SSH-Adressen ohne Deploy-Key: mit `VIPER_GH_TOKEN` über HTTPS geklont, sonst vom Preflight abgelehnt. Keine Agent- oder X11-Weiterleitung zum Server. Ein Symlink als `~/.ssh/config` funktioniert im Container. Beim Wiederverwenden eines Servers enden Host-Key- und Anmeldefehler sofort. Klassische GitHub-Tokens mit `admin:org`/`write:org` werden akzeptiert. |
 | 1.15 | v3 mit Mehrrechner-Betrieb | Andere Modelle über eine Anthropic-kompatible Schnittstelle (Ollama-Cloud, vLLM, Gateway): `VIPER_ANTHROPIC_BASE_URL`, `VIPER_ANTHROPIC_AUTH_TOKEN`, `VIPER_CLAUDE_MODEL`; der Preflight testet Schlüssel und Modell. |
 | 1.16 | v3 mit Mehrrechner-Betrieb | Neue Server spielen beim Einrichten alle Updates ein und starten bei Bedarf einmal neu; `start.sh` wartet darauf, `make check` warnt bei später nötigem Neustart. Interaktive Shells starten im Arbeitsverzeichnis. cloud-init schaltet sich nach der Ersteinrichtung ab (sonst Fehlermeldungen nach jedem Neustart). `make ssh CMD=…` und `make up REPO=…` übernehmen `$` unverändert. |
+| 1.17 | v3 mit Mehrrechner-Betrieb | Ein abgebrochener erster `make up` wird beim erneuten Lauf wie ein neuer Server behandelt. `stop.sh` meldet einen abgelehnten Login-Schlüssel, kennt auch Arbeitsverzeichnisse anderer Computer und meldet Remotes auf dem Server selbst. `make ssh CMD=…` fordert im Terminal ein Terminal an (`tmux attach`). Ein Deploy-Key wird nicht mehr durch `VIPER_GH_TOKEN` umgangen. Der Check liest Fehler der Ersteinrichtung und akzeptiert nur eine echte OK-Antwort. Ein privater Schlüssel als iPad-Schlüssel wird abgelehnt. |

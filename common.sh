@@ -47,6 +47,8 @@ IP_STATE="$STATE/ip-$SERVER_NAME"
 ID_STATE="$STATE/id-$SERVER_NAME"
 # Workspace directory the server was started with (stop.sh must check that one).
 WORKSPACE_STATE="$STATE/workspace-$SERVER_NAME"
+# Server ID of the last start.sh run that completed: only such a server counts as set up.
+READY_STATE="$STATE/ready-$SERVER_NAME"
 
 # Connect by IP (the exact server we act on, independent of DNS). Trust only the host key
 # pinned for this very server: a key leaked from an earlier server (it is readable in the

@@ -73,6 +73,11 @@ set -uo pipefail
 dir="$1"; ask_claude="$2"
 export LC_ALL=C PATH="$HOME/.local/bin:$PATH"
 echo "cloudinit=$(cloud-init status 2>/dev/null | sed -n 's/^status: //p')"
+# errors of the first boot stay recorded here, also once cloud-init is disabled
+# (VIPER_CLOUD_RESULT only exists for the offline tests)
+result="${VIPER_CLOUD_RESULT:-/var/lib/cloud/data/result.json}"
+echo "cloudinit_errors=$(jq -r '.v1.errors | length' "$result" 2>/dev/null)"
+echo "cloudinit_error=$(jq -r '.v1.errors[0] // empty' "$result" 2>/dev/null | head -c 200)"
 echo "claude_version=$(claude --version 2>/dev/null | head -n1)"
 # the same loader ssh commands, tmux and VS Code terminals use
 echo "claude_auth=$(bash -c '. ~/.bashrc >/dev/null 2>&1
@@ -107,12 +112,17 @@ case "$(val cloudinit)" in
   '')   bad "cloud-init: no status" ;;
   *)    warn "cloud-init: $(val cloudinit)" ;;
 esac
+if [[ "$(val cloudinit_errors)" =~ ^[1-9] ]]; then
+  warn "cloud-init reported $(val cloudinit_errors) error(s) at the first boot, e.g.: $(val cloudinit_error) (see /var/log/cloud-init.log)"
+fi
+# the test request must really answer OK, not merely mention it in an error
+answered_ok() { [[ "$(val claude_answer | tr -d '[:space:]')" =~ ^[Oo][Kk][.!]?$ ]]; }
 if [[ -z "$(val claude_version)" ]]; then
   bad "Claude Code not installed"
 elif [[ -n "${VIPER_ANTHROPIC_BASE_URL:-}" ]]; then
   if [[ "$(val claude_auth)" != "gateway $VIPER_CLAUDE_MODEL $VIPER_ANTHROPIC_BASE_URL" ]]; then
     bad "Claude Code $(val claude_version): not configured for $VIPER_CLAUDE_MODEL at $VIPER_ANTHROPIC_BASE_URL (has: $(val claude_auth); rerun ./start.sh $MACHINE)"
-  elif [[ "$(val claude_answer)" == *OK* ]]; then
+  elif answered_ok; then
     ok "Claude Code $(val claude_version): model $VIPER_CLAUDE_MODEL at $VIPER_ANTHROPIC_BASE_URL answers"
   else
     bad "Claude Code $(val claude_version): no answer from $VIPER_CLAUDE_MODEL: $(val claude_answer)"
@@ -120,7 +130,7 @@ elif [[ -n "${VIPER_ANTHROPIC_BASE_URL:-}" ]]; then
 elif [[ -n "${VIPER_CLAUDE_TOKEN:-}" ]]; then
   if [[ "$(val claude_auth)" != token ]]; then
     bad "Claude Code $(val claude_version): token not loaded in shells (rerun ./start.sh $MACHINE)"
-  elif [[ "$(val claude_answer)" == *OK* ]]; then
+  elif answered_ok; then
     ok "Claude Code $(val claude_version): logged in via VIPER_CLAUDE_TOKEN and answers"
   else
     bad "Claude Code $(val claude_version): no answer with the token: $(val claude_answer)"

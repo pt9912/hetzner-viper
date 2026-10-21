@@ -6,7 +6,7 @@ source "$(dirname "$0")/common.sh"
 # Remove the local SSH config of this machine.
 cleanup_local() {
   ssh_include remove || ssh_include_warning
-  rm -f "$SSH_CFG" "$KNOWN_PIN" "$IP_STATE" "$ID_STATE" "$WORKSPACE_STATE"
+  rm -f "$SSH_CFG" "$KNOWN_PIN" "$IP_STATE" "$ID_STATE" "$WORKSPACE_STATE" "$READY_STATE"
 }
 
 if ! hcloud_has server "$SERVER_NAME"; then
@@ -42,6 +42,10 @@ if ! err=$(ssh -n -F "$SSH_CFG" -o BatchMode=yes -o ConnectTimeout=10 "$SSH_ALIA
     echo "The server answers, but its host key is not trusted: $err" >&2
     echo "It may have been recreated from another computer (stale pin) or its certificate expired without a pin." >&2
     echo 'Unsaved work on it cannot be checked. Only if you are sure it holds nothing of value: ./stop.sh <machine> --force' >&2
+  elif [[ "$(ssh_failure_kind "$err")" == auth ]]; then
+    echo "The server answers, but rejects the login key $SSH_KEY: $err" >&2
+    echo "It was probably created with another login key (another computer or SSH_KEY). Use that one to check and push its work." >&2
+    echo 'Unsaved work on it cannot be checked. Only if you are sure it holds nothing of value: ./stop.sh <machine> --force' >&2
   else
     echo 'SSH unreachable. Use ./stop.sh <machine> --force to delete without checks.' >&2
   fi
@@ -57,7 +61,14 @@ echo 'Checking git repositories, loose files and running sessions ...'
 # No `set -e` remotely: a git error must be reported as unsaved work, not abort the check.
 report=$(ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "${WSS[@]}")" <<'REMOTE'
 set -uo pipefail
-unsaved=0   # "$@": the workspaces
+unsaved=0
+# workspaces: those passed in (recorded on this computer) plus those the server recorded
+# itself (also started from other computers)
+declare -A seen_ws; ws=()
+while IFS= read -r w; do
+  [[ -n "$w" && -z "${seen_ws[$w]:-}" ]] || continue
+  seen_ws[$w]=1; ws+=("$w")
+done < <(printf '%s\n' "$@"; cat ~/.config/viper/workspaces 2>/dev/null)
 declare -A seen
 
 # One working tree: uncommitted changes, detached commits, ignored files.
@@ -91,11 +102,17 @@ check_repo() {
   # commits on any local branch that are not on any remote (also branches without upstream)
   unpushed=$(git -C "$repo" log --oneline --branches --not --remotes)
   [[ -z "$unpushed" ]] || { printf 'Commits not on any remote:\n%s\n' "$unpushed"; unsaved=1; }
+  # a remote that is a path on this server is deleted together with it
+  while read -r name url; do
+    case "$url" in
+      /*|./*|../*|file://*) printf 'Remote %s is on this server (%s): pushed commits are lost too\n' "$name" "$url"; unsaved=1 ;;
+    esac
+  done < <(git -C "$repo" remote -v | awk '$3 == "(push)" {print $1, $2}')
   stashes=$(git -C "$repo" stash list)
   [[ -z "$stashes" ]] || { echo "$stashes"; unsaved=1; }
 }
 
-for MP in "$@"; do
+for MP in "${ws[@]}"; do
   if [[ ! -d "$MP" ]]; then
     echo "ERROR: workspace $MP does not exist"; unsaved=1
   else
@@ -109,7 +126,7 @@ done
 # VIPER_TMP_DIRS only exists for the offline tests; ssh does not forward it.
 while IFS= read -r -d '' gitpath; do
   check_repo "${gitpath%/.git}"
-done < <(find "$@" "$HOME" ${VIPER_TMP_DIRS:-/tmp /var/tmp} -xdev \
+done < <(find "${ws[@]}" "$HOME" ${VIPER_TMP_DIRS:-/tmp /var/tmp} -xdev \
            \( -name node_modules -o -path "$HOME/.cache" -o -path "$HOME/.local" -o -path "$HOME/.npm" \
               -o -path "$HOME/.vscode-server" \) -prune -o -name .git -prune -print0 2>/dev/null)
 echo '== tmux sessions =='

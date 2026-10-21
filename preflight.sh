@@ -31,7 +31,14 @@ fi
 for var in GIT_DEPLOY_KEY_FILE IPAD_SSH_PUBLIC_KEY_FILE; do
   f="${!var:-}"; f="${f/#\~/$HOME}"
   [[ -z "$f" ]] && continue
-  if [[ -r "$f" ]]; then ok "$var readable"; else bad "$var: File not readable: $f (in the container only ~/.ssh is visible)"; fi
+  if [[ ! -r "$f" ]]; then
+    bad "$var: File not readable: $f (in the container only ~/.ssh is visible)"
+  elif [[ "$var" == IPAD_SSH_PUBLIC_KEY_FILE ]] && { grep -q 'PRIVATE KEY' "$f" || ! ssh-keygen -l -f "$f" >/dev/null 2>&1; }; then
+    # it goes into the user-data, which the server and the Hetzner project can read
+    bad "IPAD_SSH_PUBLIC_KEY_FILE must be a public key (.pub), not a private key: $f"
+  else
+    ok "$var readable"
+  fi
 done
 # config files hold API tokens: nobody but the owner should read them
 for f in .env.local "machines/$MACHINE.env.local"; do
@@ -119,7 +126,9 @@ if [[ -n "${VIPER_GH_TOKEN:-}" ]]; then
       [[ "$have" == *",read:org,"* || "$have" == *",write:org,"* || "$have" == *",admin:org,"* ]] ||
         bad "classic token lacks scope read:org (or write:org/admin:org) (has: $scopes); gh auth login will reject it"
     fi
-    if [[ -n "${REPO_URL:-}" ]] && [[ "$REPO_URL" =~ ^(https://$gh_host/|git@$gh_host:)([^/]+)/([^/]+)$ ]]; then
+    # an SSH URL with a deploy key is cloned with that key, not with the token
+    if [[ -n "${REPO_URL:-}" ]] && [[ "$REPO_URL" =~ ^(https://$gh_host/|git@$gh_host:)([^/]+)/([^/]+)$ ]] &&
+       [[ -z "${GIT_DEPLOY_KEY_FILE:-}" || "$REPO_URL" == https://* ]]; then
       repo="${BASH_REMATCH[2]}/${BASH_REMATCH[3]%.git}"
       if curl -fsS -o /dev/null -H @<(printf 'Authorization: Bearer %s\n' "$VIPER_GH_TOKEN") "$api/repos/$repo" 2>/dev/null; then
         ok "token can access $repo"

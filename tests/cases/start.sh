@@ -566,3 +566,66 @@ test_interactive_shells_start_in_the_work_directory() {
   run start.sh web "$T/origin.git" >/dev/null
   check "line added once" count_is 'viper: start in the work directory' "$h/.bashrc" 1
 }
+
+test_interrupted_first_run_is_not_treated_as_a_set_up_server() {
+  run setup.sh >/dev/null
+  MOCK_CF_WRITE_FAIL=1 fails run start.sh web >/dev/null 2>&1   # server created, run aborted at DNS
+  check "server exists" test -f "$MOCK_STATE/hcloud/server/claude-web.json"
+  check "not marked ready" test ! -f "$HOME/.local/state/hetzner-claude/ready-claude-web"
+  touch "$MOCK_STATE/reboot-required"                          # its reboot is still to come
+  : > "$CALLS"
+  run start.sh web >"$T/out"
+  check "waits for the reboot like a new server" has 'Updates need a reboot; waiting' "$T/out"
+  check "marked ready now" test "$(cat "$HOME/.local/state/hetzner-claude/ready-claude-web")" = "$(cat "$HOME/.local/state/hetzner-claude/id-claude-web")"
+}
+
+test_transient_host_key_error_of_a_booting_server_is_retried() {
+  run setup.sh >/dev/null
+  MOCK_CF_WRITE_FAIL=1 fails run start.sh web >/dev/null 2>&1
+  : > "$CALLS"
+  MOCK_SSH_HOSTKEY_FAIL=1 fails run start.sh web >/dev/null 2>"$T/err"
+  check "retried, not aborted at once" bash -c "[ \$(grep -c 'cloud-init status' '$CALLS') -gt 1 ]"
+}
+
+test_unreachable_error_shows_the_last_ssh_error() {
+  run setup.sh >/dev/null
+  MOCK_SSH_DOWN=1 fails run start.sh web >/dev/null 2>"$T/err"
+  check "last error shown" has 'SSH not reachable; server retained. Last error: ssh: connect to host' "$T/err"
+}
+
+test_workspace_is_recorded_on_the_server_too() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  run start.sh web >/dev/null
+  check "recorded once" test "$(cat "$MOCK_STATE/remote-home/.config/viper/workspaces")" = "$T/mnt"
+}
+
+test_deploy_key_is_not_bypassed_by_the_github_token() {
+  run setup.sh >/dev/null
+  echo k > "$HOME/.ssh/deploy"
+  printf 'GIT_DEPLOY_KEY_FILE=%s\nVIPER_GH_TOKEN=ghp_x\n' "$HOME/.ssh/deploy" > "$W/machines/web.env.local"
+  MOCK_GH_NOREPO=1 run preflight.sh web git@github.com:o/r.git >"$T/pre"
+  check "no token repo check for the key" bash -c "! grep -q 'token cannot access' '$T/pre'"
+  run start.sh web >/dev/null 2>&1 || true
+  check "old rewrite removed" has 'unset-all url\.https://github\.com/\.insteadOf' "$CALLS"
+  check "no new rewrite" bash -c "! grep -q 'add url\.https://github\.com/\.insteadOf' '$CALLS'"
+}
+
+test_ipad_private_key_is_rejected() {
+  run setup.sh >/dev/null
+  printf 'IPAD_SSH_PUBLIC_KEY_FILE=%s\n' "$HOME/.ssh/hetzner-build" > "$W/machines/web.env.local"   # the private one
+  fails run start.sh web >/dev/null 2>"$T/err"
+  check "message" has 'must be a public key' "$T/err"
+  check "no server" test ! -f "$MOCK_STATE/hcloud/server/claude-web.json"
+}
+
+test_connect_requests_a_terminal_for_commands_in_a_terminal() {
+  command -v script >/dev/null || { echo "    skipped: no script(1)" >&3; return 0; }
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  : > "$CALLS"
+  run connect.sh web 'tmux attach -t claude' </dev/null >/dev/null
+  check "no terminal without one" bash -c "! grep -q 'terminal requested' '$CALLS'"
+  script -qec "$W/connect.sh web 'tmux attach -t claude'" /dev/null >/dev/null 2>&1
+  check "terminal requested in a terminal" has 'terminal requested' "$CALLS"
+}

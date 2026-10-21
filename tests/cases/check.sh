@@ -88,3 +88,18 @@ test_check_accepts_cloud_init_disabled_after_first_boot() {
   run check.sh web >"$T/out"
   check "ok" has 'ok    cloud-init: done \(disabled after the first boot\)' "$T/out"
 }
+
+test_check_does_not_accept_an_error_that_mentions_ok() {
+  up_web
+  export MOCK_CLAUDE_ANSWER='API Error: TOKEN expired'
+  fails run check.sh web >"$T/out"
+  check "fails" has 'FAIL  Claude Code .*: no answer with the token' "$T/out"
+}
+
+test_check_reports_first_boot_errors_although_cloud_init_is_disabled() {
+  up_web
+  export MOCK_CLOUDINIT_DISABLED=1
+  echo '{"v1": {"errors": ["No valid DHCP lease configuration found"]}}' > "$MOCK_STATE/cloud-result.json"
+  run check.sh web >"$T/out"
+  check "warned" has 'WARN  cloud-init reported 1 error\(s\) at the first boot, e.g.: No valid DHCP lease' "$T/out"
+}

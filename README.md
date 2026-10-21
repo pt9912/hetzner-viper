@@ -12,7 +12,7 @@ It is meant for developers with their own Hetzner and Cloudflare accounts.
 
 ## What can I do today?
 
-These commands exist. State of verification: the scripts are tested against simulated Hetzner and Cloudflare APIs, **not** against real accounts (see [Limits](#security-and-limits)).
+These commands exist. State of verification: offline tests against mocks (plus a real sshd), and runs on real Hetzner Cloud (cpx02, Ubuntu 26.04) with Cloudflare DNS: setup, preflight, creating, reusing and recreating a machine incl. the reboot after updates, check, ssh, delete incl. the unsaved-work protection, Claude via subscription token and via Ollama's cloud with tool use. **Not yet run for real:** `VIPER_GH_TOKEN`/gh, deploy keys, the iPad, a vLLM server (see [Limits](#security-and-limits)).
 
 Everything runs in a Docker container via `make`, so locally you only need Docker and `make` (`ssh`, `hcloud`, `jq` etc. come from the [`Dockerfile`](Dockerfile)):
 
@@ -63,7 +63,7 @@ Machines are disposable: everything that matters lives in the Git repository. Th
 - **Everything on the server is lost when it is deleted**, including a Claude `/login` (with `VIPER_CLAUDE_TOKEN` every new server is logged in again automatically).
 - The per-machine SSH config never forwards your ssh-agent or X11 to the server, even if your own `~/.ssh/config` does.
 - The scripts create paid resources. Never put API tokens into Git.
-- Not tested against a real Hetzner or Cloudflare account. Try them in a throwaway project first.
+- Parts are not yet run against real services (see above). Use a dedicated Hetzner project and try new settings with `make preflight` and a small server first.
 
 ## Requirements
 

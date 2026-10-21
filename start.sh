@@ -82,13 +82,16 @@ PYGEN
   SERVER_ID=$(server_id)
   echo "$SERVER_ID" > "$ID_STATE"
   # a new server has none of the workspaces an earlier one with this name had
-  rm -f "$WORKSPACE_STATE"
+  rm -f "$WORKSPACE_STATE" "$READY_STATE"
   REUSED=0
 else
   echo 'Existing server: reusing it.'
   SERVER_ID=$(server_id)
   forget_stale_pin "$SERVER_ID"
-  REUSED=1
+  # "reused" means set up by a completed run; a server whose first run was interrupted may
+  # still be booting (transient ssh errors, the reboot after its updates still to come)
+  REUSED=0
+  [[ "$(cat "$READY_STATE" 2>/dev/null)" == "$SERVER_ID" ]] && REUSED=1
 fi
 IP=$(hcloud server ip "$SERVER_NAME")
 echo "$IP" > "$IP_STATE"
@@ -130,7 +133,7 @@ if [[ -z "$status" ]]; then
     echo "SSH: the server rejects the login key $SSH_KEY ($err); server retained." >&2
     echo "  Was the server created with another login key? Its authorized key is set at creation." >&2
   else
-    echo 'SSH not reachable; server retained.' >&2
+    echo "SSH not reachable; server retained.${err:+ Last error: $err}" >&2
   fi
   exit 1
 fi
@@ -150,7 +153,8 @@ grep -qx 'cloud-init=1' <<<"$status" && echo 'WARNING: cloud-init reported error
 grep -qx 'reboot=pending' <<<"$status" && echo "WARNING: updates on the server need a reboot: make ssh MACHINE=$MACHINE CMD='sudo reboot'" >&2
 # Work directory on the server's own disk; it is deleted together with the server.
 ssh -n -F "$SSH_CFG" "$SSH_ALIAS" "sudo install -d -o builder -g builder $(printf %q "$WORKSPACE_DIR")"
-# remember every workspace this server was started with: stop.sh checks all of them
+# remember every workspace this server was started with (here and, below, on the server
+# itself, so stop.sh from another computer knows them too): stop.sh checks all of them
 grep -qxF -- "$WORKSPACE_DIR" "$WORKSPACE_STATE" 2>/dev/null || echo "$WORKSPACE_DIR" >> "$WORKSPACE_STATE"
 # GitHub CLI login for builder. The token goes through stdin (not argv, not user-data);
 # `gh auth setup-git` makes git use it for HTTPS clone/push. A dedicated variable, so a
@@ -158,12 +162,18 @@ grep -qxF -- "$WORKSPACE_DIR" "$WORKSPACE_STATE" 2>/dev/null || echo "$WORKSPACE
 if [[ -n "${VIPER_GH_TOKEN:-}" ]]; then
   host="${VIPER_GH_HOST:-github.com}"
   gh_host=$(printf %q "$host")
-  # SSH URLs of that host go over HTTPS with the token: the server has no SSH key for it
+  # Without a deploy key the server has no SSH key for the git host, so SSH URLs of that host
+  # go over HTTPS with the token. With a deploy key, SSH (and the key) stay in charge.
   https=$(printf %q "https://$host/"); scp_form=$(printf %q "git@$host:"); ssh_form=$(printf %q "ssh://git@$host/")
+  rewrite="git config --global --add url.$https.insteadOf $scp_form && git config --global --add url.$https.insteadOf $ssh_form"
+  [[ -z "${GIT_DEPLOY_KEY_FILE:-}" ]] || rewrite=true
   ssh -F "$SSH_CFG" "$SSH_ALIAS" "gh auth login --hostname $gh_host --with-token && gh auth setup-git --hostname $gh_host &&
-    { git config --global --unset-all url.$https.insteadOf || true; } &&
-    git config --global --add url.$https.insteadOf $scp_form && git config --global --add url.$https.insteadOf $ssh_form" <<<"$VIPER_GH_TOKEN"
-  echo "gh: logged in to $host (SSH URLs of $host are cloned over HTTPS)"
+    { git config --global --unset-all url.$https.insteadOf || true; } && $rewrite" <<<"$VIPER_GH_TOKEN"
+  if [[ -n "${GIT_DEPLOY_KEY_FILE:-}" ]]; then
+    echo "gh: logged in to $host (repository via the deploy key)"
+  else
+    echo "gh: logged in to $host (SSH URLs of $host are cloned over HTTPS)"
+  fi
 fi
 # Claude Code login for builder, one of:
 #  - VIPER_CLAUDE_TOKEN: long-lived subscription token (`claude setup-token`)
@@ -221,13 +231,16 @@ fi
 # Interactive shells (make ssh, tmux, a plain ssh login) that start in the home directory
 # change to the work directory: the line goes at the end of .bashrc, which non-interactive
 # shells (ssh commands, the scripts) never reach because of Ubuntu's early return.
-ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf %q "$WORKDIR")" <<'CDLINE'
+ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$WORKDIR" "$WORKSPACE_DIR")" <<'CDLINE'
 set -eu
 mkdir -p ~/.config/viper
 printf '%s\n' "$1" > ~/.config/viper/workdir
+grep -qxF -- "$2" ~/.config/viper/workspaces 2>/dev/null || printf '%s\n' "$2" >> ~/.config/viper/workspaces
 line='if [ "$PWD" = "$HOME" ] && [ -f ~/.config/viper/workdir ]; then cd "$(cat ~/.config/viper/workdir)" 2>/dev/null || true; fi  # viper: start in the work directory'
 grep -qxF -- "$line" ~/.bashrc 2>/dev/null || printf '%s\n' "$line" >> ~/.bashrc
 CDLINE
+# from now on this server counts as set up (see REUSED)
+echo "$SERVER_ID" > "$READY_STATE"
 echo "Ready: ssh $SSH_ALIAS (work dir: $WORKDIR)"
 # VS Code and its extensions must not inherit the API tokens from .env.local
 if command -v code >/dev/null; then

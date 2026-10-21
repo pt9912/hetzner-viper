@@ -12,7 +12,7 @@ Zielgruppe sind Entwicklerinnen und Entwickler mit eigenem Hetzner- und Cloudfla
 
 ## Was kann ich heute tun?
 
-Diese Befehle sind vorhanden. Stand der Prüfung: Die Skripte sind gegen simulierte Hetzner- und Cloudflare-APIs getestet, **nicht** gegen echte Konten (siehe [Grenzen](#sicherheit-und-grenzen)).
+Diese Befehle sind vorhanden. Stand der Prüfung: Offline-Tests gegen Mocks (dazu ein echter sshd) und Läufe auf echtem Hetzner Cloud (cpx02, Ubuntu 26.04) mit Cloudflare-DNS: Setup, Preflight, Anlegen, Wiederverwenden und Neuanlegen eines Rechners samt Neustart nach Updates, Check, SSH, Löschen samt Schutz vor ungesicherter Arbeit, Claude über das Abo-Token und über Ollamas Cloud mit Tool-Nutzung. **Noch nicht echt gelaufen:** `VIPER_GH_TOKEN`/gh, Deploy-Keys, das iPad, ein vLLM-Server (siehe [Grenzen](#sicherheit-und-grenzen)).
 
 Alles läuft per `make` in einem Docker-Container. Lokal brauchen Sie nur Docker und `make` (`ssh`, `hcloud`, `jq` usw. kommen aus dem [`Dockerfile`](Dockerfile)):
 
@@ -63,7 +63,7 @@ Rechner sind Wegwerfware: Alles, was zählt, liegt im Git-Repository. Deshalb gi
 - **Alles auf dem Server geht beim Löschen verloren**, auch eine Claude-Anmeldung per `/login` (mit `VIPER_CLAUDE_TOKEN` ist jeder neue Server automatisch wieder angemeldet).
 - Die SSH-Konfiguration jedes Rechners leitet Ihren ssh-agent und X11 nie an den Server weiter, auch wenn Ihre eigene `~/.ssh/config` das tut.
 - Die Skripte legen kostenpflichtige Ressourcen an. Legen Sie API-Tokens nie in Git ab.
-- Nicht gegen ein echtes Hetzner- oder Cloudflare-Konto getestet. Probieren Sie sie zuerst in einem Wegwerf-Projekt aus.
+- Teile sind noch nicht gegen echte Dienste gelaufen (siehe oben). Nutzen Sie ein eigenes Hetzner-Projekt und probieren Sie neue Einstellungen zuerst mit `make preflight` und einem kleinen Server aus.
 
 ## Voraussetzungen
 

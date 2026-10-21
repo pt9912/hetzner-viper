@@ -34,7 +34,7 @@ test_stop_asks_extra_question_for_unsaved_work() {
   git init -q "$T/mnt/proj"
   echo x > "$T/mnt/proj/file"
   out=$(printf 'DISCARD\nno\n' | run stop.sh web 2>&1) || true
-  check "uncommitted file listed" bash -c "grep -q 'file' <<<'$out'"
+  check "uncommitted file listed" bash -c "grep -qx '?? file' <<<'$out'"
   check "warning" bash -c "grep -q 'UNSAVED WORK' <<<'$out'"
   check "server kept" test -f "$MOCK_STATE/hcloud/server/claude-web.json"
 }
@@ -80,7 +80,8 @@ pushed_repo() {
   git init -q --bare "$T/origin.git"
   git clone -q "$T/origin.git" "$T/mnt/proj" 2>/dev/null
   (cd "$T/mnt/proj" && echo 'build/' > .gitignore && git add .gitignore \
-    && git -c user.email=t@t -c user.name=t commit -q -m init && git push -q -u origin HEAD 2>/dev/null)
+    && git -c user.email=t@t -c user.name=t commit -q -m init && git push -q -u origin HEAD 2>/dev/null \
+    && git remote set-url origin https://git.example.invalid/proj.git)   # a remote off the server
 }
 
 test_stop_flags_stash_as_unsaved() {
@@ -263,4 +264,32 @@ test_stop_force_still_checks_a_reachable_server() {
   printf 'no\n' | fails run stop.sh web --force >"$T/out" 2>&1
   check "checks ran" has 'UNSAVED WORK' "$T/out"
   check "server kept" test -f "$MOCK_STATE/hcloud/server/claude-web.json"
+}
+
+test_stop_login_key_rejection_does_not_recommend_force_blindly() {
+  boot
+  export MOCK_SSH_AUTH_FAIL=1
+  echo DELETE | fails run stop.sh web >/dev/null 2>"$T/err"
+  check "named" has 'rejects the login key' "$T/err"
+  check "no blanket advice" bash -c "! grep -q 'SSH unreachable' '$T/err'"
+  check "server kept" test -f "$MOCK_STATE/hcloud/server/claude-web.json"
+}
+
+test_stop_checks_workspaces_recorded_on_the_server() {
+  boot
+  mkdir -p "$T/srv"; git init -q "$T/srv/proj"; echo x > "$T/srv/proj/f"
+  echo "$T/srv" >> "$MOCK_STATE/remote-home/.config/viper/workspaces"   # started from another computer
+  out=$(printf 'no\n' | run stop.sh web 2>&1) || true
+  check "server-side workspace checked" bash -c "grep -qF '== $T/srv/proj ==' <<<'$out'"
+  check "warning" bash -c "grep -q 'UNSAVED WORK' <<<'$out'"
+}
+
+test_stop_flags_remote_on_the_server_itself() {
+  boot
+  git init -q --bare "$MOCK_STATE/remote-home/backup.git"
+  git clone -q "$MOCK_STATE/remote-home/backup.git" "$T/mnt/proj" 2>/dev/null
+  (cd "$T/mnt/proj" && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m x && git push -q origin HEAD 2>/dev/null)
+  out=$(printf 'no\n' | run stop.sh web 2>&1) || true
+  check "named" bash -c "grep -q 'Remote origin is on this server' <<<'$out'"
+  check "warning" bash -c "grep -q 'UNSAVED WORK' <<<'$out'"
 }

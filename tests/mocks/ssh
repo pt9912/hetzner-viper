@@ -6,6 +6,7 @@ echo "ssh $*" >> "$MOCK_STATE/calls.log"
 args=("$@"); i=0; no_stdin=0
 while (( i < ${#args[@]} )) && [[ "${args[i]}" != hetzner-* ]]; do
   [[ "${args[i]}" == -n ]] && no_stdin=1
+  [[ "${args[i]}" == -t ]] && echo "ssh: terminal requested" >> "$MOCK_STATE/calls.log"
   i=$((i+1))
 done
 remote="${args[*]:i+1}"
@@ -17,7 +18,8 @@ consume() { (( no_stdin )) || cat >/dev/null; }
 if [[ "$*" == *known_hosts_hetzner_claude_ca* && -n "${MOCK_CA_FAIL:-}" ]]; then
   consume; echo 'Certificate invalid: expired' >&2; echo 'Host key verification failed.' >&2; exit 255
 fi
-export HOME="$MOCK_STATE/remote-home" VIPER_TMP_DIRS="$MOCK_STATE/remote-tmp" VIPER_REBOOT_FILE="$MOCK_STATE/reboot-required"
+export HOME="$MOCK_STATE/remote-home" VIPER_TMP_DIRS="$MOCK_STATE/remote-tmp" VIPER_REBOOT_FILE="$MOCK_STATE/reboot-required" \
+  VIPER_CLOUD_RESULT="$MOCK_STATE/cloud-result.json"
 mkdir -p "$HOME" "$VIPER_TMP_DIRS"
 case "$remote" in
   # readiness probe: fake cloud-init/docker, sandboxed marker file
