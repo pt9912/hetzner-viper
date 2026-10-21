@@ -518,3 +518,51 @@ test_classic_token_with_broader_org_scope_is_accepted() {
   run preflight.sh web >"$T/out"
   check "no scope failure" bash -c "! grep -q 'lacks scope' '$T/out'"
 }
+
+test_new_server_waits_for_the_reboot_after_updates() {
+  run setup.sh >/dev/null
+  touch "$MOCK_STATE/reboot-required"           # updates installed, reboot follows the probe
+  run start.sh web >"$T/out"
+  check "announced" has 'Updates need a reboot; waiting for the server to restart' "$T/out"
+  check "probed again after the reboot" count_is 'cloud-init status' "$CALLS" 2
+  check "ready" has '^Ready: ssh hetzner-claude-web' "$T/out"
+}
+
+test_reused_server_needing_a_reboot_only_warns() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  touch "$MOCK_STATE/reboot-required" "$MOCK_STATE/reboot-required.keep"   # e.g. after unattended upgrades
+  : > "$CALLS"
+  run start.sh web >"$T/out" 2>"$T/err"
+  check "no waiting" count_is 'cloud-init status' "$CALLS" 1
+  check "warning" has "updates on the server need a reboot: make ssh MACHINE=web CMD='sudo reboot'" "$T/err"
+  run check.sh web >"$T/check" || true
+  check "check warns" has "WARN  updates need a reboot" "$T/check"
+}
+
+test_cloud_init_upgrades_and_reboots_only_if_required() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  python3 -I - "$MOCK_STATE/hcloud/server/claude-web.user-data" <<'PY'
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+assert d['package_upgrade'] is True
+p = d['power_state']
+assert p['mode'] == 'reboot' and p['condition'] == 'test -f /var/run/reboot-required', p
+assert d['runcmd'][-1] == 'touch /etc/cloud/cloud-init.disabled', d['runcmd'][-1]
+PY
+}
+
+test_interactive_shells_start_in_the_work_directory() {
+  run setup.sh >/dev/null
+  ubuntu_home
+  git init -q --bare "$T/origin.git"
+  run start.sh web "$T/origin.git" >/dev/null
+  h="$MOCK_STATE/remote-home"
+  check "work dir recorded" test "$(cat "$h/.config/viper/workdir")" = "$T/mnt/origin"
+  check "interactive shell from home" test "$(cd "$h" && HOME="$h" bash -i -c pwd 2>/dev/null </dev/null | tail -n1)" = "$T/mnt/origin"
+  check "non-interactive shell stays" test "$(cd "$h" && HOME="$h" bash -c '. ~/.bashrc; pwd')" = "$h"
+  check "elsewhere stays elsewhere" test "$(cd /tmp && HOME="$h" bash -i -c pwd 2>/dev/null </dev/null | tail -n1)" = /tmp
+  run start.sh web "$T/origin.git" >/dev/null
+  check "line added once" count_is 'viper: start in the work directory' "$h/.bashrc" 1
+}

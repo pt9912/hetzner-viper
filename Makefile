@@ -6,7 +6,11 @@ RUN_IMAGE  ?= hetzner-claude-run
 
 include tests/tests.mk
 
-# passed to the recipe shell as environment, expanded there in double quotes (URLs with & ; ?)
+# passed to the recipe shell as environment, expanded there in double quotes (URLs with & ; ?).
+# $(value ...): make must not expand a $ in them itself (CMD='echo $HOME' stays as typed).
+override MACHINE := $(value MACHINE)
+override REPO := $(value REPO)
+override CMD := $(value CMD)
 export MACHINE REPO CMD
 
 .PHONY: help build setup preflight up check ssh down

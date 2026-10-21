@@ -71,3 +71,11 @@ test_make_mounts_symlinked_ssh_config_target() {
   mk preflight MACHINE=web
   check "target mounted at the same path" bash -c "grep -A1 -x -- '-v' '$MOCK_STATE/docker-call-1' | grep -qxF '$T/dotfiles/ssh_config:$T/dotfiles/ssh_config'"
 }
+
+test_make_keeps_dollar_signs_in_cmd_and_repo() {
+  mk ssh MACHINE=web 'CMD=echo "$HOME" rc=$? $(id -u)'
+  check "cmd verbatim" test "$(inner_cmd 1 | sed -n 3p)" = 'echo "$HOME" rc=$? $(id -u)'
+  rm "$MOCK_STATE"/docker-call-*
+  mk up MACHINE=web 'REPO=https://x.org/a$b.git'
+  check "repo verbatim" test "$(inner_cmd 1 | sed -n 3p)" = 'https://x.org/a$b.git'
+}

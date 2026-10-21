@@ -90,6 +90,7 @@ if [ -d "$dir/.git" ]; then
   echo "repo=$(git -C "$dir" log --oneline -1 2>/dev/null || echo '(no commits yet)')"
   echo "repo_changes=$(git -C "$dir" status --short | wc -l)"
 fi
+if [ -f "${VIPER_REBOOT_FILE:-/var/run/reboot-required}" ]; then echo reboot=required; fi
 echo "sshd=$(sudo sshd -T 2>/dev/null | grep -iE '^(passwordauthentication|permitrootlogin|authenticationmethods) ' | sort | tr '\n' ';')"
 echo "mem=$(free -m | awk '/^Mem:/ {print $7 " MB available of " $2 " MB"}')"
 echo "disk=$(df -h / | awk 'NR == 2 {print $4 " free of " $2}')"
@@ -102,6 +103,7 @@ val() { sed -n "s/^$1=//p" <<<"$out" | head -n1; }
 
 case "$(val cloudinit)" in
   done) ok "cloud-init: done" ;;
+  disabled) ok "cloud-init: done (disabled after the first boot)" ;;
   '')   bad "cloud-init: no status" ;;
   *)    warn "cloud-init: $(val cloudinit)" ;;
 esac
@@ -148,6 +150,7 @@ if [[ "$(val sshd)" == "authenticationmethods publickey;passwordauthentication n
 else
   bad "sshd hardening not in effect: $(val sshd)"
 fi
+[[ "$(val reboot)" != required ]] || warn "updates need a reboot: make ssh MACHINE=$MACHINE CMD='sudo reboot' (tmux sessions end)"
 info "memory: $(val mem); disk: $(val disk)"
 
 echo

@@ -17,14 +17,16 @@ consume() { (( no_stdin )) || cat >/dev/null; }
 if [[ "$*" == *known_hosts_hetzner_claude_ca* && -n "${MOCK_CA_FAIL:-}" ]]; then
   consume; echo 'Certificate invalid: expired' >&2; echo 'Host key verification failed.' >&2; exit 255
 fi
-export HOME="$MOCK_STATE/remote-home" VIPER_TMP_DIRS="$MOCK_STATE/remote-tmp"
+export HOME="$MOCK_STATE/remote-home" VIPER_TMP_DIRS="$MOCK_STATE/remote-tmp" VIPER_REBOOT_FILE="$MOCK_STATE/reboot-required"
 mkdir -p "$HOME" "$VIPER_TMP_DIRS"
 case "$remote" in
   # readiness probe: fake cloud-init/docker, sandboxed marker file
   "cloud-init status"*)
     consume
-    PATH="$(dirname "$0")/remote:$PATH" bash -c "${remote//\/var\/tmp\/claude-ready/$MOCK_STATE/claude-ready}"
-    exit $? ;;
+    PATH="$(dirname "$0")/remote:$PATH" bash -c "${remote//\/var\/tmp\/claude-ready/$MOCK_STATE/claude-ready}"; rc=$?
+    # the pending reboot happens right after this probe, unless the test keeps the flag
+    [[ -f "$MOCK_STATE/reboot-required.keep" ]] || rm -f "$MOCK_STATE/reboot-required"
+    exit $rc ;;
   *install.sh*)
     consume
     [[ -z "${MOCK_INSTALL_FAIL:-}" ]] || exit 1

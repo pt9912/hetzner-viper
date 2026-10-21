@@ -99,13 +99,21 @@ ssh_include add || ssh_include_warning
 echo 'Waiting for SSH and cloud-init ...'
 # The probe always exits 0 once connected; only connection failures are retried.
 # cloud-init exits 0 (done), 2 (done with warnings) or 1 (errors).
-probe='cloud-init status --wait >/dev/null 2>&1; echo "cloud-init=$?"; test -f /var/tmp/claude-ready && echo claude=ok; docker info >/dev/null 2>&1 && echo docker=ok; true'
+# reboot=pending: updates were installed and cloud-init is about to restart the server.
+# (VIPER_REBOOT_FILE only exists for the offline tests; ssh does not forward it.)
+probe='cloud-init status --wait >/dev/null 2>&1; echo "cloud-init=$?"; test -f /var/tmp/claude-ready && echo claude=ok; docker info >/dev/null 2>&1 && echo docker=ok; test -f "${VIPER_REBOOT_FILE:-/var/run/reboot-required}" && echo reboot=pending; true'
 # While a new server boots, sshd may briefly present a key other than the provisioned one
 # and builder may not exist yet, so host-key and auth errors are retried too. A reused
 # server is already up: those errors are permanent there and end the wait at once.
-status=''; err=''
+status=''; err=''; announced=0
 for i in $(seq 1 120); do
   if status=$(ssh -n -F "$SSH_CFG" -o BatchMode=yes -o ConnectTimeout=5 "$SSH_ALIAS" "$probe" 2>"$STATE/ssh-err-$SERVER_NAME"); then
+    # a new server restarts once after its updates: wait for it instead of working into it
+    if (( ! REUSED )) && grep -qx 'reboot=pending' <<<"$status"; then
+      (( announced )) || { echo 'Updates need a reboot; waiting for the server to restart ...'; announced=1; }
+      status=''; err='the server did not come back after the reboot for its updates'
+      sleep 5; continue
+    fi
     break
   fi
   status=''; err=$(cat "$STATE/ssh-err-$SERVER_NAME")
@@ -139,6 +147,7 @@ if ! grep -qx 'claude=ok' <<<"$status"; then
 fi
 grep -qx 'docker=ok' <<<"$status" || { echo 'Docker is not running; see /var/log/cloud-init-output.log on the server. Server retained.' >&2; exit 1; }
 grep -qx 'cloud-init=1' <<<"$status" && echo 'WARNING: cloud-init reported errors; see /var/log/cloud-init-output.log on the server.' >&2
+grep -qx 'reboot=pending' <<<"$status" && echo "WARNING: updates on the server need a reboot: make ssh MACHINE=$MACHINE CMD='sudo reboot'" >&2
 # Work directory on the server's own disk; it is deleted together with the server.
 ssh -n -F "$SSH_CFG" "$SSH_ALIAS" "sudo install -d -o builder -g builder $(printf %q "$WORKSPACE_DIR")"
 # remember every workspace this server was started with: stop.sh checks all of them
@@ -209,6 +218,16 @@ fi
 [[ -z "$use_key" ]] || git -C "$dir" config core.sshCommand "$GIT_SSH_COMMAND"
 CLONE
 fi
+# Interactive shells (make ssh, tmux, a plain ssh login) that start in the home directory
+# change to the work directory: the line goes at the end of .bashrc, which non-interactive
+# shells (ssh commands, the scripts) never reach because of Ubuntu's early return.
+ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf %q "$WORKDIR")" <<'CDLINE'
+set -eu
+mkdir -p ~/.config/viper
+printf '%s\n' "$1" > ~/.config/viper/workdir
+line='if [ "$PWD" = "$HOME" ] && [ -f ~/.config/viper/workdir ]; then cd "$(cat ~/.config/viper/workdir)" 2>/dev/null || true; fi  # viper: start in the work directory'
+grep -qxF -- "$line" ~/.bashrc 2>/dev/null || printf '%s\n' "$line" >> ~/.bashrc
+CDLINE
 echo "Ready: ssh $SSH_ALIAS (work dir: $WORKDIR)"
 # VS Code and its extensions must not inherit the API tokens from .env.local
 if command -v code >/dev/null; then

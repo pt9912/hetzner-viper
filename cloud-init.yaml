@@ -1,5 +1,13 @@
 #cloud-config
 package_update: true
+# install all updates during setup; if they need a reboot (kernel), restart once at the end
+# (start.sh waits for it on new servers)
+package_upgrade: true
+power_state:
+  mode: reboot
+  delay: now
+  message: Rebooting once after the package upgrades
+  condition: test -f /var/run/reboot-required
 packages:
   - docker.io
   - git
@@ -43,3 +51,7 @@ runcmd:
   - chown builder:builder /home/builder/.ssh
   - chmod 700 /home/builder/.ssh
   - su - builder -c 'set -o pipefail; curl -fsSL https://claude.ai/install.sh | bash' && touch /var/tmp/claude-ready
+  # Everything is set up on the first boot. Later boots (e.g. the reboot after the upgrades)
+  # skip cloud-init: Hetzner's datasource otherwise retries DHCP for metadata there, fails after
+  # 30 s and leaves 'status: error' although the network (already configured) works.
+  - touch /etc/cloud/cloud-init.disabled

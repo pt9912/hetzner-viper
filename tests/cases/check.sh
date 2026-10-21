@@ -81,3 +81,10 @@ test_check_explains_stale_negative_answer_of_local_resolver() {
   check "negative caching explained" has "remembers 'no such name' .* for up to 1800 s" "$T/out"
   check "public resolvers still decide" has '^Check OK' "$T/out"
 }
+
+test_check_accepts_cloud_init_disabled_after_first_boot() {
+  up_web
+  export MOCK_CLOUDINIT_DISABLED=1
+  run check.sh web >"$T/out"
+  check "ok" has 'ok    cloud-init: done \(disabled after the first boot\)' "$T/out"
+}
