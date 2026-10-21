@@ -114,3 +114,19 @@ test_inventory_of_the_server_is_logged() {
   check "trusted" has '^brew trusted: \{"taps":\["acme/tools"\]\}' "$T/tr"
   check "formulae with versions" has '^brew formulae \(installed on request\): ripgrep 1\.0, widget 1\.0$' "$T/tr"
 }
+
+test_log_times_are_local_with_offset() {
+  run setup.sh >/dev/null
+  TZ=Europe/Berlin run preflight.sh web >/dev/null
+  check "local time with offset" has '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2} claude-web ' <(events)
+  check "transcript header too" has '^===== [0-9-]{10}T[0-9:]{8}[+-][0-9]{2}:[0-9]{2} preflight claude-web$' <(transcript)
+}
+
+test_make_passes_the_local_timezone_to_the_container() {
+  mk_tz() { make -s --no-print-directory -C "$ROOT" "$@" >/dev/null 2>&1; }
+  TZ=Europe/Berlin mk_tz preflight MACHINE=web
+  if [[ -e /etc/localtime ]]; then
+    check "localtime mounted read-only" bash -c "grep -A1 -x -- '-v' '$MOCK_STATE/docker-call-1' | grep -qx '/etc/localtime:/etc/localtime:ro'"
+  fi
+  check "TZ passed" bash -c "grep -A1 -x -- '-e' '$MOCK_STATE/docker-call-1' | grep -qx TZ"
+}

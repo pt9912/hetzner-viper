@@ -5,7 +5,7 @@ ARG HCLOUD_VERSION=v1.70.1
 ARG HCLOUD_SHA256_AMD64=85182e0d51f9a26abeefd79b37de8a7fb51215d54c59ee290c3c9141e8aa887e
 ARG HCLOUD_SHA256_ARM64=c9dbc00158d31131527e9ac5cb59b835fe8275ab7922f627d81b4e9bc2a2cebb
 RUN apt-get update \
- && apt-get install -y --no-install-recommends bash git jq curl openssh-client python3 python3-yaml make ca-certificates \
+ && apt-get install -y --no-install-recommends bash git jq curl openssh-client python3 python3-yaml make ca-certificates tzdata \
  && rm -rf /var/lib/apt/lists/*
 RUN set -eu; \
     case "$TARGETARCH" in \

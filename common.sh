@@ -62,8 +62,11 @@ mkdir -p "$LOG_DIR"; chmod 700 "$LOG_DIR"
 VIPER_ACTION="${VIPER_ACTION:-}"; FINAL_EVENT=0
 EXIT_CMDS=()
 
+# local time with its offset to UTC, so entries stay unambiguous (e.g. 2026-10-21T15:12:03+02:00)
+now() { date +%Y-%m-%dT%H:%M:%S%:z; }
+
 log_event() {
-  ( umask 077; printf '%s %-24s %-9s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SERVER_NAME" "$VIPER_ACTION" "$*" >> "$EVENTS_LOG" )
+  ( umask 077; printf '%s %-24s %-9s %s\n' "$(now)" "$SERVER_NAME" "$VIPER_ACTION" "$*" >> "$EVENTS_LOG" )
 }
 # final_event <text>: the outcome of this run; without one, a failing exit is logged as FAILED
 final_event() { log_event "$*"; FINAL_EVENT=1; }
@@ -100,7 +103,7 @@ start_transcript() {
     return 0
   fi
   export VIPER_TRANSCRIPT="$LOG_DIR/$SERVER_NAME.log" VIPER_ACTION VIPER_TRANSCRIPT_PID=$$; TRANSCRIPT_OWNER=1
-  ( umask 077; printf '\n===== %s %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$SERVER_NAME" >> "$VIPER_TRANSCRIPT" )
+  ( umask 077; printf '\n===== %s %s %s\n' "$(now)" "$1" "$SERVER_NAME" >> "$VIPER_TRANSCRIPT" )
   exec > >(tee -a "$VIPER_TRANSCRIPT"); TEE_OUT=$!
   exec 2> >(tee -a "$VIPER_TRANSCRIPT" >&2); TEE_ERR=$!
 }
