@@ -98,7 +98,7 @@ test_machine_file_overrides_server_type() {
   run start.sh small >/dev/null
   check "override" has '--type cpx02' "$CALLS"
   run start.sh big >/dev/null
-  check "default elsewhere" has 'claude-big .*--type cx53' "$CALLS"
+  check "default elsewhere" has 'claude-big .*--type cpx32' "$CALLS"
 }
 
 test_start_without_setup_fails_cleanly() {

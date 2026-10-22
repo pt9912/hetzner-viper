@@ -65,10 +65,11 @@ ssh: build ## shell or one command on the machine (MACHINE, [CMD])
 	$(call RUN,./connect.sh "$$MACHINE" $${CMD:+"$$CMD"})
 
 # runs on the host, no container and no tokens needed
+# the prefix is read as the scripts read it (bash sources the files: comments, quotes)
 log: ## show the log: events of all machines, or of MACHINE; FULL=1 its complete output
 	@d="$$HOME/.local/state/hetzner-claude"; \
 	if [ -z "$$MACHINE" ]; then tail -n 50 "$$d/events.log" 2>/dev/null || echo 'no events yet'; exit 0; fi; \
-	p=$$(sed -n 's/^SERVER_PREFIX=//p' .env.local "machines/$$MACHINE.env.local" 2>/dev/null | tail -n1 | tr -d "\"'"); \
+	p=$$(bash -c 'set -a; for f in ./.env.local "./machines/$$1.env.local"; do [ ! -f "$$f" ] || . "$$f"; done; printf %s "$$SERVER_PREFIX"' _ "$$MACHINE" 2>/dev/null); \
 	s="$${p:-claude}-$$MACHINE"; \
 	if [ "$(FULL)" = 1 ]; then cat "$$d/logs/$$s.log" 2>/dev/null || echo "no log for $$s"; \
 	else awk -v s="$$s" '$$2 == s' "$$d/events.log" 2>/dev/null | grep . || echo "no events for $$s"; fi

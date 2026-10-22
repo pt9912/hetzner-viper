@@ -25,7 +25,7 @@ if os.environ.get('MOCK_HCLOUD_FAIL'):
 kind, action = args[0], args[1]
 
 # read-only catalogue (server types, locations, datacenters, images) for preflight.sh
-TYPES = {'cx53': {'id': 1, 'cores': 16, 'memory': 32, 'disk': 320, 'architecture': 'x86'},
+TYPES = {'cpx32': {'id': 1, 'cores': 4, 'memory': 8, 'disk': 160, 'architecture': 'x86'},
          'cpx02': {'id': 2, 'cores': 1, 'memory': 1, 'disk': 20, 'architecture': 'x86'},
          'cax11': {'id': 3, 'cores': 2, 'memory': 4, 'disk': 40, 'architecture': 'arm'}}
 # Like the real API: per-location availability is part of the server type.

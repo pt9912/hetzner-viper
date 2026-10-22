@@ -8,7 +8,7 @@ test_up_and_down_are_logged() {
   run setup.sh >/dev/null
   run start.sh web >/dev/null
   events > "$T/ev"
-  check "start" has ' claude-web +up +start \(cx53, fsn1, ubuntu-26\.04\)$' "$T/ev"
+  check "start" has ' claude-web +up +start \(cpx32, fsn1, ubuntu-26\.04\)$' "$T/ev"
   check "created" has ' claude-web +up +server created id=[0-9]+$' "$T/ev"
   check "ip" has ' claude-web +up +ip=203\.0\.113\.[0-9]+ dns=claude-web\.test\.invalid$' "$T/ev"
   check "ready" has ' claude-web +up +ready \(work dir ' "$T/ev"
@@ -64,6 +64,19 @@ test_make_log_shows_events() {
   check "only web" bash -c "grep -q ' claude-web ' '$T/web' && ! grep -q ' claude-api ' '$T/web'"
   make -s --no-print-directory -I "$ROOT" -f "$ROOT/Makefile" -C "$W" log MACHINE=web FULL=1 > "$T/full"
   check "full output" has '^Ready: ssh hetzner-claude-web' "$T/full"
+}
+
+# the prefix is read the way the scripts read it: comments and quotes in the file count
+test_make_log_reads_the_prefix_like_the_scripts() {
+  run setup.sh >/dev/null
+  printf 'SERVER_PREFIX=cs      # not claude\n' >> "$W/.env.local"
+  run start.sh web >/dev/null
+  make -s --no-print-directory -I "$ROOT" -f "$ROOT/Makefile" -C "$W" log MACHINE=web > "$T/web"
+  check "events of cs-web" has ' cs-web ' "$T/web"
+  printf 'SERVER_PREFIX="mach"\n' > "$W/machines/web.env.local"
+  run start.sh web >/dev/null
+  make -s --no-print-directory -I "$ROOT" -f "$ROOT/Makefile" -C "$W" log MACHINE=web FULL=1 > "$T/full"
+  check "machine file wins, quotes removed" has ' mach-web$' "$T/full"
 }
 
 test_interruption_is_logged() {

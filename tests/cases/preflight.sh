@@ -9,8 +9,8 @@ test_preflight_ok_and_read_only() {
   run setup.sh >/dev/null
   run preflight.sh web >"$T/out"
   check "summary" has '^Preflight OK' "$T/out"
-  check "availability checked" has 'cx53 can currently be ordered in fsn1' "$T/out"
-  check "type summary" has 'server type cx53 exists \(16 vCPU, 32 GB RAM, 320 GB disk\), architecture x86' "$T/out"
+  check "availability checked" has 'cpx32 can currently be ordered in fsn1' "$T/out"
+  check "type summary" has 'server type cpx32 exists \(4 vCPU, 8 GB RAM, 160 GB disk\), architecture x86' "$T/out"
   check "nothing created" nothing_created
 }
 
@@ -26,7 +26,7 @@ test_defaults_fill_settings_missing_from_env_local() {
   run setup.sh >/dev/null
   sed -i '/^SERVER_TYPE=/d; /^SERVER_LOCATION=/d; /^SERVER_IMAGE=/d; /^SSH_KEY=/d' "$W/.env.local"
   run start.sh web >/dev/null
-  check "defaults used" has 'server create --name claude-web --type cx53 --location fsn1 --image ubuntu-26.04' "$CALLS"
+  check "defaults used" has 'server create --name claude-web --type cpx32 --location fsn1 --image ubuntu-26.04' "$CALLS"
 }
 
 test_bad_dns_domain_rejected() {
@@ -137,7 +137,7 @@ test_type_not_offered_in_location() {
 
 test_deprecated_type_is_warned_about() {
   run setup.sh >/dev/null
-  export MOCK_DEPRECATED=cx53
+  export MOCK_DEPRECATED=cpx32
   run preflight.sh web >"$T/out"
-  check "warning" has 'WARN  cx53 is deprecated in fsn1 and unavailable after 2027-01-01' "$T/out"
+  check "warning" has 'WARN  cpx32 is deprecated in fsn1 and unavailable after 2027-01-01' "$T/out"
 }

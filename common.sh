@@ -20,7 +20,7 @@ done
 for cmd in hcloud jq curl ssh ssh-keygen python3; do command -v "$cmd" >/dev/null || { echo "Missing: $cmd" >&2; exit 1; }; done
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/hetzner-build}"
 SSH_KEY="${SSH_KEY/#\~/$HOME}"
-SERVER_TYPE="${SERVER_TYPE:-cx53}"
+SERVER_TYPE="${SERVER_TYPE:-cpx32}"
 SERVER_LOCATION="${SERVER_LOCATION:-fsn1}"
 SERVER_IMAGE="${SERVER_IMAGE:-ubuntu-26.04}"
 VIPER_HOMEBREW="${VIPER_HOMEBREW:-1}"
