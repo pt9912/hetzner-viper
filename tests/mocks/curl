@@ -6,6 +6,9 @@ args = sys.argv[1:]
 sf = os.path.join(os.environ['MOCK_STATE'], 'cf.json')
 with open(os.path.join(os.environ['MOCK_STATE'], 'calls.log'), 'a') as f:
     f.write('curl ' + ' '.join(args) + '\n')
+# Docker Hub's registry (make build probes it); MOCK_HUB_DOWN: it times out
+if any('registry-1.docker.io' in a for a in args):
+    sys.exit(28 if os.environ.get('MOCK_HUB_DOWN') else 0)
 recs = json.load(open(sf)) if os.path.exists(sf) else []
 # Anthropic Messages API of another provider (preflight.sh): like curl -w '\n%{http_code}'
 llm = [a for a in args if a.endswith('/v1/messages')]

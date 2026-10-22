@@ -22,8 +22,16 @@ help: ## show this help
 	@echo
 	@echo 'Example: make preflight MACHINE=web && make up MACHINE=web REPO=https://github.com/<owner>/<repo>.git'
 
+# Without BASE_IMAGE the base image comes from Docker Hub; if that is not reachable over IPv4
+# (some networks block its AWS addresses), Google's mirror of the same image is used instead.
+MIRROR_BASE_IMAGE := mirror.gcr.io/library/debian:bookworm-slim
+
 build: ## build the container image (done automatically by the other targets)
-	docker build --target run --build-arg USER_UID=$$(id -u) --build-arg USER_HOME="$$HOME" $(if $(BASE_IMAGE),--build-arg BASE_IMAGE=$(BASE_IMAGE)) -t $(RUN_IMAGE) .
+	@base='$(BASE_IMAGE)'; \
+	if [ -z "$$base" ] && ! curl -4 -s -m 5 -o /dev/null https://registry-1.docker.io/v2/ 2>/dev/null; then \
+	  base='$(MIRROR_BASE_IMAGE)'; echo "Docker Hub is not reachable; building from $$base (set BASE_IMAGE to choose another source)" >&2; \
+	fi; \
+	set -x; docker build --target run --build-arg USER_UID=$$(id -u) --build-arg USER_HOME="$$HOME" $${base:+--build-arg BASE_IMAGE="$$base"} -t $(RUN_IMAGE) .
 
 # ~/.ssh/config may be a symlink into a dotfiles repo: mount its target too (at the same
 # path), otherwise the scripts cannot add their Include line from inside the container.

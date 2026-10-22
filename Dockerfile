@@ -1,5 +1,5 @@
 # Targets: "test" (offline test suite) and "run" (real start/stop against Hetzner/Cloudflare).
-# BASE_IMAGE: another source for the base image when Docker Hub is unreachable (make build BASE_IMAGE=mirror.gcr.io/library/debian:bookworm-slim)
+# BASE_IMAGE: another source for the base image (make build picks Google's mirror itself when Docker Hub is unreachable)
 ARG BASE_IMAGE=debian:bookworm-slim
 FROM ${BASE_IMAGE} AS base
 ARG TARGETARCH

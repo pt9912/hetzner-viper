@@ -79,3 +79,20 @@ test_make_keeps_dollar_signs_in_cmd_and_repo() {
   mk up MACHINE=web 'REPO=https://x.org/a$b.git'
   check "repo verbatim" test "$(inner_cmd 1 | sed -n 3p)" = 'https://x.org/a$b.git'
 }
+
+test_build_uses_docker_hub_when_it_is_reachable() {
+  mk build
+  check "no base image given" bash -c "! grep -q BASE_IMAGE '$MOCK_STATE/docker-call-0'"
+}
+
+test_build_falls_back_to_the_mirror_when_docker_hub_is_unreachable() {
+  MOCK_HUB_DOWN=1 mk build
+  check "mirror used" bash -c "grep -qx 'BASE_IMAGE=mirror.gcr.io/library/debian:bookworm-slim' '$MOCK_STATE/docker-call-0'"
+  check "says so" has 'Docker Hub is not reachable; building from mirror\.gcr\.io' "$T/make-err"
+}
+
+test_build_honours_an_explicit_base_image_without_probing() {
+  MOCK_HUB_DOWN=1 mk build BASE_IMAGE=registry.example.invalid/debian:12
+  check "given source used" bash -c "grep -qx 'BASE_IMAGE=registry.example.invalid/debian:12' '$MOCK_STATE/docker-call-0'"
+  check "no probe" bash -c "! grep -q registry-1.docker.io '$CALLS'"
+}
