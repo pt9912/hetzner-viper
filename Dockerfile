@@ -1,5 +1,7 @@
 # Targets: "test" (offline test suite) and "run" (real start/stop against Hetzner/Cloudflare).
-FROM debian:bookworm-slim AS base
+# BASE_IMAGE: another source for the base image when Docker Hub is unreachable (make build BASE_IMAGE=mirror.gcr.io/library/debian:bookworm-slim)
+ARG BASE_IMAGE=debian:bookworm-slim
+FROM ${BASE_IMAGE} AS base
 ARG TARGETARCH
 ARG HCLOUD_VERSION=v1.70.1
 ARG HCLOUD_SHA256_AMD64=85182e0d51f9a26abeefd79b37de8a7fb51215d54c59ee290c3c9141e8aa887e

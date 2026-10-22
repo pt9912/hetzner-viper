@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.30  
+Version: 1.31  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -650,6 +650,10 @@ Die Skripte importieren und exportieren keine Daten. Ihre Arbeitsdateien liegen 
 
 ## 7. Fehlerbehebung
 
+### Meldung: "failed to resolve source metadata for docker.io/library/debian:bookworm-slim … i/o timeout"
+
+Das Basis-Image des Containers kommt von Docker Hub, und Ihr Netz erreicht dessen Adressen nicht (häufig in Firmennetzen und manchen Codespaces: `curl -4 https://registry-1.docker.io/v2/` läuft in einen Timeout). Bauen Sie das Image mit einer anderen Quelle: `make build BASE_IMAGE=mirror.gcr.io/library/debian:bookworm-slim`, danach wie gewohnt `make up MACHINE=<rechner>`. Wird das Image neu gebaut, geben Sie `BASE_IMAGE=…` auch bei `make up` an.
+
 ### Meldung: "Copy .env.local.example to .env.local"
 
 **Ursache:** Die Datei `.env.local` fehlt.  
@@ -866,3 +870,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.28 | v3 mit Mehrrechner-Betrieb | Handbuch: `code-server` von einem anderen Rechner aus nutzen (Tunnel mit DNS-Namen, Schlüssel, Host-CA). |
 | 1.29 | v3 mit Mehrrechner-Betrieb | Die Installation von Claude Code wird bei Fehlern (etwa HTTP 429, Drosselung pro Adresse) bis zu fünfmal mit wachsender Pause wiederholt, auf neuen Servern in cloud-init und beim Nachholen in `start.sh`. |
 | 1.30 | v3 mit Mehrrechner-Betrieb | Optional Swap-Datei auf dem Server: `VIPER_SWAP` als Faktor vom RAM (`1`, `0.5`) oder als Größe (`4G`). `make check` prüft sie. |
+| 1.31 | v3 mit Mehrrechner-Betrieb | `make build BASE_IMAGE=…` baut den Container mit einer anderen Quelle für das Basis-Image (etwa `mirror.gcr.io`), wenn Docker Hub nicht erreichbar ist. |

@@ -23,7 +23,7 @@ help: ## show this help
 	@echo 'Example: make preflight MACHINE=web && make up MACHINE=web REPO=https://github.com/<owner>/<repo>.git'
 
 build: ## build the container image (done automatically by the other targets)
-	docker build --target run --build-arg USER_UID=$$(id -u) --build-arg USER_HOME="$$HOME" -t $(RUN_IMAGE) .
+	docker build --target run --build-arg USER_UID=$$(id -u) --build-arg USER_HOME="$$HOME" $(if $(BASE_IMAGE),--build-arg BASE_IMAGE=$(BASE_IMAGE)) -t $(RUN_IMAGE) .
 
 # ~/.ssh/config may be a symlink into a dotfiles repo: mount its target too (at the same
 # path), otherwise the scripts cannot add their Include line from inside the container.
