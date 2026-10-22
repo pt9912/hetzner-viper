@@ -171,6 +171,41 @@ fi
 grep -qx 'docker=ok' <<<"$status" || { echo 'Docker is not running; see /var/log/cloud-init-output.log on the server. Server retained.' >&2; exit 1; }
 grep -qx 'cloud-init=1' <<<"$status" && echo 'WARNING: cloud-init reported errors; see /var/log/cloud-init-output.log on the server.' >&2
 grep -qx 'reboot=pending' <<<"$status" && echo "WARNING: updates on the server need a reboot: make ssh MACHINE=$MACHINE CMD='sudo reboot'" >&2
+# Swap file, opt-in with VIPER_SWAP (not fatal): a factor of the server's RAM (1 = as much as
+# RAM, 0.5 = half) or a size (4G, 512M). Idempotent: an active /swapfile is left alone.
+if [[ "$VIPER_SWAP" != 0 ]]; then
+  if ! ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$VIPER_SWAP")" <<'SWAP'
+set -uo pipefail
+export LC_ALL=C
+spec="$1"
+f="${VIPER_SWAPFILE:-/swapfile}"; fstab="${VIPER_FSTAB:-/etc/fstab}"; sysctl_d="${VIPER_SYSCTL_D:-/etc/sysctl.d}"
+# the kernel reports a little less than the nominal RAM (7.6 GB for 8 GB): round up
+mem_gb=$(awk '/^MemTotal:/ {g = $2 / 1048576; printf "%d", g == int(g) ? g : int(g) + 1}' "${VIPER_MEMINFO:-/proc/meminfo}")
+case "$spec" in
+  *G) mb=$(( ${spec%G} * 1024 )) ;;
+  *M) mb=${spec%M} ;;
+  *) mb=$(awk -v g="$mem_gb" -v x="$spec" 'BEGIN {printf "%d", g * 1024 * x}') ;;
+esac
+(( mb >= 256 )) || mb=256
+if swapon --show=NAME --noheadings 2>/dev/null | grep -qxF "$f"; then
+  echo "swap: $f already active ($(swapon --show=SIZE --noheadings 2>/dev/null | head -n1 | tr -d ' '))"; exit 0
+fi
+avail=$(df -Pm "$(dirname "$f")" | awk 'NR == 2 {print $4}')
+(( avail > mb + 2048 )) || { echo "swap: only ${avail} MB free on the disk, ${mb} MB needed (plus 2 GB left over)"; exit 1; }
+if [ ! -e "$f" ]; then
+  sudo fallocate -l "${mb}M" "$f" && sudo chmod 600 "$f" && sudo mkswap "$f" >/dev/null || { sudo rm -f "$f"; echo "swap: creating $f failed"; exit 1; }
+fi
+sudo swapon "$f" || { echo "swap: swapon $f failed"; exit 1; }
+grep -qs "^$f " "$fstab" || echo "$f none swap sw 0 0" | sudo tee -a "$fstab" >/dev/null
+# little swapping: it is a safety net against the OOM killer, not extra memory
+echo 'vm.swappiness=10' | sudo tee "$sysctl_d/99-viper-swap.conf" >/dev/null
+sudo sysctl -q vm.swappiness=10
+echo "swap: ${mb} MB at $f (RAM about ${mem_gb} GB, VIPER_SWAP=$spec)"
+SWAP
+  then
+    echo "WARNING: swap could not be set up; rerun ./start.sh $MACHINE" >&2
+  fi
+fi
 # Work directory on the server's own disk; it is deleted together with the server.
 # Record the workspace on the server right away (also if a later step fails), so stop.sh from
 # any computer checks it.
@@ -392,6 +427,7 @@ echo "apt: $(dpkg-query -W -f='${Package} ${Version}, ' "$@" 2>/dev/null | sed '
 echo "claude: $(claude --version 2>/dev/null | head -n1)"
 echo "gh: $(gh --version 2>/dev/null | head -n1)"
 echo "docker: $(docker --version 2>/dev/null)"
+echo "memory: $(free -m 2>/dev/null | awk '/^Mem:/ {printf "%d MB RAM", $2} /^Swap:/ {printf ", %d MB swap", $2}')"
 v=$(code-server --version 2>/dev/null | head -n1); [ -z "$v" ] || echo "code-server: $v"
 if [ -x "$brew" ]; then
   eval "$("$brew" shellenv)"; export HOMEBREW_NO_AUTO_UPDATE=1

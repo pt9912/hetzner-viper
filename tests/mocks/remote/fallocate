@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Fake fallocate on the server: creates a sparse file of the size, logs the call
+echo "fallocate $*" >> "$MOCK_STATE/swap.log"
+[[ -z "${MOCK_SWAP_FAIL:-}" ]] || { echo 'fallocate: fallocate failed: Operation not supported' >&2; exit 1; }
+truncate -s "$2" "$3"

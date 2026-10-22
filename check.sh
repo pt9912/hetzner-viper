@@ -95,6 +95,7 @@ if gh auth status >/dev/null 2>&1; then echo gh_auth=yes; else echo gh_auth=no; 
 echo "git_name=$(git config --global user.name 2>/dev/null)"
 echo "git_email=$(git config --global user.email 2>/dev/null)"
 if docker info >/dev/null 2>&1; then echo docker=ok; else echo docker=no; fi
+echo "swap_mb=$(swapon --show=SIZE --bytes --noheadings 2>/dev/null | awk '{s += $1} END {printf "%d", s / 1048576}')"
 if [ "$cs" = 1 ]; then
   echo "code_server_version=$(code-server --version 2>/dev/null | head -n1)"
   echo "code_server_active=$(systemctl is-active code-server@builder 2>/dev/null)"
@@ -189,6 +190,10 @@ else
   warn "git user.name/user.email are not set on the server: commits fail (VIPER_GIT_USER_NAME, VIPER_GIT_USER_EMAIL, then rerun ./start.sh $MACHINE)"
 fi
 if [[ "$(val docker)" == ok ]]; then ok "docker running"; else bad "docker not running"; fi
+if [[ "$VIPER_SWAP" != 0 ]]; then
+  swap_mb=$(val swap_mb)
+  if (( ${swap_mb:-0} > 0 )); then ok "swap active ($swap_mb MB)"; else bad "swap not active (VIPER_SWAP=$VIPER_SWAP; rerun ./start.sh $MACHINE)"; fi
+fi
 if [[ "$VIPER_CODE_SERVER" == 1 ]]; then
   if [[ -z "$(val code_server_version)" ]]; then
     bad "code-server not installed (rerun ./start.sh $MACHINE; log: ~/.config/viper/code-server-install.log)"

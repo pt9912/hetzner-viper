@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Fake swapon on the server: swapon FILE activates (state file), swapon --show=... lists
+echo "swapon $*" >> "$MOCK_STATE/swap.log"
+case "$1" in
+  --show=NAME*) cat "$MOCK_STATE/swap-active" 2>/dev/null ;;
+  --show=SIZE*) [[ ! -s "$MOCK_STATE/swap-active" ]] || echo "$(stat -c %s "$(head -n1 "$MOCK_STATE/swap-active")")" ;;
+  *) echo "$1" >> "$MOCK_STATE/swap-active" ;;
+esac
+exit 0

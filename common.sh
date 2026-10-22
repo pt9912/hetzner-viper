@@ -24,6 +24,8 @@ SERVER_TYPE="${SERVER_TYPE:-cpx32}"
 SERVER_LOCATION="${SERVER_LOCATION:-fsn1}"
 SERVER_IMAGE="${SERVER_IMAGE:-ubuntu-26.04}"
 VIPER_HOMEBREW="${VIPER_HOMEBREW:-1}"
+# swap file on the server: 0 (off), a factor of the RAM (1, 0.5) or a size (4G, 512M)
+VIPER_SWAP="${VIPER_SWAP:-0}"
 # code-server (VS Code in the browser), opt-in; it listens on 127.0.0.1 only (SSH tunnel)
 VIPER_CODE_SERVER="${VIPER_CODE_SERVER:-0}"
 CODE_SERVER_PORT=8080

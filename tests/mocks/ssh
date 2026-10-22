@@ -19,8 +19,10 @@ if [[ "$*" == *known_hosts_hetzner_claude_ca* && -n "${MOCK_CA_FAIL:-}" ]]; then
   consume; echo 'Certificate invalid: expired' >&2; echo 'Host key verification failed.' >&2; exit 255
 fi
 export HOME="$MOCK_STATE/remote-home" VIPER_TMP_DIRS="$MOCK_STATE/remote-tmp" VIPER_REBOOT_FILE="$MOCK_STATE/reboot-required" \
-  VIPER_CLOUD_RESULT="$MOCK_STATE/cloud-result.json"
-mkdir -p "$HOME" "$VIPER_TMP_DIRS"
+  VIPER_CLOUD_RESULT="$MOCK_STATE/cloud-result.json" VIPER_SWAPFILE="$MOCK_STATE/remote-swapfile" \
+  VIPER_FSTAB="$MOCK_STATE/remote-fstab" VIPER_SYSCTL_D="$MOCK_STATE/remote-sysctl.d" VIPER_MEMINFO="$MOCK_STATE/meminfo"
+mkdir -p "$HOME" "$VIPER_TMP_DIRS" "$VIPER_SYSCTL_D"
+[[ -e "$VIPER_MEMINFO" ]] || printf 'MemTotal:        7800000 kB\n' > "$VIPER_MEMINFO"
 case "$remote" in
   # readiness probe: fake cloud-init/docker, sandboxed marker file
   "cloud-init status"*)

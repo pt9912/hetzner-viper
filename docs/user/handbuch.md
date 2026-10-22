@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.29  
+Version: 1.30  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -219,7 +219,7 @@ Geprüft werden:
 
 * **DNS:** Der Name `<SERVER_PREFIX>-<rechner>.<DNS_DOMAIN>` löst bei den öffentlichen Resolvern von Cloudflare (1.1.1.1) und Google (8.8.8.8) auf die IP-Adresse des Servers auf. Zusätzlich zeigt der Check, was Ihr Computer auflöst.
 * **Zugriff wie ein anderes Gerät:** eine SSH-Verbindung über den DNS-Namen, bei der nur der Host-CA vertraut wird, nicht dem hinterlegten Schlüssel. So sieht das iPad oder ein zweiter Computer den Server, und dabei wird geprüft, dass das Zertifikat für den Namen gilt. Der Check zeigt auch, bis wann das Zertifikat gültig ist.
-* **Server:** cloud-init ist fertig. Claude Code ist installiert und, wenn `VIPER_CLAUDE_TOKEN` gesetzt ist, angemeldet und antwortet. `gh` ist installiert und, wenn `VIPER_GH_TOKEN` gesetzt ist, angemeldet. Docker läuft, Homebrew ist installiert und im `PATH` (wenn `VIPER_HOMEBREW=1`), das Repository ist geklont, und die SSH-Härtung wirkt. Dazu kommen freier Speicher und Plattenplatz.
+* **Server:** cloud-init ist fertig. Claude Code ist installiert und, wenn `VIPER_CLAUDE_TOKEN` gesetzt ist, angemeldet und antwortet. `gh` ist installiert und, wenn `VIPER_GH_TOKEN` gesetzt ist, angemeldet. Docker läuft, die Swap ist aktiv (wenn `VIPER_SWAP` gesetzt ist), Homebrew ist installiert und im `PATH` (wenn `VIPER_HOMEBREW=1`), das Repository ist geklont, und die SSH-Härtung wirkt. Dazu kommen freier Speicher und Plattenplatz.
 
 #### Ergebnis
 
@@ -432,6 +432,8 @@ Die Meldung `claude: using model <Modell> at <Adresse>` erscheint. `claude` nutz
 
 ### Werkzeuge mit Homebrew installieren
 
+Swap: Mit `VIPER_SWAP` legt `start.sh` eine Swap-Datei `/swapfile` an. Ein Faktor richtet sich nach dem RAM des Servers: `1` ergibt bei einem Server mit 8 GB RAM 8 GB Swap, `0.5` ergibt 4 GB. Eine Größe wie `4G` gilt unabhängig vom RAM. Die Swap ersetzt keinen Arbeitsspeicher, sie fängt Spitzen ab (etwa bei `docker build` oder `npm install`), statt dass der Prozess beendet wird. Der Kernel nutzt sie nur im Notfall (`vm.swappiness=10`), und sie bleibt nach einem Neustart aktiv. Ein erneutes `make up` ändert eine vorhandene Swap nicht; `make check` meldet, ob sie aktiv ist. Scheitert das Anlegen, warnt `start.sh` nur.
+
 Auf jedem Rechner ist Homebrew (`brew`) installiert, sofern Sie es nicht mit `VIPER_HOMEBREW=0` abschalten. Was Sie von Hand installieren, verschwindet mit dem Server. Damit jeder neue Rechner dieselben Werkzeuge bekommt, tragen Sie sie in die Einstellungen oder in eine `Brewfile` im Repository ein.
 
 #### Begriffe
@@ -613,6 +615,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `VIPER_GH_TOKEN` | GitHub-PAT für `gh` und `git` über HTTPS auf dem Server | leer |
 | `VIPER_GH_HOST` | GitHub-Host (für GitHub Enterprise) | `github.com` |
 | `VIPER_GIT_USER_NAME`, `VIPER_GIT_USER_EMAIL` | Autor für Commits auf dem Server (`git config --global`); was fehlt, kommt mit `VIPER_GH_TOKEN` vom GitHub-Konto | leer |
+| `VIPER_SWAP` | Swap-Datei auf dem Server: `0` (aus), ein Faktor vom RAM zwischen 0,1 und 4 (`1` = so viel wie RAM, `0.5` = die Hälfte) oder eine Größe (`4G`, `512M`) | `0` |
 | `VIPER_CODE_SERVER` | `1`: `code-server` (VS Code im Browser) installieren | `0` |
 | `VIPER_CODE_SERVER_PASSWORD` | Passwort für `code-server`, mindestens 12 Zeichen ohne Leerzeichen; Pflicht mit `VIPER_CODE_SERVER=1` | leer |
 | `VIPER_CLAUDE_TOKEN` | Langlebiges Token Ihres Claude-Abos aus `claude setup-token` (ein Jahr gültig) | leer |
@@ -862,3 +865,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.27 | v3 mit Mehrrechner-Betrieb | Docker aus Dockers eigenem apt-Repository (neueste Engine, `buildx`, `compose`) statt Ubuntus `docker.io`. Git-Autor auf dem Server: `VIPER_GIT_USER_NAME`/`VIPER_GIT_USER_EMAIL`, sonst vom GitHub-Konto. Optional `code-server` (VS Code im Browser, nur per SSH-Tunnel): `VIPER_CODE_SERVER`, `VIPER_CODE_SERVER_PASSWORD`. |
 | 1.28 | v3 mit Mehrrechner-Betrieb | Handbuch: `code-server` von einem anderen Rechner aus nutzen (Tunnel mit DNS-Namen, Schlüssel, Host-CA). |
 | 1.29 | v3 mit Mehrrechner-Betrieb | Die Installation von Claude Code wird bei Fehlern (etwa HTTP 429, Drosselung pro Adresse) bis zu fünfmal mit wachsender Pause wiederholt, auf neuen Servern in cloud-init und beim Nachholen in `start.sh`. |
+| 1.30 | v3 mit Mehrrechner-Betrieb | Optional Swap-Datei auf dem Server: `VIPER_SWAP` als Faktor vom RAM (`1`, `0.5`) oder als Größe (`4G`). `make check` prüft sie. |

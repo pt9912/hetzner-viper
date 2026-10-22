@@ -235,6 +235,12 @@ if [[ "${VIPER_BREWFILE:-0}" == 1 ]]; then
   [[ -z "${REPO_URL:-}" ]] || warn "the repository's Brewfile will be applied: it is Ruby code run by brew bundle, and its trusted: entries change Homebrew's trust store"
 fi
 
+if [[ "$VIPER_SWAP" == 0 ]]; then :
+elif [[ "$VIPER_SWAP" =~ ^[1-9][0-9]*[MG]$ ]]; then ok "swap file of $VIPER_SWAP on the server"
+elif [[ "$VIPER_SWAP" =~ ^[0-9]*\.?[0-9]+$ ]] && awk -v x="$VIPER_SWAP" 'BEGIN {exit !(x >= 0.1 && x <= 4)}'; then
+  ok "swap file of $VIPER_SWAP x the server's RAM"
+else bad "VIPER_SWAP must be 0, a factor of the RAM between 0.1 and 4 (e.g. 1, 0.5) or a size (e.g. 4G, 512M): $VIPER_SWAP"; fi
+
 case "$VIPER_CODE_SERVER" in
   1)
     if [[ -z "${VIPER_CODE_SERVER_PASSWORD:-}" ]]; then
