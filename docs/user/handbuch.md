@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.25  
+Version: 1.26  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -268,6 +268,7 @@ Claude Code läuft in einer Sitzung, die einen Verbindungsabbruch übersteht.
 
 #### Hinweise
 
+* Neue Server bekommen eine `~/.tmux.conf` für `builder` (Maus an, Fenster ab 1 nummeriert, `Esc` ohne Verzögerung, großer Verlauf). Mit **Alt+1** bis **Alt+9** wechseln Sie direkt zwischen Fenstern; sonst gelten die üblichen Kürzel (**Strg+B**, dann **N**/**P** oder eine Ziffer, **C** für ein neues Fenster). Mit eingeschalteter Maus markieren Sie Text zum Kopieren mit gedrückter **Umschalttaste**. Auf einem bestehenden Server wirkt die Datei nicht; legen Sie sie dort von Hand an. Eigene Änderungen gehen mit dem Server verloren.
 * Homebrew (`brew`) wird beim ersten Einrichten mit dem offiziellen Installationsskript nach `/home/linuxbrew/.linuxbrew` installiert und ist in allen Shells verfügbar, auch für Claude Code. Das kostet ein bis zwei Minuten. Mit `VIPER_HOMEBREW=0` (etwa in `machines/<rechner>.env.local`) entfällt es. Scheitert die Installation, warnt `start.sh` nur; ein erneuter `make up` versucht es wieder.
 * Interaktive Shells starten im Arbeitsverzeichnis des Rechners (beim geklonten Repository), wenn sie im Home-Verzeichnis beginnen würden. Das gilt für `make ssh`, tmux und einen normalen SSH-Login. VS-Code-Terminals öffnen ohnehin im Projektordner, und einzelne SSH-Befehle sind nicht betroffen.
 * Ohne `VIPER_CLAUDE_TOKEN` müssen Sie das Anmelden bei Claude nach jedem neuen Server wiederholen, weil `/home/builder/.claude` mit dem Server gelöscht wird. Mit Token entfällt das (siehe „Claude Code ohne erneute Anmeldung nutzen“).
@@ -799,3 +800,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.23 | v3 mit Mehrrechner-Betrieb | Ein per `REPO=` angegebenes Repository wird für den Rechner gemerkt. Tags aus dem Clone gelten nicht als ungesicherte Arbeit. Zugangsdaten in Tap-URLs werden abgelehnt, Adressen mit Zugangsdaten nirgends angezeigt. Ein älterer Server gilt auch auf anderen Computern als eingerichtet. Die Zeitzone des Rechners wird im Container sauber übernommen. |
 | 1.24 | v3 mit Mehrrechner-Betrieb | Schritt-für-Schritt-Anleitung und Rechtetabelle für das fein granulare GitHub-Token; der Preflight prüft, ob `VIPER_GH_TOKEN` in das Repository pushen darf. |
 | 1.25 | v3 mit Mehrrechner-Betrieb | Standard-Servertyp ist jetzt `cpx32` (4 vCPU, 8 GB RAM) statt `cx53`; `stop.sh` fragt nicht nach `CLEANUP`, wenn nichts mehr übrig ist. `make log MACHINE=…` liest `SERVER_PREFIX` wie die Skripte, auch mit Kommentar hinter dem Wert. |
+| 1.26 | v3 mit Mehrrechner-Betrieb | Neue Server legen eine `~/.tmux.conf` an (Maus, Fenster ab 1, Alt+1 bis Alt+9). |

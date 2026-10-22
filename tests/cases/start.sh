@@ -553,6 +553,21 @@ assert d['runcmd'][-1] == 'touch /etc/cloud/cloud-init.disabled', d['runcmd'][-1
 PY
 }
 
+test_cloud_init_writes_a_tmux_config_for_builder() {
+  run setup.sh >/dev/null
+  run start.sh web >/dev/null
+  python3 -I - "$MOCK_STATE/hcloud/server/claude-web.user-data" <<'PY'
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+f = [w for w in d['write_files'] if w['path'] == '/home/builder/.tmux.conf']
+assert len(f) == 1, f
+f = f[0]
+# before the user exists write_files could not chown: it must be deferred
+assert f['defer'] is True and f['owner'] == 'builder:builder', f
+assert 'set -g mouse on' in f['content'] and 'bind -n M-1 select-window -t 1' in f['content']
+PY
+}
+
 test_interactive_shells_start_in_the_work_directory() {
   run setup.sh >/dev/null
   ubuntu_home

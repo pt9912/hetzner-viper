@@ -45,6 +45,32 @@ write_files:
       PermitRootLogin no
       PermitEmptyPasswords no
       AuthenticationMethods publickey
+  # deferred: runs after the users are created (write_files otherwise runs before them)
+  - path: /home/builder/.tmux.conf
+    owner: builder:builder
+    permissions: '0644'
+    defer: true
+    content: |
+      # mouse: click windows and panes, scroll with the wheel (Shift+select copies in most terminals)
+      set -g mouse on
+      # windows count from 1 like the keys, and close gaps
+      set -g base-index 1
+      setw -g pane-base-index 1
+      set -g renumber-windows on
+      # Esc without delay (editors, Claude Code)
+      set -sg escape-time 10
+      set -g history-limit 50000
+      set -g focus-events on
+      # Alt+1 .. Alt+9 switch windows directly (Alt+n/p stay with the programs inside)
+      bind -n M-1 select-window -t 1
+      bind -n M-2 select-window -t 2
+      bind -n M-3 select-window -t 3
+      bind -n M-4 select-window -t 4
+      bind -n M-5 select-window -t 5
+      bind -n M-6 select-window -t 6
+      bind -n M-7 select-window -t 7
+      bind -n M-8 select-window -t 8
+      bind -n M-9 select-window -t 9
 
 runcmd:
   - sshd -t
