@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.27  
+Version: 1.28  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -521,6 +521,24 @@ Der Rechner wird neu angelegt oder mit `make up` erneut eingerichtet. Ein SSH-Cl
 * Wer Zugriff auf `code-server` hat, hat ein Terminal als Benutzer `builder`, also Root-Rechte auf dem Server. Behandeln Sie das Passwort wie einen SSH-Schlüssel.
 * Mit dem Rechner wird auch `code-server` gelöscht.
 
+#### Von einem anderen Rechner aus
+
+Auf dem Server ändern Sie nichts: `code-server` bleibt auf `127.0.0.1`, und die Firewall lässt nur SSH zu. Der andere Rechner braucht:
+
+1. **Zugang per SSH.** Er braucht den Login-Schlüssel, mit dem der Server angelegt wurde (`~/.ssh/hetzner-build`), oder einen eigenen Schlüssel. Einen eigenen Schlüssel tragen Sie beim Anlegen über `IPAD_SSH_PUBLIC_KEY_FILE` ein oder später in `~/.ssh/authorized_keys` des Benutzers `builder`.
+2. **Das Passwort** aus `VIPER_CODE_SERVER_PASSWORD` (auf dem Server in `~/.config/code-server/config.yaml`).
+3. **Einen Tunnel mit dem DNS-Namen.** Der Alias `hetzner-claude-<rechner>` existiert nur auf dem Rechner, der den Server angelegt hat. Verbinden Sie sich dort mit:
+
+   ```
+   ssh -L 8080:127.0.0.1:8080 builder@<SERVER_PREFIX>-<rechner>.<DNS_DOMAIN>
+   ```
+
+   Öffnen Sie dann `http://127.0.0.1:8080` im Browser dieses Rechners.
+
+Beim ersten Verbinden kennt der andere Rechner den Server noch nicht. Ist dort die Host-CA eingetragen (`make setup` zeigt den öffentlichen Schlüssel; Eintrag `@cert-authority *.<DNS_DOMAIN> <Schlüssel>` in `known_hosts`), vertraut er ihm ohne Rückfrage; sonst bestätigen Sie den Fingerabdruck von Hand. Belegt der Rechner Port 8080 schon, nehmen Sie einen anderen lokalen Port, etwa `-L 9090:127.0.0.1:8080`, und öffnen `http://127.0.0.1:9090`.
+
+Öffnen Sie den Port 8080 nie in der Hetzner-Firewall und binden Sie `code-server` nicht an `0.0.0.0`: Sonst wäre ein Terminal mit Root-Rechten nur durch ein Passwort ohne Verschlüsselung geschützt.
+
 ### Vom iPad aus verbinden
 
 #### Vorgehen
@@ -842,3 +860,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.25 | v3 mit Mehrrechner-Betrieb | Standard-Servertyp ist jetzt `cpx32` (4 vCPU, 8 GB RAM) statt `cx53`; `stop.sh` fragt nicht nach `CLEANUP`, wenn nichts mehr übrig ist. `make log MACHINE=…` liest `SERVER_PREFIX` wie die Skripte, auch mit Kommentar hinter dem Wert. |
 | 1.26 | v3 mit Mehrrechner-Betrieb | Neue Server legen eine `~/.tmux.conf` an (Maus, Fenster ab 1, Alt+1 bis Alt+9). |
 | 1.27 | v3 mit Mehrrechner-Betrieb | Docker aus Dockers eigenem apt-Repository (neueste Engine, `buildx`, `compose`) statt Ubuntus `docker.io`. Git-Autor auf dem Server: `VIPER_GIT_USER_NAME`/`VIPER_GIT_USER_EMAIL`, sonst vom GitHub-Konto. Optional `code-server` (VS Code im Browser, nur per SSH-Tunnel): `VIPER_CODE_SERVER`, `VIPER_CODE_SERVER_PASSWORD`. |
+| 1.28 | v3 mit Mehrrechner-Betrieb | Handbuch: `code-server` von einem anderen Rechner aus nutzen (Tunnel mit DNS-Namen, Schlüssel, Host-CA). |
