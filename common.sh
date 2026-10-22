@@ -24,6 +24,9 @@ SERVER_TYPE="${SERVER_TYPE:-cpx32}"
 SERVER_LOCATION="${SERVER_LOCATION:-fsn1}"
 SERVER_IMAGE="${SERVER_IMAGE:-ubuntu-26.04}"
 VIPER_HOMEBREW="${VIPER_HOMEBREW:-1}"
+# code-server (VS Code in the browser), opt-in; it listens on 127.0.0.1 only (SSH tunnel)
+VIPER_CODE_SERVER="${VIPER_CODE_SERVER:-0}"
+CODE_SERVER_PORT=8080
 # where Homebrew's installer puts brew on Linux (VIPER_BREW only exists for the offline tests)
 BREW="${VIPER_BREW:-/home/linuxbrew/.linuxbrew/bin/brew}"
 WORKSPACE_DIR="${WORKSPACE_DIR:-/Development}"

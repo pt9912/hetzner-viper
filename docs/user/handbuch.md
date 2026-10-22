@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.26  
+Version: 1.27  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -268,6 +268,7 @@ Claude Code läuft in einer Sitzung, die einen Verbindungsabbruch übersteht.
 
 #### Hinweise
 
+* Docker (Engine, `docker buildx` und `docker compose`) kommt aus Dockers eigenem apt-Repository, nicht aus Ubuntus älterem Paket `docker.io`. Der Signaturschlüssel wird beim Einrichten gegen Dockers veröffentlichten Fingerabdruck geprüft. Beim Einrichten holt `package_upgrade` den neuesten Stand; die automatischen Ubuntu-Sicherheitsupdates erfassen Pakete aus Dockers Repository nicht, später aktualisieren Sie mit `sudo apt update && sudo apt upgrade`. Bei einem bestehenden Server mit `docker.io` wechseln Sie, indem Sie ihn neu anlegen.
 * Neue Server bekommen eine `~/.tmux.conf` für `builder` (Maus an, Fenster ab 1 nummeriert, `Esc` ohne Verzögerung, großer Verlauf). Mit **Alt+1** bis **Alt+9** wechseln Sie direkt zwischen Fenstern; sonst gelten die üblichen Kürzel (**Strg+B**, dann **N**/**P** oder eine Ziffer, **C** für ein neues Fenster). Mit eingeschalteter Maus markieren Sie Text zum Kopieren mit gedrückter **Umschalttaste**. Auf einem bestehenden Server wirkt die Datei nicht; legen Sie sie dort von Hand an. Eigene Änderungen gehen mit dem Server verloren.
 * Homebrew (`brew`) wird beim ersten Einrichten mit dem offiziellen Installationsskript nach `/home/linuxbrew/.linuxbrew` installiert und ist in allen Shells verfügbar, auch für Claude Code. Das kostet ein bis zwei Minuten. Mit `VIPER_HOMEBREW=0` (etwa in `machines/<rechner>.env.local`) entfällt es. Scheitert die Installation, warnt `start.sh` nur; ein erneuter `make up` versucht es wieder.
 * Interaktive Shells starten im Arbeitsverzeichnis des Rechners (beim geklonten Repository), wenn sie im Home-Verzeichnis beginnen würden. Das gilt für `make ssh`, tmux und einen normalen SSH-Login. VS-Code-Terminals öffnen ohnehin im Projektordner, und einzelne SSH-Befehle sind nicht betroffen.
@@ -360,6 +361,7 @@ Die Meldung `gh: logged in to github.com` erscheint. Auf dem Server ist `gh` ang
 
 #### Hinweise
 
+* Commits auf dem Server brauchen einen Autor. Setzen Sie `VIPER_GIT_USER_NAME` und `VIPER_GIT_USER_EMAIL`, oder lassen Sie beides weg: Mit `VIPER_GH_TOKEN` übernimmt `start.sh` den Namen des GitHub-Kontos (sonst den Anmeldenamen) und dessen `noreply`-Adresse (`<id>+<login>@users.noreply.github.com`, nur bei github.com), sodass Ihre private Adresse nicht in den Commits steht. Eigene Werte haben Vorrang. Was auf dem Server schon eingetragen ist, ersetzen abgeleitete Werte nicht. Ohne beides warnt `start.sh`, und `make check` zeigt die Warnung, weil Commits dann scheitern.
 * Die Skripte lesen bewusst nicht `GH_TOKEN`. Ein Token, das Sie für Ihr lokales `gh` exportiert haben, landet so nie ungewollt auf einem Server.
 * Mit **Contents: Read and write** darf der Agent auf jeden Branch pushen, auch direkt auf `main`, und er darf Force-Pushes ausführen und Branches löschen. Weitere Einstellungen sind dafür nicht nötig. Soll er nur über Pull Requests arbeiten, schützen Sie `main` im Repository unter **Settings → Rules → Rulesets**, etwa mit „Require a pull request before merging“, „Block force pushes“ und „Restrict deletions“. Bei privaten Repositories gibt es Rulesets erst ab GitHub Pro bzw. Team.
 * Der Preflight prüft das Schreibrecht, ohne etwas zu schreiben: Er ruft die Liste der Referenzen ab, mit der jeder `git push` beginnt. Das Recht **Workflows** und Regeln für einzelne Branches prüft er nicht.
@@ -484,6 +486,41 @@ Die Werkzeuge stehen in allen Shells zur Verfügung, auch für Claude Code. `mak
 * Vertrauen Sie nur Taps, deren Herausgeber Sie vertrauen: Formeln sind Ruby-Code, den Homebrew beim Installieren ausführt.
 * Von Hand geht es jederzeit auch: `make ssh MACHINE=<rechner> CMD="bash -lc 'brew install <name>'"`.
 
+### VS Code im Browser nutzen (code-server)
+
+Auf Wunsch läuft auf dem Rechner `code-server`, VS Code im Browser. Das ist nützlich, wo es kein Remote-SSH gibt, etwa auf dem iPad. Der Dienst ist **nicht** aus dem Internet erreichbar: Er lauscht nur auf `127.0.0.1:8080` des Servers, und die Firewall lässt weiterhin nur SSH zu. Sie erreichen ihn über einen SSH-Tunnel.
+
+#### Voraussetzung
+
+Der Rechner wird neu angelegt oder mit `make up` erneut eingerichtet. Ein SSH-Client mit Port-Weiterleitung ist vorhanden (auf dem iPad zum Beispiel Termius oder Blink).
+
+#### Vorgehen
+
+1. Tragen Sie in `machines/<rechner>.env.local` ein (der Wert steht in Anführungszeichen, wenn er Sonderzeichen enthält):
+
+   ```
+   VIPER_CODE_SERVER=1
+   VIPER_CODE_SERVER_PASSWORD="ein-langes-passwort"
+   ```
+
+   Das Passwort hat mindestens 12 Zeichen, ohne Leerzeichen und Zeilenumbrüche.
+2. Prüfen Sie vorab: `make preflight MACHINE=<rechner>`.
+3. Starten Sie den Rechner: `make up MACHINE=<rechner>`.
+4. Bauen Sie den Tunnel auf: `ssh -L 8080:127.0.0.1:8080 hetzner-claude-<rechner>`. Das Fenster bleibt offen, solange Sie arbeiten.
+5. Öffnen Sie im Browser `http://127.0.0.1:8080` und melden Sie sich mit dem Passwort an.
+
+#### Ergebnis
+
+`make up` meldet `code-server: running on the server at 127.0.0.1:8080`, und `make check MACHINE=<rechner>` meldet `ok    code-server … on 127.0.0.1:8080`. Im Browser öffnet sich VS Code auf dem Server.
+
+#### Hinweise
+
+* Installiert wird mit dem offiziellen Installationsskript von `code-server` (ein `.deb`, per `sudo`), als systemd-Dienst `code-server@builder`. Scheitert das, warnt `start.sh` nur; ein erneutes `make up` versucht es wieder. Das Protokoll liegt auf dem Server unter `~/.config/viper/code-server-install.log`.
+* Das Passwort geht über die Standardeingabe in `~/.config/code-server/config.yaml` (Rechte `600`). Es steht weder in den User-Data noch in einer Befehlszeile noch in den Protokollen. Ändern Sie es in der Datei und führen Sie `make up` erneut aus, startet der Dienst mit dem neuen Passwort.
+* Die Adresse ist `http`, nicht `https`. Das ist ungefährlich, weil sie nur durch den SSH-Tunnel läuft. Öffnen Sie den Port nie in der Hetzner-Firewall.
+* Wer Zugriff auf `code-server` hat, hat ein Terminal als Benutzer `builder`, also Root-Rechte auf dem Server. Behandeln Sie das Passwort wie einen SSH-Schlüssel.
+* Mit dem Rechner wird auch `code-server` gelöscht.
+
 ### Vom iPad aus verbinden
 
 #### Vorgehen
@@ -557,6 +594,9 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `GIT_DEPLOY_KEY_FILE` | Deploy-Key für private SSH-Repositories | leer |
 | `VIPER_GH_TOKEN` | GitHub-PAT für `gh` und `git` über HTTPS auf dem Server | leer |
 | `VIPER_GH_HOST` | GitHub-Host (für GitHub Enterprise) | `github.com` |
+| `VIPER_GIT_USER_NAME`, `VIPER_GIT_USER_EMAIL` | Autor für Commits auf dem Server (`git config --global`); was fehlt, kommt mit `VIPER_GH_TOKEN` vom GitHub-Konto | leer |
+| `VIPER_CODE_SERVER` | `1`: `code-server` (VS Code im Browser) installieren | `0` |
+| `VIPER_CODE_SERVER_PASSWORD` | Passwort für `code-server`, mindestens 12 Zeichen ohne Leerzeichen; Pflicht mit `VIPER_CODE_SERVER=1` | leer |
 | `VIPER_CLAUDE_TOKEN` | Langlebiges Token Ihres Claude-Abos aus `claude setup-token` (ein Jahr gültig) | leer |
 | `VIPER_ANTHROPIC_BASE_URL` | Adresse einer Anthropic-kompatiblen Schnittstelle für ein anderes Modell (z. B. `https://ollama.com`) | leer |
 | `VIPER_ANTHROPIC_AUTH_TOKEN` | API-Schlüssel für diese Schnittstelle | leer |
@@ -801,3 +841,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.24 | v3 mit Mehrrechner-Betrieb | Schritt-für-Schritt-Anleitung und Rechtetabelle für das fein granulare GitHub-Token; der Preflight prüft, ob `VIPER_GH_TOKEN` in das Repository pushen darf. |
 | 1.25 | v3 mit Mehrrechner-Betrieb | Standard-Servertyp ist jetzt `cpx32` (4 vCPU, 8 GB RAM) statt `cx53`; `stop.sh` fragt nicht nach `CLEANUP`, wenn nichts mehr übrig ist. `make log MACHINE=…` liest `SERVER_PREFIX` wie die Skripte, auch mit Kommentar hinter dem Wert. |
 | 1.26 | v3 mit Mehrrechner-Betrieb | Neue Server legen eine `~/.tmux.conf` an (Maus, Fenster ab 1, Alt+1 bis Alt+9). |
+| 1.27 | v3 mit Mehrrechner-Betrieb | Docker aus Dockers eigenem apt-Repository (neueste Engine, `buildx`, `compose`) statt Ubuntus `docker.io`. Git-Autor auf dem Server: `VIPER_GIT_USER_NAME`/`VIPER_GIT_USER_EMAIL`, sonst vom GitHub-Konto. Optional `code-server` (VS Code im Browser, nur per SSH-Tunnel): `VIPER_CODE_SERVER`, `VIPER_CODE_SERVER_PASSWORD`. |

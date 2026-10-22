@@ -156,6 +156,18 @@ if [[ -n "${VIPER_GH_TOKEN:-}" ]]; then
 else
   info "no VIPER_GH_TOKEN: gh is not logged in on the server"
 fi
+gn="${VIPER_GIT_USER_NAME:-}"; ge="${VIPER_GIT_USER_EMAIL:-}"
+if [[ "$gn" =~ [[:cntrl:]] || "$ge" =~ [[:cntrl:]] ]]; then
+  bad "VIPER_GIT_USER_NAME / VIPER_GIT_USER_EMAIL: no line breaks or control characters"
+elif [[ -n "$ge" && ! "$ge" =~ ^[^[:space:]@]+@[^[:space:]@]+$ ]]; then
+  bad "VIPER_GIT_USER_EMAIL is not an e-mail address: $ge"
+elif [[ -n "$gn" && -n "$ge" ]]; then
+  ok "git commits on the server as $gn <$ge>"
+elif [[ -n "${VIPER_GH_TOKEN:-}" ]]; then
+  info "git identity: ${gn:+name $gn, }${ge:+e-mail $ge, }the rest from the GitHub account (name, noreply address on github.com)"
+else
+  info "no VIPER_GIT_USER_NAME / VIPER_GIT_USER_EMAIL: git commits on the server fail until user.name and user.email are set"
+fi
 echo "== Claude Code"
 if [[ -n "${VIPER_ANTHROPIC_BASE_URL:-}" ]]; then
   [[ -z "${VIPER_CLAUDE_TOKEN:-}" ]] || bad "set either VIPER_CLAUDE_TOKEN or VIPER_ANTHROPIC_BASE_URL, not both (the API token would take precedence over the subscription)"
@@ -222,6 +234,19 @@ if [[ "${VIPER_BREWFILE:-0}" == 1 ]]; then
   [[ -n "${REPO_URL:-}" ]] || info "VIPER_BREWFILE=1 without a repository: nothing to apply"
   [[ -z "${REPO_URL:-}" ]] || warn "the repository's Brewfile will be applied: it is Ruby code run by brew bundle, and its trusted: entries change Homebrew's trust store"
 fi
+
+case "$VIPER_CODE_SERVER" in
+  1)
+    if [[ -z "${VIPER_CODE_SERVER_PASSWORD:-}" ]]; then
+      bad "VIPER_CODE_SERVER=1 needs VIPER_CODE_SERVER_PASSWORD (the login of code-server in the browser)"
+    elif [[ ! "$VIPER_CODE_SERVER_PASSWORD" =~ ^[[:graph:]]{12,}$ ]]; then
+      bad "VIPER_CODE_SERVER_PASSWORD: at least 12 characters, no spaces or line breaks"
+    else
+      ok "code-server will be installed (VS Code in the browser, reachable only through an SSH tunnel to 127.0.0.1:$CODE_SERVER_PORT)"
+    fi ;;
+  0) [[ -z "${VIPER_CODE_SERVER_PASSWORD:-}" ]] || info "VIPER_CODE_SERVER_PASSWORD is set but VIPER_CODE_SERVER is not 1: ignored" ;;
+  *) bad "VIPER_CODE_SERVER must be 0 or 1: $VIPER_CODE_SERVER" ;;
+esac
 
 echo "== repository"
 if [[ -z "${REPO_URL:-}" ]]; then

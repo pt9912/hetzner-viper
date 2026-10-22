@@ -70,9 +70,9 @@ echo "== server ($SERVER_NAME, $IP)"
 WORKDIR="$WORKSPACE_DIR"
 [[ -z "${REPO_URL:-}" ]] || WORKDIR="$WORKSPACE_DIR/$(basename "${REPO_URL%.git}")"
 # key=value lines; nothing is changed on the server
-if ! out=$(ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$WORKDIR" "${VIPER_CLAUDE_TOKEN:+1}${VIPER_ANTHROPIC_BASE_URL:+1}" "$BREW" "${VIPER_BREW_TAPS:-}" "${VIPER_BREW_PACKAGES:-}" "$( [[ "${VIPER_BREWFILE:-0}" != 1 || -z "${REPO_URL:-}" ]] || echo "$WORKDIR/Brewfile")" "${VIPER_BREW_TRUST:-}")" <<'PROBE'
+if ! out=$(ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$WORKDIR" "${VIPER_CLAUDE_TOKEN:+1}${VIPER_ANTHROPIC_BASE_URL:+1}" "$BREW" "${VIPER_BREW_TAPS:-}" "${VIPER_BREW_PACKAGES:-}" "$( [[ "${VIPER_BREWFILE:-0}" != 1 || -z "${REPO_URL:-}" ]] || echo "$WORKDIR/Brewfile")" "${VIPER_BREW_TRUST:-}" "$VIPER_CODE_SERVER" "$CODE_SERVER_PORT")" <<'PROBE'
 set -uo pipefail
-dir="$1"; ask_claude="$2"; brew="$3"; taps_in="$4"; pkgs_in="$5"; brewfile="$6"; trust_in="$7"
+dir="$1"; ask_claude="$2"; brew="$3"; taps_in="$4"; pkgs_in="$5"; brewfile="$6"; trust_in="$7"; cs="$8"; cs_port="$9"
 export LC_ALL=C PATH="$HOME/.local/bin:$PATH"
 echo "cloudinit=$(cloud-init status 2>/dev/null | sed -n 's/^status: //p')"
 # errors of the first boot stay recorded here, also once cloud-init is disabled
@@ -92,7 +92,14 @@ if [ -n "$ask_claude" ]; then
 fi
 echo "gh_version=$(gh --version 2>/dev/null | head -n1)"
 if gh auth status >/dev/null 2>&1; then echo gh_auth=yes; else echo gh_auth=no; fi
+echo "git_name=$(git config --global user.name 2>/dev/null)"
+echo "git_email=$(git config --global user.email 2>/dev/null)"
 if docker info >/dev/null 2>&1; then echo docker=ok; else echo docker=no; fi
+if [ "$cs" = 1 ]; then
+  echo "code_server_version=$(code-server --version 2>/dev/null | head -n1)"
+  echo "code_server_active=$(systemctl is-active code-server@builder 2>/dev/null)"
+  if curl -fsS -m 5 -o /dev/null "http://127.0.0.1:$cs_port/healthz" 2>/dev/null; then echo code_server_http=yes; else echo code_server_http=no; fi
+fi
 echo "brew_version=$("$brew" --version 2>/dev/null | head -n1)"
 if bash -c '. ~/.bashrc >/dev/null 2>&1; command -v brew' >/dev/null 2>&1; then echo brew_path=yes; else echo brew_path=no; fi
 if [ -x "$brew" ]; then
@@ -176,7 +183,21 @@ elif [[ -n "${VIPER_GH_TOKEN:-}" ]]; then
 else
   info "$(val gh_version): not logged in (no VIPER_GH_TOKEN)"
 fi
+if [[ -n "$(val git_name)" && -n "$(val git_email)" ]]; then
+  ok "git commits as $(val git_name) <$(val git_email)>"
+else
+  warn "git user.name/user.email are not set on the server: commits fail (VIPER_GIT_USER_NAME, VIPER_GIT_USER_EMAIL, then rerun ./start.sh $MACHINE)"
+fi
 if [[ "$(val docker)" == ok ]]; then ok "docker running"; else bad "docker not running"; fi
+if [[ "$VIPER_CODE_SERVER" == 1 ]]; then
+  if [[ -z "$(val code_server_version)" ]]; then
+    bad "code-server not installed (rerun ./start.sh $MACHINE; log: ~/.config/viper/code-server-install.log)"
+  elif [[ "$(val code_server_active)" != active || "$(val code_server_http)" != yes ]]; then
+    bad "code-server $(val code_server_version) is not running (rerun ./start.sh $MACHINE; journalctl -u code-server@builder)"
+  else
+    ok "code-server $(val code_server_version) on 127.0.0.1:$CODE_SERVER_PORT (tunnel: ssh -L $CODE_SERVER_PORT:127.0.0.1:$CODE_SERVER_PORT $SSH_ALIAS)"
+  fi
+fi
 if [[ "$VIPER_HOMEBREW" == 1 ]]; then
   if [[ -z "$(val brew_version)" ]]; then
     bad "Homebrew not installed (rerun ./start.sh $MACHINE; log: ~/.config/viper/homebrew-install.log)"

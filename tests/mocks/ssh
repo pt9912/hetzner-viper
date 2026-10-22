@@ -33,12 +33,17 @@ case "$remote" in
   *Homebrew/install*) consume; [[ -z "${MOCK_BREW_FAIL:-}" ]] || { echo 'Error: Failed to download'; exit 1; }
     # the installer puts brew where common.sh expects it (VIPER_BREW)
     [[ -e "$VIPER_BREW" ]] || { mkdir -p "$(dirname "$VIPER_BREW")"; ln -s "$(dirname "$0")/remote/brew" "$VIPER_BREW"; } ;;
+  # code-server's installer (MOCK_CODE_SERVER_FAIL: it fails); before Claude's install.sh
+  *code-server.dev/install.sh*) consume; [[ -z "${MOCK_CODE_SERVER_FAIL:-}" ]] || { echo 'Error: no .deb for this system'; exit 1; }
+    touch "$MOCK_STATE/code-server-installed" ;;
   *install.sh*)
     consume
     [[ -z "${MOCK_INSTALL_FAIL:-}" ]] || exit 1
     touch "$MOCK_STATE/claude-ready" ;;
   # Claude token login: run it for real in the sandbox home (stdin = token)
   *viper/claude.env*) (( no_stdin )) && exec </dev/null; bash -c "$remote"; exit $? ;;
+  # code-server config (stdin = config.yaml) and its systemd unit: run it in the sandbox home
+  *code-server/config.yaml*) (( no_stdin )) && exec </dev/null; PATH="$(dirname "$0")/remote:$PATH" bash -c "$remote"; exit $? ;;
   # creating the workspace (sudo install -d ...) and recording it: run it in the sandbox
   "sudo install -d"*) consume; PATH="$(dirname "$0")/remote:$PATH" bash -c "$remote"; exit $? ;;
   "gh auth login"*) [[ -z "${MOCK_GH_LOGIN_FAIL:-}" ]] || { consume; echo 'error validating token' >&2; exit 1; }

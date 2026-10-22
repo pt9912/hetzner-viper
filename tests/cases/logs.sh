@@ -121,7 +121,7 @@ test_inventory_of_the_server_is_logged() {
   transcript > "$T/tr"
   check "section" has '^== installed on the server ==$' "$T/tr"
   check "os" has '^os: .*, kernel ' "$T/tr"
-  check "apt list asked for the cloud-init packages" has 'bash -s -- .* docker\.io git gh make build-essential' "$CALLS"
+  check "apt list asked for the cloud-init packages" has 'bash -s -- .* git gh make build-essential' "$CALLS"
   check "homebrew" has '^homebrew: Homebrew ' "$T/tr"
   check "taps" has '^brew taps: .*acme/tools' "$T/tr"
   check "trusted" has '^brew trusted: \{"taps":\["acme/tools"\]\}' "$T/tr"

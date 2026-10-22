@@ -191,6 +191,31 @@ if [[ -n "${VIPER_GH_TOKEN:-}" ]]; then
     echo "gh: logged in to $host (SSH URLs of $host are cloned over HTTPS)"
   fi
 fi
+# Git identity for commits on the server (the agent commits and pushes). VIPER_GIT_USER_NAME /
+# VIPER_GIT_USER_EMAIL win; what is missing is taken from the GitHub login: the account's name
+# and its noreply address (github.com only), unless git already has a value.
+{
+  ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "${VIPER_GIT_USER_NAME:-}" "${VIPER_GIT_USER_EMAIL:-}" "${VIPER_GH_HOST:-github.com}" "${VIPER_GH_TOKEN:+1}")" <<'GITID' || echo 'WARNING: git user.name/user.email could not be set on the server' >&2
+set -u
+name="$1"; email="$2"; host="$3"; use_gh="$4"
+[ -z "$name" ] || git config --global user.name "$name"
+[ -z "$email" ] || git config --global user.email "$email"
+if [ -n "$use_gh" ] && { [ -z "$(git config --global user.name)" ] || [ -z "$(git config --global user.email)" ]; }; then
+  info=$(gh api --hostname "$host" user -q '[.login, (.id | tostring), (.name // "")] | @tsv' 2>/dev/null </dev/null) || info=''
+  if [ -n "$info" ]; then
+    IFS=$'\t' read -r login id gname <<<"$info"
+    [ -n "$(git config --global user.name)" ] || git config --global user.name "${gname:-$login}"
+    [ "$host" != github.com ] || [ -n "$(git config --global user.email)" ] || git config --global user.email "$id+$login@users.noreply.github.com"
+  fi
+fi
+n=$(git config --global user.name); e=$(git config --global user.email)
+if [ -n "$n" ] && [ -n "$e" ]; then
+  echo "git: commits as $n <$e>"
+else
+  echo "WARNING: git user.name/user.email are not set on the server, commits will fail (VIPER_GIT_USER_NAME, VIPER_GIT_USER_EMAIL)" >&2
+fi
+GITID
+}
 # Claude Code login for builder, one of:
 #  - VIPER_CLAUDE_TOKEN: long-lived subscription token (`claude setup-token`)
 #  - VIPER_ANTHROPIC_BASE_URL + VIPER_ANTHROPIC_AUTH_TOKEN + VIPER_CLAUDE_MODEL: another model
@@ -303,6 +328,28 @@ BREWPKG
     echo "WARNING: some Homebrew taps, trust entries or formulae failed (log on the server: ~/.config/viper/brew-packages.log); rerun ./start.sh $MACHINE" >&2
   fi
 fi
+# code-server (VS Code in the browser), opt-in with VIPER_CODE_SERVER=1 (not fatal): official
+# installer (a .deb, installed with sudo), listening on 127.0.0.1 only; reach it through an SSH
+# tunnel. The password goes through stdin into a 600 file, not into argv or user-data.
+if [[ "$VIPER_CODE_SERVER" == 1 ]]; then
+  echo 'code-server: installing (skipped if present) ...'
+  if ! ssh -n -F "$SSH_CFG" "$SSH_ALIAS" "command -v code-server >/dev/null || { mkdir -p ~/.config/viper && f=\$(mktemp) &&
+      curl -fsSL -o \"\$f\" https://code-server.dev/install.sh &&
+      sh \"\$f\" </dev/null >~/.config/viper/code-server-install.log 2>&1; rc=\$?; rm -f \"\$f\";
+      [ \$rc = 0 ] || tail -n 15 ~/.config/viper/code-server-install.log; exit \$rc; }"; then
+    echo "WARNING: code-server installation failed (log on the server: ~/.config/viper/code-server-install.log); rerun ./start.sh $MACHINE" >&2
+  else
+    # JSON strings are valid YAML: any character in the password is quoted correctly
+    cs_config=$(printf 'bind-addr: 127.0.0.1:%s\nauth: password\ncert: false\npassword: %s\n' \
+      "$CODE_SERVER_PORT" "$(PW="$VIPER_CODE_SERVER_PASSWORD" jq -rn 'env.PW | @json')")
+    if ssh -F "$SSH_CFG" "$SSH_ALIAS" "umask 077 && mkdir -p ~/.config/code-server && cat > ~/.config/code-server/config.yaml &&
+        sudo systemctl enable code-server@builder >/dev/null 2>&1 && sudo systemctl restart code-server@builder" <<<"$cs_config"; then
+      echo "code-server: running on the server at 127.0.0.1:$CODE_SERVER_PORT; tunnel: ssh -L $CODE_SERVER_PORT:127.0.0.1:$CODE_SERVER_PORT $SSH_ALIAS, then http://127.0.0.1:$CODE_SERVER_PORT"
+    else
+      echo "WARNING: code-server could not be configured or started (journalctl -u code-server@builder on the server); rerun ./start.sh $MACHINE" >&2
+    fi
+  fi
+fi
 # Interactive shells (make ssh, tmux, a plain ssh login) that start in the home directory
 # change to the work directory: the line goes at the end of .bashrc, which non-interactive
 # shells (ssh commands, the scripts) never reach because of Ubuntu's early return.
@@ -327,6 +374,8 @@ echo "$SERVER_ID" > "$READY_STATE"
 # once it is deleted. Packages of cloud-init.yaml, tools and Homebrew (taps, trust, the
 # formulae installed on request). Informative only.
 apt_pkgs=$(awk '/^packages:/ {f = 1; next} /^[a-z_]+:/ {f = 0} f && /^  - / {print $2}' cloud-init.yaml)
+# Docker's own packages are installed by runcmd, not listed under packages:
+apt_pkgs+=" docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin"
 echo '== installed on the server =='
 ssh -F "$SSH_CFG" "$SSH_ALIAS" "bash -s -- $(printf '%q ' "$BREW" $apt_pkgs)" <<'INVENTORY' || echo '(inventory not available)'
 brew="$1"; shift
@@ -336,6 +385,7 @@ echo "apt: $(dpkg-query -W -f='${Package} ${Version}, ' "$@" 2>/dev/null | sed '
 echo "claude: $(claude --version 2>/dev/null | head -n1)"
 echo "gh: $(gh --version 2>/dev/null | head -n1)"
 echo "docker: $(docker --version 2>/dev/null)"
+v=$(code-server --version 2>/dev/null | head -n1); [ -z "$v" ] || echo "code-server: $v"
 if [ -x "$brew" ]; then
   eval "$("$brew" shellenv)"; export HOMEBREW_NO_AUTO_UPDATE=1
   echo "homebrew: $(brew --version 2>/dev/null </dev/null | head -n1)"
@@ -351,5 +401,5 @@ echo "Ready: ssh $SSH_ALIAS (work dir: $WORKDIR)"
 if command -v code >/dev/null; then
   env -u HCLOUD_TOKEN -u CLOUDFLARE_API_TOKEN -u CLOUDFLARE_ZONE_ID -u VIPER_GH_TOKEN -u GH_TOKEN \
     -u VIPER_TRANSCRIPT -u VIPER_TRANSCRIPT_PID -u VIPER_ACTION \
-    -u VIPER_CLAUDE_TOKEN -u CLAUDE_CODE_OAUTH_TOKEN -u VIPER_ANTHROPIC_AUTH_TOKEN code --remote "ssh-remote+$SSH_ALIAS" "$WORKDIR" || true
+    -u VIPER_CLAUDE_TOKEN -u CLAUDE_CODE_OAUTH_TOKEN -u VIPER_ANTHROPIC_AUTH_TOKEN -u VIPER_CODE_SERVER_PASSWORD code --remote "ssh-remote+$SSH_ALIAS" "$WORKDIR" || true
 fi

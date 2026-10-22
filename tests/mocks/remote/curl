@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Fake curl on the server: only code-server's health check (MOCK_CODE_SERVER_DOWN: no answer)
+echo "curl $*" >> "$MOCK_STATE/remote-curl.log"
+[[ -z "${MOCK_CODE_SERVER_DOWN:-}" ]]

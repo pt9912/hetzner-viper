@@ -9,7 +9,8 @@ power_state:
   message: Rebooting once after the package upgrades
   condition: test -f /var/run/reboot-required
 packages:
-  - docker.io
+  # Docker comes from Docker's own apt repository (see runcmd), not from Ubuntu's older docker.io
+  - gnupg
   - git
   - gh
   - make
@@ -75,6 +76,19 @@ write_files:
 runcmd:
   - sshd -t
   - systemctl try-reload-or-restart ssh
+  # Docker Engine, Buildx and Compose from Docker's repository; the signing key must have Docker's
+  # published fingerprint. In a subshell: set -e must not leak into the other commands.
+  - |
+    (
+      set -eu
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+      gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc | grep -q '^fpr:::::::::9DC858229FC7DD38854AE2D88D81803C0EBFCD88:'
+      . /etc/os-release
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable" > /etc/apt/sources.list.d/docker.list
+      apt-get update
+      DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    )
   - systemctl enable --now docker
   - mkdir -p /home/builder/.ssh
   - chown builder:builder /home/builder/.ssh
