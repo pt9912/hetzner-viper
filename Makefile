@@ -13,7 +13,7 @@ override REPO := $(value REPO)
 override CMD := $(value CMD)
 export MACHINE REPO CMD
 
-.PHONY: help build setup preflight up check ssh down log
+.PHONY: help build setup preflight up check ssh dns down log
 
 help: ## show this help
 	@echo 'Usage: make <target> [MACHINE=<name>] [REPO=<url>] [CMD="<command>"] [FORCE=1] [FULL=1]'
@@ -71,6 +71,13 @@ check: build ## read-only checks of a running machine: DNS, access by name, serv
 ssh: build ## shell or one command on the machine (MACHINE, [CMD])
 	$(call NEED_MACHINE,[CMD="<command>"])
 	$(call RUN,./connect.sh "$$MACHINE" $${CMD:+"$$CMD"})
+
+# runs on the host, no container and no tokens needed (settings read as the scripts read them)
+dns: ## print the DNS name of the machine (MACHINE)
+	$(call NEED_MACHINE,)
+	@bash -c 'set -a; for f in ./.env.local "./machines/$$1.env.local"; do [ ! -f "$$f" ] || . "$$f"; done; \
+	  [ -n "$$DNS_DOMAIN" ] || { echo "DNS_DOMAIN is not set in .env.local" >&2; exit 1; }; \
+	  printf "%s-%s.%s\n" "$${SERVER_PREFIX:-claude}" "$$1" "$$DNS_DOMAIN"' _ "$$MACHINE"
 
 # runs on the host, no container and no tokens needed
 # the prefix is read as the scripts read it (bash sources the files: comments, quotes)

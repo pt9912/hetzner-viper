@@ -25,6 +25,7 @@ make up MACHINE=web REPO=https://example.org/org/web.git   # Rechner "web" einri
 make check MACHINE=web                              # nur lesend: DNS, Zugriff über den Namen wie ein anderes Gerät, Server-Zustand
 make ssh MACHINE=web                                # Shell auf dem Rechner (CMD="..." für einen Befehl)
 make down MACHINE=web                               # Rechner "web" löschen
+make dns MACHINE=web                                # DNS-Name des Rechners "web" ausgeben
 make log [MACHINE=web] [FULL=1]                     # Ereignisse der Rechner oder die vollständige Ausgabe eines Rechners
 ```
 

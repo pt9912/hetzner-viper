@@ -44,6 +44,7 @@ Bei den Anbietern:
 | `setup.sh` | Legt Ihren Login-Schlüssel und die lokale Host-CA an (einmalig). |
 | `preflight.sh <rechner>` | Prüft vorab nur lesend Einstellungen, Setup, Hetzner, Cloudflare und GitHub. Legt nichts an. `start.sh` führt es zuerst aus. |
 | `check.sh <rechner>` | Prüft einen laufenden Rechner nur lesend: DNS, Zugriff über den Namen wie ein anderes Gerät, Zustand des Servers. Im Container: `make check`. |
+| `make dns MACHINE=…` | Gibt den DNS-Namen des Rechners aus (`<SERVER_PREFIX>-<rechner>.<DNS_DOMAIN>`), ohne Container und ohne Zugriff auf Hetzner oder Cloudflare. |
 | `make log [MACHINE=…] [FULL=1]` | Zeigt die lokalen Protokolle: Ereignisse aller Rechner, eines Rechners oder dessen vollständige Ausgabe. |
 | `connect.sh <rechner> [befehl]` | Öffnet eine Shell auf dem Rechner oder führt einen Befehl aus, mit der SSH-Konfiguration des Rechners. Im Container: `make ssh`. |
 | `start.sh <rechner>` | Richtet einen Rechner ein, setzt den DNS-Eintrag, legt das Arbeitsverzeichnis an und klont das Repository. |
