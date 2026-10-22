@@ -159,6 +159,20 @@ test_failed_claude_install_reported() {
   check "message" has 'installation failed' "$T/err"
 }
 
+test_claude_install_is_retried_when_rate_limited() {
+  run setup.sh >/dev/null
+  rm "$MOCK_STATE/claude-ready"
+  MOCK_INSTALL_FAIL_TIMES=2 run start.sh web >"$T/out" 2>"$T/err"
+  check "retried" has 'installation failed \(attempt 1 of 5\); retrying in 30 s' "$T/err"
+  check "second retry" has 'attempt 2 of 5\); retrying in 60 s' "$T/err"
+  check "third attempt worked" test -f "$MOCK_STATE/claude-ready"
+  check "machine ready" has '^Ready: ssh hetzner-claude-web' "$T/out"
+  rm "$MOCK_STATE/claude-ready" "$MOCK_STATE/install-attempts"
+  MOCK_INSTALL_FAIL_TIMES=9 fails run start.sh web >/dev/null 2>"$T/err2"
+  check "gives up after 5" test "$(cat "$MOCK_STATE/install-attempts")" = 5
+  check "named" has 'rate limit, HTTP 429' "$T/err2"
+}
+
 test_cloud_init_marks_ready_only_after_successful_install() {
   run setup.sh >/dev/null
   run start.sh web >/dev/null
@@ -166,7 +180,9 @@ test_cloud_init_marks_ready_only_after_successful_install() {
 import sys, yaml
 d = yaml.safe_load(open(sys.argv[1]))
 install = [c for c in d['runcmd'] if 'install.sh' in c]
-assert len(install) == 1 and 'pipefail' in install[0] and install[0].endswith('&& touch /var/tmp/claude-ready'), install
+assert len(install) == 1 and 'pipefail' in install[0] and '&& touch /var/tmp/claude-ready && break' in install[0], install
+# rate limit (HTTP 429): retried with pauses, the marker only after a success
+assert install[0].startswith('for i in') and '[ $i -lt 5 ] && sleep' in install[0], install
 assert not any(c == 'touch /var/tmp/claude-ready' for c in d['runcmd'])
 assert not any('60-host-cert' in w['path'] for w in d['write_files'])
 assert 'systemctl try-reload-or-restart ssh' in d['runcmd']

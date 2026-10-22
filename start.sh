@@ -158,8 +158,15 @@ fi
 # runcmd runs only once per server; a failed Claude install is repaired here instead.
 if ! grep -qx 'claude=ok' <<<"$status"; then
   echo 'Claude Code is not installed yet; installing ...'
-  ssh -n -F "$SSH_CFG" "$SSH_ALIAS" "bash -o pipefail -c 'curl -fsSL https://claude.ai/install.sh | bash' && sudo touch /var/tmp/claude-ready" \
-    || { echo 'Claude Code installation failed; server retained. Rerun ./start.sh to try again.' >&2; exit 1; }
+  # the installer is rate limited per address (HTTP 429, e.g. for a recycled IP): retry with growing pauses
+  claude_installed=0
+  for attempt in 1 2 3 4 5; do
+    if ssh -n -F "$SSH_CFG" "$SSH_ALIAS" "bash -o pipefail -c 'curl -fsSL https://claude.ai/install.sh | bash' && sudo touch /var/tmp/claude-ready"; then
+      claude_installed=1; break
+    fi
+    (( attempt == 5 )) || { echo "Claude Code installation failed (attempt $attempt of 5); retrying in $((attempt * 30)) s ..." >&2; sleep $((attempt * 30)); }
+  done
+  (( claude_installed )) || { echo 'Claude Code installation failed; server retained. Rerun ./start.sh to try again (a rate limit, HTTP 429, passes after a few minutes).' >&2; exit 1; }
 fi
 grep -qx 'docker=ok' <<<"$status" || { echo 'Docker is not running; see /var/log/cloud-init-output.log on the server. Server retained.' >&2; exit 1; }
 grep -qx 'cloud-init=1' <<<"$status" && echo 'WARNING: cloud-init reported errors; see /var/log/cloud-init-output.log on the server.' >&2

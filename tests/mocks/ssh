@@ -39,6 +39,11 @@ case "$remote" in
   *install.sh*)
     consume
     [[ -z "${MOCK_INSTALL_FAIL:-}" ]] || exit 1
+    # MOCK_INSTALL_FAIL_TIMES=N: the first N attempts fail (rate limit), then it works
+    if [[ -n "${MOCK_INSTALL_FAIL_TIMES:-}" ]]; then
+      n=$(cat "$MOCK_STATE/install-attempts" 2>/dev/null || echo 0); echo $((n + 1)) > "$MOCK_STATE/install-attempts"
+      (( n >= MOCK_INSTALL_FAIL_TIMES )) || { echo 'curl: (22) The requested URL returned error: 429' >&2; exit 22; }
+    fi
     touch "$MOCK_STATE/claude-ready" ;;
   # Claude token login: run it for real in the sandbox home (stdin = token)
   *viper/claude.env*) (( no_stdin )) && exec </dev/null; bash -c "$remote"; exit $? ;;

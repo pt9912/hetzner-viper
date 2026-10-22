@@ -93,7 +93,8 @@ runcmd:
   - mkdir -p /home/builder/.ssh
   - chown builder:builder /home/builder/.ssh
   - chmod 700 /home/builder/.ssh
-  - su - builder -c 'set -o pipefail; curl -fsSL https://claude.ai/install.sh | bash' && touch /var/tmp/claude-ready
+  # the installer is rate limited per address (HTTP 429, e.g. for a recycled IP): retry with growing pauses
+  - for i in 1 2 3 4 5; do su - builder -c 'set -o pipefail; curl -fsSL https://claude.ai/install.sh | bash' && touch /var/tmp/claude-ready && break; [ $i -lt 5 ] && sleep $((i * 30)); done
   # Everything is set up on the first boot. Later boots (e.g. the reboot after the upgrades)
   # skip cloud-init: Hetzner's datasource otherwise retries DHCP for metadata there, fails after
   # 30 s and leaves 'status: error' although the network (already configured) works.

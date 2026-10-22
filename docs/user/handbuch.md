@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.28  
+Version: 1.29  
 Software-Version: v3 (mit Mehrrechner-Betrieb)  
 Stand: 21.10.2026
 
@@ -704,8 +704,8 @@ Die Skripte importieren und exportieren keine Daten. Ihre Arbeitsdateien liegen 
 
 ### Meldung: "Claude Code installation failed; server retained."
 
-**Ursache:** Die Installation von Claude Code ist bei der Einrichtung und beim Nachholen gescheitert, meist wegen eines Netzwerkproblems.  
-**Lösung:** Führen Sie `./start.sh <rechner>` erneut aus. Das Skript versucht die Installation dann noch einmal.
+**Ursache:** Die Installation von Claude Code ist bei der Einrichtung und beim Nachholen gescheitert, meist wegen eines Netzwerkproblems. Steht davor `curl: (22) … error: 429`, drosselt der Installer die Adresse des Servers (Hetzner vergibt freigegebene Adressen schnell neu, so bekommen neue Server oft die Adresse eines früheren Testservers).  
+**Lösung:** Neue Server und `start.sh` versuchen die Installation selbst bis zu fünfmal mit wachsender Pause. Scheitert auch das, warten Sie einige Minuten und führen `make up MACHINE=<rechner>` erneut aus; das richtet nur nach, was fehlt (auch Homebrew und die Pakete, die der Abbruch übersprungen hat). Die Antwort des Servers zeigt `make ssh MACHINE=<rechner> CMD="curl -sI https://claude.ai/install.sh"`, eine Zeile `retry-after` nennt die Wartezeit. Hilft Warten nicht, löschen Sie den Server und legen ihn später neu an, dann hat er vielleicht eine andere Adresse.
 
 ### Meldung: "Docker is not running"
 
@@ -861,3 +861,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.26 | v3 mit Mehrrechner-Betrieb | Neue Server legen eine `~/.tmux.conf` an (Maus, Fenster ab 1, Alt+1 bis Alt+9). |
 | 1.27 | v3 mit Mehrrechner-Betrieb | Docker aus Dockers eigenem apt-Repository (neueste Engine, `buildx`, `compose`) statt Ubuntus `docker.io`. Git-Autor auf dem Server: `VIPER_GIT_USER_NAME`/`VIPER_GIT_USER_EMAIL`, sonst vom GitHub-Konto. Optional `code-server` (VS Code im Browser, nur per SSH-Tunnel): `VIPER_CODE_SERVER`, `VIPER_CODE_SERVER_PASSWORD`. |
 | 1.28 | v3 mit Mehrrechner-Betrieb | Handbuch: `code-server` von einem anderen Rechner aus nutzen (Tunnel mit DNS-Namen, Schlüssel, Host-CA). |
+| 1.29 | v3 mit Mehrrechner-Betrieb | Die Installation von Claude Code wird bei Fehlern (etwa HTTP 429, Drosselung pro Adresse) bis zu fünfmal mit wachsender Pause wiederholt, auf neuen Servern in cloud-init und beim Nachholen in `start.sh`. |
