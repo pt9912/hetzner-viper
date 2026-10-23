@@ -55,7 +55,7 @@ var commands = map[string]command{
 		args: func(o *options) []string { return []string{"./setup.sh"} }},
 	"preflight": {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"}, native: nativePreflight,
 		args: func(o *options) []string { return []string{"./preflight.sh", o.machine, o.repo} }},
-	"up": {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"},
+	"up": {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"}, native: nativeUp,
 		args: func(o *options) []string { return []string{"./start.sh", o.machine, o.repo} }},
 	"check": {usage: "<machine>", machine: needMachine, native: nativeCheck,
 		args: func(o *options) []string { return []string{"./check.sh", o.machine} }},

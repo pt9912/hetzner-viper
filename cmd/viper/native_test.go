@@ -16,7 +16,7 @@ import (
 
 func TestNativeCommandsRunHereAndContainerFlagRunsThemInTheContainer(t *testing.T) {
 	var ran []string
-	oldNative, oldIn := commands["setup"], inContainer
+	oldNative, oldIn, oldUp := commands["setup"], inContainer, commands["up"]
 	t.Cleanup(func() { commands["setup"], inContainer = oldNative, oldIn })
 	c := oldNative
 	c.native = func(*options) error { ran = append(ran, "native"); return nil }
@@ -27,7 +27,11 @@ func TestNativeCommandsRunHereAndContainerFlagRunsThemInTheContainer(t *testing.
 	dispatch(commands["setup"], &o)
 	_, o = mustParse(t, "setup", "--container")
 	dispatch(commands["setup"], &o)
-	_, o = mustParse(t, "up", "web") // has no native version yet
+	c2 := commands["up"]
+	c2.native = nil // pretend: a command without a native version
+	commands["up"] = c2
+	t.Cleanup(func() { commands["up"] = oldUp })
+	_, o = mustParse(t, "up", "web")
 	dispatch(commands["up"], &o)
 	if !slices.Equal(ran, []string{"native", "container", "container"}) {
 		t.Errorf("ran %q", ran)

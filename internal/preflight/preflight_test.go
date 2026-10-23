@@ -233,7 +233,7 @@ func TestHetznerApiProblem(t *testing.T) {
 
 func TestLoginKeyAlreadyInTheProject(t *testing.T) {
 	e := fixture(t, "")
-	fp := fingerprintMD5(filepath.Join(e.home, ".ssh", "hetzner-build.pub"))
+	fp := FingerprintMD5(filepath.Join(e.home, ".ssh", "hetzner-build.pub"))
 	if len(fp) != 47 {
 		t.Fatalf("fingerprint %q", fp)
 	}

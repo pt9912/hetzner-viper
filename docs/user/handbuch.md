@@ -20,9 +20,10 @@ Dieses Handbuch richtet sich an Entwicklerinnen und Entwickler, die auf einem Li
 
 Auf Ihrem lokalen Rechner (nur Linux ist erprobt):
 
-* **Empfohlen:** Docker, dazu das Programm `viper` (eine einzelne Datei aus dem Release, siehe Aufgabe „`viper` installieren und benutzen“) oder alternativ `make`. Alle Werkzeuge (`ssh`, `hcloud`, `jq`, `curl`, `python3`) kommen dann aus dem Container, Sie installieren sonst nichts. Dieses Handbuch nennt jeweils den `make`-Befehl; `viper` kennt dieselben Befehle (siehe auch Aufgabe „Rechner im Container einrichten und beenden“).
+* **Empfohlen:** das Programm `viper` (eine einzelne Datei aus dem Release, siehe Aufgabe „`viper` installieren und benutzen“) und der OpenSSH-Client. Mehr brauchen Sie nicht.
+* **Alternativ** mit Docker und `make`: Alle Werkzeuge (`ssh`, `hcloud`, `jq`, `curl`, `python3`) kommen dann aus dem Container, Sie installieren sonst nichts. Dieses Handbuch nennt jeweils den `make`-Befehl; `viper` kennt dieselben Befehle (siehe Aufgabe „Rechner im Container einrichten und beenden“).
 * **Alternativ** ohne Container: `bash`, `curl`, `jq`, `python3`, OpenSSH-Client und die Hetzner-Kommandozeile `hcloud`. Dann rufen Sie die Skripte direkt auf (`./setup.sh`, `./start.sh <rechner>` usw.).
-* Optional VS Code mit der Erweiterung **Remote-SSH**. Sie nutzt den OpenSSH-Client Ihres Rechners, der dafür lokal installiert sein muss. Ohne ihn verbinden Sie sich mit `make ssh MACHINE=<rechner>`.
+* Optional VS Code mit der Erweiterung **Remote-SSH**. Sie nutzt den OpenSSH-Client Ihres Rechners, der dafür lokal installiert sein muss. Ohne ihn verbinden Sie sich mit `viper ssh <rechner>` (oder `make ssh MACHINE=<rechner>`).
 
 Bei den Anbietern:
 
@@ -95,24 +96,24 @@ Sie arbeiten mit genau dem Stand der gewählten Version. Es gibt nichts zu insta
 
 ### `viper` installieren und benutzen
 
-`viper` ist ein kleines Programm, das die Skripte im Container startet, so wie es `make` tut. Sie brauchen dafür nur Docker, kein `make`.
+`viper` ist ein einzelnes Programm, das alles erledigt, was die Skripte und `make` tun: Rechner einrichten, prüfen, verbinden und löschen. Es läuft direkt auf Ihrem Rechner, ohne Docker, ohne `make` und ohne die Skripte des Klons.
 
 #### Voraussetzung
 
-* Docker läuft (Linux, oder macOS mit Docker Desktop oder Colima).
-* `viper setup` und `viper ssh` laufen direkt auf Ihrem Rechner und brauchen dafür den OpenSSH-Client (`ssh-keygen` bzw. `ssh`); `viper dns` und `viper preflight` brauchen ihn nicht. Fehlt er, meldet `viper` das, bevor es etwas anlegt. Mit `--container` laufen die Befehle stattdessen im Container.
-* Sie haben das Repository geklont (siehe „Eine bestimmte Version verwenden“). Die Skripte und Ihre `.env.local` liegen im Klon, `viper` läuft dort.
+* Linux oder macOS (nur Linux ist erprobt).
+* Der OpenSSH-Client mit `ssh`, `ssh-keygen`, `ssh-keyscan` und `scp`. `viper` meldet es, bevor es etwas anlegt, wenn ein Programm fehlt.
+* Ein Verzeichnis mit Ihrer `.env.local` (und optional `machines/<rechner>.env.local`). `viper setup` legt eine fehlende `.env.local` aus einer eingebauten Vorlage an. Einen Klon des Repositorys brauchen Sie dafür nicht.
 
 #### Vorgehen
 
-1. Laden Sie von der Release-Seite die Datei für Ihr System, zum Beispiel `viper_v0.4.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`), und `SHA256SUMS`.
+1. Laden Sie von der Release-Seite die Datei für Ihr System, zum Beispiel `viper_v0.5.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`), und `SHA256SUMS`.
 2. Prüfen Sie die Datei und machen Sie sie ausführbar:
    ```bash
-   grep viper_v0.4.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
-   chmod +x viper_v0.4.0_linux_amd64
-   mv viper_v0.4.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
+   grep viper_v0.5.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
+   chmod +x viper_v0.5.0_linux_amd64
+   mv viper_v0.5.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
    ```
-3. Wechseln Sie in den Klon und rufen Sie `viper` auf:
+3. Wechseln Sie in das Verzeichnis mit Ihrer `.env.local` (oder geben Sie es mit `--dir` an) und rufen Sie `viper` auf:
    ```bash
    viper setup
    viper preflight web
@@ -124,7 +125,7 @@ Sie arbeiten mit genau dem Stand der gewählten Version. Es gibt nichts zu insta
 
 #### Ergebnis
 
-`viper` führt dieselben Skripte mit demselben Container aus wie `make`. Die Befehle entsprechen einander:
+Dieselben Abläufe und Meldungen wie bei den Skripten, dieselben Zustandsdateien und Protokolle (`~/.local/state/hetzner-claude`). Die Befehle entsprechen einander:
 
 | `make` | `viper` |
 |---|---|
@@ -139,19 +140,15 @@ Sie arbeiten mit genau dem Stand der gewählten Version. Es gibt nichts zu insta
 
 #### Hinweise
 
-* `viper setup`, `viper ssh`, `viper dns`, `viper preflight`, `viper check`, `viper log` und `viper down` brauchen weder den Container noch die Skripte des Klons: Sie lesen `.env.local` und `machines/<rechner>.env.local` im aktuellen Verzeichnis (oder in `--dir`); `viper ssh` nutzt dazu die SSH-Konfiguration des Rechners in `~/.ssh`. Ein relativer `SSH_KEY` gilt, wie bei den Skripten, relativ zu diesem Verzeichnis. `viper setup` legt eine fehlende `.env.local` aus der eingebauten Vorlage an. Nur `up` startet noch das Skript im Container.
-* `viper preflight` prüft dasselbe wie `make preflight` und schreibt dieselben Protokolle (`events.log`, `logs/<server>.log`). Es spricht die APIs von Hetzner, Cloudflare und (falls gesetzt) GitHub und Ihrem Claude-Gateway direkt an, ohne `hcloud`, `jq` oder `curl`. Die Meldungen entsprechen denen des Skripts; Hinweise auf Befehle nennen `viper` statt der Skripte.
-* Das Programm holt das Image zu seiner Version beim ersten Aufruf selbst (`docker pull ghcr.io/pt9912/hetzner-viper:<version>`). Mit `--local` baut es das Image stattdessen aus dem `Dockerfile` des Klons (`--base-image` wählt die Quelle des Basis-Images), mit `--image <ref>` nutzen Sie ein anderes Image. `--dir <verzeichnis>` gibt den Klon an, wenn Sie nicht darin stehen.
-* Die Skripte kommen aus dem Klon, das Image enthält nur die Werkzeuge. Klon und Programm sollten dieselbe Version haben (`viper version`, `git describe --tags`).
-* Unter macOS mit **Colima** ist Ihr Home-Verzeichnis in der VM standardmäßig nur lesend eingebunden. Die Befehle im Container (`preflight`, `up`, `check`, `down`, `log`) schreiben aber nach `~/.ssh` und nach `~/.local/state/hetzner-claude`. Legen Sie beide Verzeichnisse an und starten Sie Colima mit schreibbarem Mount: `mkdir -p ~/.ssh ~/.local/state/hetzner-claude && colima start --mount "$HOME:w"`. Geben Sie `--mount` an, ersetzt es den Standard-Mount; binden Sie dann auch den Klon und das Ziel eines per Symlink verwalteten `~/.ssh/config` ein, sonst sieht der Container einen leeren `/repo`. Erscheint im Container „Permission denied“ für diese Verzeichnisse, fehlt das. Auf macOS ist `viper` bisher nicht getestet; nur Linux ist erprobt.
-* Ein Binary aus dem Browser versieht macOS mit einer Quarantäne-Markierung, die das Starten verhindert. Entfernen Sie sie mit `xattr -d com.apple.quarantine ~/bin/viper`.
-* `viper dns` prüft zusätzlich Rechnername, `DNS_DOMAIN`, `SERVER_PREFIX` und die Länge des Servernamens und meldet Fehler; `make dns` gibt nur den Namen aus.
-* `viper ssh` ersetzt sich selbst durch `ssh` (wie `make ssh`): Signale und Exit-Code sind die von `ssh`.
-* `viper down` fragt wie `make down` (`DISCARD` bei ungesicherter Arbeit, `DELETE` zum Löschen, `CLEANUP` bei einem Rechner, den es beim Anbieter nicht mehr gibt). Die Antworten dürfen auch per Pipe kommen; das Ende der Eingabe bestätigt nichts. Die Prüfung auf dem Server ist dasselbe Skript wie bisher, es läuft per SSH und ändert dort nichts. Die Bedienung nennt `viper down … --force` statt `./stop.sh … --force`.
-* `viper check` braucht auf Ihrem Rechner `ssh` (und für die Zertifikatsanzeige `ssh-keyscan` und `ssh-keygen`) und läuft sonst wie `make check`; es sendet das Prüfskript per SSH auf den Server und ändert dort nichts.
-* `.env.local` wird von `viper setup`, `viper ssh` und `viper dns` selbst gelesen. Es versteht die Schreibweise der Datei (`NAME=wert`, Anführungszeichen, `$HOME`, `${NAME}`, mehrzeilige Werte, Kommentare) und lehnt anderes mit Zeilennummer ab (ohne die Zeile selbst zu zeigen, sie kann ein Token enthalten): Befehle und Ersetzungen wie `$(befehl)`, nicht gesetzte Variablen (die Skripte brechen dort ebenfalls ab), `~benutzer`, `$'…'` und Windows-Zeilenenden (CRLF). Setzen Sie solche Werte als festen Text in Anführungszeichen und speichern Sie die Datei mit Unix-Zeilenenden.
-* Windows wird nicht unterstützt. Nutzen Sie `viper` dort innerhalb von WSL.
-* Die Zeitzone des Containers wird aus Ihrem System übernommen (`TZ` oder Ihre `/etc/localtime`).
+* **Einstellungen:** `viper` liest `.env.local` selbst. Es versteht die Schreibweise der Datei (`NAME=wert`, Anführungszeichen, `$HOME`, `${NAME}`, mehrzeilige Werte, Kommentare) und lehnt anderes mit Zeilennummer ab, ohne die Zeile selbst zu zeigen (sie kann ein Token enthalten): Befehle und Ersetzungen wie `$(befehl)`, nicht gesetzte Variablen (die Skripte brechen dort ebenfalls ab), `~benutzer`, `$'…'` und Windows-Zeilenenden (CRLF). Setzen Sie solche Werte als festen Text in Anführungszeichen und speichern Sie die Datei mit Unix-Zeilenenden. Ein relativer `SSH_KEY` gilt relativ zum Verzeichnis der `.env.local`.
+* **Fragen beim Löschen:** `viper down` fragt wie `make down` (`DISCARD` bei ungesicherter Arbeit, `DELETE` zum Löschen, `CLEANUP` bei einem Rechner, den es beim Anbieter nicht mehr gibt). Die Antworten dürfen auch per Pipe kommen; eine leere Antwort, das Ende der Eingabe und eine letzte Zeile ohne Zeilenende bestätigen nichts.
+* **Verbindung:** `viper ssh` ersetzt sich selbst durch `ssh` (wie `make ssh`): Signale und Exit-Code sind die von `ssh`.
+* **Prüfungen:** `viper dns` prüft zusätzlich Rechnername, `DNS_DOMAIN`, `SERVER_PREFIX` und die Länge des Servernamens; `make dns` gibt nur den Namen aus. `viper preflight` und `viper check` sprechen die APIs von Hetzner, Cloudflare und (falls gesetzt) GitHub und Ihrem Claude-Gateway direkt an. `viper check` sendet das Prüfskript per SSH auf den Server und ändert dort nichts.
+* **Server-Skripte:** Die Programme, die auf dem Server laufen (Einrichtung, Prüfung, Sicherheitsprüfung vor dem Löschen), sind dieselben wie bei den Skripten und im Programm eingebaut.
+* **VS Code:** `viper up` öffnet VS Code, wenn `code` vorhanden ist, ohne dass VS Code Ihre Tokens erbt.
+* **Container:** Mit `--container` laufen die Befehle stattdessen wie bisher als Skripte im Container (dann sind der Klon und Docker nötig; `--image`, `--local`, `--base-image` und `--dir` wirken dort). Das Image zur Version holt `viper` selbst (`docker pull ghcr.io/pt9912/hetzner-viper:<version>`). Unter macOS mit **Colima** ist Ihr Home-Verzeichnis in der VM standardmäßig nur lesend eingebunden; die Container-Befehle schreiben aber nach `~/.ssh` und `~/.local/state/hetzner-claude`. Legen Sie dann beide Verzeichnisse an und starten Sie Colima mit `colima start --mount "$HOME:w"`; geben Sie `--mount` an, ersetzt es den Standard-Mount.
+* **macOS:** Ein Binary aus dem Browser versieht macOS mit einer Quarantäne-Markierung, die das Starten verhindert. Entfernen Sie sie mit `xattr -d com.apple.quarantine ~/bin/viper`. Auf macOS ist `viper` bisher nicht getestet.
+* **Windows** wird nicht unterstützt. Nutzen Sie `viper` dort innerhalb von WSL.
 
 ### Erstmalige Einrichtung
 
@@ -965,4 +962,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.33 | v0.1.0 | Erstes Release `v0.1.0` (nur Quellcode); die Software wird ab jetzt nach Release-Version statt als „v3“ benannt. Neue Aufgabe „Eine bestimmte Version verwenden“. |
 | 1.34 | v0.2.0 | Zu jedem Release gehört ein Container-Image (`ghcr.io/pt9912/hetzner-viper`), das `make` auf einem Release-Tag selbst holt, statt es zu bauen. Das Image ist nicht mehr an Ihre Benutzerkennung gebunden. |
 | 1.35 | v0.4.0 | Neues Programm `viper` (eine Datei, nur Docker nötig) ersetzt `make` für den Container-Betrieb; Binaries für Linux und macOS am Release. Die erzeugte `/etc/passwd` liegt jetzt im Zustandsverzeichnis, damit `make` auch mit einer VM wie Colima funktioniert. |
-| 1.36 | v0.5.0 | `viper setup`, `viper ssh`, `viper dns`, `viper preflight`, `viper check` und `viper log` und `viper down` laufen direkt auf Ihrem Rechner (kein Container), `--container` erzwingt den Container. `.env.local` wird in Go gelesen. |
+| 1.36 | v0.5.0 | Alle Befehle von `viper` laufen direkt auf Ihrem Rechner, ohne Container, Docker und Klon (nur OpenSSH nötig); `--container` startet wie bisher die Skripte im Container. `.env.local` wird von `viper` selbst gelesen. |

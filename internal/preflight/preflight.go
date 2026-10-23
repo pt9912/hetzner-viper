@@ -213,9 +213,9 @@ func isPublicKey(s string) bool {
 	return false
 }
 
-// fingerprintMD5 is the colon-separated MD5 fingerprint of an OpenSSH public key file, "" if
+// FingerprintMD5 is the colon-separated MD5 fingerprint of an OpenSSH public key file, "" if
 // it cannot be read.
-func fingerprintMD5(path string) string {
+func FingerprintMD5(path string) string {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return ""
@@ -268,7 +268,7 @@ func hetznerChecks(ctx context.Context, r *report, c *config.Config, d Deps) {
 		r.bad("SSH keys could not be listed: %s", hetzner.Error(err))
 		return
 	}
-	fp := fingerprintMD5(c.SSHKey + ".pub")
+	fp := FingerprintMD5(c.SSHKey + ".pub")
 	existing, named := "", false
 	for _, k := range keys {
 		if fp != "" && strings.EqualFold(k.Fingerprint, fp) && existing == "" {

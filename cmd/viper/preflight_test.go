@@ -15,6 +15,7 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/config"
 	"github.com/pt9912/hetzner-viper/internal/hetzner"
 	"github.com/pt9912/hetzner-viper/internal/preflight"
+	"github.com/pt9912/hetzner-viper/internal/start"
 	"github.com/pt9912/hetzner-viper/internal/stop"
 )
 
@@ -109,8 +110,10 @@ func TestPreflightRunsHereByDefault(t *testing.T) {
 	if commands["preflight"].native == nil {
 		t.Error("preflight is native")
 	}
-	if commands["up"].native != nil {
-		t.Error("up is still the script")
+	for _, name := range []string{"up", "down", "check", "log", "setup", "ssh", "dns"} {
+		if commands[name].native == nil {
+			t.Errorf("%s is native", name)
+		}
 	}
 }
 
@@ -239,4 +242,60 @@ func TestDownReadsItsAnswersFromAPipeAndLogsTheOutcome(t *testing.T) {
 	if commands["down"].native == nil {
 		t.Error("down is native")
 	}
+}
+
+func TestVSCodeDoesNotInheritTheTokens(t *testing.T) {
+	env := vscodeEnv([]string{"PATH=/bin", "HCLOUD_TOKEN=a", "CLOUDFLARE_API_TOKEN=b", "CLOUDFLARE_ZONE_ID=z", "VIPER_GH_TOKEN=c", "GH_TOKEN=d",
+		"VIPER_CLAUDE_TOKEN=e", "CLAUDE_CODE_OAUTH_TOKEN=f", "VIPER_ANTHROPIC_AUTH_TOKEN=g", "VIPER_CODE_SERVER_PASSWORD=h", "VIPER_TRANSCRIPT=x",
+		"HOME=/home/me", "VIPER_SWAP=1", "TOKEN_LIKE=keep"})
+	if strings.Join(env, " ") != "PATH=/bin HOME=/home/me VIPER_SWAP=1 TOKEN_LIKE=keep" {
+		t.Errorf("%q", env)
+	}
+}
+
+func TestUpStopsAtPreflightProblemsAndLogsThem(t *testing.T) {
+	env, home, o := preflightSetup(t, false) // the DNS check fails: one problem
+	old := newUpDeps
+	t.Cleanup(func() { newUpDeps = old })
+	created := false
+	newUpDeps = func(c *config.Config, pd func() preflight.Deps) start.Deps {
+		d := old(c, pd)
+		d.Hetzner = failIfCreated{&created}
+		return d
+	}
+	var out, errb bytes.Buffer
+	err := runUp(context.Background(), o, env, &out, &errb)
+	if exitCode(err) != 1 || created {
+		t.Fatalf("%v created=%v\n%s%s", err, created, out.String(), errb.String())
+	}
+	if !strings.Contains(errb.String(), "Preflight: 1 problem(s); nothing was created.") {
+		t.Errorf("err %q", errb.String())
+	}
+	events, _ := os.ReadFile(filepath.Join(home, ".local", "state", "hetzner-claude", "events.log"))
+	if !strings.Contains(string(events), " up        start (cpx32, fsn1, ubuntu-26.04)\n") || !strings.HasSuffix(string(events), "up        FAILED (exit 1; see logs/claude-web.log)\n") {
+		t.Errorf("events %q", events)
+	}
+}
+
+type failIfCreated struct{ created *bool }
+
+func (f failIfCreated) ServerByName(context.Context, string) (*hetzner.Server, error) {
+	return nil, nil
+}
+func (f failIfCreated) SSHKeys(context.Context) ([]hetzner.SSHKey, error) { return nil, nil }
+func (f failIfCreated) SSHKeyCreate(context.Context, string, string) error {
+	*f.created = true
+	return nil
+}
+func (f failIfCreated) FirewallRules(context.Context, string) ([]hetzner.FirewallRule, bool, error) {
+	return nil, false, nil
+}
+func (f failIfCreated) FirewallCreate(context.Context, string) error { *f.created = true; return nil }
+func (f failIfCreated) FirewallAddRule(context.Context, string, hetzner.FirewallRule) error {
+	*f.created = true
+	return nil
+}
+func (f failIfCreated) ServerCreate(context.Context, hetzner.ServerSpec) (*hetzner.Server, error) {
+	*f.created = true
+	return nil, nil
 }
