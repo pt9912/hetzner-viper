@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Fake Claude Code on the server: answers OK only when the token is set
+case "$1" in
+  --version) echo '2.1.306 (Claude Code)' ;;
+  # like the real one, -p reads piped stdin as additional prompt input
+  -p) [[ -t 0 ]] || cat >/dev/null
+      # MOCK_CLAUDE_ANSWER: what the model says instead of OK
+      [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}${ANTHROPIC_AUTH_TOKEN:-}" ]] && echo "${MOCK_CLAUDE_ANSWER:-OK}" || { echo 'Invalid API key · Please run /login'; exit 1; } ;;
+esac

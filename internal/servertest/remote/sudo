@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Fake sudo on the server: sshd -T prints the hardened configuration (MOCK_SSHD_WEAK: password login on)
+if [[ "$*" == "sshd -T" ]]; then
+  printf 'permitrootlogin no\npasswordauthentication %s\nauthenticationmethods publickey\n' "$([[ -n "${MOCK_SSHD_WEAK:-}" ]] && echo yes || echo no)"
+elif [[ "$1" == install ]]; then
+  # install -d -o builder -g builder DIR: no user builder and no root here, so without -o/-g
+  args=(); skip=0
+  for a in "${@:2}"; do (( skip )) && { skip=0; continue; }; [[ "$a" == -o || "$a" == -g ]] && { skip=1; continue; }; args+=("$a"); done
+  install "${args[@]}"
+else
+  "$@"
+fi

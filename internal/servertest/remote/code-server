@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Fake code-server on the server: only there once its installer ran
+[[ -e "$MOCK_STATE/code-server-installed" ]] || exit 127
+[[ "$1" != --version ]] || echo '4.96.4 abcdef123 with Code 1.96.4'
