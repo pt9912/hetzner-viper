@@ -32,6 +32,8 @@ type Cloud struct {
 	DNSRecords map[string]DNSRecord
 	DNSZone    string
 	DNSFail    bool // setting a record fails
+	// FirewallErr makes reading a firewall fail (the preflight does not read firewalls).
+	FirewallErr error
 }
 
 // DNSRecord is an A record; Ours is whether it carries the comment of this tool.
@@ -130,6 +132,9 @@ func (c *Cloud) FirewallRules(_ context.Context, name string) ([]hetzner.Firewal
 	defer c.mu.Unlock()
 	if c.ListErr != nil {
 		return nil, false, c.ListErr
+	}
+	if c.FirewallErr != nil {
+		return nil, false, c.FirewallErr
 	}
 	r, ok := c.Firewalls[name]
 	return append([]hetzner.FirewallRule(nil), r...), ok, nil

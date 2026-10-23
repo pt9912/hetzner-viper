@@ -428,3 +428,7 @@ type firewallRule = hetzner.FirewallRule
 func servertestRecord(ip string, ours bool) servertest.DNSRecord {
 	return servertest.DNSRecord{IP: ip, Ours: ours}
 }
+
+func hetznerKey(name, pub string) hetzner.SSHKey {
+	return hetzner.SSHKey{Name: name, Fingerprint: servertest.Fingerprint(pub)}
+}
