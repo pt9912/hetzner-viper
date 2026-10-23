@@ -91,6 +91,8 @@ type Server struct {
 	ID   int64
 	Name string
 	IPv4 string
+	// Created is when the server was created.
+	Created time.Time
 }
 
 // ServerByName returns the server of that name, nil if there is none.
@@ -99,11 +101,7 @@ func (h *Client) ServerByName(ctx context.Context, name string) (*Server, error)
 	if err != nil || s == nil {
 		return nil, err
 	}
-	out := &Server{ID: s.ID, Name: s.Name}
-	if s.PublicNet.IPv4.IP != nil {
-		out.IPv4 = s.PublicNet.IPv4.IP.String()
-	}
-	return out, nil
+	return serverFrom(s), nil
 }
 
 // DeleteServer deletes the server and waits until it is gone (hcloud server delete).
