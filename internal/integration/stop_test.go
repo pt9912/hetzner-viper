@@ -329,7 +329,7 @@ func TestStopHetznerErrorKeepsEverything(t *testing.T) {
 	if r.Code != 1 {
 		t.Errorf("code %d", r.Code)
 	}
-	r.Has(t, "list failed")
+	r.Has(t, "listing the servers failed")
 	if len(e.Cloud.DNSRecords) != 1 {
 		t.Error("dns changed")
 	}

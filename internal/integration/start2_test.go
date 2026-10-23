@@ -111,7 +111,7 @@ func TestFirewallErrorAbortsBeforeAServerExists(t *testing.T) {
 	if r.Code != 1 || len(e.Cloud.Servers) != 0 {
 		t.Errorf("code %d, servers %v", r.Code, e.Cloud.Servers)
 	}
-	r.Has(t, "hcloud firewall list failed")
+	r.Has(t, "Hetzner: listing the firewalls failed")
 }
 
 func TestTheSameMachineNameUnderTwoPrefixesDoesNotCollide(t *testing.T) {

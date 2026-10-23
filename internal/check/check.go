@@ -110,7 +110,7 @@ func Run(ctx context.Context, c *config.Config, d Deps, out, errOut io.Writer) (
 
 	srv, err := d.Hetzner.ServerByName(ctx, c.ServerName)
 	if err != nil {
-		return 0, fmt.Errorf("hcloud server list failed (check HCLOUD_TOKEN / project / network): %s", hetzner.Error(err))
+		return 0, fmt.Errorf("Hetzner: listing the servers failed (check HCLOUD_TOKEN / project / network): %s", hetzner.Error(err))
 	}
 	if srv == nil {
 		fmt.Fprintf(errOut, "Server %s does not exist (start it with viper up %s)\n", c.ServerName, c.Machine)

@@ -44,7 +44,7 @@ check_repo() {
   done < <(git -C "$repo" worktree list --porcelain | sed -n 's/^worktree //p')
   # commits on any local branch that are not on any remote (also branches without upstream)
   # Tags count only if created here: not among those that came with the clone (recorded by
-  # start.sh) and not on any remote (asked with a time limit; unknown if offline).
+  # viper up) and not on any remote (asked with a time limit; unknown if offline).
   local_tags=$(git -C "$repo" for-each-ref --format='%(refname)' refs/tags)
   remote_tags=$(for r in $(git -C "$repo" remote); do timeout 20 git -C "$repo" ls-remote --tags "$r" 2>/dev/null </dev/null | awk '{print $2}' | sed 's/\^{}$//'; done)
   new_tags=$(comm -23 <(sort -u <<<"$local_tags") <(sort -u <(cat "$common/viper-clone-tags" 2>/dev/null; printf '%s\n' "$remote_tags")) | grep . || true)

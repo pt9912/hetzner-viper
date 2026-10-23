@@ -187,7 +187,7 @@ func (c *Client) Check(ctx context.Context, domain, host string) (lines []string
 	if domain != zone.Name && !strings.HasSuffix(domain, "."+zone.Name) {
 		return []string{fmt.Sprintf("FAIL  DNS_DOMAIN %s is not in Cloudflare zone %s", domain, zone.Name)}, false, nil
 	}
-	lines = append(lines, fmt.Sprintf("ok    Cloudflare zone %s readable (edit permission is only seen when start.sh writes the record)", zone.Name))
+	lines = append(lines, fmt.Sprintf("ok    Cloudflare zone %s readable (edit permission is only seen when viper up writes the record)", zone.Name))
 	switch {
 	case rec == nil:
 		lines = append(lines, fmt.Sprintf("ok    %s: no record yet", host))

@@ -1,7 +1,7 @@
 #cloud-config
 package_update: true
 # install all updates during setup; if they need a reboot (kernel), restart once at the end
-# (start.sh waits for it on new servers)
+# (viper up waits for it on new servers)
 package_upgrade: true
 power_state:
   mode: reboot

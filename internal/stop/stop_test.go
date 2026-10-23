@@ -406,7 +406,7 @@ func TestAnHcloudErrorKeepsEverything(t *testing.T) {
 	if code != 1 || !errors.Is(err, ErrShown) || len(w.deleted) != 0 || len(w.dnsCalls) != 0 {
 		t.Fatalf("%d %v", code, err)
 	}
-	has(t, w.errb.String(), "hcloud server list failed (check HCLOUD_TOKEN / project / network): unauthorized (check HCLOUD_TOKEN)")
+	has(t, w.errb.String(), "Hetzner: listing the servers failed (check HCLOUD_TOKEN / project / network): unauthorized (check HCLOUD_TOKEN)")
 	if _, err := os.Stat(w.c.IDState); err != nil {
 		t.Error("local files were removed")
 	}

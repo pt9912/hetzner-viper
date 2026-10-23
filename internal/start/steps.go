@@ -23,7 +23,7 @@ func (r *runner) loginKey() (string, int, error) {
 	}
 	keys, err := r.d.Hetzner.SSHKeys(r.ctx)
 	if err != nil {
-		code, err := r.fail("hcloud ssh-key list failed (check HCLOUD_TOKEN / project / network)")
+		code, err := r.fail("Hetzner: listing the SSH keys failed (check HCLOUD_TOKEN / project / network)")
 		return "", code, err
 	}
 	for _, k := range keys {
@@ -56,7 +56,7 @@ func (r *runner) firewall() (int, error) {
 	c := r.c
 	rules, exists, err := r.d.Hetzner.FirewallRules(r.ctx, c.FirewallName)
 	if err != nil {
-		return r.fail("hcloud firewall list failed (check HCLOUD_TOKEN / project / network): %s", hetzner.Error(err))
+		return r.fail("Hetzner: listing the firewalls failed (check HCLOUD_TOKEN / project / network): %s", hetzner.Error(err))
 	}
 	if !exists {
 		if err := r.d.Hetzner.FirewallCreate(r.ctx, c.FirewallName); err != nil {
@@ -97,7 +97,7 @@ func (r *runner) server(ca, keyName, ipadKeyFile string) (srv *hetzner.Server, r
 	c := r.c
 	existing, err := r.d.Hetzner.ServerByName(r.ctx, c.ServerName)
 	if err != nil {
-		code, err := r.fail("hcloud server list failed (check HCLOUD_TOKEN / project / network): %s", hetzner.Error(err))
+		code, err := r.fail("Hetzner: listing the servers failed (check HCLOUD_TOKEN / project / network): %s", hetzner.Error(err))
 		return nil, false, code, err
 	}
 	if existing != nil {

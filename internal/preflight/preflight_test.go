@@ -94,7 +94,7 @@ type env struct {
 // fixture: a settings directory and a home with login key and host CA, like after viper setup.
 func fixture(t *testing.T, settings string) *env {
 	t.Helper()
-	e := &env{t: t, home: t.TempDir(), dir: t.TempDir(), h: defaultHetzner(), dns: fakeDNS{ok: true, lines: []string{"ok    Cloudflare zone example.com readable (edit permission is only seen when start.sh writes the record)", "ok    claude-web.example.com: no record yet"}}}
+	e := &env{t: t, home: t.TempDir(), dir: t.TempDir(), h: defaultHetzner(), dns: fakeDNS{ok: true, lines: []string{"ok    Cloudflare zone example.com readable (edit permission is only seen when viper up writes the record)", "ok    claude-web.example.com: no record yet"}}}
 	ssh := filepath.Join(e.home, ".ssh")
 	os.MkdirAll(ssh, 0o700)
 	os.WriteFile(filepath.Join(ssh, "hetzner-build"), []byte("PRIVATE"), 0o600)

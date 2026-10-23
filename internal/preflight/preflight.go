@@ -251,7 +251,7 @@ func hetznerChecks(ctx context.Context, r *report, c *config.Config, d Deps) {
 	case err != nil:
 		r.bad("server type %s could not be read: %s", c.ServerType, hetzner.Error(err))
 	case st == nil:
-		r.bad("server type %s does not exist (see: hcloud server-type list)", c.ServerType)
+		r.bad("server type %s does not exist (see the server types in the Hetzner Console)", c.ServerType)
 	default:
 		r.ok("server type %s exists (%d vCPU, %s GB RAM, %d GB disk), architecture %s", c.ServerType, st.Cores, formatGB(st.MemoryGB), st.DiskGB, st.Architecture)
 		locationChecks(ctx, r, c, d, st)
@@ -260,7 +260,7 @@ func hetznerChecks(ctx context.Context, r *report, c *config.Config, d Deps) {
 		} else if ok {
 			r.ok("image %s exists for %s", c.ServerImage, st.Architecture)
 		} else {
-			r.bad("image %s does not exist for %s (see: hcloud image list --type system)", c.ServerImage, st.Architecture)
+			r.bad("image %s does not exist for %s (see the system images in the Hetzner Console)", c.ServerImage, st.Architecture)
 		}
 	}
 	keys, err := d.Hetzner.SSHKeys(ctx)
@@ -302,7 +302,7 @@ func locationChecks(ctx context.Context, r *report, c *config.Config, d Deps, st
 		return
 	}
 	if !exists {
-		r.bad("location %s does not exist (see: hcloud location list)", c.ServerLocation)
+		r.bad("location %s does not exist (see the locations in the Hetzner Console)", c.ServerLocation)
 		return
 	}
 	r.ok("location %s exists", c.ServerLocation)

@@ -352,7 +352,7 @@ func TestHcloudErrorAbortsBeforeCreating(t *testing.T) {
 	if code != 1 || err == nil || len(w.created) != 0 {
 		t.Fatalf("%d %v", code, err)
 	}
-	has(t, w.err.String(), "hcloud server list failed (check HCLOUD_TOKEN / project / network): unauthorized")
+	has(t, w.err.String(), "Hetzner: listing the servers failed (check HCLOUD_TOKEN / project / network): unauthorized")
 	has(t, w.events(), "FAILED (exit 1")
 }
 

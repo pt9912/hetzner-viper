@@ -221,7 +221,7 @@ func (c *Cloud) Check(_ context.Context, domain, host string) ([]string, bool, e
 	if domain != c.DNSZone && !strings.HasSuffix(domain, "."+c.DNSZone) {
 		return []string{fmt.Sprintf("FAIL  DNS_DOMAIN %s is not in Cloudflare zone %s", domain, c.DNSZone)}, false, nil
 	}
-	lines := []string{fmt.Sprintf("ok    Cloudflare zone %s readable (edit permission is only seen when start.sh writes the record)", c.DNSZone)}
+	lines := []string{fmt.Sprintf("ok    Cloudflare zone %s readable (edit permission is only seen when viper up writes the record)", c.DNSZone)}
 	r, ok := c.DNSRecords[host]
 	switch {
 	case !ok:

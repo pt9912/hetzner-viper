@@ -676,7 +676,7 @@ Der DNS-Eintrag ist ein A-Record ohne Cloudflare-Proxy, weil dieser SSH nicht we
 
 **Ursache:** Die Vorabprüfung hat Probleme gefunden. Die Zeilen mit `FAIL` darüber nennen sie. Häufige Fälle:
 * `… cannot currently be ordered in …` oder `… is not offered in …`: Der Servertyp ist am Standort ausverkauft oder dort nicht erhältlich. Die Meldung nennt die Standorte, an denen er bestellbar ist. Setzen Sie `SERVER_LOCATION` (etwa `nbg1` oder `hel1`) oder einen anderen `SERVER_TYPE`, am besten in `machines/<rechner>.env.local`.
-* `server type … does not exist`, `location … does not exist`, `image … does not exist`: Tippfehler oder ein Wert, den Hetzner nicht anbietet. Die gültigen Werte zeigen `hcloud server-type list`, `hcloud location list` und `hcloud image list --type system`.
+* `server type … does not exist`, `location … does not exist`, `image … does not exist`: Tippfehler oder ein Wert, den Hetzner nicht anbietet. Die gültigen Werte zeigt die Hetzner Console (Servertypen, Standorte und Images).
 * `DNS_DOMAIN … is not in Cloudflare zone …`: `CLOUDFLARE_ZONE_ID` gehört zu einer anderen Domain.
 * `repository … not reachable without credentials`: Das Repository ist privat. Setzen Sie `VIPER_GH_TOKEN` (GitHub) oder nutzen Sie eine SSH-URL mit `GIT_DEPLOY_KEY_FILE`.
 * `token cannot access …`: Das fein granulare Token gilt nicht für dieses Repository oder gehört zu einem anderen Resource owner. `token cannot push to …`: Das Token darf nur lesen; setzen Sie **Contents** auf „Read and write“ (Abschnitt „GitHub-CLI und Token auf dem Rechner nutzen“). Die Rechte eines vorhandenen Tokens können Sie bei GitHub nachträglich ändern (**Edit**); ein neues Token ist nicht nötig.
@@ -693,7 +693,7 @@ Der DNS-Eintrag ist ein A-Record ohne Cloudflare-Proxy, weil dieser SSH nicht we
 **Ursache:** Login-Schlüssel oder Host-CA fehlen.  
 **Lösung:** Führen Sie `viper setup` aus.
 
-### Meldung: "hcloud … list failed (check HCLOUD_TOKEN / project / network)"
+### Meldung: "Hetzner: listing the … failed (check HCLOUD_TOKEN / project / network)"
 
 **Ursache:** Die Hetzner-API hat nicht geantwortet oder das Token abgelehnt: Es ist abgelaufen, gehört zu einem anderen Projekt oder hat keine Schreibrechte, oder das Netz ist gestört. `viper` bricht dann ab, ohne etwas anzulegen, zu löschen oder aufzuräumen.  
 **Lösung:** Prüfen Sie `HCLOUD_TOKEN` und das Hetzner-Projekt und führen Sie den Befehl erneut aus.

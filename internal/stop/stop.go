@@ -79,7 +79,7 @@ func (d Deps) deleteDNS(ctx context.Context, c *config.Config, ip string, out, e
 func Run(ctx context.Context, c *config.Config, force bool, d Deps, lg *runlog.Log, out, errOut io.Writer) (int, error) {
 	srv, err := d.Hetzner.ServerByName(ctx, c.ServerName)
 	if err != nil {
-		fmt.Fprintf(errOut, "hcloud server list failed (check HCLOUD_TOKEN / project / network): %s\n", hetzner.Error(err))
+		fmt.Fprintf(errOut, "Hetzner: listing the servers failed (check HCLOUD_TOKEN / project / network): %s\n", hetzner.Error(err))
 		return 1, ErrShown
 	}
 	if srv == nil {
