@@ -16,3 +16,5 @@ jobs:
       - uses: actions/checkout@v7
       # builds the test image and runs the offline suite (incl. lint and a real sshd) without network
       - run: make docker-test
+      # the image that releases publish must keep building
+      - run: docker build --target run -t hetzner-claude-run .

@@ -29,11 +29,12 @@ RUN useradd --create-home tester
 USER tester
 CMD ["make", "test"]
 
-# The user gets the host's uid and home path, so that ~/.ssh and the ssh config written by
-# the scripts are valid on the host too (ssh resolves ~ via the passwd entry, not $HOME).
+# The image is independent of the user: `make` runs it with the host's uid and gid (--user) and
+# mounts a generated /etc/passwd with that uid and the host's home path, so that ~/.ssh and the
+# ssh config written by the scripts are valid on the host too (ssh resolves ~ via the passwd
+# entry, not $HOME). The same image therefore serves everyone, built locally or pulled.
 FROM base AS run
-ARG USER_UID=1000
-ARG USER_HOME=/home/runner
-RUN useradd --no-create-home --uid "$USER_UID" --home-dir "$USER_HOME" runner
-USER runner
+LABEL org.opencontainers.image.source="https://github.com/pt9912/hetzner-viper" \
+      org.opencontainers.image.description="Hetzner Viper: tools to run the scripts (ssh, hcloud, jq, ...)" \
+      org.opencontainers.image.licenses="MIT"
 ENTRYPOINT ["/bin/bash"]

@@ -1,8 +1,8 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.32  
-Software-Version: v3 (mit Mehrrechner-Betrieb)  
-Stand: 21.10.2026
+Version: 1.34  
+Software-Version: v0.2.0  
+Stand: 23.10.2026
 
 ## 1. Einleitung
 
@@ -64,6 +64,34 @@ Jeder Rechner hat einen Namen, den Sie beim Start angeben (`<rechner>`). Erlaubt
 Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 
 ## 3. Aufgaben ausführen
+
+### Eine bestimmte Version verwenden
+
+#### Voraussetzung
+
+Sie haben `git` und die Voraussetzungen aus Kapitel 1.
+
+#### Vorgehen
+
+1. Die veröffentlichten Versionen stehen auf der Seite „Releases“ des Repositorys (`https://github.com/pt9912/hetzner-viper/releases`).
+2. Klonen Sie die gewünschte Version, zum Beispiel:
+   ```bash
+   git clone --branch v0.2.0 https://github.com/pt9912/hetzner-viper.git
+   cd hetzner-viper
+   ```
+   Alternativ laden Sie auf der Release-Seite das Quellarchiv (`Source code`) herunter und entpacken es.
+3. Fahren Sie mit „Erstmalige Einrichtung“ fort.
+
+#### Ergebnis
+
+Sie arbeiten mit genau dem Stand der gewählten Version. Es gibt nichts zu installieren: Ein Release besteht aus dem Quellcode und einem Container-Image mit den Werkzeugen (`ghcr.io/pt9912/hetzner-viper:<version>`). Steht Ihr Klon auf einem Release-Tag, holt `make` das passende Image beim ersten Aufruf selbst (`docker pull`), statt es zu bauen.
+
+#### Hinweise
+
+* Nach `git clone --branch <version>` steht Git auf einem Tag („detached HEAD“). Das ist zum Verwenden in Ordnung. Eigene Änderungen legen Sie auf einem neuen Branch an (`git switch -c <name>`).
+* Auf einen neueren Stand wechseln Sie mit `git fetch --tags` und `git checkout <neue-version>`. Das passende neue Image holt `make` beim nächsten Aufruf. Lesen Sie vorher die Release Notes und die Änderungshistorie in Kapitel 11.
+* Das Quellarchiv von der Release-Seite enthält kein Git. Dann baut `make` das Image selbst (wie auf jedem Stand ohne Release-Tag). Dasselbe erreichen Sie in einem Klon, wenn Sie bei jedem Aufruf `RELEASE=` mitgeben (`make up MACHINE=web RELEASE=`) oder `export RELEASE=` setzen. Als Release-Tag gelten nur Tags wie `v1.2.3`. Ein anderes Image erzwingen Sie mit `RUN_IMAGE=<image>`.
+* Ihre Einstellungen in `.env.local` und `machines/` sind nicht Teil des Releases und bleiben beim Wechsel erhalten.
 
 ### Erstmalige Einrichtung
 
@@ -204,7 +232,8 @@ Das Ergebnis ist dasselbe wie beim direkten Aufruf. Login-Schlüssel, Host-CA un
 #### Hinweise
 
 * VS Code wird aus dem Container nicht gestartet. Öffnen Sie die Verbindung `hetzner-claude-web` selbst.
-* `make up` baut das Image bei Bedarf und übernimmt Ihre Benutzerkennung und Ihr Home-Verzeichnis. Das Image gilt daher nur für Ihren Benutzer.
+* Das Image enthält nur die Werkzeuge, keinen Benutzer. `make` startet es mit Ihrer Benutzerkennung und bindet eine erzeugte `/etc/passwd` mit Ihrem Home-Pfad ein; dasselbe Image passt daher für jeden Benutzer.
+* Auf einem Release-Tag holt `make` das veröffentlichte Image (`docker pull`), auf jedem anderen Stand baut es das Image selbst. Die Skripte kommen immer aus Ihrem Klon, nicht aus dem Image. Die Aufgabe „Eine bestimmte Version verwenden“ beschreibt, wie Sie das Verhalten ändern.
 * Der Container sieht das Repository nur lesend.
 * Von Ihrem Home-Verzeichnis sieht der Container nur `~/.ssh`. Legen Sie Dateien für `GIT_DEPLOY_KEY_FILE` und `IPAD_SSH_PUBLIC_KEY_FILE` deshalb dort ab. Sonst bricht `start.sh` mit „File not readable“ ab, bevor etwas angelegt wird.
 * Die Skripte nutzen nur die SSH-Konfiguration des jeweiligen Rechners (`~/.ssh/config_hetzner_<SERVER_PREFIX>-<rechner>`). Einstellungen in Ihrer `~/.ssh/config` stören daher nicht.
@@ -873,3 +902,5 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.30 | v3 mit Mehrrechner-Betrieb | Optional Swap-Datei auf dem Server: `VIPER_SWAP` als Faktor vom RAM (`1`, `0.5`) oder als Größe (`4G`). `make check` prüft sie. |
 | 1.31 | v3 mit Mehrrechner-Betrieb | `make build BASE_IMAGE=…` baut den Container mit einer anderen Quelle für das Basis-Image (etwa `mirror.gcr.io`), wenn Docker Hub nicht erreichbar ist. |
 | 1.32 | v3 mit Mehrrechner-Betrieb | `make build` prüft vorab, ob Docker Hub per IPv4 erreichbar ist, und baut sonst automatisch aus `mirror.gcr.io`; `BASE_IMAGE` überschreibt die Quelle. |
+| 1.33 | v0.1.0 | Erstes Release `v0.1.0` (nur Quellcode); die Software wird ab jetzt nach Release-Version statt als „v3“ benannt. Neue Aufgabe „Eine bestimmte Version verwenden“. |
+| 1.34 | v0.2.0 | Zu jedem Release gehört ein Container-Image (`ghcr.io/pt9912/hetzner-viper`), das `make` auf einem Release-Tag selbst holt, statt es zu bauen. Das Image ist nicht mehr an Ihre Benutzerkennung gebunden. |

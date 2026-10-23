@@ -2,7 +2,20 @@
 # `make` without a target shows the help; descriptions are the `## ` comments below.
 .DEFAULT_GOAL := help
 TEST_IMAGE ?= hetzner-claude-tests
-RUN_IMAGE  ?= hetzner-claude-run
+IMAGE_REPO ?= ghcr.io/pt9912/hetzner-viper
+# On a release tag (git clone --branch v0.2.0) the published image of that release is used; on any
+# other checkout, or with RELEASE= (empty, on every make call or exported), the image is built
+# locally. Only tags like v1.2.3 count, and only when this directory is the top of the git
+# work tree (not a release archive unpacked inside some other repository). RUN_IMAGE names the
+# image to run instead; on a tag, make build then only pulls it if it is missing.
+ifeq ($(origin RELEASE),undefined)
+RELEASE := $(shell test -z "$$(git rev-parse --show-prefix 2>/dev/null)" && git describe --tags --match 'v[0-9]*' --exact-match 2>/dev/null | grep -E '^v[0-9][A-Za-z0-9_.-]*$$')
+endif
+ifneq ($(RELEASE),)
+RUN_IMAGE ?= $(IMAGE_REPO):$(RELEASE)
+else
+RUN_IMAGE ?= hetzner-claude-run
+endif
 
 include tests/tests.mk
 
@@ -26,12 +39,17 @@ help: ## show this help
 # (some networks block its AWS addresses), Google's mirror of the same image is used instead.
 MIRROR_BASE_IMAGE := mirror.gcr.io/library/debian:bookworm-slim
 
-build: ## build the container image (done automatically by the other targets)
+build: ## get the container image: pull the release's, else build it (done automatically by the other targets)
+ifneq ($(RELEASE),)
+	@docker image inspect $(RUN_IMAGE) >/dev/null 2>&1 || docker pull $(RUN_IMAGE) || { \
+	  echo "Cannot pull $(RUN_IMAGE); build it locally: pass RELEASE= to every make call (or export RELEASE=)" >&2; exit 1; }
+else
 	@base='$(BASE_IMAGE)'; \
 	if [ -z "$$base" ] && ! curl -4 -s -m 5 -o /dev/null https://registry-1.docker.io/v2/ 2>/dev/null; then \
 	  base='$(MIRROR_BASE_IMAGE)'; echo "Docker Hub is not reachable; building from $$base (set BASE_IMAGE to choose another source)" >&2; \
 	fi; \
-	set -x; docker build --target run --build-arg USER_UID=$$(id -u) --build-arg USER_HOME="$$HOME" $${base:+--build-arg BASE_IMAGE="$$base"} -t $(RUN_IMAGE) .
+	set -x; docker build --target run $${base:+--build-arg BASE_IMAGE="$$base"} -t $(RUN_IMAGE) .
+endif
 
 # ~/.ssh/config may be a symlink into a dotfiles repo: mount its target too (at the same
 # path), otherwise the scripts cannot add their Include line from inside the container.
@@ -40,12 +58,16 @@ SSH_CONFIG_MOUNT := $(if $(filter-out $(HOME)/.ssh/%,$(SSH_CONFIG_TARGET)),-v "$
 
 # Runs as the host user with the host's ~/.ssh and state directory mounted at the same
 # paths, so keys, host CA and ssh config end up where the host's ssh and VS Code expect them.
+# The image has no user for that uid: a passwd file with it and the host's home is mounted
+# (ssh resolves ~ via the passwd entry, not $HOME).
 define RUN
 	@mkdir -p "$$HOME/.ssh" "$$HOME/.local/state/hetzner-claude"
+	@pw=$$(mktemp) && trap 'rm -f "$$pw"' EXIT && chmod 644 "$$pw" && \
+	printf 'root:x:0:0:root:/root:/bin/bash\nrunner:x:%s:%s::%s:/bin/bash\n' "$$(id -u)" "$$(id -g)" "$$HOME" > "$$pw" && \
 	docker run --rm -i $$(test -t 0 && echo -t) --user $$(id -u):$$(id -g) -e HOME="$$HOME" \
 	  $$(test -e /etc/localtime && echo -v /etc/localtime:/etc/host-localtime:ro) -e TZ="$${TZ:-$$(test -e /etc/localtime && echo :/etc/host-localtime)}" \
 	  -e HCLOUD_TOKEN -e CLOUDFLARE_API_TOKEN -e CLOUDFLARE_ZONE_ID -e VIPER_GH_TOKEN -e VIPER_GH_HOST -e VIPER_CLAUDE_TOKEN -e VIPER_ANTHROPIC_BASE_URL -e VIPER_ANTHROPIC_AUTH_TOKEN -e VIPER_CLAUDE_MODEL -e VIPER_CLAUDE_MAX_CONTEXT_TOKENS -e VIPER_HOMEBREW -e VIPER_BREW_TAPS -e VIPER_BREW_TRUST -e VIPER_BREW_PACKAGES -e VIPER_BREWFILE -e VIPER_SWAP -e VIPER_CODE_SERVER -e VIPER_CODE_SERVER_PASSWORD -e VIPER_GIT_USER_NAME -e VIPER_GIT_USER_EMAIL \
-	  -v "$$HOME/.ssh:$$HOME/.ssh" -v "$$HOME/.local/state/hetzner-claude:$$HOME/.local/state/hetzner-claude" $(SSH_CONFIG_MOUNT) \
+	  -v "$$pw:/etc/passwd:ro" -v "$$HOME/.ssh:$$HOME/.ssh" -v "$$HOME/.local/state/hetzner-claude:$$HOME/.local/state/hetzner-claude" $(SSH_CONFIG_MOUNT) \
 	  -v "$(CURDIR)":/repo:ro $(RUN_IMAGE) $(1)
 endef
 
