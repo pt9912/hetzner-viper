@@ -53,7 +53,7 @@ type Env struct {
 func tool(t *testing.T, name string) {
 	t.Helper()
 	if _, err := exec.LookPath(name); err != nil {
-		t.Skipf("no %s", name)
+		servertest.SkipOrFail(t, "no %s", name)
 	}
 }
 
@@ -77,7 +77,7 @@ func New(t *testing.T, settings string) *Env {
 	key, ca := filepath.Join(ssh, "hetzner-build"), filepath.Join(ssh, "hetzner_claude_host_ca")
 	for _, k := range [][]string{{"-t", "ed25519", "-N", "", "-f", key, "-q"}, {"-t", "ed25519", "-N", "", "-f", ca, "-C", "Hetzner Claude Host CA", "-q"}} {
 		if out, err := exec.Command("ssh-keygen", k...).CombinedOutput(); err != nil {
-			t.Skipf("ssh-keygen does not run here: %v %s", err, out)
+			servertest.SkipOrFail(t, "ssh-keygen does not run here: %v %s", err, out)
 		}
 	}
 	pub, _ := os.ReadFile(ca + ".pub")

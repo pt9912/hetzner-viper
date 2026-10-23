@@ -43,6 +43,17 @@ type Server struct {
 	hostKey string
 }
 
+// SkipOrFail ends a test that cannot run here because a tool is missing. With VIPER_REQUIRE_TOOLS=1
+// (set in CI) that is a failure instead: a runner without the tools must not turn the main safety
+// net into a pile of skipped tests.
+func SkipOrFail(t *testing.T, format string, args ...any) {
+	t.Helper()
+	if os.Getenv("VIPER_REQUIRE_TOOLS") == "1" {
+		t.Fatalf("a tool is missing, but VIPER_REQUIRE_TOOLS=1: "+format, args...)
+	}
+	t.Skipf(format, args...)
+}
+
 // New makes a fake server in a temporary directory.
 func New(t *testing.T, brewPath string) *Server {
 	t.Helper()

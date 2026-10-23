@@ -47,7 +47,7 @@ func settingsDir(o *options) string {
 	return "."
 }
 
-// setup creates the login key and the host CA and trusts the CA for the domain (setup.sh).
+// setup creates the login key and the host CA and trusts the CA for the domain .
 func setup(o *options, env config.Env, out io.Writer) error {
 	dir := settingsDir(o)
 	file := filepath.Join(dir, ".env.local")
@@ -131,7 +131,7 @@ Host CA public key for iPad SSH clients (only if they support OpenSSH host CAs):
 func exists(p string) bool { _, err := os.Stat(p); return err == nil }
 
 // connect opens a shell or runs one command on a machine, with the machine's own ssh config
-// (pinned host key) (connect.sh). With a command ssh gets a terminal only if we have one.
+// (pinned host key). With a command ssh gets a terminal only if we have one.
 func connect(o *options, env config.Env, interactive bool) error {
 	c, err := config.Load(settingsDir(o), o.machine, env, false)
 	if err != nil {
@@ -151,7 +151,7 @@ func connect(o *options, env config.Env, interactive bool) error {
 	if err := need("ssh"); err != nil {
 		return err
 	}
-	// ssh takes our place (like connect.sh's exec): signals and the exit code are its own
+	// ssh takes our place (like exec): signals and the exit code are its own
 	return execTool("ssh", args...)
 }
 
@@ -165,7 +165,7 @@ func dnsName(o *options, env config.Env, out io.Writer) error {
 	return nil
 }
 
-// showLog is make log: the events of all machines or one machine, or its complete output.
+// showLog shows the events of all machines or one machine, or its complete output.
 func showLog(o *options, env config.Env, out io.Writer) error {
 	home := env.Home
 	state := filepath.Join(home, ".local", "state", "hetzner-claude")

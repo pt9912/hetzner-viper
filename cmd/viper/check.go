@@ -46,7 +46,6 @@ func runCaptured(ctx context.Context, stdin, name string, args ...string) (strin
 
 // replaced by the tests
 var newCheckDeps = func(c *config.Config) check.Deps {
-	_, inContainer := os.Stat("/.dockerenv")
 	return check.Deps{
 		Hetzner: hetzner.New(c.Get("HCLOUD_TOKEN"), ""),
 		LookupIPv4: func(ctx context.Context, host string) ([]string, error) {
@@ -58,7 +57,6 @@ var newCheckDeps = func(c *config.Config) check.Deps {
 			return out, err
 		},
 		Nameserver:     nameserver(),
-		InContainer:    inContainer == nil,
 		Run:            runCaptured,
 		WriteSSHConfig: func(ip string) error { return machine.WriteSSHConfig(c, ip) },
 	}

@@ -1,4 +1,4 @@
-// Package runlog keeps the logs the scripts keep (common.sh): events.log has one line per event of
+// Package runlog keeps the logs: events.log has one line per event of
 // every machine, logs/<server>.log has the full output of each run. Neither holds tokens: the
 // code never prints them.
 package runlog

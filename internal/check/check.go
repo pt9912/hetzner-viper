@@ -34,9 +34,8 @@ type Deps struct {
 	}
 	HTTP *http.Client // DNS over HTTPS
 	// LookupIPv4 asks this computer's resolver.
-	LookupIPv4  func(ctx context.Context, host string) ([]string, error)
-	Nameserver  string // the resolver's address, "" if unknown
-	InContainer bool
+	LookupIPv4 func(ctx context.Context, host string) ([]string, error)
+	Nameserver string // the resolver's address, "" if unknown
 	// Run runs a program; stdin may be empty.
 	Run func(ctx context.Context, stdin, name string, args ...string) (stdout, stderr string, err error)
 	// WriteSSHConfig writes the machine's ssh config if there is none yet.
@@ -185,11 +184,8 @@ func dnsChecks(ctx context.Context, r *report, c *config.Config, d Deps, ip stri
 			r.bad("%s resolves to '%s', expected %s (new record? wait a few minutes)", resolver.name, joined, ip)
 		}
 	}
-	// the resolver this process uses (in a container: the container's, not the host's)
+	// the resolver this process uses
 	where := "this computer's resolver"
-	if d.InContainer {
-		where = "the container's resolver"
-	}
 	if d.Nameserver != "" {
 		where += " (" + d.Nameserver + ")"
 	}

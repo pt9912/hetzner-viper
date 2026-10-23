@@ -21,6 +21,15 @@ func mustParse(t *testing.T, args ...string) (string, options) {
 	return name, o
 }
 
+func TestAMissingMachineNameGivesTheUsage(t *testing.T) {
+	for _, name := range []string{"preflight", "up", "check", "ssh", "down", "dns"} {
+		_, _, err := parse([]string{name})
+		if err == nil || !strings.HasPrefix(err.Error(), "Usage: viper "+name+" <machine>") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
 func TestUnknownOrMisplacedOptionsAreRejected(t *testing.T) {
 	for _, args := range [][]string{
 		{"nope"}, {"up", "web", "--bogus"}, {"check", "web", "--repo", "x"}, {"up", "web", "--force"},

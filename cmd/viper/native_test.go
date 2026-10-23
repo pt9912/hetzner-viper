@@ -77,6 +77,9 @@ func TestSetupCreatesTheTemplateOnlyOnce(t *testing.T) {
 	if !strings.Contains(out.String(), "Created ") {
 		t.Errorf("says it created the file: %q", out.String())
 	}
+	if st, err := os.Stat(filepath.Join(dir, ".env.local")); err != nil || st.Mode().Perm() != 0o600 {
+		t.Errorf("a new .env.local holds tokens and must be private: %v %v", st, err)
+	}
 	os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=mine.example.com\n"), 0o600)
 	out.Reset()
 	if err := setup(&options{dir: dir}, env, &out); err != nil || strings.Contains(out.String(), "Created ") {

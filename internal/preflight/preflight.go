@@ -1,4 +1,4 @@
-// Package preflight is preflight.sh: read-only checks before a machine is created. It creates and
+// Package preflight does the read-only checks before a machine is created. It creates and
 // changes nothing. The wording of the lines is that of the script.
 package preflight
 

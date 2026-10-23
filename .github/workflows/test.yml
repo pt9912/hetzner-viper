@@ -17,9 +17,13 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      # the tests run the scripts that go to the server for real (bash, git, jq, ssh-keygen) and,
-      # if there is one, against a real sshd (it needs this directory)
+      # the tests run the scripts that go to the server for real (bash, git, jq, ssh-keygen),
+      # against a real sshd (it needs /run/sshd) and through shellcheck; a missing tool fails the
+      # tests (VIPER_REQUIRE_TOOLS) instead of skipping them
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends jq shellcheck openssh-server openssh-client git
       - run: sudo mkdir -p /run/sshd
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race ./...
+        env:
+          VIPER_REQUIRE_TOOLS: "1"

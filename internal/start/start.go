@@ -1,4 +1,4 @@
-// Package start is start.sh: create or reuse a machine and set it up. The wording of the lines is
+// Package start creates or reuses a machine and set it up. The wording of the lines is
 // that of the script; the programs that run on the server are the script's (see scripts/).
 package start
 

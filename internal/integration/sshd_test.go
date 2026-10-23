@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/machine"
+	"github.com/pt9912/hetzner-viper/internal/servertest"
 )
 
 // Trust logic against a real OpenSSH pair: the ssh config is written by the same code the commands
@@ -21,11 +22,11 @@ func haveRealSshd(t *testing.T) {
 	t.Helper()
 	for _, p := range []string{"/usr/sbin/sshd", "/usr/bin/ssh"} {
 		if _, err := os.Stat(p); err != nil {
-			t.Skip("no real sshd: ", p)
+			servertest.SkipOrFail(t, "no real sshd: %s", p)
 		}
 	}
 	if st, err := os.Stat("/run/sshd"); err != nil || !st.IsDir() {
-		t.Skip("no /run/sshd")
+		servertest.SkipOrFail(t, "no /run/sshd")
 	}
 }
 

@@ -1,4 +1,4 @@
-// Package stop is stop.sh: delete a machine safely. Before the server is destroyed, the git
+// Package stop deletes a machine safely. Before the server is destroyed, the git
 // repositories, loose files and sessions on it are checked and unsaved work needs an explicit
 // DISCARD; the deletion itself needs DELETE. The wording is that of the script.
 package stop

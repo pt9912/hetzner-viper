@@ -11,7 +11,7 @@ import (
 )
 
 // Show prints the events of all machines (the last 50 lines) or, with a server, the events of
-// that server, or with full its whole transcript (make log, viper log).
+// that server, or with full its whole transcript (viper log).
 func Show(stateDir, server string, full bool, out io.Writer) error {
 	events := filepath.Join(stateDir, "events.log")
 	switch {

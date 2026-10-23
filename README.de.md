@@ -12,7 +12,7 @@ Zielgruppe sind Entwicklerinnen und Entwickler mit eigenem Hetzner- und Cloudfla
 
 ## Was kann ich heute tun?
 
-`viper` ist eine Datei (Linux, macOS) von der [Releases-Seite](https://github.com/pt9912/hetzner-viper/releases). Es braucht nur den OpenSSH-Client (`ssh`, `ssh-keygen`, `ssh-keyscan`, `scp`); kein Docker, `make`, `hcloud` oder `jq`.
+`viper` ist eine Datei (Linux, macOS) von der [Releases-Seite](https://github.com/pt9912/hetzner-viper/releases). Es braucht den OpenSSH-Client (`ssh`, `ssh-keygen`, `ssh-keyscan`, `scp`) und sonst nichts: kein Docker, `make`, `hcloud` oder `jq` (`git` dient der Repository-Prüfung und `code` dem Öffnen von VS Code, beides optional).
 
 ```bash
 mkdir ~/viper && cd ~/viper        # hier liegt Ihre .env.local

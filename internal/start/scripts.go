@@ -2,7 +2,7 @@ package start
 
 import _ "embed"
 
-// Scripts that run on the server, as in start.sh. Each is fed to `bash -s -- <args>` on stdin.
+// Scripts that run on the server. Each is fed to `bash -s -- <args>` on stdin.
 var (
 	//go:embed scripts/swap.sh
 	swapScript string

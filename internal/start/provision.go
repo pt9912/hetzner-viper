@@ -12,7 +12,7 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/preflight"
 )
 
-// provision sets the server up once ssh works: the steps after the wait, in the order of start.sh.
+// provision sets the server up once ssh works: the steps after the wait.
 func (r *runner) provision(status, id, repoURL string, remembered bool, deployKey string) (int, error) {
 	c := r.c
 	rerun := "viper up " + c.Machine
@@ -68,7 +68,7 @@ func (r *runner) provision(status, id, repoURL string, remembered bool, deployKe
 		return 1, ErrShown
 	}
 
-	// Interactive shells (make ssh, tmux, a plain ssh login) that start in the home directory
+	// Interactive shells (viper ssh, tmux, a plain ssh login) that start in the home directory
 	// change to the work directory: the line goes at the end of .bashrc, which non-interactive
 	// shells (ssh commands, the scripts) never reach because of Ubuntu's early return.
 	brew := c.Setting("VIPER_BREW", "/home/linuxbrew/.linuxbrew/bin/brew")
