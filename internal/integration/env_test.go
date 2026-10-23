@@ -43,8 +43,11 @@ type Env struct {
 	Sleeps []time.Duration
 	// Answers are the typed answers of down, in order.
 	Answers []string
-	// LocalIP is what this computer's resolver says for the DNS name ("" = the server's IP).
+	// LocalIP is what this computer's resolver says for the DNS name ("" = the server's IP,
+	// "none" = it knows no such name).
 	LocalIP string
+	// DNSStale makes the public resolvers answer with nothing (the record is not there yet).
+	DNSStale bool
 }
 
 func tool(t *testing.T, name string) {
@@ -118,6 +121,9 @@ func (e *Env) client() *http.Client {
 	return &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
 		// DNS over HTTPS: both public resolvers say what the cloud has
 		if strings.Contains(r.URL.Host, "dns") {
+			if r.URL.Query().Get("type") == "SOA" {
+				return Reply(200, `{"Authority":[{"type":6,"data":"ns.example.com. hostmaster.example.com. 1 7200 3600 1209600 1800"}]}`, nil), nil
+			}
 			host := r.URL.Query().Get("name")
 			var data string
 			for name, srv := range e.Cloud.Servers {
@@ -126,7 +132,7 @@ func (e *Env) client() *http.Client {
 				}
 			}
 			body := `{"Answer":[]}`
-			if data != "" {
+			if data != "" && !e.DNSStale {
 				body = `{"Answer":[{"type":1,"data":"` + data + `"}]}`
 			}
 			return Reply(200, body, nil), nil
@@ -259,6 +265,9 @@ func (e *Env) Check(name string) Result {
 	d := check.Deps{
 		Hetzner: e.Cloud, HTTP: e.client(),
 		LookupIPv4: func(_ context.Context, host string) ([]string, error) {
+			if local == "none" {
+				return nil, nil
+			}
 			if local != "" {
 				return []string{local}, nil
 			}

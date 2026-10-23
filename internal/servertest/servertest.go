@@ -150,6 +150,11 @@ func (s *Server) exec(ctx context.Context, stdin string, stdout, stderr io.Write
 		return os.WriteFile(filepath.Join(s.State, "scp", filepath.Base(dst)), b, 0o600)
 	case "ssh-keyscan":
 		return s.keyscan(args, stdout)
+	case "ssh-keygen":
+		// reading a certificate (ssh-keygen -L) is the real program
+		cmd := exec.CommandContext(ctx, "ssh-keygen", args...)
+		cmd.Stdout, cmd.Stderr = stdout, stderr
+		return cmd.Run()
 	case "ssh":
 		return s.ssh(ctx, stdin, stdout, stderr, args)
 	}
