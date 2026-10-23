@@ -13,8 +13,8 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/runlog"
 )
 
-// Commands that run on the host itself, without the container: they only need the files of the
-// settings directory (--dir, default the current directory) and, for setup and ssh, OpenSSH.
+// The commands run on this computer: they need the files of the settings directory (--dir, default
+// the current directory) and the OpenSSH client.
 
 // replaced by the tests
 var (
@@ -27,7 +27,7 @@ var (
 // changed, and says what to do if not.
 func need(program string) error {
 	if _, err := lookPath(program); err != nil {
-		return fmt.Errorf("%s not found: install the OpenSSH client, or run this command in the container with --container", program)
+		return fmt.Errorf("%s not found: install the OpenSSH client", program)
 	}
 	return nil
 }

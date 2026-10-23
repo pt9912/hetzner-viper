@@ -14,33 +14,6 @@ import (
 	"time"
 )
 
-func TestNativeCommandsRunHereAndContainerFlagRunsThemInTheContainer(t *testing.T) {
-	var ran []string
-	oldNative, oldIn, oldUp := commands["setup"], inContainer, commands["up"]
-	t.Cleanup(func() { commands["setup"], inContainer = oldNative, oldIn })
-	c := oldNative
-	c.native = func(*options) error { ran = append(ran, "native"); return nil }
-	commands["setup"] = c
-	inContainer = func(command, options) error { ran = append(ran, "container"); return nil }
-
-	_, o := mustParse(t, "setup")
-	dispatch(commands["setup"], &o)
-	_, o = mustParse(t, "setup", "--container")
-	dispatch(commands["setup"], &o)
-	c2 := commands["up"]
-	c2.native = nil // pretend: a command without a native version
-	commands["up"] = c2
-	t.Cleanup(func() { commands["up"] = oldUp })
-	_, o = mustParse(t, "up", "web")
-	dispatch(commands["up"], &o)
-	if !slices.Equal(ran, []string{"native", "container", "container"}) {
-		t.Errorf("ran %q", ran)
-	}
-	if _, _, err := parse([]string{"up", "web", "--container"}); err != nil {
-		t.Errorf("--container is global: %v", err)
-	}
-}
-
 func TestSetupResolvesARelativeKeyInTheSettingsDirectory(t *testing.T) {
 	env, _ := nativeEnv(t)
 	dir := t.TempDir()
@@ -74,7 +47,7 @@ func TestMissingOpenSSHIsReportedBeforeAnythingIsCreated(t *testing.T) {
 	fakeTools(t)
 	lookPath = func(string) (string, error) { return "", errors.New("not found") }
 	err := setup(&options{dir: dir}, env, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "--container") || !strings.Contains(err.Error(), "ssh-keygen") {
+	if err == nil || !strings.Contains(err.Error(), "OpenSSH") || !strings.Contains(err.Error(), "ssh-keygen") {
 		t.Fatalf("got %v", err)
 	}
 	if exists(filepath.Join(home, ".ssh")) {
@@ -83,7 +56,7 @@ func TestMissingOpenSSHIsReportedBeforeAnythingIsCreated(t *testing.T) {
 	// ssh: the same
 	os.MkdirAll(filepath.Join(home, ".ssh"), 0o700)
 	os.WriteFile(filepath.Join(home, ".ssh", "config_hetzner_claude-web"), nil, 0o600)
-	if err := connect(&options{dir: dir, machine: "web"}, env, false); err == nil || !strings.Contains(err.Error(), "--container") {
+	if err := connect(&options{dir: dir, machine: "web"}, env, false); err == nil || !strings.Contains(err.Error(), "OpenSSH") {
 		t.Errorf("ssh: got %v", err)
 	}
 	// keys that exist need no ssh-keygen
@@ -191,7 +164,7 @@ func TestLogReadsThePrefixAndShowsTheMachine(t *testing.T) {
 	if !strings.Contains(out.String(), "claude-api") || !strings.Contains(out.String(), "cs-web") {
 		t.Errorf("all: %q", out.String())
 	}
-	if commands["log"].native == nil {
+	if commands["log"].run == nil {
 		t.Error("log is native")
 	}
 }
@@ -274,7 +247,7 @@ func TestUpDownAndCheckNeedOpenSSHBeforeAnythingHappens(t *testing.T) {
 	} {
 		missing = map[string]bool{c.program: true}
 		err := c.run(&options{machine: "web", dir: t.TempDir()})
-		if err == nil || !strings.Contains(err.Error(), c.program+" not found") || !strings.Contains(err.Error(), "--container") {
+		if err == nil || !strings.Contains(err.Error(), c.program+" not found") || !strings.Contains(err.Error(), "OpenSSH") {
 			t.Errorf("%s without %s: %v", c.command, c.program, err)
 		}
 	}

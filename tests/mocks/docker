@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-# Fake docker for the Makefile tests: one file per call, one argument per line.
-n=$(ls "$MOCK_STATE"/docker-call-* 2>/dev/null | wc -l)
-printf '%s\n' "$@" > "$MOCK_STATE/docker-call-$n"
-# MOCK_NO_IMAGE: the image is not available locally (make build then pulls it)
-[[ -z "${MOCK_NO_IMAGE:-}" || "$1 $2" != "image inspect" ]] || exit 1
-# MOCK_DOCKER_PULL_FAIL: the registry has no such image
-[[ -z "${MOCK_DOCKER_PULL_FAIL:-}" || "$1" != pull ]] || exit 1

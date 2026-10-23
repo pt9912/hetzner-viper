@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-# Fake cloud-init on the server: exit code from MOCK_CLOUDINIT_RC (2 = done with warnings, 1 = errors)
-rc="${MOCK_CLOUDINIT_RC:-0}"
-# MOCK_CLOUDINIT_DISABLED: later boot, cloud-init switched itself off after the first one
-if [[ -n "${MOCK_CLOUDINIT_DISABLED:-}" ]]; then [[ "$1" != status ]] || echo 'status: disabled'; exit 0; fi
-[[ "$1" != status ]] || { (( rc == 1 )) && echo 'status: error' || echo 'status: done'; }
-exit "$rc"

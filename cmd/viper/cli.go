@@ -8,11 +8,8 @@ import (
 )
 
 type options struct {
-	machine, repo, cmd    string
-	force, full, local    bool
-	container             bool
-	image, baseImage, dir string
-	extraEnv              []string
+	machine, repo, cmd, dir string
+	force, full             bool
 }
 
 type machineMode int
@@ -23,69 +20,28 @@ const (
 	maybeMachine
 )
 
-// A command runs the given arguments of bash in the container (a script of the checkout, or -c).
 type command struct {
 	usage   string // shown after "viper <name>"
 	machine machineMode
 	flags   []string // options besides the global ones
-	args    func(o *options) []string
-	// runs on the host instead of in the container (unless --container)
-	native func(o *options) error
+	run     func(o *options) error
 }
 
 var errHelp = errors.New("help")
 
-var globalFlags = []string{"image", "base-image", "dir", "local", "container"}
-var valueFlags = map[string]bool{"repo": true, "cmd": true, "image": true, "base-image": true, "dir": true}
-
-const dnsScript = `set -a; for f in ./.env.local "./machines/$1.env.local"; do [ ! -f "$f" ] || . "$f"; done; ` +
-	`[ -n "$DNS_DOMAIN" ] || { echo "DNS_DOMAIN is not set in .env.local" >&2; exit 1; }; ` +
-	`printf "%s-%s.%s\n" "${SERVER_PREFIX:-claude}" "$1" "$DNS_DOMAIN"`
-
-// the prefix is read as the scripts read it (bash sources the files: comments, quotes)
-const logScript = `d="$HOME/.local/state/hetzner-claude"; ` +
-	`if [ -z "$MACHINE" ]; then tail -n 50 "$d/events.log" 2>/dev/null || echo 'no events yet'; exit 0; fi; ` +
-	`p=$(bash -c 'set -a; for f in ./.env.local "./machines/$1.env.local"; do [ ! -f "$f" ] || . "$f"; done; printf %s "$SERVER_PREFIX"' _ "$MACHINE" 2>/dev/null); ` +
-	`s="${p:-claude}-$MACHINE"; ` +
-	`if [ "$FULL" = 1 ]; then cat "$d/logs/$s.log" 2>/dev/null || echo "no log for $s"; ` +
-	`else awk -v s="$s" '$2 == s' "$d/events.log" 2>/dev/null | grep . || echo "no events for $s"; fi`
+var globalFlags = []string{"dir"}
+var valueFlags = map[string]bool{"repo": true, "cmd": true, "dir": true}
 
 var commands = map[string]command{
-	"setup": {usage: "", machine: noMachine, native: nativeSetup,
-		args: func(o *options) []string { return []string{"./setup.sh"} }},
-	"preflight": {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"}, native: nativePreflight,
-		args: func(o *options) []string { return []string{"./preflight.sh", o.machine, o.repo} }},
-	"up": {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"}, native: nativeUp,
-		args: func(o *options) []string { return []string{"./start.sh", o.machine, o.repo} }},
-	"check": {usage: "<machine>", machine: needMachine, native: nativeCheck,
-		args: func(o *options) []string { return []string{"./check.sh", o.machine} }},
-	"ssh": {usage: "<machine> [--cmd COMMAND]", machine: needMachine, flags: []string{"cmd"}, native: nativeSSH,
-		args: func(o *options) []string {
-			a := []string{"./connect.sh", o.machine}
-			if o.cmd != "" {
-				a = append(a, o.cmd)
-			}
-			return a
-		}},
-	"down": {usage: "<machine> [--force]", machine: needMachine, flags: []string{"force"}, native: nativeDown,
-		args: func(o *options) []string {
-			a := []string{"./stop.sh", o.machine}
-			if o.force {
-				a = append(a, "--force")
-			}
-			return a
-		}},
-	"dns": {usage: "<machine>", machine: needMachine, native: nativeDNS,
-		args: func(o *options) []string { return []string{"-c", dnsScript, "_", o.machine} }},
-	"log": {usage: "[<machine>] [--full]", machine: maybeMachine, flags: []string{"full"}, native: nativeLog,
-		args: func(o *options) []string {
-			o.extraEnv = []string{"MACHINE=" + o.machine}
-			if o.full {
-				o.extraEnv = append(o.extraEnv, "FULL=1")
-			}
-			return []string{"-c", logScript, "_"}
-		}},
-	"version": {usage: "", machine: noMachine},
+	"setup":     {usage: "", machine: noMachine, run: nativeSetup},
+	"preflight": {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"}, run: nativePreflight},
+	"up":        {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"}, run: nativeUp},
+	"check":     {usage: "<machine>", machine: needMachine, run: nativeCheck},
+	"ssh":       {usage: "<machine> [--cmd COMMAND]", machine: needMachine, flags: []string{"cmd"}, run: nativeSSH},
+	"down":      {usage: "<machine> [--force]", machine: needMachine, flags: []string{"force"}, run: nativeDown},
+	"dns":       {usage: "<machine>", machine: needMachine, run: nativeDNS},
+	"log":       {usage: "[<machine>] [--full]", machine: maybeMachine, flags: []string{"full"}, run: nativeLog},
+	"version":   {usage: "", machine: noMachine},
 }
 
 func parse(args []string) (string, options, error) {
@@ -131,10 +87,6 @@ func parse(args []string) (string, options, error) {
 				o.repo = v
 			case "cmd":
 				o.cmd = v
-			case "image":
-				o.image = v
-			case "base-image":
-				o.baseImage = v
 			case "dir":
 				o.dir = v
 			}
@@ -148,10 +100,6 @@ func parse(args []string) (string, options, error) {
 			o.force = true
 		case "full":
 			o.full = true
-		case "local":
-			o.local = true
-		case "container":
-			o.container = true
 		}
 	}
 	if len(positional) > 0 {
@@ -177,18 +125,14 @@ func helpText() string {
 	}
 	sort.Strings(names)
 	var b strings.Builder
-	b.WriteString("viper " + version + ": set up and use Hetzner machines for Claude Code (needs Docker; setup, ssh and dns need OpenSSH)\n\n")
+	b.WriteString("viper " + version + ": set up and use Hetzner machines for Claude Code (needs the OpenSSH client)\n\n")
 	for _, n := range names {
 		b.WriteString("  " + strings.TrimPrefix(usageLine(n), "Usage: ") + "\n")
 	}
 	b.WriteString(`
-Options for every command:
-  --dir DIR         the directory with .env.local (and machines/), and the scripts for the container commands;
-                    a relative SSH_KEY is relative to it (default: current directory)
-  --image REF       run this image (pulled if missing) instead of the one of this version
-  --container       run the native commands in the container too (default: on this computer)
-  --local           build the image from the Dockerfile instead of pulling the release's
-  --base-image REF  base image for --local (default: Docker Hub, or mirror.gcr.io if unreachable)
+Option for every command:
+  --dir DIR   the directory with .env.local (and machines/); a relative SSH_KEY is relative to it
+              (default: the current directory)
 
 Values that start with a dash need the form --cmd=VALUE, for example viper ssh web --cmd="ls -la".
 `)

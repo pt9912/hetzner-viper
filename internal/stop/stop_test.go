@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -486,20 +485,6 @@ func TestAbsentServerWithoutRecordedIpLeavesDns(t *testing.T) {
 }
 
 // --- the script on the server is the one of stop.sh, and it finds what it should find
-
-func TestRemoteScriptIsTheOneOfStopSh(t *testing.T) {
-	b, err := os.ReadFile("../../stop.sh")
-	if err != nil {
-		t.Skip("no stop.sh")
-	}
-	m := regexp.MustCompile(`(?s)<<'REMOTE'\n(.*?)\nREMOTE\n`).FindSubmatch(b)
-	if m == nil {
-		t.Skip("stop.sh has no remote script any more")
-	}
-	if string(m[1])+"\n" != remote {
-		t.Error("internal/stop/remote.sh differs from the REMOTE heredoc in stop.sh")
-	}
-}
 
 func git(t *testing.T, dir string, args ...string) {
 	t.Helper()

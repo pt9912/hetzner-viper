@@ -9,24 +9,17 @@ permissions:
   contents: read
 
 jobs:
-  docker-test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-      # builds the test image and runs the offline suite (incl. lint and a real sshd) without network
-      - run: make docker-test
-      # the image that releases publish must keep building
-      - run: docker build --target run -t hetzner-claude-run .
-
   go:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+      # the tests run the scripts that go to the server for real (bash, git, jq, ssh-keygen) and,
+      # if there is one, against a real sshd (it needs this directory)
+      - run: sudo mkdir -p /run/sshd
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
-      - run: go test ./...
+      - run: go test -race ./...

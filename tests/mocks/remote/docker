@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-# Fake docker on the server: MOCK_DOCKER_FAIL simulates a docker daemon that is not running
-[[ -z "${MOCK_DOCKER_FAIL:-}" ]]

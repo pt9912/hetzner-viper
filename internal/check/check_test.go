@@ -7,28 +7,12 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/pt9912/hetzner-viper/internal/config"
 	"github.com/pt9912/hetzner-viper/internal/hetzner"
 )
-
-// The probe in this package is the one in check.sh (until that script is gone).
-func TestProbeIsTheOneOfCheckSh(t *testing.T) {
-	b, err := os.ReadFile("../../check.sh")
-	if err != nil {
-		t.Skip("no check.sh")
-	}
-	m := regexp.MustCompile(`(?s)<<'PROBE'\n(.*?)\nPROBE\n`).FindSubmatch(b)
-	if m == nil {
-		t.Skip("check.sh has no probe any more")
-	}
-	if string(m[1])+"\n" != probe {
-		t.Error("internal/check/probe.sh differs from the PROBE heredoc in check.sh")
-	}
-}
 
 func TestParseProbeKeepsTheFirstValue(t *testing.T) {
 	got := parseProbe("cloudinit=done\nclaude_answer=OK\nmem=1 MB available of 2 MB\nweird line\ncloudinit=other\nx=a=b\n")

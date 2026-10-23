@@ -1,5 +1,4 @@
-// viper runs the hetzner-viper scripts in their container, like the Makefile does, so that
-// Docker is all a user needs: viper up web --repo https://example.org/org/web.git
+// viper sets up and uses Hetzner machines for Claude Code: viper up web --repo https://example.org/org/web.git
 package main
 
 import (
@@ -42,16 +41,7 @@ func run(args []string) int {
 	return exitCode(err)
 }
 
-// replaced by the tests
-var inContainer = execute
-
-// A native command runs on this computer, unless --container asks for the container.
-func dispatch(c command, o *options) error {
-	if c.native != nil && !o.container {
-		return c.native(o)
-	}
-	return inContainer(c, *o)
-}
+func dispatch(c command, o *options) error { return c.run(o) }
 
 func exitCode(err error) int {
 	var es exitStatus

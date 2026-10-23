@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-# Fake systemctl on the server: logs the calls; MOCK_SYSTEMCTL_FAIL: starting fails,
-# MOCK_CODE_SERVER_DOWN: code-server is not active
-echo "systemctl $*" >> "$MOCK_STATE/systemctl.log"
-case "$1" in
-  restart|start) [[ -z "${MOCK_SYSTEMCTL_FAIL:-}" ]] || exit 1 ;;
-  is-active) if [[ -n "${MOCK_CODE_SERVER_DOWN:-}" ]]; then echo inactive; exit 3; else echo active; fi ;;
-esac

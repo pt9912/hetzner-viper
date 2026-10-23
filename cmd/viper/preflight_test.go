@@ -109,11 +109,11 @@ func TestPreflightNeedsTheSettingsBeforeAnything(t *testing.T) {
 }
 
 func TestPreflightRunsHereByDefault(t *testing.T) {
-	if commands["preflight"].native == nil {
+	if commands["preflight"].run == nil {
 		t.Error("preflight is native")
 	}
 	for _, name := range []string{"up", "down", "check", "log", "setup", "ssh", "dns"} {
-		if commands[name].native == nil {
+		if commands[name].run == nil {
 			t.Errorf("%s is native", name)
 		}
 	}
@@ -172,7 +172,7 @@ func TestCheckLogsTheRunAndItsOutcome(t *testing.T) {
 	if exitCode(err) != 1 || !strings.HasSuffix(string(events), "check     FAILED (exit 1; see logs/claude-web.log)\n") {
 		t.Errorf("%v / events %q", err, events)
 	}
-	if commands["check"].native == nil {
+	if commands["check"].run == nil {
 		t.Error("check is native")
 	}
 }
@@ -241,7 +241,7 @@ func TestDownReadsItsAnswersFromAPipeAndLogsTheOutcome(t *testing.T) {
 	if !strings.HasSuffix(string(events), "down      cancelled (no DELETE)\n") {
 		t.Errorf("events %q", events)
 	}
-	if commands["down"].native == nil {
+	if commands["down"].run == nil {
 		t.Error("down is native")
 	}
 }
