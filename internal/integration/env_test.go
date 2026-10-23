@@ -78,7 +78,7 @@ func New(t *testing.T, settings string) *Env {
 	pub, _ := os.ReadFile(ca + ".pub")
 	os.WriteFile(filepath.Join(ssh, "known_hosts_hetzner_claude_ca"), []byte("@cert-authority *.example.com "+strings.TrimSpace(string(pub))+"\n"), 0o600)
 	e.WriteSettings(settings)
-	e.HTTP = func(*http.Request) (*http.Response, error) { return Reply(404, "", nil), nil }
+	e.HTTP = defaultHTTP
 	return e
 }
 
@@ -344,4 +344,80 @@ func gitCmd(dir string, args ...string) (string, error) {
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0")
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// GitHub makes the preflight see GitHub (api.github.com and github.com) with a token for the
+// user "tester". scopes is the header of a classic token ("" = a fine-grained one).
+func (e *Env) GitHub(scopes string) {
+	e.HTTP = func(r *http.Request) (*http.Response, error) {
+		switch {
+		case r.URL.Host == "api.github.com" && r.URL.Path == "/user":
+			h := map[string]string{}
+			if scopes != "" {
+				h["X-OAuth-Scopes"] = scopes
+			}
+			return Reply(200, `{"login":"tester"}`, h), nil
+		case r.URL.Host == "api.github.com" && strings.HasPrefix(r.URL.Path, "/repos/"):
+			return Reply(200, `{}`, nil), nil
+		case r.URL.Host == "github.com" && strings.HasSuffix(r.URL.Path, ".git/info/refs"):
+			return Reply(200, ``, nil), nil
+		}
+		return Reply(404, ``, nil), nil
+	}
+}
+
+// Gateway makes llm.test.invalid answer like an Anthropic-compatible API: Bearer token olk_secret_9,
+// the models listed (a model that is not listed is "not found").
+func (e *Env) Gateway(models ...string) {
+	e.HTTP = func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "llm.test.invalid" || r.URL.Path != "/v1/messages" {
+			return Reply(404, "", nil), nil
+		}
+		if r.Header.Get("Authorization") != "Bearer olk_secret_9" {
+			return Reply(401, `{"error":{"message":"invalid api key"}}`, nil), nil
+		}
+		b, _ := io.ReadAll(r.Body)
+		for _, m := range models {
+			if strings.Contains(string(b), `"model":"`+m+`"`) {
+				return Reply(200, `{}`, nil), nil
+			}
+		}
+		return Reply(404, `{"error":{"message":"model not found"}}`, nil), nil
+	}
+}
+
+// RemoteEnv is the value of a variable in a non-interactive shell on the server ("<unset>" if none).
+func (e *Env) RemoteEnv(name string) string {
+	e.t.Helper()
+	cmd := exec.Command("bash", "-c", `. ~/.bashrc >/dev/null 2>&1; printf %s "${`+name+`-<unset>}"`)
+	cmd.Env = []string{"HOME=" + e.Srv.Home, "PATH=" + os.Getenv("PATH")}
+	out, _ := cmd.Output()
+	return string(out)
+}
+
+// GitConfig is a value of the global git config on the server.
+func (e *Env) GitConfig(key string) string {
+	cmd := exec.Command("git", "config", "--file", filepath.Join(e.Srv.Home, ".gitconfig"), key)
+	out, _ := cmd.Output()
+	return strings.TrimSpace(string(out))
+}
+
+// defaultHTTP is the world outside as the tests found it: GitHub knows the user "tester" (a classic
+// token with the scopes gh needs), and a gateway at llm.test.invalid answers every request that
+// has a bearer token.
+func defaultHTTP(r *http.Request) (*http.Response, error) {
+	switch {
+	case r.URL.Host == "api.github.com" && r.URL.Path == "/user":
+		return Reply(200, `{"login":"tester"}`, map[string]string{"X-OAuth-Scopes": "repo, read:org"}), nil
+	case r.URL.Host == "api.github.com" && strings.HasPrefix(r.URL.Path, "/repos/"):
+		return Reply(200, `{}`, nil), nil
+	case r.URL.Host == "github.com" && strings.HasSuffix(r.URL.Path, ".git/info/refs"):
+		return Reply(200, ``, nil), nil
+	case r.URL.Host == "llm.test.invalid" && r.URL.Path == "/v1/messages":
+		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+			return Reply(401, `{"error":{"message":"invalid api key"}}`, nil), nil
+		}
+		return Reply(200, `{}`, nil), nil
+	}
+	return Reply(404, ``, nil), nil
 }
