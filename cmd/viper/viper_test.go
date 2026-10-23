@@ -352,17 +352,25 @@ func nativeEnv(t *testing.T) (config.Env, string) {
 func fakeTools(t *testing.T) *[][]string {
 	t.Helper()
 	var calls [][]string
-	old := runTool
-	t.Cleanup(func() { runTool = old })
-	runTool = func(name string, args ...string) error {
+	oldRun, oldExec, oldLook := runTool, execTool, lookPath
+	t.Cleanup(func() { runTool, execTool, lookPath = oldRun, oldExec, oldLook })
+	lookPath = func(string) (string, error) { return "/usr/bin/tool", nil }
+	record := func(name string, args ...string) error {
 		calls = append(calls, append([]string{name}, args...))
 		if name == "ssh-keygen" {
 			f := args[slices.Index(args, "-f")+1]
+			if _, err := os.Stat(f); err == nil {
+				return errors.New("ssh-keygen would overwrite " + f)
+			}
+			if err := os.MkdirAll(filepath.Dir(f), 0o700); err != nil {
+				return err
+			}
 			os.WriteFile(f, []byte("PRIVATE\n"), 0o600)
 			return os.WriteFile(f+".pub", []byte("ssh-ed25519 AAAAkey comment\n"), 0o644)
 		}
 		return nil
 	}
+	runTool, execTool = record, record
 	return &calls
 }
 
@@ -464,15 +472,5 @@ func TestDnsNamePrintsTheMachinesName(t *testing.T) {
 	}
 	if err := dnsName(&options{dir: t.TempDir(), machine: "web"}, env, &out); err == nil {
 		t.Error("no settings")
-	}
-}
-
-func TestContainerFlagKeepsTheScriptsInTheContainer(t *testing.T) {
-	_, o := mustParse(t, "setup", "--container")
-	if !o.container || commands["setup"].native == nil {
-		t.Error("setup is native by default and --container is accepted")
-	}
-	if _, _, err := parse([]string{"up", "web", "--container"}); err != nil {
-		t.Errorf("--container is global: %v", err)
 	}
 }

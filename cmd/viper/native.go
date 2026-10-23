@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -15,7 +16,20 @@ import (
 // settings directory (--dir, default the current directory) and, for setup and ssh, OpenSSH.
 
 // replaced by the tests
-var runTool = runChild
+var (
+	runTool  = runChild
+	execTool = replaceProcess
+	lookPath = exec.LookPath
+)
+
+// need checks that a program the command runs on this computer exists, before anything is
+// changed, and says what to do if not.
+func need(program string) error {
+	if _, err := lookPath(program); err != nil {
+		return fmt.Errorf("%s not found: install the OpenSSH client, or run this command in the container with --container", program)
+	}
+	return nil
+}
 
 func hostEnv() (config.Env, error) {
 	home, err := os.UserHomeDir()
@@ -36,15 +50,19 @@ func settingsDir(o *options) string {
 func setup(o *options, env config.Env, out io.Writer) error {
 	dir := settingsDir(o)
 	file := filepath.Join(dir, ".env.local")
-	if _, err := os.Stat(file); os.IsNotExist(err) {
-		// 600: the file holds API tokens
-		if err := os.WriteFile(file, hetznerviper.EnvExample, 0o600); err != nil {
-			return err
+	// O_EXCL: two runs at once do not truncate each other's file; 600: it holds API tokens
+	switch f, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600); {
+	case err == nil:
+		_, werr := f.Write(hetznerviper.EnvExample)
+		if cerr := f.Close(); werr == nil {
+			werr = cerr
 		}
-		if err := os.Chmod(file, 0o600); err != nil {
-			return err
+		if werr != nil {
+			return werr
 		}
 		fmt.Fprintf(out, "Created %s from the template; set DNS_DOMAIN in it.\n", file)
+	case !os.IsExist(err):
+		return err
 	}
 	vars, err := config.LoadFile(dir, env)
 	if err != nil {
@@ -60,11 +78,17 @@ func setup(o *options, env config.Env, out io.Writer) error {
 	if domain == "" {
 		return fmt.Errorf("Set DNS_DOMAIN in .env.local")
 	}
-	key := get("SSH_KEY")
-	if key == "" {
-		key = filepath.Join(env.Home, ".ssh", "hetzner-build")
+	if err := config.CheckDomain(domain); err != nil {
+		return err
 	}
-	key = config.ExpandHome(key, env.Home)
+	key := config.KeyPath(get("SSH_KEY"), dir, env.Home)
+	ca := filepath.Join(env.Home, ".ssh", "hetzner_claude_host_ca")
+	// before anything is created: without OpenSSH a key cannot be made
+	if !exists(key) || !exists(ca) {
+		if err := need("ssh-keygen"); err != nil {
+			return err
+		}
+	}
 	for _, d := range []string{filepath.Dir(key), filepath.Join(env.Home, ".ssh")} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return err
@@ -75,7 +99,6 @@ func setup(o *options, env config.Env, out io.Writer) error {
 			return err
 		}
 	}
-	ca := filepath.Join(env.Home, ".ssh", "hetzner_claude_host_ca")
 	if !exists(ca) {
 		if err := runTool("ssh-keygen", "-t", "ed25519", "-f", ca, "-N", "", "-C", "Hetzner Claude Host CA"); err != nil {
 			return err
@@ -124,7 +147,11 @@ func connect(o *options, env config.Env, interactive bool) error {
 	if o.cmd != "" {
 		args = append(args, o.cmd)
 	}
-	return runTool("ssh", args...)
+	if err := need("ssh"); err != nil {
+		return err
+	}
+	// ssh takes our place (like connect.sh's exec): signals and the exit code are its own
+	return execTool("ssh", args...)
 }
 
 // dnsName prints the DNS name of a machine: <SERVER_PREFIX>-<machine>.<DNS_DOMAIN>.

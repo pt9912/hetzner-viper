@@ -30,22 +30,35 @@ func run(args []string) int {
 		fmt.Println("viper", version)
 		return 0
 	}
-	c := commands[name]
-	if c.native != nil && !o.container {
-		err = c.native(&o)
-	} else {
-		err = execute(c, o)
+	err = dispatch(commands[name], &o)
+	if err == nil {
+		return 0
 	}
-	if err != nil {
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			if code := ee.ExitCode(); code >= 0 {
-				return code
-			}
-			return 130 // the program was ended by a signal
-		}
+	var ee *exec.ExitError
+	if !errors.As(err, &ee) {
 		fmt.Fprintln(os.Stderr, "viper:", err)
-		return 1
 	}
-	return 0
+	return exitCode(err)
+}
+
+// replaced by the tests
+var inContainer = execute
+
+// A native command runs on this computer, unless --container asks for the container.
+func dispatch(c command, o *options) error {
+	if c.native != nil && !o.container {
+		return c.native(o)
+	}
+	return inContainer(c, *o)
+}
+
+func exitCode(err error) int {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		if code := ee.ExitCode(); code >= 0 {
+			return code
+		}
+		return 130 // the program was ended by a signal
+	}
+	return 1
 }

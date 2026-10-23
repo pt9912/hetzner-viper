@@ -22,6 +22,9 @@ type Env struct {
 
 // Getenv is the value of an environment variable, "" if it is not set.
 func (e Env) Getenv(name string) string {
+	if e.Lookup == nil {
+		return ""
+	}
 	v, _ := e.Lookup(name)
 	return v
 }
@@ -71,6 +74,9 @@ func sourceFile(vars map[string]string, path string, env Env) error {
 		if k == "HOME" {
 			return env.Home, true
 		}
+		if env.Lookup == nil {
+			return "", false
+		}
 		return env.Lookup(k)
 	}
 	if err := Source(vars, string(b), lookup); err != nil {
@@ -111,10 +117,10 @@ func Load(dir, machine string, env Env, needTokens bool) (*Config, error) {
 		return nil, fmt.Errorf("Missing settings: %s (in .env.local or machines/%s.env.local; the three tokens may also be exported in the shell)", strings.Join(missing, " "), machine)
 	}
 	c.DNSDomain = c.Get("DNS_DOMAIN")
-	if !domainRe.MatchString(c.DNSDomain) {
-		return nil, fmt.Errorf("DNS_DOMAIN must be a domain like example.com (lowercase, no scheme, no trailing dot): %s", c.DNSDomain)
+	if err := CheckDomain(c.DNSDomain); err != nil {
+		return nil, err
 	}
-	c.SSHKey = ExpandHome(or(c.Get("SSH_KEY"), filepath.Join(env.Home, ".ssh", "hetzner-build")), env.Home)
+	c.SSHKey = KeyPath(c.Get("SSH_KEY"), dir, env.Home)
 	c.ServerType = or(c.Get("SERVER_TYPE"), "cpx32")
 	c.ServerLocation = or(c.Get("SERVER_LOCATION"), "fsn1")
 	c.ServerImage = or(c.Get("SERVER_IMAGE"), "ubuntu-26.04")
@@ -138,6 +144,29 @@ func Load(dir, machine string, env Env, needTokens bool) (*Config, error) {
 	c.SSHConfig = filepath.Join(c.SSHDir, "config_hetzner_"+c.ServerName)
 	c.KnownPin = filepath.Join(c.SSHDir, "known_hosts_hetzner_"+c.ServerName)
 	return c, nil
+}
+
+// CheckDomain reports a DNS_DOMAIN that is not a plain lowercase domain.
+func CheckDomain(d string) error {
+	if !domainRe.MatchString(d) {
+		return fmt.Errorf("DNS_DOMAIN must be a domain like example.com (lowercase, no scheme, no trailing dot): %s", d)
+	}
+	return nil
+}
+
+// KeyPath is the login key: SSH_KEY (default ~/.ssh/hetzner-build) with ~ expanded. A relative
+// path is relative to the settings directory, where the scripts ran (they changed into it).
+func KeyPath(setting, dir, home string) string {
+	if setting == "" {
+		return filepath.Join(home, ".ssh", "hetzner-build")
+	}
+	p := ExpandHome(setting, home)
+	if !filepath.IsAbs(p) {
+		if abs, err := filepath.Abs(filepath.Join(dir, p)); err == nil {
+			p = abs
+		}
+	}
+	return p
 }
 
 // ExpandHome turns a leading ~ into the home directory (${SSH_KEY/#\~/$HOME}).

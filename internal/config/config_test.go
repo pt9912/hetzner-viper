@@ -260,3 +260,21 @@ func TestSourceAgreesWithBash(t *testing.T) {
 		}
 	}
 }
+
+func TestEnvWithoutLookupIsSafe(t *testing.T) {
+	dir := setupDir(t, "DNS_DOMAIN=example.com\n", "")
+	c, err := Load(dir, "web", Env{Home: "/h"}, false)
+	if err != nil || c.SSHKey != "/h/.ssh/hetzner-build" {
+		t.Errorf("%v %v", c, err)
+	}
+}
+
+func TestKeyPath(t *testing.T) {
+	for _, c := range []struct{ setting, want string }{
+		{"", "/h/.ssh/hetzner-build"}, {"~/.ssh/k", "/h/.ssh/k"}, {"/abs/k", "/abs/k"}, {"keys/k", "/work/keys/k"}, {"./k", "/work/k"},
+	} {
+		if got := KeyPath(c.setting, "/work", "/h"); got != c.want {
+			t.Errorf("%q: got %q, want %q", c.setting, got, c.want)
+		}
+	}
+}

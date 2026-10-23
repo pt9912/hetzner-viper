@@ -177,13 +177,14 @@ func helpText() string {
 	}
 	sort.Strings(names)
 	var b strings.Builder
-	b.WriteString("viper " + version + ": run the hetzner-viper scripts in their container (needs Docker, run it in the checkout)\n\n")
+	b.WriteString("viper " + version + ": set up and use Hetzner machines for Claude Code (needs Docker; setup, ssh and dns need OpenSSH)\n\n")
 	for _, n := range names {
 		b.WriteString("  " + strings.TrimPrefix(usageLine(n), "Usage: ") + "\n")
 	}
 	b.WriteString(`
 Options for every command:
-  --dir DIR         the directory with .env.local, and the scripts for the container commands (default: current directory)
+  --dir DIR         the directory with .env.local (and machines/), and the scripts for the container commands;
+                    a relative SSH_KEY is relative to it (default: current directory)
   --image REF       run this image (pulled if missing) instead of the one of this version
   --container       run setup, ssh and dns in the container too (default: on this computer, needs OpenSSH)
   --local           build the image from the Dockerfile instead of pulling the release's
