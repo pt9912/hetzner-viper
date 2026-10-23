@@ -3,7 +3,7 @@
 .DEFAULT_GOAL := help
 TEST_IMAGE ?= hetzner-claude-tests
 IMAGE_REPO ?= ghcr.io/pt9912/hetzner-viper
-# On a release tag (git clone --branch v0.2.0) the published image of that release is used; on any
+# On a release tag (git clone --branch v0.4.0) the published image of that release is used; on any
 # other checkout, or with RELEASE= (empty, on every make call or exported), the image is built
 # locally. Only tags like v1.2.3 count, and only when this directory is the top of the git
 # work tree (not a release archive unpacked inside some other repository). RUN_IMAGE names the
@@ -59,11 +59,12 @@ SSH_CONFIG_MOUNT := $(if $(filter-out $(HOME)/.ssh/%,$(SSH_CONFIG_TARGET)),-v "$
 # Runs as the host user with the host's ~/.ssh and state directory mounted at the same
 # paths, so keys, host CA and ssh config end up where the host's ssh and VS Code expect them.
 # The image has no user for that uid: a passwd file with it and the host's home is mounted
-# (ssh resolves ~ via the passwd entry, not $HOME).
+# (ssh resolves ~ via the passwd entry, not $HOME). It lives in the state directory: with a VM
+# (Colima, Docker Desktop) only the home directory is shared with Docker, not the temp directory.
 define RUN
 	@mkdir -p "$$HOME/.ssh" "$$HOME/.local/state/hetzner-claude"
-	@pw=$$(mktemp) && trap 'rm -f "$$pw"' EXIT && chmod 644 "$$pw" && \
-	printf 'root:x:0:0:root:/root:/bin/bash\nrunner:x:%s:%s::%s:/bin/bash\n' "$$(id -u)" "$$(id -g)" "$$HOME" > "$$pw" && \
+	@pw="$$HOME/.local/state/hetzner-claude/passwd.$$$$" && trap 'rm -f "$$pw"' EXIT && \
+	printf 'root:x:0:0:root:/root:/bin/bash\nrunner:x:%s:%s::%s:/bin/bash\n' "$$(id -u)" "$$(id -g)" "$$HOME" > "$$pw" && chmod 644 "$$pw" && \
 	docker run --rm -i $$(test -t 0 && echo -t) --user $$(id -u):$$(id -g) -e HOME="$$HOME" \
 	  $$(test -e /etc/localtime && echo -v /etc/localtime:/etc/host-localtime:ro) -e TZ="$${TZ:-$$(test -e /etc/localtime && echo :/etc/host-localtime)}" \
 	  -e HCLOUD_TOKEN -e CLOUDFLARE_API_TOKEN -e CLOUDFLARE_ZONE_ID -e VIPER_GH_TOKEN -e VIPER_GH_HOST -e VIPER_CLAUDE_TOKEN -e VIPER_ANTHROPIC_BASE_URL -e VIPER_ANTHROPIC_AUTH_TOKEN -e VIPER_CLAUDE_MODEL -e VIPER_CLAUDE_MAX_CONTEXT_TOKENS -e VIPER_HOMEBREW -e VIPER_BREW_TAPS -e VIPER_BREW_TRUST -e VIPER_BREW_PACKAGES -e VIPER_BREWFILE -e VIPER_SWAP -e VIPER_CODE_SERVER -e VIPER_CODE_SERVER_PASSWORD -e VIPER_GIT_USER_NAME -e VIPER_GIT_USER_EMAIL \

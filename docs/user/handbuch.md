@@ -1,7 +1,7 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.34  
-Software-Version: v0.2.0  
+Version: 1.35  
+Software-Version: v0.4.0  
 Stand: 23.10.2026
 
 ## 1. Einleitung
@@ -20,7 +20,7 @@ Dieses Handbuch richtet sich an Entwicklerinnen und Entwickler, die auf einem Li
 
 Auf Ihrem lokalen Rechner (nur Linux ist erprobt):
 
-* **Empfohlen:** Docker und `make`. Alle Werkzeuge (`ssh`, `hcloud`, `jq`, `curl`, `python3`) kommen dann aus dem Container, Sie installieren sonst nichts. Dieses Handbuch nennt jeweils den `make`-Befehl (siehe auch Aufgabe „Rechner im Container einrichten und beenden“).
+* **Empfohlen:** Docker, dazu das Programm `viper` (eine einzelne Datei aus dem Release, siehe Aufgabe „`viper` installieren und benutzen“) oder alternativ `make`. Alle Werkzeuge (`ssh`, `hcloud`, `jq`, `curl`, `python3`) kommen dann aus dem Container, Sie installieren sonst nichts. Dieses Handbuch nennt jeweils den `make`-Befehl; `viper` kennt dieselben Befehle (siehe auch Aufgabe „Rechner im Container einrichten und beenden“).
 * **Alternativ** ohne Container: `bash`, `curl`, `jq`, `python3`, OpenSSH-Client und die Hetzner-Kommandozeile `hcloud`. Dann rufen Sie die Skripte direkt auf (`./setup.sh`, `./start.sh <rechner>` usw.).
 * Optional VS Code mit der Erweiterung **Remote-SSH**. Sie nutzt den OpenSSH-Client Ihres Rechners, der dafür lokal installiert sein muss. Ohne ihn verbinden Sie sich mit `make ssh MACHINE=<rechner>`.
 
@@ -76,7 +76,7 @@ Sie haben `git` und die Voraussetzungen aus Kapitel 1.
 1. Die veröffentlichten Versionen stehen auf der Seite „Releases“ des Repositorys (`https://github.com/pt9912/hetzner-viper/releases`).
 2. Klonen Sie die gewünschte Version, zum Beispiel:
    ```bash
-   git clone --branch v0.2.0 https://github.com/pt9912/hetzner-viper.git
+   git clone --branch v0.4.0 https://github.com/pt9912/hetzner-viper.git
    cd hetzner-viper
    ```
    Alternativ laden Sie auf der Release-Seite das Quellarchiv (`Source code`) herunter und entpacken es.
@@ -92,6 +92,59 @@ Sie arbeiten mit genau dem Stand der gewählten Version. Es gibt nichts zu insta
 * Auf einen neueren Stand wechseln Sie mit `git fetch --tags` und `git checkout <neue-version>`. Das passende neue Image holt `make` beim nächsten Aufruf. Lesen Sie vorher die Release Notes und die Änderungshistorie in Kapitel 11.
 * Das Quellarchiv von der Release-Seite enthält kein Git. Dann baut `make` das Image selbst (wie auf jedem Stand ohne Release-Tag). Dasselbe erreichen Sie in einem Klon, wenn Sie bei jedem Aufruf `RELEASE=` mitgeben (`make up MACHINE=web RELEASE=`) oder `export RELEASE=` setzen. Als Release-Tag gelten nur Tags wie `v1.2.3`. Ein anderes Image erzwingen Sie mit `RUN_IMAGE=<image>`.
 * Ihre Einstellungen in `.env.local` und `machines/` sind nicht Teil des Releases und bleiben beim Wechsel erhalten.
+
+### `viper` installieren und benutzen
+
+`viper` ist ein kleines Programm, das die Skripte im Container startet, so wie es `make` tut. Sie brauchen dafür nur Docker, kein `make`.
+
+#### Voraussetzung
+
+* Docker läuft (Linux, oder macOS mit Docker Desktop oder Colima).
+* Sie haben das Repository geklont (siehe „Eine bestimmte Version verwenden“). Die Skripte und Ihre `.env.local` liegen im Klon, `viper` läuft dort.
+
+#### Vorgehen
+
+1. Laden Sie von der Release-Seite die Datei für Ihr System, zum Beispiel `viper_v0.4.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`), und `SHA256SUMS`.
+2. Prüfen Sie die Datei und machen Sie sie ausführbar:
+   ```bash
+   grep viper_v0.4.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
+   chmod +x viper_v0.4.0_linux_amd64
+   mv viper_v0.4.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
+   ```
+3. Wechseln Sie in den Klon und rufen Sie `viper` auf:
+   ```bash
+   viper setup
+   viper preflight web
+   viper up web --repo https://git.example.org/team/web.git
+   viper ssh web
+   viper down web
+   ```
+   `viper help` listet alle Befehle.
+
+#### Ergebnis
+
+`viper` führt dieselben Skripte mit demselben Container aus wie `make`. Die Befehle entsprechen einander:
+
+| `make` | `viper` |
+|---|---|
+| `make setup` | `viper setup` |
+| `make preflight MACHINE=web REPO=…` | `viper preflight web --repo …` |
+| `make up MACHINE=web REPO=…` | `viper up web --repo …` |
+| `make check MACHINE=web` | `viper check web` |
+| `make ssh MACHINE=web CMD="…"` | `viper ssh web --cmd "…"` |
+| `make down MACHINE=web FORCE=1` | `viper down web --force` |
+| `make dns MACHINE=web` | `viper dns web` |
+| `make log [MACHINE=web] [FULL=1]` | `viper log [web] [--full]` |
+
+#### Hinweise
+
+* Das Programm holt das Image zu seiner Version beim ersten Aufruf selbst (`docker pull ghcr.io/pt9912/hetzner-viper:<version>`). Mit `--local` baut es das Image stattdessen aus dem `Dockerfile` des Klons (`--base-image` wählt die Quelle des Basis-Images), mit `--image <ref>` nutzen Sie ein anderes Image. `--dir <verzeichnis>` gibt den Klon an, wenn Sie nicht darin stehen.
+* Die Skripte kommen aus dem Klon, das Image enthält nur die Werkzeuge. Klon und Programm sollten dieselbe Version haben (`viper version`, `git describe --tags`).
+* Unter macOS mit **Colima** ist Ihr Home-Verzeichnis in der VM standardmäßig nur lesend eingebunden. `setup` schreibt aber Schlüssel nach `~/.ssh`, und alle Befehle schreiben nach `~/.local/state/hetzner-claude`. Legen Sie beide Verzeichnisse an und starten Sie Colima mit schreibbarem Mount: `mkdir -p ~/.ssh ~/.local/state/hetzner-claude && colima start --mount "$HOME:w"`. Geben Sie `--mount` an, ersetzt es den Standard-Mount; binden Sie dann auch den Klon und das Ziel eines per Symlink verwalteten `~/.ssh/config` ein, sonst sieht der Container einen leeren `/repo`. Erscheint im Container „Permission denied“ für diese Verzeichnisse, fehlt das. Auf macOS ist `viper` bisher nicht getestet; nur Linux ist erprobt.
+* Ein Binary aus dem Browser versieht macOS mit einer Quarantäne-Markierung, die das Starten verhindert. Entfernen Sie sie mit `xattr -d com.apple.quarantine ~/bin/viper`.
+* `viper dns` und `viper log` laufen im Container (anders als `make dns` und `make log`, die auf dem Rechner laufen) und brauchen daher laufendes Docker und das Image.
+* Windows wird nicht unterstützt. Nutzen Sie `viper` dort innerhalb von WSL.
+* Die Zeitzone des Containers wird aus Ihrem System übernommen (`TZ` oder Ihre `/etc/localtime`).
 
 ### Erstmalige Einrichtung
 
@@ -904,3 +957,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.32 | v3 mit Mehrrechner-Betrieb | `make build` prüft vorab, ob Docker Hub per IPv4 erreichbar ist, und baut sonst automatisch aus `mirror.gcr.io`; `BASE_IMAGE` überschreibt die Quelle. |
 | 1.33 | v0.1.0 | Erstes Release `v0.1.0` (nur Quellcode); die Software wird ab jetzt nach Release-Version statt als „v3“ benannt. Neue Aufgabe „Eine bestimmte Version verwenden“. |
 | 1.34 | v0.2.0 | Zu jedem Release gehört ein Container-Image (`ghcr.io/pt9912/hetzner-viper`), das `make` auf einem Release-Tag selbst holt, statt es zu bauen. Das Image ist nicht mehr an Ihre Benutzerkennung gebunden. |
+| 1.35 | v0.4.0 | Neues Programm `viper` (eine Datei, nur Docker nötig) ersetzt `make` für den Container-Betrieb; Binaries für Linux und macOS am Release. Die erzeugte `/etc/passwd` liegt jetzt im Zustandsverzeichnis, damit `make` auch mit einer VM wie Colima funktioniert. |

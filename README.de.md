@@ -58,6 +58,7 @@ Rechner sind Wegwerfware: Alles, was zählt, liegt im Git-Repository. Deshalb gi
 - **Tests:** `make test` (Syntaxprüfung, `shellcheck` falls installiert, Mock-Tests in [`tests/`](tests/)). Sie decken Einrichtung, Bereitschaftsprüfung, Mehrrechner-Betrieb, Git-Clone, Firewall- und DNS-Schutz sowie die Sicherheitsabfragen von `stop.sh` ab. Die erzeugte cloud-init-Konfiguration wurde einmalig mit `cloud-init schema` (cloud-init 26.2, Ubuntu 26.04 und 24.04) geprüft, dazu Paketverfügbarkeit, `sshd`-Härtung und `gh`-Flags unter 26.04 sowie die `hcloud`-Aufrufe gegen die Hilfe der CLI v1.70.1.
 - **Schutz fremder Ressourcen:** `dns.sh` ändert und löscht nur DNS-Einträge, die es selbst angelegt hat.
 - **Handbuch:** [`docs/user/handbuch.md`](docs/user/handbuch.md) mit Versions- und Änderungshistorie.
+- **`viper`:** ein einzelnes Programm je Release (Linux, macOS), das tut, was die `make`-Ziele tun, sodass nur Docker nötig ist: `viper up web --repo https://example.org/org/web.git`. Siehe Handbuch.
 - **Releases:** Versionen stehen als Tags auf der [Releases-Seite](https://github.com/pt9912/hetzner-viper/releases) mit je einem Container-Image (`ghcr.io/pt9912/hetzner-viper:<version>`), das `make` auf einem Release-Tag holt statt zu bauen; zur Nutzung siehe Handbuch, zum Erstellen [`docs/maintainer/releasing.md`](docs/maintainer/releasing.md).
 - **Lizenz:** MIT, siehe [`LICENSE`](LICENSE).
 

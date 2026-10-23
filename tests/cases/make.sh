@@ -104,7 +104,8 @@ test_build_has_no_user_in_the_image() {
 
 test_make_runs_with_a_generated_passwd_for_the_host_user() {
   mk preflight MACHINE=web
-  check "passwd mounted read-only" bash -c "grep -qE '^/.+:/etc/passwd:ro$' '$MOCK_STATE/docker-call-1'"
+  check "passwd mounted read-only, from the state directory" bash -c "grep -qxE '$HOME/.local/state/hetzner-claude/passwd\\.[0-9]+:/etc/passwd:ro' '$MOCK_STATE/docker-call-1'"
+  check "removed after the run" bash -c "! ls '$HOME'/.local/state/hetzner-claude/passwd.* >/dev/null 2>&1"
   check "user is the host user" bash -c "grep -qx -- \"$(id -u):$(id -g)\" '$MOCK_STATE/docker-call-1'"
 }
 

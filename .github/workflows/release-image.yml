@@ -3,7 +3,7 @@ name: release image
 # Publishes the container image of a release (make uses it on a release tag).
 on:
   push:
-    tags: ['v*']
+    tags: ['v[0-9]*']
 
 permissions:
   contents: read

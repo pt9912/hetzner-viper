@@ -18,3 +18,15 @@ jobs:
       - run: make docker-test
       # the image that releases publish must keep building
       - run: docker build --target run -t hetzner-claude-run .
+
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test ./...

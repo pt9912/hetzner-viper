@@ -58,6 +58,7 @@ Machines are disposable: everything that matters lives in the Git repository. Th
 - **Tests:** `make test` (syntax check, `shellcheck` if installed, mock tests in [`tests/`](tests/)). They cover setup, readiness check, multiple machines, Git clone, firewall and DNS protection, and the safety prompts of `stop.sh`. The generated cloud-init configuration was checked once with `cloud-init schema` (cloud-init 26.2, Ubuntu 26.04 and 24.04), as were package availability, the `sshd` hardening and the `gh` flags on 26.04, and the `hcloud` calls against the help of CLI v1.70.1.
 - **Protection of foreign resources:** `dns.sh` only changes and deletes DNS records it created itself.
 - **Manual:** [`docs/user/handbuch.md`](docs/user/handbuch.md) (German) with version and change history.
+- **`viper`:** a single binary per release (Linux, macOS) that does what the `make` targets do, so Docker is all you need: `viper up web --repo https://example.org/org/web.git`. See the manual.
 - **Releases:** versions are tagged on the [Releases page](https://github.com/pt9912/hetzner-viper/releases), each with a container image (`ghcr.io/pt9912/hetzner-viper:<version>`) that `make` pulls on a release tag instead of building; see the manual for using one, and [`docs/maintainer/releasing.md`](docs/maintainer/releasing.md) (German) for creating one.
 - **License:** MIT, see [`LICENSE`](LICENSE).
 
