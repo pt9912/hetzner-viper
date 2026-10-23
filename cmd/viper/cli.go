@@ -67,7 +67,7 @@ var commands = map[string]command{
 			}
 			return a
 		}},
-	"down": {usage: "<machine> [--force]", machine: needMachine, flags: []string{"force"},
+	"down": {usage: "<machine> [--force]", machine: needMachine, flags: []string{"force"}, native: nativeDown,
 		args: func(o *options) []string {
 			a := []string{"./stop.sh", o.machine}
 			if o.force {

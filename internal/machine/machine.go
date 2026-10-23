@@ -4,8 +4,11 @@ package machine
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/pt9912/hetzner-viper/internal/config"
@@ -64,4 +67,118 @@ func QuoteAll(words ...string) string {
 		q[i] = Quote(w)
 	}
 	return strings.Join(q, " ")
+}
+
+var (
+	hostKeyRe = regexp.MustCompile(`(?i)host key verification failed|remote host identification has changed|host key for .* has changed|no .* host key is known|certificate invalid`)
+	authRe    = regexp.MustCompile(`(?i)permission denied`)
+)
+
+// SSHFailureKind says why ssh failed, from its error output: "hostkey" if it rejected the
+// server's identity, "auth" if the server rejected our key, else "network".
+func SSHFailureKind(stderr string) string {
+	switch {
+	case hostKeyRe.MatchString(stderr):
+		return "hostkey"
+	case authRe.MatchString(stderr):
+		return "auth"
+	}
+	return "network"
+}
+
+// ForgetStalePin drops a pinned host key recorded for another server ID: the name was reused by
+// a new server, e.g. created from another computer.
+func ForgetStalePin(c *config.Config, id string, out io.Writer) {
+	b, err := os.ReadFile(c.IDState)
+	recorded := strings.TrimRight(string(b), "\n")
+	if err != nil || recorded == "" || recorded == id {
+		return
+	}
+	if _, err := os.Stat(c.KnownPin); err != nil {
+		return
+	}
+	fmt.Fprintf(out, "Server %s was recreated (ID %s -> %s); dropping its old pinned host key.\n", c.ServerName, recorded, id)
+	os.Remove(c.KnownPin)
+}
+
+// PinFromServer: without a pin, the connection was verified through the host CA; record the
+// server's host key, read over that verified channel, as the pin. It does nothing if the key
+// cannot be read.
+func PinFromServer(c *config.Config, id string, ssh func(args ...string) (string, error), out io.Writer) {
+	if st, err := os.Stat(c.KnownPin); err == nil && st.Size() > 0 {
+		return
+	}
+	stdout, err := ssh("-n", "-F", c.SSHConfig, "-o", "BatchMode=yes", c.SSHAlias, "cat /etc/ssh/ssh_host_ed25519_key.pub")
+	f := strings.Fields(strings.SplitN(stdout, "\n", 2)[0])
+	if err != nil || len(f) < 2 || f[0] != "ssh-ed25519" {
+		return
+	}
+	if err := os.WriteFile(c.KnownPin, []byte(c.DNSHost+" "+f[0]+" "+f[1]+"\n"), 0o600); err != nil {
+		return
+	}
+	os.Chmod(c.KnownPin, 0o600)
+	os.WriteFile(c.IDState, []byte(id+"\n"), 0o600)
+	fmt.Fprintf(out, "Pinned host key of %s (verified via host CA).\n", c.ServerName)
+}
+
+// SSHInclude adds or removes the line 'Include <this machine's config>' in ~/.ssh/config, in
+// place (a symlink into a dotfiles repository stays), serialized with a lock so that parallel
+// runs do not lose each other's line. An error means the file cannot be edited: the commands
+// themselves use -F, the Include only serves plain `ssh <alias>` and VS Code.
+func SSHInclude(c *config.Config, action string) error {
+	cfg, err := filepath.EvalSymlinks(filepath.Join(c.SSHDir, "config"))
+	if err != nil {
+		cfg = filepath.Join(c.SSHDir, "config")
+		if f, cerr := os.OpenFile(cfg, os.O_CREATE|os.O_WRONLY, 0o600); cerr != nil {
+			return cerr
+		} else {
+			f.Close()
+		}
+		if cfg, err = filepath.EvalSymlinks(cfg); err != nil {
+			return err
+		}
+	}
+	if f, err := os.OpenFile(cfg, os.O_WRONLY, 0); err != nil {
+		return err
+	} else {
+		f.Close()
+	}
+	unlock, err := lockFile(filepath.Join(c.StateDir, "ssh-config.lock"))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	b, err := os.ReadFile(cfg)
+	if err != nil {
+		return err
+	}
+	line := "Include " + c.SSHConfig
+	var out string
+	switch action {
+	case "add":
+		for _, l := range strings.Split(string(b), "\n") {
+			if l == line {
+				return os.Chmod(cfg, 0o600)
+			}
+		}
+		out = line + "\n" + string(b)
+	default:
+		var kept []string
+		for _, l := range strings.SplitAfter(string(b), "\n") {
+			if strings.TrimSuffix(l, "\n") != line {
+				kept = append(kept, l)
+			}
+		}
+		out = strings.Join(kept, "")
+	}
+	if err := os.WriteFile(cfg, []byte(out), 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(cfg, 0o600)
+}
+
+// SSHIncludeWarning is what to tell the user when SSHInclude failed.
+func SSHIncludeWarning(c *config.Config) string {
+	target, _ := filepath.EvalSymlinks(filepath.Join(c.SSHDir, "config"))
+	return fmt.Sprintf("WARNING: could not edit ~/.ssh/config (%s); add or remove the line 'Include %s' yourself.", target, c.SSHConfig)
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/config"
 	"github.com/pt9912/hetzner-viper/internal/hetzner"
 	"github.com/pt9912/hetzner-viper/internal/preflight"
+	"github.com/pt9912/hetzner-viper/internal/stop"
 )
 
 type okHetzner struct{}
@@ -108,8 +109,8 @@ func TestPreflightRunsHereByDefault(t *testing.T) {
 	if commands["preflight"].native == nil {
 		t.Error("preflight is native")
 	}
-	if commands["up"].native != nil || commands["down"].native != nil {
-		t.Error("up and down are still the scripts")
+	if commands["up"].native != nil {
+		t.Error("up is still the script")
 	}
 }
 
@@ -168,5 +169,74 @@ func TestCheckLogsTheRunAndItsOutcome(t *testing.T) {
 	}
 	if commands["check"].native == nil {
 		t.Error("check is native")
+	}
+}
+
+type downHetzner struct {
+	srv     *hetzner.Server
+	deleted *[]int64
+}
+
+func (d downHetzner) ServerByName(context.Context, string) (*hetzner.Server, error) {
+	return d.srv, nil
+}
+func (d downHetzner) DeleteServer(_ context.Context, id int64) error {
+	*d.deleted = append(*d.deleted, id)
+	return nil
+}
+
+type dnsDeleter struct{}
+
+func (dnsDeleter) Delete(context.Context, string, string) (string, error) {
+	return "DNS record removed (if present)", nil
+}
+
+func TestDownReadsItsAnswersFromAPipeAndLogsTheOutcome(t *testing.T) {
+	env, home, o := preflightSetup(t, true)
+	state := filepath.Join(home, ".local", "state", "hetzner-claude")
+	var deleted []int64
+	old := newDownDeps
+	t.Cleanup(func() { newDownDeps = old })
+	newDownDeps = func(c *config.Config) stop.Deps {
+		return stop.Deps{
+			Hetzner: downHetzner{&hetzner.Server{ID: 42, Name: "claude-web", IPv4: "203.0.113.7"}, &deleted},
+			DNS:     dnsDeleter{},
+			Run: func(_ context.Context, _, name string, args ...string) (string, string, error) {
+				if strings.HasPrefix(args[len(args)-1], "bash -s") {
+					return "== /Development ==\n== tmux sessions ==\nUNSAVED WORK: x\n== end of check ==\n", "", nil
+				}
+				return "ssh-ed25519 AAAA k\n", "", nil
+			},
+			WriteSSHConfig: func(string) error { return nil },
+			SSHInclude:     func(string) error { return nil },
+		}
+	}
+	// both answers follow each other in one pipe
+	var out, errb bytes.Buffer
+	err := runDown(context.Background(), o, env, strings.NewReader("DISCARD\nDELETE\n"), &out, &errb)
+	if err != nil || len(deleted) != 1 || deleted[0] != 42 {
+		t.Fatalf("%v deleted %v\n%s%s", err, deleted, out.String(), errb.String())
+	}
+	if !strings.Contains(errb.String(), "Type DISCARD to continue: ") || !strings.Contains(errb.String(), "Type DELETE to continue: ") || !strings.Contains(out.String(), "Server claude-web deleted.") {
+		t.Errorf("out %q err %q", out.String(), errb.String())
+	}
+	events, _ := os.ReadFile(filepath.Join(state, "events.log"))
+	if !strings.Contains(string(events), "server deleted id=42 ip=203.0.113.7") || !strings.HasSuffix(string(events), " claude-web               down      deleted\n") {
+		t.Errorf("events %q", events)
+	}
+	// the end of the input is no confirmation
+	deleted = nil
+	out.Reset()
+	errb.Reset()
+	err = runDown(context.Background(), o, env, strings.NewReader("DISCARD\n"), &out, &errb)
+	if exitCode(err) != 1 || len(deleted) != 0 {
+		t.Errorf("%v deleted %v", err, deleted)
+	}
+	events, _ = os.ReadFile(filepath.Join(state, "events.log"))
+	if !strings.HasSuffix(string(events), "down      cancelled (no DELETE)\n") {
+		t.Errorf("events %q", events)
+	}
+	if commands["down"].native == nil {
+		t.Error("down is native")
 	}
 }

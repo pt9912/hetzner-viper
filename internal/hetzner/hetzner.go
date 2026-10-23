@@ -106,6 +106,18 @@ func (h *Client) ServerByName(ctx context.Context, name string) (*Server, error)
 	return out, nil
 }
 
+// DeleteServer deletes the server and waits until it is gone (hcloud server delete).
+func (h *Client) DeleteServer(ctx context.Context, id int64) error {
+	res, _, err := h.c.Server.DeleteWithResult(ctx, &hcloud.Server{ID: id})
+	if err != nil {
+		return err
+	}
+	if res != nil && res.Action != nil {
+		return h.c.Action.WaitFor(ctx, res.Action)
+	}
+	return nil
+}
+
 // LocationExists reports whether a location of that name exists.
 func (h *Client) LocationExists(ctx context.Context, name string) (bool, error) {
 	l, _, err := h.c.Location.GetByName(ctx, name)
