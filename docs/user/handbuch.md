@@ -1,7 +1,7 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.35  
-Software-Version: v0.4.0  
+Version: 1.36  
+Software-Version: v0.5.0  
 Stand: 23.10.2026
 
 ## 1. Einleitung
@@ -100,6 +100,7 @@ Sie arbeiten mit genau dem Stand der gewählten Version. Es gibt nichts zu insta
 #### Voraussetzung
 
 * Docker läuft (Linux, oder macOS mit Docker Desktop oder Colima).
+* Für `viper setup`, `viper ssh` und `viper dns` läuft `viper` direkt auf Ihrem Rechner und braucht dafür den OpenSSH-Client (`ssh`, `ssh-keygen`). Fehlt er, geben Sie `--container` an: Dann laufen auch diese Befehle im Container.
 * Sie haben das Repository geklont (siehe „Eine bestimmte Version verwenden“). Die Skripte und Ihre `.env.local` liegen im Klon, `viper` läuft dort.
 
 #### Vorgehen
@@ -138,11 +139,13 @@ Sie arbeiten mit genau dem Stand der gewählten Version. Es gibt nichts zu insta
 
 #### Hinweise
 
+* `viper setup`, `viper ssh` und `viper dns` brauchen weder den Container noch die Skripte des Klons: Sie lesen nur `.env.local` im aktuellen Verzeichnis (oder in `--dir`). `viper setup` legt eine fehlende `.env.local` aus der eingebauten Vorlage an. Alle anderen Befehle starten weiterhin die Skripte im Container.
 * Das Programm holt das Image zu seiner Version beim ersten Aufruf selbst (`docker pull ghcr.io/pt9912/hetzner-viper:<version>`). Mit `--local` baut es das Image stattdessen aus dem `Dockerfile` des Klons (`--base-image` wählt die Quelle des Basis-Images), mit `--image <ref>` nutzen Sie ein anderes Image. `--dir <verzeichnis>` gibt den Klon an, wenn Sie nicht darin stehen.
 * Die Skripte kommen aus dem Klon, das Image enthält nur die Werkzeuge. Klon und Programm sollten dieselbe Version haben (`viper version`, `git describe --tags`).
-* Unter macOS mit **Colima** ist Ihr Home-Verzeichnis in der VM standardmäßig nur lesend eingebunden. `setup` schreibt aber Schlüssel nach `~/.ssh`, und alle Befehle schreiben nach `~/.local/state/hetzner-claude`. Legen Sie beide Verzeichnisse an und starten Sie Colima mit schreibbarem Mount: `mkdir -p ~/.ssh ~/.local/state/hetzner-claude && colima start --mount "$HOME:w"`. Geben Sie `--mount` an, ersetzt es den Standard-Mount; binden Sie dann auch den Klon und das Ziel eines per Symlink verwalteten `~/.ssh/config` ein, sonst sieht der Container einen leeren `/repo`. Erscheint im Container „Permission denied“ für diese Verzeichnisse, fehlt das. Auf macOS ist `viper` bisher nicht getestet; nur Linux ist erprobt.
+* Unter macOS mit **Colima** ist Ihr Home-Verzeichnis in der VM standardmäßig nur lesend eingebunden. Die Befehle im Container (`preflight`, `up`, `check`, `down`, `log`) schreiben aber nach `~/.ssh` und nach `~/.local/state/hetzner-claude`. Legen Sie beide Verzeichnisse an und starten Sie Colima mit schreibbarem Mount: `mkdir -p ~/.ssh ~/.local/state/hetzner-claude && colima start --mount "$HOME:w"`. Geben Sie `--mount` an, ersetzt es den Standard-Mount; binden Sie dann auch den Klon und das Ziel eines per Symlink verwalteten `~/.ssh/config` ein, sonst sieht der Container einen leeren `/repo`. Erscheint im Container „Permission denied“ für diese Verzeichnisse, fehlt das. Auf macOS ist `viper` bisher nicht getestet; nur Linux ist erprobt.
 * Ein Binary aus dem Browser versieht macOS mit einer Quarantäne-Markierung, die das Starten verhindert. Entfernen Sie sie mit `xattr -d com.apple.quarantine ~/bin/viper`.
-* `viper dns` und `viper log` laufen im Container (anders als `make dns` und `make log`, die auf dem Rechner laufen) und brauchen daher laufendes Docker und das Image.
+* `viper log` läuft im Container (anders als `make log`, das auf dem Rechner läuft) und braucht daher laufendes Docker und das Image.
+* `.env.local` wird von `viper setup`, `viper ssh` und `viper dns` selbst gelesen. Es versteht die Schreibweise der Datei (`NAME=wert`, Anführungszeichen, `$HOME`, `${NAME}`, mehrzeilige Werte, Kommentare) und lehnt anderes mit Zeilennummer ab (ohne die Zeile selbst zu zeigen, sie kann ein Token enthalten): Befehle und Ersetzungen wie `$(befehl)`, nicht gesetzte Variablen (die Skripte brechen dort ebenfalls ab), `~benutzer`, `$'…'` und Windows-Zeilenenden (CRLF). Setzen Sie solche Werte als festen Text in Anführungszeichen und speichern Sie die Datei mit Unix-Zeilenenden.
 * Windows wird nicht unterstützt. Nutzen Sie `viper` dort innerhalb von WSL.
 * Die Zeitzone des Containers wird aus Ihrem System übernommen (`TZ` oder Ihre `/etc/localtime`).
 
@@ -958,3 +961,4 @@ Zu den Skripten gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst
 | 1.33 | v0.1.0 | Erstes Release `v0.1.0` (nur Quellcode); die Software wird ab jetzt nach Release-Version statt als „v3“ benannt. Neue Aufgabe „Eine bestimmte Version verwenden“. |
 | 1.34 | v0.2.0 | Zu jedem Release gehört ein Container-Image (`ghcr.io/pt9912/hetzner-viper`), das `make` auf einem Release-Tag selbst holt, statt es zu bauen. Das Image ist nicht mehr an Ihre Benutzerkennung gebunden. |
 | 1.35 | v0.4.0 | Neues Programm `viper` (eine Datei, nur Docker nötig) ersetzt `make` für den Container-Betrieb; Binaries für Linux und macOS am Release. Die erzeugte `/etc/passwd` liegt jetzt im Zustandsverzeichnis, damit `make` auch mit einer VM wie Colima funktioniert. |
+| 1.36 | v0.5.0 | `viper setup`, `viper ssh` und `viper dns` laufen direkt auf Ihrem Rechner (nur OpenSSH nötig, kein Container), `--container` erzwingt den Container. `.env.local` wird in Go gelesen. |

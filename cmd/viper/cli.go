@@ -10,6 +10,7 @@ import (
 type options struct {
 	machine, repo, cmd    string
 	force, full, local    bool
+	container             bool
 	image, baseImage, dir string
 	extraEnv              []string
 }
@@ -28,11 +29,13 @@ type command struct {
 	machine machineMode
 	flags   []string // options besides the global ones
 	args    func(o *options) []string
+	// runs on the host instead of in the container (unless --container)
+	native func(o *options) error
 }
 
 var errHelp = errors.New("help")
 
-var globalFlags = []string{"image", "base-image", "dir", "local"}
+var globalFlags = []string{"image", "base-image", "dir", "local", "container"}
 var valueFlags = map[string]bool{"repo": true, "cmd": true, "image": true, "base-image": true, "dir": true}
 
 const dnsScript = `set -a; for f in ./.env.local "./machines/$1.env.local"; do [ ! -f "$f" ] || . "$f"; done; ` +
@@ -48,7 +51,7 @@ const logScript = `d="$HOME/.local/state/hetzner-claude"; ` +
 	`else awk -v s="$s" '$2 == s' "$d/events.log" 2>/dev/null | grep . || echo "no events for $s"; fi`
 
 var commands = map[string]command{
-	"setup": {usage: "", machine: noMachine,
+	"setup": {usage: "", machine: noMachine, native: nativeSetup,
 		args: func(o *options) []string { return []string{"./setup.sh"} }},
 	"preflight": {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"},
 		args: func(o *options) []string { return []string{"./preflight.sh", o.machine, o.repo} }},
@@ -56,7 +59,7 @@ var commands = map[string]command{
 		args: func(o *options) []string { return []string{"./start.sh", o.machine, o.repo} }},
 	"check": {usage: "<machine>", machine: needMachine,
 		args: func(o *options) []string { return []string{"./check.sh", o.machine} }},
-	"ssh": {usage: "<machine> [--cmd COMMAND]", machine: needMachine, flags: []string{"cmd"},
+	"ssh": {usage: "<machine> [--cmd COMMAND]", machine: needMachine, flags: []string{"cmd"}, native: nativeSSH,
 		args: func(o *options) []string {
 			a := []string{"./connect.sh", o.machine}
 			if o.cmd != "" {
@@ -72,7 +75,7 @@ var commands = map[string]command{
 			}
 			return a
 		}},
-	"dns": {usage: "<machine>", machine: needMachine,
+	"dns": {usage: "<machine>", machine: needMachine, native: nativeDNS,
 		args: func(o *options) []string { return []string{"-c", dnsScript, "_", o.machine} }},
 	"log": {usage: "[<machine>] [--full]", machine: maybeMachine, flags: []string{"full"},
 		args: func(o *options) []string {
@@ -147,6 +150,8 @@ func parse(args []string) (string, options, error) {
 			o.full = true
 		case "local":
 			o.local = true
+		case "container":
+			o.container = true
 		}
 	}
 	if len(positional) > 0 {
@@ -178,8 +183,9 @@ func helpText() string {
 	}
 	b.WriteString(`
 Options for every command:
-  --dir DIR         the checkout with the scripts and .env.local (default: current directory)
+  --dir DIR         the directory with .env.local, and the scripts for the container commands (default: current directory)
   --image REF       run this image (pulled if missing) instead of the one of this version
+  --container       run setup, ssh and dns in the container too (default: on this computer, needs OpenSSH)
   --local           build the image from the Dockerfile instead of pulling the release's
   --base-image REF  base image for --local (default: Docker Hub, or mirror.gcr.io if unreachable)
 

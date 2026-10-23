@@ -176,34 +176,36 @@ func execute(c command, o options) error {
 
 // replaced by the tests
 var (
-	// Ctrl-C reaches docker with the terminal (it passes it on to the container); viper itself
-	// must survive it and wait, so that the passwd file is removed. SIGTERM and SIGHUP are
-	// forwarded: they do not reach the child on their own.
-	dockerRun = func(args ...string) error {
-		cmd := exec.Command("docker", args...)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-		if err := cmd.Start(); err != nil {
-			return err
-		}
-		sig := make(chan os.Signal, 4)
-		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-		defer signal.Stop(sig)
-		done := make(chan struct{})
-		go func() {
-			for {
-				select {
-				case s := <-sig:
-					if s != syscall.SIGINT {
-						_ = cmd.Process.Signal(s)
-					}
-				case <-done:
-					return
-				}
-			}
-		}()
-		err := cmd.Wait()
-		close(done)
-		return err
-	}
+	dockerRun   = func(args ...string) error { return runChild("docker", args...) }
 	dockerQuiet = func(args ...string) error { return exec.Command("docker", args...).Run() }
 )
+
+// runChild runs a program on our terminal. Ctrl-C reaches it with the terminal (docker passes it
+// on to the container); viper itself must survive it and wait, so that it can clean up. SIGTERM
+// and SIGHUP are forwarded: they do not reach the child on their own.
+func runChild(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	sig := make(chan os.Signal, 4)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(sig)
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case s := <-sig:
+				if s != syscall.SIGINT {
+					_ = cmd.Process.Signal(s)
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
+	err := cmd.Wait()
+	close(done)
+	return err
+}

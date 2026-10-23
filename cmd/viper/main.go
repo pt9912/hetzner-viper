@@ -30,13 +30,19 @@ func run(args []string) int {
 		fmt.Println("viper", version)
 		return 0
 	}
-	if err := execute(commands[name], o); err != nil {
+	c := commands[name]
+	if c.native != nil && !o.container {
+		err = c.native(&o)
+	} else {
+		err = execute(c, o)
+	}
+	if err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
 			if code := ee.ExitCode(); code >= 0 {
 				return code
 			}
-			return 130 // docker was ended by a signal
+			return 130 // the program was ended by a signal
 		}
 		fmt.Fprintln(os.Stderr, "viper:", err)
 		return 1
