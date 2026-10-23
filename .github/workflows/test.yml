@@ -1,0 +1,18 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      # builds the test image and runs the offline suite (incl. lint and a real sshd) without network
+      - run: make docker-test
