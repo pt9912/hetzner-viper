@@ -40,6 +40,15 @@ type Config struct {
 
 	ServerName, SSHAlias, DNSHost, KeyName, FirewallName string
 	StateDir, SSHDir, SSHConfig, KnownPin                string
+
+	// state files of the machine (common.sh), all keyed by the server name
+	IPState, IDState, WorkspaceState, ReadyState, RepoState string
+	EventsLog, LogDir                                       string
+}
+
+// Setting is a setting with a default for when it is unset or empty (${NAME:-default}).
+func (c *Config) Setting(name, def string) string {
+	return or(c.Get(name), def)
 }
 
 // Get returns a setting: the files take precedence over the environment, like with `source`.
@@ -143,6 +152,13 @@ func Load(dir, machine string, env Env, needTokens bool) (*Config, error) {
 	c.StateDir = filepath.Join(env.Home, ".local", "state", "hetzner-claude")
 	c.SSHConfig = filepath.Join(c.SSHDir, "config_hetzner_"+c.ServerName)
 	c.KnownPin = filepath.Join(c.SSHDir, "known_hosts_hetzner_"+c.ServerName)
+	c.IPState = filepath.Join(c.StateDir, "ip-"+c.ServerName)
+	c.IDState = filepath.Join(c.StateDir, "id-"+c.ServerName)
+	c.WorkspaceState = filepath.Join(c.StateDir, "workspace-"+c.ServerName)
+	c.ReadyState = filepath.Join(c.StateDir, "ready-"+c.ServerName)
+	c.RepoState = filepath.Join(c.StateDir, "repo-"+c.ServerName)
+	c.EventsLog = filepath.Join(c.StateDir, "events.log")
+	c.LogDir = filepath.Join(c.StateDir, "logs")
 	return c, nil
 }
 
