@@ -155,7 +155,12 @@ func Run(ctx context.Context, c *config.Config, force bool, d Deps, lg *runlog.L
 		forced = " (--force, no git checks)"
 	}
 	lg.Event("server deleted id=%s ip=%s%s", id, ip, forced)
-	d.deleteDNS(ctx, c, ip, out, errOut)
+	if ip == "" {
+		// without the IP the record cannot be matched to this server: leave it
+		fmt.Fprintf(errOut, "WARNING: the server had no IPv4 address; DNS record %s left untouched.\n", c.DNSHost)
+	} else {
+		d.deleteDNS(ctx, c, ip, out, errOut)
+	}
 	d.cleanupLocal(c, errOut)
 	lg.Final("deleted")
 	fmt.Fprintf(out, "Server %s deleted.\n", c.ServerName)
@@ -206,7 +211,14 @@ var endRe = regexp.MustCompile(`(?m)^== end of check ==$`)
 func checkServer(ctx context.Context, c *config.Config, d Deps, lg *runlog.Log, wss []string, out, errOut io.Writer) (int, error) {
 	fmt.Fprintln(out, "Checking git repositories, loose files and running sessions ...")
 	// No `set -e` remotely: a git error must be reported as unsaved work, not abort the check.
-	stdout, _, err := d.Run(ctx, remote, "ssh", "-F", c.SSHConfig, c.SSHAlias, "bash -s -- "+machine.QuoteAll(wss...))
+	stdout, stderr, err := d.Run(ctx, remote, "ssh", "-F", c.SSHConfig, c.SSHAlias, "bash -s -- "+machine.QuoteAll(wss...))
+	// what ssh and the remote commands (git, find) complained about stays visible
+	if stderr != "" {
+		fmt.Fprint(errOut, stderr)
+		if !strings.HasSuffix(stderr, "\n") {
+			fmt.Fprintln(errOut)
+		}
+	}
 	if err != nil {
 		fmt.Fprintln(errOut, "Git check on the server failed. NOT deleting server (use --force to skip checks).")
 		return 1, ErrShown

@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/check"
 	"github.com/pt9912/hetzner-viper/internal/config"
@@ -35,6 +36,7 @@ func nameserver() string {
 // run runs a program with the given input and returns what it printed.
 func runCaptured(ctx context.Context, stdin, name string, args ...string) (string, string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.WaitDelay = 5 * time.Second // a program that left children holding the pipes cannot hang us
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}

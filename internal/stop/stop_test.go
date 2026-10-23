@@ -21,27 +21,28 @@ const cleanReport = "== /Development ==\n== tmux sessions ==\n== end of check ==
 const unsavedReport = "== /Development/r ==\n M file.txt\n== tmux sessions ==\nUNSAVED WORK: uncommitted, unpushed, stashed or unversioned data exists and will be lost.\n== end of check ==\n"
 
 type world struct {
-	t          *testing.T
-	c          *config.Config
-	lg         *runlog.Log
-	server     *hetzner.Server
-	listErr    error
-	deleteErr  error
-	deleted    []int64
-	dnsErr     error
-	dnsCalls   []string
-	sshErr     string // stderr of the reachability check; "" = reachable
-	report     string
-	reportErr  error
-	hostKey    string
-	answers    []string
-	prompts    []string
-	calls      [][]string
-	stdins     []string
-	includes   []string
-	includeErr error
-	out, errb  bytes.Buffer
-	state      string
+	t            *testing.T
+	c            *config.Config
+	lg           *runlog.Log
+	server       *hetzner.Server
+	listErr      error
+	deleteErr    error
+	deleted      []int64
+	dnsErr       error
+	dnsCalls     []string
+	sshErr       string // stderr of the reachability check; "" = reachable
+	report       string
+	reportErr    error
+	reportStderr string
+	hostKey      string
+	answers      []string
+	prompts      []string
+	calls        [][]string
+	stdins       []string
+	includes     []string
+	includeErr   error
+	out, errb    bytes.Buffer
+	state        string
 }
 
 func newWorld(t *testing.T) *world {
@@ -116,7 +117,7 @@ func (w *world) deps() Deps {
 			case strings.HasPrefix(last, "cat /etc/ssh"):
 				return w.hostKey, "", nil
 			case strings.HasPrefix(last, "bash -s -- "):
-				return w.report, "", w.reportErr
+				return w.report, w.reportStderr, w.reportErr
 			}
 			return "", "", errors.New("unexpected call")
 		},
@@ -255,6 +256,28 @@ func TestAnIncompleteCheckRefuses(t *testing.T) {
 	if code, _ := w.run(false, "DELETE"); code != 1 || len(w.deleted) != 0 {
 		t.Errorf("%d", code)
 	}
+}
+
+func TestTheErrorsOfTheServerCheckStayVisible(t *testing.T) {
+	w := newWorld(t)
+	w.reportStderr = "fatal: detected dubious ownership in repository at '/Development/r'\n"
+	w.run(false, "DELETE")
+	has(t, w.errb.String(), "fatal: detected dubious ownership in repository at '/Development/r'\n")
+	w = newWorld(t)
+	w.reportStderr = "Connection to 203.0.113.7 closed by remote host."
+	w.reportErr = errors.New("exit 255")
+	w.run(false, "DELETE")
+	has(t, w.errb.String(), "Connection to 203.0.113.7 closed by remote host.\nGit check on the server failed.")
+}
+
+func TestAServerWithoutIPv4LeavesTheDnsRecord(t *testing.T) {
+	w := newWorld(t)
+	w.server.IPv4 = ""
+	w.sshErr = "Connection timed out"
+	if code, _ := w.run(true, "DELETE"); code != 0 || len(w.deleted) != 1 || len(w.dnsCalls) != 0 {
+		t.Fatalf("%d %v %v", code, w.deleted, w.dnsCalls)
+	}
+	has(t, w.errb.String(), "WARNING: the server had no IPv4 address; DNS record claude-web.example.com left untouched.")
 }
 
 func TestAFailingCheckKeepsEverything(t *testing.T) {

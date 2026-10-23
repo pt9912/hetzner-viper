@@ -46,30 +46,7 @@ func runDown(ctx context.Context, o *options, env config.Env, in io.Reader, stdo
 	defer stop_()
 
 	deps := newDownDeps(c)
-	lines := make(chan string)
-	go func() { // one reader for all prompts: answers that follow in a pipe must not be lost
-		sc := bufio.NewScanner(in)
-		for sc.Scan() {
-			select {
-			case lines <- sc.Text():
-			case <-ctx.Done():
-				return
-			}
-		}
-		close(lines)
-	}()
-	deps.Ask = func(prompt string) string {
-		fmt.Fprint(l.Err, prompt)
-		select {
-		case line, ok := <-lines:
-			if !ok {
-				return ""
-			}
-			return strings.TrimRight(line, "\r")
-		case <-ctx.Done():
-			return "" // never confirms anything
-		}
-	}
+	deps.Ask = newAsker(ctx, in, l.Err)
 	code, err := stop.Run(ctx, c, o.force, deps, l, l.Out, l.Err)
 	switch {
 	case ctx.Err() != nil:
@@ -89,6 +66,44 @@ func runDown(ctx context.Context, o *options, env config.Env, in io.Reader, stdo
 		return exitStatus(code)
 	}
 	return nil
+}
+
+// newAsker returns the function that shows a prompt and reads the answer, like `read -r -p`:
+// one line, surrounding spaces and tabs ignored, a final line without a line end is no answer
+// (the script aborted there), and an end of input or an interruption is an empty answer, which
+// confirms nothing. One reader serves all prompts, so answers that follow in a pipe are not lost.
+func newAsker(ctx context.Context, in io.Reader, prompts io.Writer) func(string) string {
+	lines := make(chan string)
+	go func() {
+		r := bufio.NewReader(in)
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil { // end of input, also after text without a line end
+				close(lines)
+				return
+			}
+			select {
+			case lines <- strings.Trim(strings.TrimSuffix(line, "\n"), " \t"):
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return func(prompt string) string {
+		fmt.Fprint(prompts, prompt)
+		if ctx.Err() != nil {
+			return ""
+		}
+		select {
+		case line, ok := <-lines:
+			if !ok || ctx.Err() != nil {
+				return ""
+			}
+			return line
+		case <-ctx.Done():
+			return ""
+		}
+	}
 }
 
 func nativeDown(o *options) error {

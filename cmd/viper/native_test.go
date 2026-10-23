@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -188,5 +189,65 @@ func TestLogReadsThePrefixAndShowsTheMachine(t *testing.T) {
 	}
 	if commands["log"].native == nil {
 		t.Error("log is native")
+	}
+}
+
+func TestAskerAnswersLikeReadDashR(t *testing.T) {
+	ask := func(input string, prompts int) []string {
+		a := newAsker(context.Background(), strings.NewReader(input), io.Discard)
+		var out []string
+		for i := 0; i < prompts; i++ {
+			out = append(out, a("? "))
+		}
+		return out
+	}
+	for _, c := range []struct {
+		input string
+		want  []string
+	}{
+		{"DELETE\n", []string{"DELETE", ""}},
+		{"DISCARD\nDELETE\n", []string{"DISCARD", "DELETE"}},
+		{"  DELETE \t\n", []string{"DELETE", ""}},
+		{"DELETE\r\n", []string{"DELETE\r", ""}},
+		{"DELETE", []string{"", ""}},
+		{"DISCARD\nDELETE", []string{"DISCARD", ""}},
+		{"", []string{"", ""}},
+		{"\n\nDELETE\n", []string{"", ""}},
+		{"delete\n", []string{"delete", ""}},
+	} {
+		if got := ask(c.input, 2); !slices.Equal(got, c.want) {
+			t.Errorf("%q: got %q, want %q", c.input, got, c.want)
+		}
+	}
+}
+
+func TestAskerNeverConfirmsAfterAnInterruption(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	var shown strings.Builder
+	a := newAsker(ctx, strings.NewReader("DELETE\nDELETE\n"), &shown)
+	cancel()
+	for i := 0; i < 50; i++ {
+		if got := a("Type DELETE: "); got != "" {
+			t.Fatalf("answered %q after the interruption", got)
+		}
+	}
+	if !strings.Contains(shown.String(), "Type DELETE: ") {
+		t.Error("prompt not shown")
+	}
+	// a blocked read ends with the interruption
+	pr, _ := io.Pipe()
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	b := newAsker(ctx2, pr, io.Discard)
+	done := make(chan string)
+	go func() { done <- b("? ") }()
+	time.Sleep(50 * time.Millisecond)
+	cancel2()
+	select {
+	case got := <-done:
+		if got != "" {
+			t.Errorf("got %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the prompt did not end with the interruption")
 	}
 }
