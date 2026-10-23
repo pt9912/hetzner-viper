@@ -7,9 +7,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/check"
@@ -76,7 +74,7 @@ func runCheck(ctx context.Context, o *options, env config.Env, stdout, stderr io
 	if err != nil {
 		return err
 	}
-	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	ctx, stop := notifyContext(ctx)
 	defer stop()
 	failures, err := check.Run(ctx, c, newCheckDeps(c), l.Out, l.Err)
 	switch {
@@ -99,6 +97,9 @@ func runCheck(ctx context.Context, o *options, env config.Env, stdout, stderr io
 }
 
 func nativeCheck(o *options) error {
+	if err := need("ssh"); err != nil {
+		return err
+	}
 	env, err := hostEnv()
 	if err != nil {
 		return err

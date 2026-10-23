@@ -36,14 +36,20 @@ func (r *runner) provision(status, id, repoURL string, remembered bool, deployKe
 	// RAM, 0.5 = half) or a size (4G, 512M). Idempotent: an active /swapfile is left alone.
 	if swap := c.Setting("VIPER_SWAP", "0"); swap != "0" {
 		if err := r.script(swapScript, swap); err != nil {
-			r.eprintf("WARNING: swap could not be set up; rerun %s\n", rerun)
+			r.warnf("WARNING: swap could not be set up; rerun %s\n", rerun)
 		}
+	}
+	if r.interrupted() {
+		return 1, ErrShown
 	}
 	if code, err := r.workspace(); code != 0 || err != nil {
 		return code, err
 	}
 	if code, err := r.githubLogin(deployKey); code != 0 || err != nil {
 		return code, err
+	}
+	if r.interrupted() {
+		return 1, ErrShown
 	}
 	r.gitIdentity()
 	if code, err := r.claudeLogin(); code != 0 || err != nil {
@@ -53,8 +59,14 @@ func (r *runner) provision(status, id, repoURL string, remembered bool, deployKe
 	if code != 0 || err != nil {
 		return code, err
 	}
+	if r.interrupted() {
+		return 1, ErrShown
+	}
 	r.homebrew(repoURL, workdir)
 	r.codeServer()
+	if r.interrupted() {
+		return 1, ErrShown
+	}
 
 	// Interactive shells (make ssh, tmux, a plain ssh login) that start in the home directory
 	// change to the work directory: the line goes at the end of .bashrc, which non-interactive
@@ -83,6 +95,9 @@ func (r *runner) installClaude() (int, error) {
 		}
 		if err := r.ssh("", "bash -o pipefail -c 'curl -fsSL https://claude.ai/install.sh | bash' && sudo touch /var/tmp/claude-ready"); err == nil {
 			return 0, nil
+		}
+		if r.interrupted() {
+			return 1, ErrShown
 		}
 		if attempt != 5 {
 			r.eprintf("Claude Code installation failed (attempt %d of 5); retrying in %d s ...\n", attempt, attempt*30)
@@ -158,7 +173,7 @@ func (r *runner) gitIdentity() {
 		useGH = "1"
 	}
 	if err := r.script(gitIDScript, c.Get("VIPER_GIT_USER_NAME"), c.Get("VIPER_GIT_USER_EMAIL"), c.Setting("VIPER_GH_HOST", "github.com"), useGH); err != nil {
-		r.eprintf("WARNING: git user.name/user.email could not be set on the server\n")
+		r.warnf("WARNING: git user.name/user.email could not be set on the server\n")
 	}
 }
 
@@ -251,7 +266,7 @@ func (r *runner) homebrew(repoURL, workdir string) {
 		"      NONINTERACTIVE=1 bash \"$f\" </dev/null >~/.config/viper/homebrew-install.log 2>&1; rc=$?; rm -f \"$f\";\n" +
 		"      [ $rc = 0 ] || tail -n 15 ~/.config/viper/homebrew-install.log; exit $rc; }"
 	if err := r.ssh("", install); err != nil {
-		r.eprintf("WARNING: Homebrew installation failed (log on the server: ~/.config/viper/homebrew-install.log); rerun %s\n", rerun)
+		r.warnf("WARNING: Homebrew installation failed (log on the server: ~/.config/viper/homebrew-install.log); rerun %s\n", rerun)
 	}
 	// Homebrew, in this order: VIPER_BREW_TAPS ("owner/repo", or "owner/repo=URL" for a tap outside
 	// GitHub), VIPER_BREW_TRUST (brew trust), VIPER_BREW_PACKAGES and a Brewfile in the cloned
@@ -267,7 +282,7 @@ func (r *runner) homebrew(repoURL, workdir string) {
 	args := append([]string{brew, brewfile, fmt.Sprint(len(taps)), fmt.Sprint(len(trust))}, taps...)
 	args = append(append(args, trust...), pkgs...)
 	if err := r.script(brewPkgScript, args...); err != nil {
-		r.eprintf("WARNING: some Homebrew taps, trust entries or formulae failed (log on the server: ~/.config/viper/brew-packages.log); rerun %s\n", rerun)
+		r.warnf("WARNING: some Homebrew taps, trust entries or formulae failed (log on the server: ~/.config/viper/brew-packages.log); rerun %s\n", rerun)
 	}
 }
 
@@ -288,7 +303,7 @@ func (r *runner) codeServer() {
 		"      sh \"$f\" </dev/null >~/.config/viper/code-server-install.log 2>&1; rc=$?; rm -f \"$f\";\n" +
 		"      [ $rc = 0 ] || tail -n 15 ~/.config/viper/code-server-install.log; exit $rc; }"
 	if err := r.ssh("", install); err != nil {
-		r.eprintf("WARNING: code-server installation failed (log on the server: ~/.config/viper/code-server-install.log); rerun %s\n", rerun)
+		r.warnf("WARNING: code-server installation failed (log on the server: ~/.config/viper/code-server-install.log); rerun %s\n", rerun)
 		return
 	}
 	// JSON strings are valid YAML: any character in the password is quoted correctly
@@ -297,7 +312,7 @@ func (r *runner) codeServer() {
 	cmd := "umask 077 && mkdir -p ~/.config/code-server && cat > ~/.config/code-server/config.yaml &&\n" +
 		"        sudo systemctl enable code-server@builder >/dev/null 2>&1 && sudo systemctl restart code-server@builder"
 	if err := r.ssh(config, cmd); err != nil {
-		r.eprintf("WARNING: code-server could not be configured or started (journalctl -u code-server@builder on the server); rerun %s\n", rerun)
+		r.warnf("WARNING: code-server could not be configured or started (journalctl -u code-server@builder on the server); rerun %s\n", rerun)
 		return
 	}
 	r.printf("code-server: running on the server at 127.0.0.1:%s; tunnel: ssh -L %s:127.0.0.1:%s %s, then http://127.0.0.1:%s\n", port, port, port, c.SSHAlias, port)

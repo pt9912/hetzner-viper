@@ -7,9 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 
 	"github.com/pt9912/hetzner-viper/internal/cloudflare"
 	"github.com/pt9912/hetzner-viper/internal/config"
@@ -42,7 +40,7 @@ func runDown(ctx context.Context, o *options, env config.Env, in io.Reader, stdo
 	if err != nil {
 		return err
 	}
-	ctx, stop_ := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	ctx, stop_ := notifyContext(ctx)
 	defer stop_()
 
 	deps := newDownDeps(c)
@@ -107,6 +105,9 @@ func newAsker(ctx context.Context, in io.Reader, prompts io.Writer) func(string)
 }
 
 func nativeDown(o *options) error {
+	if err := need("ssh"); err != nil {
+		return err
+	}
 	env, err := hostEnv()
 	if err != nil {
 		return err

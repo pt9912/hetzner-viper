@@ -84,7 +84,8 @@ func TestUserDataAgreesWithPythonOnOddKeys(t *testing.T) {
 	}
 	dir := t.TempDir()
 	write := func(n, c string) string { p := filepath.Join(dir, n); os.WriteFile(p, []byte(c), 0o600); return p }
-	for _, key := range []string{"ssh-ed25519 AAAA plain", "ssh-ed25519 AAAA \"q\" 'single' \\ back", "ssh-ed25519 AAAA ü €  😀 <tag> & more\t tab", "ssh-ed25519 AAAA\n"} {
+	for _, key := range []string{"ssh-ed25519 AAAA literal \\u003cx and \\<y and <z> & w", "ssh-ed25519 AAAA del\x7fchar bell\a nul-free\v form\f back\b", "ssh-ed25519 AAAA line\u2028sep \u00a0nbsp",
+		"ssh-ed25519 AAAA plain", "ssh-ed25519 AAAA \"q\" 'single' \\ back", "ssh-ed25519 AAAA ü €  😀 <tag> & more\t tab", "ssh-ed25519 AAAA\n"} {
 		write("ssh_host_ed25519_key", "P1\nP2\n")
 		write("ssh_host_ed25519_key.pub", "ssh-ed25519 PUB c\n")
 		write("ssh_host_ed25519_key-cert.pub", "ssh-ed25519-cert-v01@openssh.com CERT c\n")
@@ -145,5 +146,36 @@ func TestMakeHostKeyAsksForACertificateOfTheDNSName(t *testing.T) {
 	}
 	if strings.Join(sign[:10], " ") != "ssh-keygen -q -s /home/me/.ssh/hetzner_claude_host_ca -I claude-web-1700000000 -h -n claude-web.example.com -V" || sign[10] != "-5m:+7d" {
 		t.Errorf("signing %q", sign)
+	}
+}
+
+func TestJSONStringIsPythonsJSONDumps(t *testing.T) {
+	for in, want := range map[string]string{
+		"plain": `"plain"`, `a"b\c`: `"a\"b\\c"`, "tab\tnl\ncr\r": `"tab\tnl\ncr\r"`, "\b\f": `"\b\f"`, "\x01\x1f": `"\u0001\u001f"`,
+		"del\x7f": `"del\u007f"`, "<>&": `"<>&"`, `\u003c`: `"\\u003c"`, "ü€": `"\u00fc\u20ac"`, "😀": `"\ud83d\ude00"`, "": `""`, "~ ": `"~ "`,
+	} {
+		if got := jsonString(in); got != want {
+			t.Errorf("%q: got %s, want %s", in, got, want)
+		}
+	}
+}
+
+// Odd keys, with the output of the script's own Python code (made once, python3 is not always here).
+func TestUserDataOfOddKeysIsWhatPythonMade(t *testing.T) {
+	base, err := os.ReadFile("testdata/cloud-init.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, _ := filepath.Glob("testdata/odd/key*.pub")
+	if len(files) < 5 {
+		t.Fatalf("only %d odd keys", len(files))
+	}
+	for _, f := range files {
+		key, _ := os.ReadFile(f)
+		want, _ := os.ReadFile(strings.TrimSuffix(f, ".pub") + ".golden")
+		got, err := UserData(base, []string{string(key)}, "P1\nP2\n", "ssh-ed25519 PUB c\n", "ssh-ed25519-cert-v01@openssh.com CERT c\n")
+		if err != nil || got != string(want) {
+			t.Errorf("%s differs from Python's output (%v)\n--- got\n%s\n--- want\n%s", f, err, tail(got), tail(string(want)))
+		}
 	}
 }

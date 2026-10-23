@@ -930,3 +930,48 @@ func TestDnsFailureStopsBeforeWaiting(t *testing.T) {
 		t.Error("the server was created before the DNS step, as in the script")
 	}
 }
+
+func TestAnInterruptionEndsTheRunWithoutMisleadingWarnings(t *testing.T) {
+	w := newWorld(t, "VIPER_SWAP=1\nVIPER_CODE_SERVER=1\nVIPER_CODE_SERVER_PASSWORD=long-enough-pw-1\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	d := w.deps()
+	stream := d.Stream
+	d.Stream = func(c context.Context, stdin string, o, e io.Writer, name string, args ...string) error {
+		if strings.Contains(args[len(args)-1], "sudo install -d") { // the workspace step: Ctrl-C arrives here
+			cancel()
+			return context.Canceled
+		}
+		return stream(c, stdin, o, e, name, args...)
+	}
+	code, err := Run(ctx, w.c, "", d, w.lg, &w.out, &w.err)
+	w.lg.Close(err, code)
+	if code != 1 || !errors.Is(err, ErrShown) {
+		t.Fatalf("%d %v", code, err)
+	}
+	hasNot(t, w.err.String(), "WARNING")
+	if len(w.remote("claude.env"))+len(w.remote("Homebrew"))+len(w.remote("code-server")) != 0 {
+		t.Error("steps went on after the interruption")
+	}
+}
+
+func TestAnInterruptedClaudeInstallDoesNotWaitOrRetry(t *testing.T) {
+	w := newWorld(t, "")
+	w.probes = []func() (string, string, error){func() (string, string, error) { return "cloud-init=0\ndocker=ok\nready=\n", "", nil }}
+	ctx, cancel := context.WithCancel(context.Background())
+	d := w.deps()
+	d.Stream = func(c context.Context, stdin string, o, e io.Writer, name string, args ...string) error {
+		cancel()
+		return context.Canceled
+	}
+	code, err := Run(ctx, w.c, "", d, w.lg, &w.out, &w.err)
+	w.lg.Close(err, code)
+	if code != 1 || !errors.Is(err, ErrShown) {
+		t.Fatalf("%d %v", code, err)
+	}
+	for _, s := range w.sleeps {
+		if s >= 30*time.Second {
+			t.Errorf("slept %v after the interruption", s)
+		}
+	}
+	hasNot(t, w.err.String(), "retrying in")
+}

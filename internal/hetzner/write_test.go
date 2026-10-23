@@ -81,8 +81,16 @@ func (a *writeAPI) handle(w http.ResponseWriter, r *http.Request) {
 		a.bodies["rules"] = map[string]any{"n": float64(len(rules))}
 		reply(map[string]any{"actions": []any{action}})
 	case key == "GET /server_types":
-		page["server_types"] = []any{map[string]any{"id": 105, "name": r.URL.Query().Get("name"), "architecture": "arm", "cores": 2, "memory": 4, "disk": 40}}
+		if r.URL.Query().Get("name") == "cax11" {
+			page["server_types"] = []any{map[string]any{"id": 105, "name": "cax11", "architecture": "arm", "cores": 2, "memory": 4, "disk": 40}}
+		} else {
+			page["server_types"] = []any{}
+		}
 		reply(page)
+	case key == "GET /server_types/105":
+		reply(map[string]any{"server_type": map[string]any{"id": 105, "name": "cax11", "architecture": "arm", "cores": 2, "memory": 4, "disk": 40}})
+	case key == "GET /images/77":
+		reply(map[string]any{"image": map[string]any{"id": 77, "name": "ubuntu-26.04", "architecture": "arm", "type": "system"}})
 	case key == "GET /images":
 		if r.URL.Query().Get("architecture") != "arm" || r.URL.Query().Get("name") != "ubuntu-26.04" {
 			page["images"] = []any{}
@@ -91,10 +99,11 @@ func (a *writeAPI) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		reply(page)
 	case key == "POST /servers":
+		running := map[string]any{"id": 7, "status": "running", "progress": 40, "command": "create_server", "started": "2026-01-01T00:00:00Z"}
 		reply(map[string]any{
 			"server": map[string]any{"id": 42, "name": body["name"], "created": "2026-10-23T10:00:00Z", "status": "initializing",
 				"public_net": map[string]any{"ipv4": map[string]any{"ip": "203.0.113.7", "blocked": false, "dns_ptr": ""}, "ipv6": map[string]any{"ip": "2001:db8::/64"}, "floating_ips": []any{}}},
-			"action": action, "next_actions": []any{action}, "root_password": nil})
+			"action": running, "next_actions": []any{}, "root_password": nil})
 	case key == "GET /actions":
 		page["actions"] = []any{action}
 		reply(page)
@@ -140,6 +149,9 @@ func TestFirewallRulesAndAddRule(t *testing.T) {
 		t.Errorf("rules sent: %v", a.bodies["rules"])
 	}
 	sent := a.bodies["POST /firewalls/11/actions/set_rules"]["rules"].([]any)
+	if kept := sent[0].(map[string]any); kept["protocol"] != "tcp" || kept["port"] != "22" || kept["direction"] != "in" || kept["source_ips"].([]any)[0] != "0.0.0.0/0" {
+		t.Errorf("the rule that was there is not kept as it was: %v", kept)
+	}
 	last := sent[1].(map[string]any)
 	if last["protocol"] != "icmp" || last["direction"] != "in" || len(last["source_ips"].([]any)) != 2 {
 		t.Errorf("new rule %v", last)
@@ -166,7 +178,7 @@ func TestServerCreateUsesTheImageOfTheTypesArchitecture(t *testing.T) {
 	if b["name"] != "claude-web" || b["server_type"] != float64(105) || b["location"] != "fsn1" || b["user_data"] != "#cloud-config\nx: 1\n" {
 		t.Errorf("body %v", b)
 	}
-	if b["image"] != float64(77) && b["image"] != "ubuntu-26.04" {
+	if b["image"] != float64(77) {
 		t.Errorf("image %v", b["image"])
 	}
 	if keys := b["ssh_keys"].([]any); len(keys) != 1 || keys[0] != float64(5) {
@@ -175,14 +187,16 @@ func TestServerCreateUsesTheImageOfTheTypesArchitecture(t *testing.T) {
 	if fws := b["firewalls"].([]any); len(fws) != 1 || fws[0].(map[string]any)["firewall"] != float64(11) {
 		t.Errorf("firewalls %v", b["firewalls"])
 	}
-	// the action is waited for
+	// the actions of the create call are waited for
 	waited := false
 	for _, r := range a.requests {
 		if strings.HasPrefix(r, "GET /actions") {
 			waited = true
 		}
 	}
-	_ = waited
+	if !waited {
+		t.Errorf("no wait for the actions: %v", a.requests)
+	}
 	if _, err := a.client().ServerCreate(ctx, ServerSpec{Name: "x", Type: "cax11", Location: "fsn1", Image: "nope", SSHKey: "claude-login", Firewall: "claude-ssh"}); err == nil || !strings.Contains(err.Error(), "image nope not found for arm") {
 		t.Errorf("unknown image: %v", err)
 	}
@@ -191,5 +205,20 @@ func TestServerCreateUsesTheImageOfTheTypesArchitecture(t *testing.T) {
 	}
 	if _, err := a.client().ServerCreate(ctx, ServerSpec{Name: "x", Type: "cax11", Location: "fsn1", Image: "ubuntu-26.04", SSHKey: "claude-login", Firewall: "no-such"}); err == nil || !strings.Contains(err.Error(), "firewall no-such not found") {
 		t.Errorf("unknown firewall: %v", err)
+	}
+}
+
+func TestTypeLocationAndImageMayBeGivenByID(t *testing.T) {
+	a := newWriteAPI(t)
+	a.firewalls["claude-ssh"] = nil
+	h := a.client()
+	if st, err := h.ServerType(ctx, "105"); err != nil || st == nil || st.Cores != 2 {
+		t.Errorf("type by ID: %+v %v", st, err)
+	}
+	if ok, err := h.ImageExists(ctx, "77", "arm"); !ok || err != nil {
+		t.Errorf("image by ID: %v %v", ok, err)
+	}
+	if _, err := h.ServerCreate(ctx, ServerSpec{Name: "x", Type: "105", Location: "fsn1", Image: "77", SSHKey: "claude-login", Firewall: "claude-ssh"}); err != nil {
+		t.Errorf("create with IDs: %v", err)
 	}
 }

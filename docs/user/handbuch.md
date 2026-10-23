@@ -125,7 +125,7 @@ Sie arbeiten mit genau dem Stand der gewählten Version. Es gibt nichts zu insta
 
 #### Ergebnis
 
-Dieselben Abläufe und Meldungen wie bei den Skripten, dieselben Zustandsdateien und Protokolle (`~/.local/state/hetzner-claude`). Die Befehle entsprechen einander:
+Dieselben Abläufe wie bei den Skripten, dieselben Zustandsdateien und Protokolle (`~/.local/state/hetzner-claude`). Die Meldungen entsprechen denen der Skripte; an wenigen Stellen weichen sie ab (Hinweise auf Befehle nennen `viper` statt der Skripte, und `viper up` meldet zusätzlich das Anlegen von Schlüssel, Firewall und Server). Die Befehle entsprechen einander:
 
 | `make` | `viper` |
 |---|---|
@@ -144,6 +144,7 @@ Dieselben Abläufe und Meldungen wie bei den Skripten, dieselben Zustandsdateien
 * **Fragen beim Löschen:** `viper down` fragt wie `make down` (`DISCARD` bei ungesicherter Arbeit, `DELETE` zum Löschen, `CLEANUP` bei einem Rechner, den es beim Anbieter nicht mehr gibt). Die Antworten dürfen auch per Pipe kommen; eine leere Antwort, das Ende der Eingabe und eine letzte Zeile ohne Zeilenende bestätigen nichts.
 * **Verbindung:** `viper ssh` ersetzt sich selbst durch `ssh` (wie `make ssh`): Signale und Exit-Code sind die von `ssh`.
 * **Prüfungen:** `viper dns` prüft zusätzlich Rechnername, `DNS_DOMAIN`, `SERVER_PREFIX` und die Länge des Servernamens; `make dns` gibt nur den Namen aus. `viper preflight` und `viper check` sprechen die APIs von Hetzner, Cloudflare und (falls gesetzt) GitHub und Ihrem Claude-Gateway direkt an. `viper check` sendet das Prüfskript per SSH auf den Server und ändert dort nichts.
+* **Abbruch:** Ein erstes Ctrl-C beendet den laufenden Befehl und wird protokolliert (`interrupted`); ein zweites beendet `viper` sofort. Ein abgebrochenes `viper up` lässt den Server stehen; ein erneutes `viper up` setzt die Einrichtung fort.
 * **Server-Skripte:** Die Programme, die auf dem Server laufen (Einrichtung, Prüfung, Sicherheitsprüfung vor dem Löschen), sind dieselben wie bei den Skripten und im Programm eingebaut.
 * **VS Code:** `viper up` öffnet VS Code, wenn `code` vorhanden ist, ohne dass VS Code Ihre Tokens erbt.
 * **Container:** Mit `--container` laufen die Befehle stattdessen wie bisher als Skripte im Container (dann sind der Klon und Docker nötig; `--image`, `--local`, `--base-image` und `--dir` wirken dort). Das Image zur Version holt `viper` selbst (`docker pull ghcr.io/pt9912/hetzner-viper:<version>`). Unter macOS mit **Colima** ist Ihr Home-Verzeichnis in der VM standardmäßig nur lesend eingebunden; die Container-Befehle schreiben aber nach `~/.ssh` und `~/.local/state/hetzner-claude`. Legen Sie dann beide Verzeichnisse an und starten Sie Colima mit `colima start --mount "$HOME:w"`; geben Sie `--mount` an, ersetzt es den Standard-Mount.

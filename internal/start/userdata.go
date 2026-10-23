@@ -1,7 +1,6 @@
 package start
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,26 +37,39 @@ func UserData(base []byte, authorizedKeys []string, hostPrivate, hostPublic, hos
 	return s + extra.String(), nil
 }
 
-// jsonString is a string as Python's json.dumps writes it (ASCII only), which is what the
-// script used; any JSON string is valid YAML.
+// jsonString is a string as Python's json.dumps writes it (ASCII only): quotes and backslashes
+// escaped, the short forms for \n \r \t \b \f, every other character outside space..~ as \uXXXX
+// (surrogate pairs above U+FFFF). Any JSON string is valid YAML.
 func jsonString(s string) string {
-	b, _ := json.Marshal(s)
-	out := strings.Builder{}
-	for _, r := range string(b) {
-		if r > 127 {
-			if r > 0xFFFF {
-				r -= 0x10000
-				fmt.Fprintf(&out, "\\u%04x\\u%04x", 0xD800+(r>>10), 0xDC00+(r&0x3FF))
-			} else {
-				fmt.Fprintf(&out, "\\u%04x", r)
-			}
-			continue
+	var out strings.Builder
+	out.WriteByte('"')
+	for _, r := range s {
+		switch {
+		case r == '"':
+			out.WriteString(`\"`)
+		case r == '\\':
+			out.WriteString(`\\`)
+		case r == '\n':
+			out.WriteString(`\n`)
+		case r == '\r':
+			out.WriteString(`\r`)
+		case r == '\t':
+			out.WriteString(`\t`)
+		case r == '\b':
+			out.WriteString(`\b`)
+		case r == '\f':
+			out.WriteString(`\f`)
+		case r >= ' ' && r <= '~':
+			out.WriteRune(r)
+		case r > 0xFFFF:
+			r -= 0x10000
+			fmt.Fprintf(&out, "\\u%04x\\u%04x", 0xD800+(r>>10), 0xDC00+(r&0x3FF))
+		default:
+			fmt.Fprintf(&out, "\\u%04x", r)
 		}
-		out.WriteRune(r)
 	}
-	// Go escapes <, > and & as <...; Python does not
-	bs := "\\"
-	return strings.NewReplacer(bs+"u003c", "<", bs+"u003e", ">", bs+"u0026", "&").Replace(out.String())
+	out.WriteByte('"')
+	return out.String()
 }
 
 // HostKey is a new SSH host key for a server and its certificate, signed by the host CA.

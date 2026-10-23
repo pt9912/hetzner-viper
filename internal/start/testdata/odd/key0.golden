@@ -1,0 +1,110 @@
+#cloud-config
+package_update: true
+# install all updates during setup; if they need a reboot (kernel), restart once at the end
+# (start.sh waits for it on new servers)
+package_upgrade: true
+power_state:
+  mode: reboot
+  delay: now
+  message: Rebooting once after the package upgrades
+  condition: test -f /var/run/reboot-required
+packages:
+  # Docker comes from Docker's own apt repository (see runcmd), not from Ubuntu's older docker.io
+  - gnupg
+  - git
+  - gh
+  - make
+  - build-essential
+  - curl
+  - ca-certificates
+  - tmux
+  - jq
+  - openssh-server
+  - psmisc
+  # Homebrew on Linux needs these besides build-essential, curl and git
+  - procps
+  - file
+users:
+  - name: builder
+    shell: /bin/bash
+    groups: [sudo, docker]
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: true
+    ssh_authorized_keys:
+      - "ssh-ed25519 AAAA literal \\u003cx and \\<y and <z> & w"
+ssh_pwauth: false
+
+disable_root: true
+
+write_files:
+  - path: /etc/ssh/sshd_config.d/01-keys-only.conf
+    owner: root:root
+    permissions: '0644'
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      ChallengeResponseAuthentication no
+      PubkeyAuthentication yes
+      PermitRootLogin no
+      PermitEmptyPasswords no
+      AuthenticationMethods publickey
+  # deferred: runs after the users are created (write_files otherwise runs before them)
+  - path: /home/builder/.tmux.conf
+    owner: builder:builder
+    permissions: '0644'
+    defer: true
+    content: |
+      # mouse: click windows and panes, scroll with the wheel (Shift+select copies in most terminals)
+      set -g mouse on
+      # windows count from 1 like the keys, and close gaps
+      set -g base-index 1
+      setw -g pane-base-index 1
+      set -g renumber-windows on
+      # Esc without delay (editors, Claude Code)
+      set -sg escape-time 10
+      set -g history-limit 50000
+      set -g focus-events on
+      # Alt+1 .. Alt+9 switch windows directly (Alt+n/p stay with the programs inside)
+      bind -n M-1 select-window -t 1
+      bind -n M-2 select-window -t 2
+      bind -n M-3 select-window -t 3
+      bind -n M-4 select-window -t 4
+      bind -n M-5 select-window -t 5
+      bind -n M-6 select-window -t 6
+      bind -n M-7 select-window -t 7
+      bind -n M-8 select-window -t 8
+      bind -n M-9 select-window -t 9
+
+runcmd:
+  - sshd -t
+  - systemctl try-reload-or-restart ssh
+  # Docker Engine, Buildx and Compose from Docker's repository; the signing key must have Docker's
+  # published fingerprint. In a subshell: set -e must not leak into the other commands.
+  - |
+    (
+      set -eu
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+      gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc | grep -q '^fpr:::::::::9DC858229FC7DD38854AE2D88D81803C0EBFCD88:'
+      . /etc/os-release
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable" > /etc/apt/sources.list.d/docker.list
+      apt-get update
+      DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    )
+  - systemctl enable --now docker
+  - mkdir -p /home/builder/.ssh
+  - chown builder:builder /home/builder/.ssh
+  - chmod 700 /home/builder/.ssh
+  # the installer is rate limited per address (HTTP 429, e.g. for a recycled IP): retry with growing pauses
+  - for i in 1 2 3 4 5; do su - builder -c 'set -o pipefail; curl -fsSL https://claude.ai/install.sh | bash' && touch /var/tmp/claude-ready && break; [ $i -lt 5 ] && sleep $((i * 30)); done
+  # Everything is set up on the first boot. Later boots (e.g. the reboot after the upgrades)
+  # skip cloud-init: Hetzner's datasource otherwise retries DHCP for metadata there, fails after
+  # 30 s and leaves 'status: error' although the network (already configured) works.
+  - touch /etc/cloud/cloud-init.disabled
+
+ssh_keys:
+  ed25519_private: |
+    P1
+    P2
+  ed25519_public: "ssh-ed25519 PUB c"
+  ed25519_certificate: "ssh-ed25519-cert-v01@openssh.com CERT c"

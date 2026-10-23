@@ -92,7 +92,7 @@ type ServerSpec struct {
 
 // ServerCreate creates a server and waits until it is running (hcloud server create).
 func (h *Client) ServerCreate(ctx context.Context, s ServerSpec) (*Server, error) {
-	st, _, err := h.c.ServerType.GetByName(ctx, s.Type)
+	st, _, err := h.c.ServerType.Get(ctx, s.Type)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func (h *Client) ServerCreate(ctx context.Context, s ServerSpec) (*Server, error
 		return nil, fmt.Errorf("server type %s not found", s.Type)
 	}
 	// the image of the server type's architecture
-	img, _, err := h.c.Image.GetByNameAndArchitecture(ctx, s.Image, st.Architecture)
+	img, err := h.image(ctx, s.Image, string(st.Architecture))
 	if err != nil {
 		return nil, err
 	}

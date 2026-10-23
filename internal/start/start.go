@@ -62,6 +62,17 @@ type runner struct {
 	repo   string
 }
 
+// interrupted reports that the run was cancelled (Ctrl-C): nothing more is started, and failures
+// that follow from the cancellation are not shown as problems.
+func (r *runner) interrupted() bool { return r.ctx.Err() != nil }
+
+// warnf is a warning of a step that is not fatal; it stays quiet after an interruption.
+func (r *runner) warnf(format string, a ...any) {
+	if !r.interrupted() {
+		r.eprintf(format, a...)
+	}
+}
+
 func (r *runner) printf(format string, a ...any)  { fmt.Fprintf(r.out, format, a...) }
 func (r *runner) eprintf(format string, a ...any) { fmt.Fprintf(r.errOut, format, a...) }
 

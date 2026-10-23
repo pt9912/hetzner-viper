@@ -6,8 +6,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"os/signal"
-	"syscall"
 
 	"github.com/pt9912/hetzner-viper/internal/cloudflare"
 	"github.com/pt9912/hetzner-viper/internal/config"
@@ -48,7 +46,7 @@ func runPreflight(ctx context.Context, o *options, env config.Env, stdout, stder
 	if err != nil {
 		return err
 	}
-	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	ctx, stop := notifyContext(ctx)
 	defer stop()
 	failures := preflight.Run(ctx, c, o.repo, newPreflightDeps(c), l.Out, l.Err)
 	switch {

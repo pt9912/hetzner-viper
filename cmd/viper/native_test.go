@@ -255,3 +255,27 @@ func TestAskerNeverConfirmsAfterAnInterruption(t *testing.T) {
 		t.Fatal("the prompt did not end with the interruption")
 	}
 }
+
+func TestUpDownAndCheckNeedOpenSSHBeforeAnythingHappens(t *testing.T) {
+	fakeTools(t)
+	missing := map[string]bool{}
+	lookPath = func(p string) (string, error) {
+		if missing[p] {
+			return "", errors.New("not found")
+		}
+		return "/usr/bin/" + p, nil
+	}
+	for _, c := range []struct {
+		command string
+		program string
+		run     func(*options) error
+	}{
+		{"up", "ssh", nativeUp}, {"up", "ssh-keygen", nativeUp}, {"up", "scp", nativeUp}, {"down", "ssh", nativeDown}, {"check", "ssh", nativeCheck},
+	} {
+		missing = map[string]bool{c.program: true}
+		err := c.run(&options{machine: "web", dir: t.TempDir()})
+		if err == nil || !strings.Contains(err.Error(), c.program+" not found") || !strings.Contains(err.Error(), "--container") {
+			t.Errorf("%s without %s: %v", c.command, c.program, err)
+		}
+	}
+}

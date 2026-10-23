@@ -5,9 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/cloudflare"
@@ -102,9 +100,16 @@ func runUp(ctx context.Context, o *options, env config.Env, stdout, stderr io.Wr
 	if err != nil {
 		return err
 	}
-	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	ctx, stop := notifyContext(ctx)
 	defer stop()
 	deps := newUpDeps(c, func() preflight.Deps { return newPreflightDeps(c) })
+	// the pauses end with an interruption
+	deps.Sleep = func(d time.Duration) {
+		select {
+		case <-time.After(d):
+		case <-ctx.Done():
+		}
+	}
 	code, err := start.Run(ctx, c, o.repo, deps, l, l.Out, l.Err)
 	switch {
 	case ctx.Err() != nil:
@@ -126,6 +131,12 @@ func runUp(ctx context.Context, o *options, env config.Env, stdout, stderr io.Wr
 }
 
 func nativeUp(o *options) error {
+	// before anything is created: a program that is missing later would leave a server behind
+	for _, program := range []string{"ssh", "ssh-keygen", "scp"} {
+		if err := need(program); err != nil {
+			return err
+		}
+	}
 	env, err := hostEnv()
 	if err != nil {
 		return err

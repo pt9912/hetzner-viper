@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,7 +66,7 @@ func (h *Client) ServerNames(ctx context.Context) ([]string, error) {
 
 // ServerType returns the server type of that name, nil if there is none.
 func (h *Client) ServerType(ctx context.Context, name string) (*ServerType, error) {
-	t, _, err := h.c.ServerType.GetByName(ctx, name)
+	t, _, err := h.c.ServerType.Get(ctx, name)
 	if err != nil || t == nil {
 		return nil, err
 	}
@@ -118,14 +119,24 @@ func (h *Client) DeleteServer(ctx context.Context, id int64) error {
 
 // LocationExists reports whether a location of that name exists.
 func (h *Client) LocationExists(ctx context.Context, name string) (bool, error) {
-	l, _, err := h.c.Location.GetByName(ctx, name)
+	l, _, err := h.c.Location.Get(ctx, name)
 	return l != nil, err
 }
 
 // ImageExists reports whether an image of that name exists for the architecture.
+// A number is the ID of an image (a snapshot, say), as the hcloud CLI took it.
 func (h *Client) ImageExists(ctx context.Context, name, architecture string) (bool, error) {
-	img, _, err := h.c.Image.GetByNameAndArchitecture(ctx, name, hcloud.Architecture(architecture))
+	img, err := h.image(ctx, name, architecture)
 	return img != nil, err
+}
+
+func (h *Client) image(ctx context.Context, nameOrID, architecture string) (*hcloud.Image, error) {
+	if id, err := strconv.ParseInt(nameOrID, 10, 64); err == nil {
+		img, _, err := h.c.Image.GetByID(ctx, id)
+		return img, err
+	}
+	img, _, err := h.c.Image.GetByNameAndArchitecture(ctx, nameOrID, hcloud.Architecture(architecture))
+	return img, err
 }
 
 // SSHKeys lists the public keys of the project.
