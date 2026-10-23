@@ -57,7 +57,7 @@ var commands = map[string]command{
 		args: func(o *options) []string { return []string{"./preflight.sh", o.machine, o.repo} }},
 	"up": {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"},
 		args: func(o *options) []string { return []string{"./start.sh", o.machine, o.repo} }},
-	"check": {usage: "<machine>", machine: needMachine,
+	"check": {usage: "<machine>", machine: needMachine, native: nativeCheck,
 		args: func(o *options) []string { return []string{"./check.sh", o.machine} }},
 	"ssh": {usage: "<machine> [--cmd COMMAND]", machine: needMachine, flags: []string{"cmd"}, native: nativeSSH,
 		args: func(o *options) []string {
@@ -186,7 +186,7 @@ Options for every command:
   --dir DIR         the directory with .env.local (and machines/), and the scripts for the container commands;
                     a relative SSH_KEY is relative to it (default: current directory)
   --image REF       run this image (pulled if missing) instead of the one of this version
-  --container       run setup, ssh, dns and preflight in the container too (default: on this computer)
+  --container       run the native commands in the container too (default: on this computer)
   --local           build the image from the Dockerfile instead of pulling the release's
   --base-image REF  base image for --local (default: Docker Hub, or mirror.gcr.io if unreachable)
 

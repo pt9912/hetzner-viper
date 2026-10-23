@@ -3,11 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/pt9912/hetzner-viper/internal/check"
 	"github.com/pt9912/hetzner-viper/internal/config"
 	"github.com/pt9912/hetzner-viper/internal/hetzner"
 	"github.com/pt9912/hetzner-viper/internal/preflight"
@@ -106,5 +110,63 @@ func TestPreflightRunsHereByDefault(t *testing.T) {
 	}
 	if commands["up"].native != nil || commands["down"].native != nil {
 		t.Error("up and down are still the scripts")
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+type serverHetzner struct{ srv *hetzner.Server }
+
+func (s serverHetzner) ServerByName(context.Context, string) (*hetzner.Server, error) {
+	return s.srv, nil
+}
+
+func TestCheckLogsTheRunAndItsOutcome(t *testing.T) {
+	env, home, o := preflightSetup(t, true)
+	state := filepath.Join(home, ".local", "state", "hetzner-claude")
+	old := newCheckDeps
+	t.Cleanup(func() { newCheckDeps = old })
+	var probeOK = true
+	newCheckDeps = func(c *config.Config) check.Deps {
+		return check.Deps{
+			Hetzner: serverHetzner{&hetzner.Server{Name: "claude-web", IPv4: "203.0.113.7"}},
+			HTTP: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"Answer":[{"type":1,"data":"203.0.113.7"}]}`))}, nil
+			})},
+			LookupIPv4:     func(context.Context, string) ([]string, error) { return []string{"203.0.113.7"}, nil },
+			WriteSSHConfig: func(string) error { return nil },
+			Run: func(_ context.Context, _, name string, args ...string) (string, string, error) {
+				if name == "ssh" && args[0] != "-n" && !probeOK {
+					return "", "", errors.New("exit 255")
+				}
+				if name == "ssh" && args[0] != "-n" {
+					return "cloudinit=done\nclaude_version=2\ngh_version=gh 2\ngit_name=a\ngit_email=b@c\ndocker=ok\nbrew_version=Homebrew 5\nbrew_path=yes\nsshd=authenticationmethods publickey;passwordauthentication no;permitrootlogin no;\n", "", nil
+				}
+				return "", "", nil
+			},
+		}
+	}
+	var out, errb bytes.Buffer
+	if err := runCheck(context.Background(), o, env, &out, &errb); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "Check OK.") {
+		t.Errorf("output %q", out.String())
+	}
+	events, _ := os.ReadFile(filepath.Join(state, "events.log"))
+	if !strings.HasSuffix(string(events), " claude-web               check     check OK\n") {
+		t.Errorf("events %q", events)
+	}
+	// an ssh failure: logged as FAILED, exit status 1
+	probeOK = false
+	err := runCheck(context.Background(), o, env, &out, &errb)
+	events, _ = os.ReadFile(filepath.Join(state, "events.log"))
+	if exitCode(err) != 1 || !strings.HasSuffix(string(events), "check     FAILED (exit 1; see logs/claude-web.log)\n") {
+		t.Errorf("%v / events %q", err, events)
+	}
+	if commands["check"].native == nil {
+		t.Error("check is native")
 	}
 }

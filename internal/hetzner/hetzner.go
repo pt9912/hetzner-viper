@@ -86,6 +86,26 @@ func (h *Client) ServerType(ctx context.Context, name string) (*ServerType, erro
 	return out, nil
 }
 
+// Server is a server of the project as far as the commands use it.
+type Server struct {
+	ID   int64
+	Name string
+	IPv4 string
+}
+
+// ServerByName returns the server of that name, nil if there is none.
+func (h *Client) ServerByName(ctx context.Context, name string) (*Server, error) {
+	s, _, err := h.c.Server.GetByName(ctx, name)
+	if err != nil || s == nil {
+		return nil, err
+	}
+	out := &Server{ID: s.ID, Name: s.Name}
+	if s.PublicNet.IPv4.IP != nil {
+		out.IPv4 = s.PublicNet.IPv4.IP.String()
+	}
+	return out, nil
+}
+
 // LocationExists reports whether a location of that name exists.
 func (h *Client) LocationExists(ctx context.Context, name string) (bool, error) {
 	l, _, err := h.c.Location.GetByName(ctx, name)

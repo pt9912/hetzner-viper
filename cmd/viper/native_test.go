@@ -26,8 +26,8 @@ func TestNativeCommandsRunHereAndContainerFlagRunsThemInTheContainer(t *testing.
 	dispatch(commands["setup"], &o)
 	_, o = mustParse(t, "setup", "--container")
 	dispatch(commands["setup"], &o)
-	_, o = mustParse(t, "check", "web") // has no native version yet
-	dispatch(commands["check"], &o)
+	_, o = mustParse(t, "up", "web") // has no native version yet
+	dispatch(commands["up"], &o)
 	if !slices.Equal(ran, []string{"native", "container", "container"}) {
 		t.Errorf("ran %q", ran)
 	}
