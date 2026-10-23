@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/check"
 	"github.com/pt9912/hetzner-viper/internal/config"
@@ -298,4 +300,70 @@ func (f failIfCreated) FirewallAddRule(context.Context, string, hetzner.Firewall
 func (f failIfCreated) ServerCreate(context.Context, hetzner.ServerSpec) (*hetzner.Server, error) {
 	*f.created = true
 	return nil, nil
+}
+
+func TestInterruptionAtAPromptIsLoggedNotAFailure(t *testing.T) {
+	env, home, o := preflightSetup(t, true)
+	state := filepath.Join(home, ".local", "state", "hetzner-claude")
+	var deleted []int64
+	old := newDownDeps
+	t.Cleanup(func() { newDownDeps = old })
+	newDownDeps = func(c *config.Config) stop.Deps {
+		return stop.Deps{
+			Hetzner: downHetzner{&hetzner.Server{ID: 42, Name: "claude-web", IPv4: "203.0.113.7"}, &deleted},
+			DNS:     dnsDeleter{},
+			Run: func(_ context.Context, _, _ string, args ...string) (string, string, error) {
+				if strings.HasPrefix(args[len(args)-1], "bash -s") {
+					return "== /Development ==\n== tmux sessions ==\n== end of check ==\n", "", nil
+				}
+				return "ssh-ed25519 AAAA k\n", "", nil
+			},
+			WriteSSHConfig: func(string) error { return nil },
+			SSHInclude:     func(string) error { return nil },
+		}
+	}
+	pr, pw := io.Pipe() // nothing is typed: the prompt waits
+	defer pw.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	var out, errb syncBuffer
+	go func() { done <- runDown(ctx, o, env, pr, &out, &errb) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(errb.String(), "Type DELETE to continue: ") && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if exitCode(err) != 130 {
+			t.Errorf("exit code %d (%v)", exitCode(err), err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the prompt did not end with the interruption")
+	}
+	if len(deleted) != 0 {
+		t.Error("deleted after an interruption")
+	}
+	events, _ := os.ReadFile(filepath.Join(state, "events.log"))
+	if !strings.HasSuffix(string(events), " claude-web               down      interrupted\n") || strings.Contains(string(events), "FAILED") {
+		t.Errorf("events %q", events)
+	}
+}
+
+// syncBuffer is a buffer that a test may read while a command still writes to it.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
 }

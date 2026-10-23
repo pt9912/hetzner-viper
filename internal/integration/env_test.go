@@ -444,3 +444,19 @@ func hetznerKey(name, pub string) hetzner.SSHKey {
 }
 
 var errBoom = errors.New("hcloud: server responded with status code 500")
+
+func configLoad(e *Env, name string) (*config.Config, error) {
+	return config.Load(e.Dir, name, config.Env{Home: e.Home, Lookup: func(k string) (string, bool) { v, ok := e.Tokens[k]; return v, ok }}, true)
+}
+
+func berlin(t *testing.T) *time.Location {
+	t.Helper()
+	loc, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Skip("no time zone data: ", err)
+	}
+	return loc
+}
+
+func timeLocal() *time.Location     { return time.Local }
+func setTimeLocal(l *time.Location) { time.Local = l }
