@@ -77,7 +77,7 @@ var commands = map[string]command{
 		}},
 	"dns": {usage: "<machine>", machine: needMachine, native: nativeDNS,
 		args: func(o *options) []string { return []string{"-c", dnsScript, "_", o.machine} }},
-	"log": {usage: "[<machine>] [--full]", machine: maybeMachine, flags: []string{"full"},
+	"log": {usage: "[<machine>] [--full]", machine: maybeMachine, flags: []string{"full"}, native: nativeLog,
 		args: func(o *options) []string {
 			o.extraEnv = []string{"MACHINE=" + o.machine}
 			if o.full {

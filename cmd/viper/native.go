@@ -10,6 +10,7 @@ import (
 
 	hetznerviper "github.com/pt9912/hetzner-viper"
 	"github.com/pt9912/hetzner-viper/internal/config"
+	"github.com/pt9912/hetzner-viper/internal/runlog"
 )
 
 // Commands that run on the host itself, without the container: they only need the files of the
@@ -162,6 +163,25 @@ func dnsName(o *options, env config.Env, out io.Writer) error {
 	}
 	fmt.Fprintln(out, c.DNSHost)
 	return nil
+}
+
+// showLog is make log: the events of all machines or one machine, or its complete output.
+func showLog(o *options, env config.Env, out io.Writer) error {
+	home := env.Home
+	state := filepath.Join(home, ".local", "state", "hetzner-claude")
+	server := ""
+	if o.machine != "" {
+		server = config.Prefix(settingsDir(o), o.machine, env) + "-" + o.machine
+	}
+	return runlog.Show(state, server, o.full, out)
+}
+
+func nativeLog(o *options) error {
+	env, err := hostEnv()
+	if err != nil {
+		return err
+	}
+	return showLog(o, env, os.Stdout)
 }
 
 func nativeSetup(o *options) error {

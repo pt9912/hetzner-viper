@@ -95,6 +95,16 @@ func sourceFile(vars map[string]string, path string, env Env) error {
 	return nil
 }
 
+// Prefix is SERVER_PREFIX of a machine, read like the scripts read it (files only, the machine's
+// file wins); a file that cannot be read counts as not set, so the default "claude" applies.
+func Prefix(dir, machine string, env Env) string {
+	vars := map[string]string{}
+	for _, f := range []string{filepath.Join(dir, ".env.local"), filepath.Join(dir, "machines", machine+".env.local")} {
+		_ = sourceFile(vars, f, env)
+	}
+	return or(vars["SERVER_PREFIX"], "claude")
+}
+
 // Load reads .env.local and machines/<machine>.env.local of dir and checks the settings. With
 // needTokens it requires the three API credentials as well (all commands that call an API).
 func Load(dir, machine string, env Env, needTokens bool) (*Config, error) {

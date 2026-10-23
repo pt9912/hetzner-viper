@@ -261,6 +261,25 @@ func TestSourceAgreesWithBash(t *testing.T) {
 	}
 }
 
+func TestPrefixIsReadLikeTheScriptsReadIt(t *testing.T) {
+	dir := setupDir(t, "SERVER_PREFIX=cs      # not claude\n", "SERVER_TYPE=cpx32\n")
+	env := Env{Home: "/h"}
+	if got := Prefix(dir, "web", env); got != "cs" {
+		t.Errorf("comment after the value: %q", got)
+	}
+	os.WriteFile(filepath.Join(dir, "machines", "web.env.local"), []byte("SERVER_PREFIX=\"mach\"\n"), 0o600)
+	if got := Prefix(dir, "web", env); got != "mach" {
+		t.Errorf("machine file wins, quotes removed: %q", got)
+	}
+	if got := Prefix(t.TempDir(), "web", env); got != "claude" {
+		t.Errorf("default: %q", got)
+	}
+	os.WriteFile(filepath.Join(dir, "machines", "web.env.local"), []byte("SERVER_PREFIX=$(x)\n"), 0o600)
+	if got := Prefix(dir, "web", env); got != "cs" {
+		t.Errorf("an unreadable machine file is ignored: %q", got)
+	}
+}
+
 func TestEnvWithoutLookupIsSafe(t *testing.T) {
 	dir := setupDir(t, "DNS_DOMAIN=example.com\n", "")
 	c, err := Load(dir, "web", Env{Home: "/h"}, false)

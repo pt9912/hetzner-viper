@@ -163,3 +163,30 @@ func TestChildExitCodesAndSignals(t *testing.T) {
 		t.Errorf("viper survives SIGINT and waits: %v", err)
 	}
 }
+
+func TestLogReadsThePrefixAndShowsTheMachine(t *testing.T) {
+	env, home := nativeEnv(t)
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\nSERVER_PREFIX=cs # c\n"), 0o600)
+	state := filepath.Join(home, ".local", "state", "hetzner-claude")
+	os.MkdirAll(filepath.Join(state, "logs"), 0o700)
+	os.WriteFile(filepath.Join(state, "events.log"), []byte("t cs-web up ready\nt claude-api up ready\n"), 0o600)
+	os.WriteFile(filepath.Join(state, "logs", "cs-web.log"), []byte("full output\n"), 0o600)
+	var out strings.Builder
+	if err := showLog(&options{dir: dir, machine: "web"}, env, &out); err != nil || out.String() != "t cs-web up ready\n" {
+		t.Errorf("%q %v", out.String(), err)
+	}
+	out.Reset()
+	showLog(&options{dir: dir, machine: "web", full: true}, env, &out)
+	if out.String() != "full output\n" {
+		t.Errorf("%q", out.String())
+	}
+	out.Reset()
+	showLog(&options{dir: dir}, env, &out)
+	if !strings.Contains(out.String(), "claude-api") || !strings.Contains(out.String(), "cs-web") {
+		t.Errorf("all: %q", out.String())
+	}
+	if commands["log"].native == nil {
+		t.Error("log is native")
+	}
+}
