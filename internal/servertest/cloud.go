@@ -16,22 +16,23 @@ import (
 type Cloud struct {
 	mu sync.Mutex
 
-	Now        time.Time
-	Servers    map[string]*hetzner.Server
-	nextID     int64
-	Keys       []hetzner.SSHKey
-	Firewalls  map[string][]hetzner.FirewallRule
-	Types      map[string]*hetzner.ServerType
-	Locations  map[string]bool
-	Images     map[string]bool // "name/arch"
-	UserData   map[string]string
-	Created    []hetzner.ServerSpec
-	Deleted    []string
-	Calls      []string // what was changed, in order: "key create ...", "server create ...", ...
-	ListErr    error    // every call of the project fails with it
-	DNSRecords map[string]DNSRecord
-	DNSZone    string
-	DNSFail    bool // setting a record fails
+	Now           time.Time
+	Servers       map[string]*hetzner.Server
+	nextID        int64
+	Keys          []hetzner.SSHKey
+	Firewalls     map[string][]hetzner.FirewallRule
+	Types         map[string]*hetzner.ServerType
+	Locations     map[string]bool
+	Images        map[string]bool // "name/arch"
+	UserData      map[string]string
+	Created       []hetzner.ServerSpec
+	Deleted       []string
+	Calls         []string // what was changed, in order: "key create ...", "server create ...", ...
+	ListErr       error    // every call of the project fails with it
+	DNSRecords    map[string]DNSRecord
+	DNSZone       string
+	DNSFail       bool // setting a record fails
+	DNSDeleteFail bool // deleting a record fails
 	// FirewallErr makes reading a firewall fail (the preflight does not read firewalls).
 	FirewallErr error
 }
@@ -198,6 +199,9 @@ func (c *Cloud) Set(_ context.Context, host, ip string) (string, error) {
 func (c *Cloud) Delete(_ context.Context, host, expectedIP string) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.DNSDeleteFail {
+		return "", errors.New("Cloudflare API error: fake")
+	}
 	if r, ok := c.DNSRecords[host]; ok {
 		if !r.Ours {
 			return "", errors.New("DNS record not owned by setup; skipping")

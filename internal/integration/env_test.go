@@ -3,6 +3,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -432,3 +433,5 @@ func servertestRecord(ip string, ours bool) servertest.DNSRecord {
 func hetznerKey(name, pub string) hetzner.SSHKey {
 	return hetzner.SSHKey{Name: name, Fingerprint: servertest.Fingerprint(pub)}
 }
+
+var errBoom = errors.New("hcloud: server responded with status code 500")
