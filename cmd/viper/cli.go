@@ -53,7 +53,7 @@ const logScript = `d="$HOME/.local/state/hetzner-claude"; ` +
 var commands = map[string]command{
 	"setup": {usage: "", machine: noMachine, native: nativeSetup,
 		args: func(o *options) []string { return []string{"./setup.sh"} }},
-	"preflight": {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"},
+	"preflight": {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"}, native: nativePreflight,
 		args: func(o *options) []string { return []string{"./preflight.sh", o.machine, o.repo} }},
 	"up": {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"},
 		args: func(o *options) []string { return []string{"./start.sh", o.machine, o.repo} }},
@@ -186,7 +186,7 @@ Options for every command:
   --dir DIR         the directory with .env.local (and machines/), and the scripts for the container commands;
                     a relative SSH_KEY is relative to it (default: current directory)
   --image REF       run this image (pulled if missing) instead of the one of this version
-  --container       run setup, ssh and dns in the container too (default: on this computer, needs OpenSSH)
+  --container       run setup, ssh, dns and preflight in the container too (default: on this computer)
   --local           build the image from the Dockerfile instead of pulling the release's
   --base-image REF  base image for --local (default: Docker Hub, or mirror.gcr.io if unreachable)
 

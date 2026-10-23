@@ -35,7 +35,8 @@ func run(args []string) int {
 		return 0
 	}
 	var ee *exec.ExitError
-	if !errors.As(err, &ee) {
+	var es exitStatus
+	if !errors.As(err, &ee) && !errors.As(err, &es) {
 		fmt.Fprintln(os.Stderr, "viper:", err)
 	}
 	return exitCode(err)
@@ -53,6 +54,10 @@ func dispatch(c command, o *options) error {
 }
 
 func exitCode(err error) int {
+	var es exitStatus
+	if errors.As(err, &es) {
+		return int(es)
+	}
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
 		if code := ee.ExitCode(); code >= 0 {

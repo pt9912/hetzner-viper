@@ -32,6 +32,7 @@ func (e Env) Getenv(name string) string {
 // Config is the settings of one machine with the names and paths derived from them (common.sh).
 type Config struct {
 	Machine string
+	Dir     string // where .env.local is
 	vars    map[string]string
 	env     Env
 
@@ -110,7 +111,7 @@ func Load(dir, machine string, env Env, needTokens bool) (*Config, error) {
 	if err := sourceFile(vars, filepath.Join(dir, "machines", machine+".env.local"), env); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	c := &Config{Machine: machine, vars: vars, env: env}
+	c := &Config{Machine: machine, Dir: dir, vars: vars, env: env}
 
 	required := []string{"DNS_DOMAIN"}
 	if needTokens {
