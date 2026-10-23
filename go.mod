@@ -2,7 +2,10 @@ module github.com/pt9912/hetzner-viper
 
 go 1.26.10
 
-require github.com/hetznercloud/hcloud-go/v2 v2.53.0
+require (
+	github.com/hetznercloud/hcloud-go/v2 v2.53.0
+	gopkg.in/yaml.v3 v3.0.1
+)
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect

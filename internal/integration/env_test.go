@@ -14,6 +14,7 @@ import (
 
 	"github.com/pt9912/hetzner-viper/internal/check"
 	"github.com/pt9912/hetzner-viper/internal/config"
+	"github.com/pt9912/hetzner-viper/internal/hetzner"
 	"github.com/pt9912/hetzner-viper/internal/machine"
 	"github.com/pt9912/hetzner-viper/internal/preflight"
 	"github.com/pt9912/hetzner-viper/internal/runlog"
@@ -420,4 +421,10 @@ func defaultHTTP(r *http.Request) (*http.Response, error) {
 		return Reply(200, `{}`, nil), nil
 	}
 	return Reply(404, ``, nil), nil
+}
+
+type firewallRule = hetzner.FirewallRule
+
+func servertestRecord(ip string, ours bool) servertest.DNSRecord {
+	return servertest.DNSRecord{IP: ip, Ours: ours}
 }
