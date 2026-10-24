@@ -1,8 +1,8 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.39  
+Version: 1.40  
 Software-Version: v0.5.0  
-Stand: 23.10.2026
+Stand: 24.10.2026
 
 ## 1. Einleitung
 
@@ -102,7 +102,6 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 * **macOS:** Ein Binary aus dem Browser versieht macOS mit einer Quarantäne-Markierung, die das Starten verhindert. Entfernen Sie sie mit `xattr -d com.apple.quarantine ~/bin/viper`. Auf macOS ist `viper` bisher nicht getestet.
 * **Windows** wird nicht unterstützt. Nutzen Sie `viper` dort innerhalb von WSL.
 * **Quellcode:** Das Release enthält auch den Quellcode. Mit Docker und `make` bauen Sie `viper` selbst, ohne Go zu installieren: `make build` legt `dist/viper` ab (`make build GOOS=darwin GOARCH=arm64` für ein anderes System, `make help` zeigt alle Ziele). Mit installiertem Go geht auch `go build ./cmd/viper`. Für die Benutzung ist das nicht nötig.
-* **Noch kein Release mit dem neuen `viper`:** Das letzte veröffentlichte Release ist `v0.4.0`; es enthält noch die frühere Container-Variante. Bis `v0.5.0` erscheint, bauen Sie `viper` wie oben aus dem Quellcode.
 
 ### Erstmalige Einrichtung
 
@@ -883,3 +882,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.37 | v0.5.0 | Die Bash-Skripte, `make` und das Container-Image entfallen; `viper` ist der einzige Weg. Dieses Handbuch beschreibt nur noch `viper`; die älteren Zeilen dieser Tabelle nennen die damaligen Skripte und `make`-Ziele. |
 | 1.38 | v0.5.0 | Entwicklung: `make build` baut `viper` in Docker (`dist/viper`), `make check` führt gofmt, `go vet`, golangci-lint und alle Tests in Containern aus (`make help` listet die Ziele). Für die Benutzung ändert sich nichts. |
 | 1.39 | v0.5.0 | Neue Option `viper up <rechner> --no-code`: VS Code wird nach dem Start nicht geöffnet. |
+| 1.40 | v0.5.0 | Release `v0.5.0` mit den `viper`-Binaries für Linux und macOS. |
