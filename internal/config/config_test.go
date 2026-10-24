@@ -193,7 +193,7 @@ func TestLoadChecksNamesAndDomain(t *testing.T) {
 			t.Errorf("%q %q: got %v, want %q", c.file, c.machine, err, c.want)
 		}
 	}
-	if _, err := config.Load(t.TempDir(), "web", env, false); err == nil || err.Error() != "Copy .env.local.example to .env.local" {
+	if _, err := config.Load(t.TempDir(), "web", env, false); err == nil || err.Error() != "No .env.local: run viper setup to create it" {
 		t.Errorf("no file: %v", err)
 	}
 }

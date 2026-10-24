@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.40  
+Version: 1.41  
 Software-Version: v0.5.0  
 Stand: 24.10.2026
 
@@ -172,7 +172,7 @@ Die erstmalige Einrichtung ist abgeschlossen. Am besten nutzen Sie ein eigenes H
 
 #### Vorgehen
 
-1. Tragen Sie in die Einstellungsdatei des Testrechners `machines/test.env.local` die Zeile `SERVER_TYPE=cpx02` ein. Gibt es die Datei noch nicht, kopieren Sie vorher `machines/example.env.local.example` dorthin. Dort können Sie auch `REPO_URL` setzen, dann brauchen Sie die URL in den folgenden Befehlen nicht. `cpx02` hat 1 vCPU, 1 GB RAM und 20 GB Platte.
+1. Tragen Sie in die Einstellungsdatei des Testrechners `machines/test.env.local` die Zeile `SERVER_TYPE=cpx02` ein. Gibt es die Datei noch nicht, kopieren Sie vorher `machines/example.env.local.example` dorthin (die Vorlage legt `viper setup` neben Ihrer `.env.local` an). Dort können Sie auch `REPO_URL` setzen, dann brauchen Sie die URL in den folgenden Befehlen nicht. `cpx02` hat 1 vCPU, 1 GB RAM und 20 GB Platte.
 2. Prüfen Sie vorab: `viper preflight test` (mit URL: `viper preflight test --repo https://github.com/<konto>/<repo>.git`). Meldet die Prüfung, dass `cpx02` in `fsn1` derzeit nicht bestellbar ist, ergänzen Sie in derselben Datei `SERVER_LOCATION=nbg1` oder `hel1`, oder nehmen Sie `SERVER_TYPE=cpx12` (2 GB RAM).
 3. Starten Sie den Rechner: `viper up test` (oder mit `--repo …` wie oben).
 4. Prüfen Sie den Rechner: `viper check test` (siehe „Einen laufenden Rechner prüfen“).
@@ -302,7 +302,7 @@ Sie haben im Git-Dienst einen **Deploy-Key** (nur lesend) für das Repository hi
 
 #### Vorgehen
 
-1. Kopieren Sie `machines/example.env.local.example` nach `machines/<rechner>.env.local`.
+1. Kopieren Sie `machines/example.env.local.example` (legt `viper setup` im Arbeitsverzeichnis an) nach `machines/<rechner>.env.local`.
 2. Tragen Sie `REPO_URL` (SSH-Adresse) und `GIT_DEPLOY_KEY_FILE` (Pfad zur Schlüsseldatei) ein.
 3. Starten Sie den Rechner mit `viper up <rechner>`.
 
@@ -657,10 +657,10 @@ Der DNS-Eintrag ist ein A-Record ohne Cloudflare-Proxy, weil dieser SSH nicht we
 
 ## 7. Fehlerbehebung
 
-### Meldung: "Copy .env.local.example to .env.local"
+### Meldung: "No .env.local: run viper setup to create it"
 
 **Ursache:** Die Datei `.env.local` fehlt.  
-**Lösung:** Kopieren Sie `.env.local.example` nach `.env.local` und tragen Sie `DNS_DOMAIN` ein.
+**Lösung:** Führen Sie `viper setup` im Arbeitsverzeichnis aus (oder geben Sie es mit `--dir` an). Es legt `.env.local` aus der Vorlage an; tragen Sie dann `DNS_DOMAIN` ein.
 
 ### Meldung: "Missing settings: …"
 
@@ -883,3 +883,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.38 | v0.5.0 | Entwicklung: `make build` baut `viper` in Docker (`dist/viper`), `make check` führt gofmt, `go vet`, golangci-lint und alle Tests in Containern aus (`make help` listet die Ziele). Für die Benutzung ändert sich nichts. |
 | 1.39 | v0.5.0 | Neue Option `viper up <rechner> --no-code`: VS Code wird nach dem Start nicht geöffnet. |
 | 1.40 | v0.5.0 | Release `v0.5.0` mit den `viper`-Binaries für Linux und macOS. |
+| 1.41 | v0.5.1 | `viper setup` legt zusätzlich `machines/example.env.local.example` an (Vorlage für die Einstellungen eines Rechners). Die Meldung bei fehlender `.env.local` verweist auf `viper setup`. |

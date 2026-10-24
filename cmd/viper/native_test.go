@@ -93,6 +93,9 @@ func TestSetupCreatesTheTemplateOnlyOnce(t *testing.T) {
 	if !strings.Contains(out.String(), "Created ") {
 		t.Errorf("says it created the file: %q", out.String())
 	}
+	if b, err := os.ReadFile(filepath.Join(dir, "machines", "example.env.local.example")); err != nil || !strings.Contains(string(b), "REPO_URL=") {
+		t.Errorf("the template for one machine: %v %q", err, b)
+	}
 	if st, err := os.Stat(filepath.Join(dir, ".env.local")); err != nil || st.Mode().Perm() != 0o600 {
 		t.Errorf("a new .env.local holds tokens and must be private: %v %v", st, err)
 	}

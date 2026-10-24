@@ -41,17 +41,33 @@ func settingsDir(o *options) string {
 
 // createEnvFile writes .env.local from the template unless it already exists.
 func createEnvFile(file string, out io.Writer) error {
-	// O_EXCL: two runs at once do not truncate each other's file; 600: it holds API tokens
-	switch f, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600); {
+	// 600: it holds API tokens
+	return writeTemplate(file, hetznerviper.EnvExample, 0o600, "Created %s from the template; set DNS_DOMAIN in it.\n", out)
+}
+
+// createMachineExample writes machines/example.env.local.example unless it already exists: the
+// template for the settings of one machine, to copy to machines/<machine>.env.local.
+func createMachineExample(dir string, out io.Writer) error {
+	if err := os.MkdirAll(filepath.Join(dir, "machines"), 0o755); err != nil {
+		return err
+	}
+	file := filepath.Join(dir, "machines", "example.env.local.example")
+	return writeTemplate(file, hetznerviper.MachineExample, 0o644, "Created %s: copy it to machines/<machine>.env.local for the settings of one machine.\n", out)
+}
+
+// writeTemplate writes a template to a file that does not exist yet and says so; O_EXCL: two runs
+// at once do not truncate each other's file.
+func writeTemplate(file string, data []byte, mode os.FileMode, message string, out io.Writer) error {
+	switch f, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode); {
 	case err == nil:
-		_, werr := f.Write(hetznerviper.EnvExample)
+		_, werr := f.Write(data)
 		if cerr := f.Close(); werr == nil {
 			werr = cerr
 		}
 		if werr != nil {
 			return werr
 		}
-		fmt.Fprintf(out, "Created %s from the template; set DNS_DOMAIN in it.\n", file)
+		fmt.Fprintf(out, message, file)
 	case !os.IsExist(err):
 		return err
 	}
@@ -89,6 +105,9 @@ func setup(o *options, env config.Env, out io.Writer) error {
 	dir := settingsDir(o)
 	file := filepath.Join(dir, ".env.local")
 	if err := createEnvFile(file, out); err != nil {
+		return err
+	}
+	if err := createMachineExample(dir, out); err != nil {
 		return err
 	}
 	vars, err := config.LoadFile(dir, env)

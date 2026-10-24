@@ -70,7 +70,7 @@ func LoadFile(dir string, env Env) (map[string]string, error) {
 	vars := map[string]string{}
 	if err := sourceFile(vars, filepath.Join(dir, ".env.local"), env); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, errors.New("Copy .env.local.example to .env.local")
+			return nil, errors.New("No .env.local: run viper setup to create it")
 		}
 		return nil, err
 	}
