@@ -12,7 +12,7 @@ It is meant for developers with their own Hetzner and Cloudflare accounts.
 
 ## What can I do today?
 
-`viper` is one file (Linux) from the [Releases page](https://github.com/pt9912/hetzner-viper/releases), or with Homebrew: `brew install pt9912/viper/viper`. It needs the OpenSSH client (`ssh`, `ssh-keygen`, `ssh-keyscan`, `scp`) and nothing else: no Docker, `make`, `hcloud` or `jq` (`git` is used for the repository check and `code` to open VS Code, both optional).
+`viper` is one file (Linux, macOS) from the [Releases page](https://github.com/pt9912/hetzner-viper/releases), or with Homebrew: `brew install pt9912/viper/viper`. It needs the OpenSSH client (`ssh`, `ssh-keygen`, `ssh-keyscan`, `scp`) and nothing else: no Docker, `make`, `hcloud` or `jq` (`git` is used for the repository check and `code` to open VS Code, both optional).
 
 ```bash
 mkdir ~/viper && cd ~/viper        # where your .env.local lives
@@ -72,7 +72,7 @@ Machines are disposable: everything that matters lives in the Git repository. Th
 
 ## Requirements
 
-Linux, the `viper` binary and an OpenSSH client. VS Code Remote-SSH uses the local OpenSSH client; without VS Code use `viper ssh`. Plus a Hetzner Cloud API token (read and write) and a Cloudflare token with **Zone DNS Edit/Read** and the zone ID.
+Linux or macOS, the `viper` binary and an OpenSSH client. VS Code Remote-SSH uses the local OpenSSH client; without VS Code use `viper ssh`. Plus a Hetzner Cloud API token (read and write) and a Cloudflare token with **Zone DNS Edit/Read** and the zone ID.
 
 ## License
 

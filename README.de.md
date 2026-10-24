@@ -12,7 +12,7 @@ Zielgruppe sind Entwicklerinnen und Entwickler mit eigenem Hetzner- und Cloudfla
 
 ## Was kann ich heute tun?
 
-`viper` ist eine Datei (Linux) von der [Releases-Seite](https://github.com/pt9912/hetzner-viper/releases) oder mit Homebrew: `brew install pt9912/viper/viper`. Es braucht den OpenSSH-Client (`ssh`, `ssh-keygen`, `ssh-keyscan`, `scp`) und sonst nichts: kein Docker, `make`, `hcloud` oder `jq` (`git` dient der Repository-Prüfung und `code` dem Öffnen von VS Code, beides optional).
+`viper` ist eine Datei (Linux, macOS) von der [Releases-Seite](https://github.com/pt9912/hetzner-viper/releases) oder mit Homebrew: `brew install pt9912/viper/viper`. Es braucht den OpenSSH-Client (`ssh`, `ssh-keygen`, `ssh-keyscan`, `scp`) und sonst nichts: kein Docker, `make`, `hcloud` oder `jq` (`git` dient der Repository-Prüfung und `code` dem Öffnen von VS Code, beides optional).
 
 ```bash
 mkdir ~/viper && cd ~/viper        # hier liegt Ihre .env.local
@@ -72,7 +72,7 @@ Rechner sind Wegwerfware: Alles, was zählt, liegt im Git-Repository. Deshalb gi
 
 ## Voraussetzungen
 
-Linux, das Binary `viper` und ein OpenSSH-Client. VS Code Remote-SSH nutzt den lokalen OpenSSH-Client; ohne VS Code nutzen Sie `viper ssh`. Dazu ein Hetzner-Cloud-API-Token (Lesen und Schreiben) und ein Cloudflare-Token mit **Zone DNS Edit/Read** samt Zone-ID.
+Linux oder macOS, das Binary `viper` und ein OpenSSH-Client. VS Code Remote-SSH nutzt den lokalen OpenSSH-Client; ohne VS Code nutzen Sie `viper ssh`. Dazu ein Hetzner-Cloud-API-Token (Lesen und Schreiben) und ein Cloudflare-Token mit **Zone DNS Edit/Read** samt Zone-ID.
 
 ## Lizenz
 

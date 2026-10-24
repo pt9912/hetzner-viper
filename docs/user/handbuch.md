@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.43  
+Version: 1.44  
 Software-Version: v0.5.2  
 Stand: 24.10.2026  
 
@@ -18,7 +18,7 @@ Dieses Handbuch richtet sich an Entwicklerinnen und Entwickler, die auf einem Li
 
 ### Voraussetzungen
 
-Auf Ihrem lokalen Rechner (Linux oder macOS; nur Linux ist erprobt):
+Auf Ihrem lokalen Rechner (Linux oder macOS):
 
 * Das Programm `viper` (eine einzelne Datei aus dem Release, siehe „`viper` installieren“).
 * Der OpenSSH-Client mit `ssh`, `ssh-keygen`, `ssh-keyscan` und `scp`. Mehr brauchen Sie nicht: `hcloud`, `jq`, `curl`, Docker und `make` sind nicht nötig.
@@ -71,7 +71,7 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 
 #### Voraussetzung
 
-* Linux oder macOS (nur Linux ist erprobt).
+* Linux oder macOS.
 * Der OpenSSH-Client mit `ssh`, `ssh-keygen`, `ssh-keyscan` und `scp`. `viper` meldet es, bevor es etwas anlegt, wenn ein Programm fehlt.
 
 #### Vorgehen
@@ -838,7 +838,7 @@ Nein. Verwenden Sie die Shell oder `.env.local`, die nicht eingecheckt wird.
 
 ## 10. Support und Kontakt
 
-Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapitel 7. Für Hetzner und Cloudflare gelten deren Dokumentation und Support. Beachten Sie: Echt gelaufen sind Einrichtung, Wiederverwenden, Neuanlegen, Check und Löschen auf Hetzner Cloud mit Cloudflare-DNS sowie Claude über das Abo-Token und Ollamas Cloud, aber mit den früheren Bash-Skripten, auf denen `viper` aufbaut. Das Go-Programm `viper` selbst ist bisher nur gegen eine Fake-Cloud und einen Fake-Server getestet, nicht gegen die echten APIs. Noch nicht echt gelaufen sind außerdem `VIPER_GH_TOKEN`/gh, Deploy-Keys, das iPad, ein vLLM-Server und macOS. Probieren Sie Neues in einem Testprojekt und mit `viper preflight` aus.
+Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapitel 7. Für Hetzner und Cloudflare gelten deren Dokumentation und Support. Beachten Sie: Echt gelaufen sind Einrichtung, Wiederverwenden, Neuanlegen, Check und Löschen auf Hetzner Cloud mit Cloudflare-DNS sowie Claude über das Abo-Token und Ollamas Cloud, aber mit den früheren Bash-Skripten, auf denen `viper` aufbaut. Das Go-Programm `viper` selbst ist bisher nur gegen eine Fake-Cloud und einen Fake-Server getestet, nicht gegen die echten APIs. Noch nicht echt gelaufen sind außerdem `VIPER_GH_TOKEN`/gh, Deploy-Keys, das iPad und ein vLLM-Server. Probieren Sie Neues in einem Testprojekt und mit `viper preflight` aus.
 
 ## 11. Änderungshistorie
 
@@ -888,3 +888,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.41 | v0.5.1 | `viper setup` legt zusätzlich `machines/example.env.local.example` an (Vorlage für die Einstellungen eines Rechners). Die Meldung bei fehlender `.env.local` verweist auf `viper setup`. |
 | 1.42 | v0.5.1 | `viper` lässt sich auch mit Homebrew installieren: `brew install pt9912/viper/viper`. |
 | 1.43 | v0.5.2 | `viper help` nennt am Ende die Adresse dieses Handbuchs (der installierten Version und der aktuellen auf `main`). |
+| 1.44 | v0.5.2 | macOS gilt nicht mehr als „nicht erprobt“: `viper` startet dort. |
