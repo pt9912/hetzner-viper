@@ -13,6 +13,8 @@ Einmalig einzurichten (Handlung des Betreibers):
 
 Den Job allein (Formel und Tap eines vorhandenen Releases, ohne neue Binaries) starten Sie von Hand: `gh workflow run "release binaries" -f tag=v0.5.1`. Fehlt das Geheimnis, endet der Schritt mit einem Hinweis, das Release bleibt unberührt, und `viper.rb` hängt trotzdem am Release. Vorab prüfen Sie die Vorlage mit `brew audit --strict` in einem lokalen Tap (`brew tap-new --no-git local/probe`, die gefüllte Formel nach `Formula/viper.rb` kopieren).
 
+Probieren Sie die veröffentlichte Formel mit `brew install pt9912/viper/viper` aus, prüfen Sie vorher mit `brew list --versions viper` und `brew tap`, ob `viper` oder der Tap `pt9912/viper` auf diesem Rechner schon installiert sind. `brew uninstall viper` und `brew untap pt9912/viper` entfernen auch eine Installation, die Sie selbst nutzen. Räumen Sie nur auf, was Sie für den Test angelegt haben, und lassen Sie `brew audit --online` bei Bedarf nur gegen den lokalen Test-Tap laufen (es holt `homebrew/core`, rund 1,5 GB).
+
 ## Versionsnummer
 
 Die Versionen folgen [SemVer](https://semver.org/lang/de/) mit dem Präfix `v` (`v0.5.0`):
