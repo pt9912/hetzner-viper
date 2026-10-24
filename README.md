@@ -75,7 +75,7 @@ Machines are disposable: everything that matters lives in the Git repository. Th
 
 ## Requirements
 
-Linux (tested) or macOS (untested): the `viper` binary and an OpenSSH client. VS Code Remote-SSH needs a local OpenSSH client; without VS Code use `viper ssh`. Plus a Hetzner Cloud API token (read and write) and a Cloudflare token with **Zone DNS Edit/Read** and the zone ID. Windows is not supported (use WSL).
+Linux, the `viper` binary and an OpenSSH client. VS Code Remote-SSH uses the local OpenSSH client; without VS Code use `viper ssh`. Plus a Hetzner Cloud API token (read and write) and a Cloudflare token with **Zone DNS Edit/Read** and the zone ID.
 
 ## License
 
