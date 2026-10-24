@@ -56,7 +56,7 @@ Machines are disposable: everything that matters lives in the Git repository. Th
 
 ## What makes it trustworthy?
 
-- **Tests:** `make check` (gofmt, vet, golangci-lint and more than 300 tests, all in Docker; CI on every push; `make help` lists the targets, `make build` builds `dist/viper` without a Go installation). They cover setup, readiness check, multiple machines, Git clone, firewall and DNS protection, the safety prompts of `viper down`, the interruption by Ctrl-C and the parser of `.env.local` (compared with real bash). The generated cloud-init user-data is compared with the output of the original code and parsed as YAML.
+- **Tests:** `make check` (gofmt, vet, golangci-lint and more than 300 tests, all in Docker; CI on every push; `make help` lists the targets, `make build` builds `dist/viper` without a Go installation). They cover setup, readiness check, multiple machines, Git clone, firewall and DNS protection, the safety prompts of `viper down`, the interruption by Ctrl-C and the parser of `.env.local` (compared with real bash). The generated cloud-init user-data is compared with reference files and parsed as YAML.
 - **Protection of foreign resources:** `viper` only changes and deletes DNS records it created itself.
 - **Manual:** [`docs/user/handbuch.md`](docs/user/handbuch.md) (German) with version and change history.
 - **Releases:** versions are tagged on the [Releases page](https://github.com/pt9912/hetzner-viper/releases) with the `viper` binaries and checksums; see [`docs/maintainer/releasing.md`](docs/maintainer/releasing.md) (German) for creating one.
