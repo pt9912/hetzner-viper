@@ -42,7 +42,7 @@ The full guide with all tasks, settings and troubleshooting is the [user manual]
 
 ## State of verification
 
-`viper` is written in Go and replaces an earlier set of Bash scripts. The tests run the commands against a fake cloud and a fake server: the scripts that go to the server are executed for real (in a sandbox, with fake `brew`, `claude`, `gh` and so on, against real Git repositories), the host keys are made and signed with a real `ssh-keygen`, and the trust logic is checked against a real `sshd`. The Bash scripts had been run on real Hetzner Cloud (cpx02, Ubuntu 26.04) with Cloudflare DNS: setup, preflight, creating, reusing and recreating a machine, check, ssh, delete incl. the unsaved-work protection, Claude via subscription token and via Ollama's cloud.
+The tests run the commands against a fake cloud and a fake server: the scripts that go to the server are executed for real (in a sandbox, with fake `brew`, `claude`, `gh` and so on, against real Git repositories), the host keys are made and signed with a real `ssh-keygen`, and the trust logic is checked against a real `sshd`.
 
 **Not yet run for real with the Go program:** any command against the real Hetzner and Cloudflare APIs. Also not yet run for real: `VIPER_GH_TOKEN`/gh, deploy keys, the iPad, a vLLM server, macOS (see [Limits](#security-and-limits)). Try `viper preflight` first (it only reads), then a small server.
 
