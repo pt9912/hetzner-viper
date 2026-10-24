@@ -3,7 +3,7 @@ VERSION ?= $(shell git describe --tags --match 'v[0-9]*' --dirty 2>/dev/null || 
 GOOS    ?= $(shell uname -s | tr A-Z a-z)
 GOARCH  ?= $(shell uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 DEV     := viper-dev
-RUN     := docker run --rm -v "$(CURDIR)":/src -v viper-gocache:/go -v viper-buildcache:/root/.cache $(DEV)
+RUN     := docker run --rm -v "$(CURDIR)":/src -v viper-gocache:/home/dev/go -v viper-buildcache:/home/dev/.cache $(DEV)
 
 .PHONY: help build image test vet fmt lint check
 .DEFAULT_GOAL := help
@@ -17,7 +17,7 @@ build: ## viper binary for this computer into dist/
 	@echo "built dist/viper ($(VERSION), $(GOOS)/$(GOARCH))"
 
 image: ## development image (Go and the test tools)
-	docker build --target dev -t $(DEV) .
+	docker build --target dev --build-arg UID=$$(id -u) --build-arg GID=$$(id -g) -t $(DEV) .
 
 test: image ## all tests, as in the CI (tools missing = failure)
 	$(RUN) go test -race ./...

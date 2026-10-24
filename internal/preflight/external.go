@@ -101,11 +101,7 @@ func githubChecks(ctx context.Context, r *report, c *config.Config, d Deps, repo
 		r.bad("VIPER_GH_TOKEN rejected by %s: HTTP %d", host, resp.StatusCode)
 		return
 	}
-	var user struct {
-		Login string `json:"login"`
-	}
-	_ = json.Unmarshal(body, &user)
-	r.ok("VIPER_GH_TOKEN valid for %s on %s", user.Login, host)
+	login := tokenValid(r, body, host)
 	if scopes := strings.TrimSpace(resp.Header.Get("X-OAuth-Scopes")); scopes != "" {
 		scopeChecks(r, scopes)
 	}
@@ -125,7 +121,7 @@ func githubChecks(ctx context.Context, r *report, c *config.Config, d Deps, repo
 		return
 	}
 	r.ok("token can access %s", repo)
-	pushCheck(ctx, r, d, host, repo, user.Login, token)
+	pushCheck(ctx, r, d, host, repo, login, token)
 }
 
 var (
@@ -262,4 +258,18 @@ func errorMessage(raw []byte) string {
 		msg = msg[:200]
 	}
 	return msg
+}
+
+// tokenValid reports an accepted token, with the user the reply names (it may name none), and
+// returns that user.
+func tokenValid(r *report, body []byte, host string) string {
+	var user struct {
+		Login string `json:"login"`
+	}
+	if json.Unmarshal(body, &user) != nil || user.Login == "" {
+		r.ok("VIPER_GH_TOKEN valid on %s", host)
+		return ""
+	}
+	r.ok("VIPER_GH_TOKEN valid for %s on %s", user.Login, host)
+	return user.Login
 }

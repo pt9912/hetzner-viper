@@ -2,3 +2,8 @@
 dist
 .env.local
 machines/*.env.local
+.env
+.env.local.codespace
+.ssh-pub-key-file
+*.key
+*.pem

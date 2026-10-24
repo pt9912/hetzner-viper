@@ -1,7 +1,7 @@
 # .golangci.yml — lint profile of viper (make lint), same strictness as odata-recorder.
 #
-# Exceptions live only here, each as a rule under `exclusions.rules` with a comment block whose
-# first line starts with "# Why:". No //nolint in the code; nolintlint reports one without a
+# Exceptions live only here (`exclusions.rules` and the errcheck function list), each with a
+# comment block whose first line starts with "# Why:". No //nolint in the code; nolintlint reports one without a
 # reason, a named linter or an effect.
 
 version: "2"
@@ -45,6 +45,8 @@ linters:
 
   settings:
     errcheck:
+      # Why: a write to a bytes.Buffer, a strings.Builder or the output the user sees is not
+      # something the program could act on when it fails.
       exclude-functions:
         - fmt.Fprint
         - fmt.Fprintf
@@ -97,19 +99,16 @@ linters:
       require-specific: true
       allow-unused: false
 
-    # Dependency direction: the packages of internal/ do not import each other except along these
-    # lines; cmd/viper wires them. servertest and integration are for tests only.
+    # Dependency direction. (Cycles between the packages of internal/ are refused by the compiler;
+    # these rules keep the fakes and the integration tests out of the program.)
     depguard:
       rules:
-        leaf-packages:
+        no-integration-import:
           list-mode: lax
           files:
             - $all
-            - "!**/cmd/viper/**"
             - "!**/internal/integration/**"
           deny:
-            - pkg: github.com/pt9912/hetzner-viper/cmd
-              desc: nothing imports the composition root
             - pkg: github.com/pt9912/hetzner-viper/internal/integration
               desc: integration tests are not a library
         no-test-fakes-in-code:
@@ -120,22 +119,6 @@ linters:
           deny:
             - pkg: github.com/pt9912/hetzner-viper/internal/servertest
               desc: the fakes are for tests only
-        clients-are-leaves:
-          list-mode: lax
-          files:
-            - "**/internal/hetzner/**"
-            - "**/internal/cloudflare/**"
-            - "**/internal/config/**"
-            - "**/internal/runlog/**"
-          deny:
-            - pkg: github.com/pt9912/hetzner-viper/internal/start
-              desc: the API clients and config do not depend on the commands
-            - pkg: github.com/pt9912/hetzner-viper/internal/stop
-              desc: the API clients and config do not depend on the commands
-            - pkg: github.com/pt9912/hetzner-viper/internal/check
-              desc: the API clients and config do not depend on the commands
-            - pkg: github.com/pt9912/hetzner-viper/internal/preflight
-              desc: the API clients and config do not depend on the commands
 
     revive:
       rules:
@@ -192,7 +175,8 @@ linters:
         path: ^.+_test\.go$
         text: ^unused-(parameter|receiver)
 
-      # Why: messages shown to the user begin with a capital letter ("Set DNS_DOMAIN ...").
+      # Why: the error texts of this program are messages for the user and begin with a capital
+      # letter ("Set DNS_DOMAIN ..."), also where they are passed up inside the program.
       - linters:
           - staticcheck
         text: ^ST1005
