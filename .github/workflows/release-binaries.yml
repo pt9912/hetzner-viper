@@ -78,9 +78,10 @@ jobs:
           mkdir -p tap/Formula
           cp viper.rb tap/Formula/viper.rb
           cd tap
+          git checkout -B main   # a new, empty tap has no branch yet
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula/viper.rb
           if git diff --cached --quiet; then echo "the tap has this formula already"; exit 0; fi
           git commit -m "viper ${tag#v}"
-          git -c http.extraheader="$auth" push origin HEAD
+          git -c http.extraheader="$auth" push origin HEAD:refs/heads/main
