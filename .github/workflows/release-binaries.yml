@@ -4,12 +4,19 @@ name: release binaries
 on:
   push:
     tags: ['v[0-9]*']
+  # only the job homebrew: formula and tap of an existing release (gh workflow run "release binaries" -f tag=v0.5.1)
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag for the Homebrew formula
+        required: true
 
 permissions:
   contents: write
 
 jobs:
   binaries:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -43,6 +50,7 @@ jobs:
   # not change the tap.
   homebrew:
     needs: binaries
+    if: ${{ !cancelled() && (needs.binaries.result == 'success' || needs.binaries.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -52,9 +60,11 @@ jobs:
       - name: Fill the formula
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          tag="$GITHUB_REF_NAME"
+          tag="$TAG"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "not a release tag: $tag"; exit 1; }
           gh release download "$tag" --pattern SHA256SUMS
           formula=viper.rb
           sed -e "s/__TAG__/${tag}/g" packaging/homebrew-formula.rb.tmpl > "$formula"
@@ -68,9 +78,10 @@ jobs:
       - name: Put it into the tap
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          tag="$GITHUB_REF_NAME"
+          tag="$TAG"
           if [ -z "$TAP_TOKEN" ]; then echo "::notice::HOMEBREW_TAP_GITHUB_TOKEN is not set: the tap is not updated (viper.rb is attached to the release)"; exit 0; fi
           if [[ "$tag" == *-* ]]; then echo "$tag is a pre-release: the tap stays as it is"; exit 0; fi
           auth="Authorization: Basic $(printf 'x-access-token:%s' "$TAP_TOKEN" | base64 -w0)"

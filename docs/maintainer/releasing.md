@@ -11,7 +11,7 @@ Einmalig einzurichten (Handlung des Betreibers):
 1. Das Repository `pt9912/homebrew-viper` anlegen (öffentlich, mit einem ersten Commit).
 2. Einen fein granularen Token erzeugen, der nur für dieses Repository gilt (*Contents: Read and write*, mit Ablaufdatum), und ihn im Repository `hetzner-viper` als Geheimnis `HOMEBREW_TAP_GITHUB_TOKEN` hinterlegen (`gh secret set HOMEBREW_TAP_GITHUB_TOKEN`).
 
-Fehlt das Geheimnis, endet der Schritt mit einem Hinweis, das Release bleibt unberührt, und `viper.rb` hängt trotzdem am Release. Vorab prüfen Sie die Vorlage mit `brew audit --strict` in einem lokalen Tap (`brew tap-new --no-git local/probe`, die gefüllte Formel nach `Formula/viper.rb` kopieren).
+Den Job allein (Formel und Tap eines vorhandenen Releases, ohne neue Binaries) starten Sie von Hand: `gh workflow run "release binaries" -f tag=v0.5.1`. Fehlt das Geheimnis, endet der Schritt mit einem Hinweis, das Release bleibt unberührt, und `viper.rb` hängt trotzdem am Release. Vorab prüfen Sie die Vorlage mit `brew audit --strict` in einem lokalen Tap (`brew tap-new --no-git local/probe`, die gefüllte Formel nach `Formula/viper.rb` kopieren).
 
 ## Versionsnummer
 
