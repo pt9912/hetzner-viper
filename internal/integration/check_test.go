@@ -1,4 +1,4 @@
-package integration
+package integration_test
 
 import (
 	"os"
@@ -81,7 +81,7 @@ func TestCheckReportsCARejection(t *testing.T) {
 
 func TestCheckReportsAMissingClaudeTokenOnTheServer(t *testing.T) {
 	e := upWeb(t)
-	os.Remove(filepath.Join(e.Srv.Home, ".config/viper/claude.env"))
+	_ = os.Remove(filepath.Join(e.Srv.Home, ".config/viper/claude.env")) // may not exist
 	r := e.Check("web")
 	if r.Code != 1 {
 		t.Errorf("code %d", r.Code)
@@ -153,7 +153,7 @@ func TestCheckReportsFirstBootErrorsAlthoughCloudInitIsDisabled(t *testing.T) {
 func TestCheckReportsHomebrew(t *testing.T) {
 	e := upWeb(t)
 	e.Check("web").Has(t, "ok    Homebrew 4.9.0")
-	os.Remove(e.Srv.BrewPath)
+	_ = os.Remove(e.Srv.BrewPath) // may not exist
 	r := e.Check("web")
 	if r.Code != 1 {
 		t.Errorf("code %d", r.Code)

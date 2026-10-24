@@ -143,6 +143,13 @@ func localSetup(r *report, c *config.Config) {
 	} else {
 		r.bad("host CA trust for *.%s missing (new or changed DNS_DOMAIN?): run viper setup", c.DNSDomain)
 	}
+	keyFileChecks(r, c)
+	permissionChecks(r, c)
+	cidrChecks(r, c)
+}
+
+// keyFileChecks checks that the deploy key and iPad public key files can be read.
+func keyFileChecks(r *report, c *config.Config) {
 	for _, name := range []string{"GIT_DEPLOY_KEY_FILE", "IPAD_SSH_PUBLIC_KEY_FILE"} {
 		f := config.ExpandHome(c.Get(name), userHome(c))
 		if f == "" {
@@ -159,6 +166,10 @@ func localSetup(r *report, c *config.Config) {
 			r.ok("%s readable", name)
 		}
 	}
+}
+
+// permissionChecks warns about settings files readable by others and an unwritable ~/.ssh/config.
+func permissionChecks(r *report, c *config.Config) {
 	// config files hold API tokens: nobody but the owner should read them
 	for _, f := range []string{".env.local", filepath.Join("machines", c.Machine+".env.local")} {
 		if st, err := os.Stat(filepath.Join(c.Dir, f)); err == nil && st.Mode().Perm()&0o077 != 0 {
@@ -174,9 +185,13 @@ func localSetup(r *report, c *config.Config) {
 		if f, err := os.OpenFile(target, os.O_WRONLY, 0); err != nil {
 			r.warn("~/.ssh/config (%s) is not writable: viper up cannot add 'Include %s'; ssh <alias> and VS Code need it", target, c.SSHConfig)
 		} else {
-			f.Close()
+			_ = f.Close() // only the open mattered
 		}
 	}
+}
+
+// cidrChecks validates SSH_ALLOWED_CIDRS.
+func cidrChecks(r *report, c *config.Config) {
 	v4 := regexp.MustCompile(`^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$`)
 	v6 := regexp.MustCompile(`^[0-9a-fA-F:]+/[0-9]{1,3}$`)
 	cidrs := c.Setting("SSH_ALLOWED_CIDRS", "0.0.0.0/0,::/0")
@@ -204,7 +219,7 @@ func isPublicKey(s string) bool {
 		if len(f) == 0 || strings.HasPrefix(f[0], "#") {
 			continue
 		}
-		if len(f) < 2 || !(strings.HasPrefix(f[0], "ssh-") || strings.HasPrefix(f[0], "ecdsa-") || strings.HasPrefix(f[0], "sk-")) {
+		if len(f) < 2 || (!strings.HasPrefix(f[0], "ssh-") && !strings.HasPrefix(f[0], "ecdsa-") && !strings.HasPrefix(f[0], "sk-")) {
 			return false
 		}
 		_, err := base64.StdEncoding.DecodeString(f[1])
@@ -246,6 +261,24 @@ func hetznerChecks(ctx context.Context, r *report, c *config.Config, d Deps) {
 		return
 	}
 	r.ok("Hetzner token can read the project (write access is only seen when viper up creates something)")
+	serverTypeChecks(ctx, r, c, d)
+	keys, err := d.Hetzner.SSHKeys(ctx)
+	if err != nil {
+		r.bad("SSH keys could not be listed: %s", hetzner.Error(err))
+		return
+	}
+	sshKeyChecks(r, c, keys)
+	for _, n := range names {
+		if n == c.ServerName {
+			r.info("server %s exists; viper up reuses it", c.ServerName)
+			return
+		}
+	}
+	r.info("server %s will be created", c.ServerName)
+}
+
+// serverTypeChecks checks the server type, its location and the image.
+func serverTypeChecks(ctx context.Context, r *report, c *config.Config, d Deps) {
 	st, err := d.Hetzner.ServerType(ctx, c.ServerType)
 	switch {
 	case err != nil:
@@ -263,11 +296,10 @@ func hetznerChecks(ctx context.Context, r *report, c *config.Config, d Deps) {
 			r.bad("image %s does not exist for %s (see the system images in the Hetzner Console)", c.ServerImage, st.Architecture)
 		}
 	}
-	keys, err := d.Hetzner.SSHKeys(ctx)
-	if err != nil {
-		r.bad("SSH keys could not be listed: %s", hetzner.Error(err))
-		return
-	}
+}
+
+// sshKeyChecks compares the login key with the keys in the project.
+func sshKeyChecks(r *report, c *config.Config, keys []hetzner.SSHKey) {
 	fp := FingerprintMD5(c.SSHKey + ".pub")
 	existing, named := "", false
 	for _, k := range keys {
@@ -286,13 +318,6 @@ func hetznerChecks(ctx context.Context, r *report, c *config.Config, d Deps) {
 	default:
 		r.info("login key will be uploaded as %s", c.KeyName)
 	}
-	for _, n := range names {
-		if n == c.ServerName {
-			r.info("server %s exists; viper up reuses it", c.ServerName)
-			return
-		}
-	}
-	r.info("server %s will be created", c.ServerName)
 }
 
 func locationChecks(ctx context.Context, r *report, c *config.Config, d Deps, st *hetzner.ServerType) {

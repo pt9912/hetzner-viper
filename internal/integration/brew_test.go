@@ -1,4 +1,4 @@
-package integration
+package integration_test
 
 import (
 	"os"
@@ -34,7 +34,7 @@ func TestBrewTapsTrustAndInstallsInThisOrder(t *testing.T) {
 		t.Errorf("custom tap URL not passed:\n%s", log)
 	}
 	tap, trust, install := lineNo(log, "brew tap"), lineNo(log, "brew trust"), lineNo(log, "brew install")
-	if !(tap >= 0 && tap < trust && trust < install) {
+	if tap < 0 || tap >= trust || trust >= install {
 		t.Errorf("order tap %d < trust %d < install %d:\n%s", tap, trust, install, log)
 	}
 }
@@ -52,7 +52,9 @@ func TestBrewfileOfTheRepositoryIsApplied(t *testing.T) {
 	}
 	run("", "init", "-q", "--bare", origin)
 	run("", "clone", "-q", origin, seed)
-	os.WriteFile(filepath.Join(seed, "Brewfile"), []byte("tap \"acme/tools\", trusted: true\nbrew \"jq\"\nbrew \"acme/tools/widget\"\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(seed, "Brewfile"), []byte("tap \"acme/tools\", trusted: true\nbrew \"jq\"\nbrew \"acme/tools/widget\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	run(seed, "add", "Brewfile")
 	run(seed, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "brewfile")
 	run(seed, "push", "-q", "origin", "HEAD")

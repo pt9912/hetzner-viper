@@ -45,8 +45,8 @@ func vscodeEnv(environ []string) []string {
 	return out
 }
 
-// replaced by the tests
-var newUpDeps = func(c *config.Config, preflightDeps func() preflight.Deps) start.Deps {
+// defaultUpDeps are the real dependencies of up.
+func defaultUpDeps(c *config.Config, preflightDeps func() preflight.Deps) start.Deps {
 	return start.Deps{
 		Preflight: func(ctx context.Context, repoArg string, out, errOut io.Writer) int {
 			return preflight.Run(ctx, c, repoArg, preflightDeps(), out, errOut)
@@ -56,7 +56,7 @@ var newUpDeps = func(c *config.Config, preflightDeps func() preflight.Deps) star
 		Run:     runCaptured,
 		Stream:  runStream,
 		Keygen: func(name string, args ...string) error {
-			out, err := exec.Command(name, args...).CombinedOutput()
+			out, err := exec.CommandContext(context.Background(), name, args...).CombinedOutput()
 			if err != nil {
 				return &keygenError{err, strings.TrimSpace(string(out))}
 			}
@@ -71,7 +71,7 @@ var newUpDeps = func(c *config.Config, preflightDeps func() preflight.Deps) star
 			if err != nil {
 				return
 			}
-			cmd := exec.Command(path, "--remote", "ssh-remote+"+alias, workdir)
+			cmd := exec.CommandContext(context.Background(), path, "--remote", "ssh-remote+"+alias, workdir)
 			cmd.Env = vscodeEnv(os.Environ())
 			_ = cmd.Run()
 		},
@@ -102,7 +102,7 @@ func runUp(ctx context.Context, o *options, env config.Env, stdout, stderr io.Wr
 	}
 	ctx, stop := notifyContext(ctx)
 	defer stop()
-	deps := newUpDeps(c, func() preflight.Deps { return newPreflightDeps(c) })
+	deps := o.host().newUpDeps(c, func() preflight.Deps { return o.host().newPreflightDeps(c) })
 	// the pauses end with an interruption
 	deps.Sleep = func(d time.Duration) {
 		select {
@@ -133,7 +133,7 @@ func runUp(ctx context.Context, o *options, env config.Env, stdout, stderr io.Wr
 func nativeUp(o *options) error {
 	// before anything is created: a program that is missing later would leave a server behind
 	for _, program := range []string{"ssh", "ssh-keygen", "scp"} {
-		if err := need(program); err != nil {
+		if err := o.host().need(program); err != nil {
 			return err
 		}
 	}

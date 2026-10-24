@@ -86,7 +86,7 @@ func MakeHostKey(run func(name string, args ...string) error, ca, serverName, dn
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(tmp)
+	defer func() { _ = os.RemoveAll(tmp) }() // temporary directory; nothing to do if it stays
 	if err := os.Chmod(tmp, 0o700); err != nil {
 		return nil, err
 	}

@@ -76,6 +76,7 @@ func (c *Cloud) Changes() []string {
 
 // --- Hetzner
 
+// ServerNames lists the names of the servers.
 func (c *Cloud) ServerNames(context.Context) ([]string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -89,6 +90,7 @@ func (c *Cloud) ServerNames(context.Context) ([]string, error) {
 	return names, nil
 }
 
+// ServerByName returns a copy of the server, or nil.
 func (c *Cloud) ServerByName(_ context.Context, name string) (*hetzner.Server, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -102,15 +104,22 @@ func (c *Cloud) ServerByName(_ context.Context, name string) (*hetzner.Server, e
 	return nil, nil
 }
 
+// ServerType returns the server type, or nil if it does not exist.
 func (c *Cloud) ServerType(_ context.Context, name string) (*hetzner.ServerType, error) {
 	return c.Types[name], nil
 }
+
+// LocationExists reports whether the location exists.
 func (c *Cloud) LocationExists(_ context.Context, name string) (bool, error) {
 	return c.Locations[name], nil
 }
+
+// ImageExists reports whether the image exists for the architecture.
 func (c *Cloud) ImageExists(_ context.Context, name, arch string) (bool, error) {
 	return c.Images[name+"/"+arch], nil
 }
+
+// SSHKeys lists the public keys of the project.
 func (c *Cloud) SSHKeys(context.Context) ([]hetzner.SSHKey, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -119,6 +128,8 @@ func (c *Cloud) SSHKeys(context.Context) ([]hetzner.SSHKey, error) {
 	}
 	return append([]hetzner.SSHKey(nil), c.Keys...), nil
 }
+
+// SSHKeyCreate adds a public key to the project.
 func (c *Cloud) SSHKeyCreate(_ context.Context, name, pub string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -128,6 +139,7 @@ func (c *Cloud) SSHKeyCreate(_ context.Context, name, pub string) error {
 	return nil
 }
 
+// FirewallRules returns the rules of a firewall and whether it exists.
 func (c *Cloud) FirewallRules(_ context.Context, name string) ([]hetzner.FirewallRule, bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -140,6 +152,8 @@ func (c *Cloud) FirewallRules(_ context.Context, name string) ([]hetzner.Firewal
 	r, ok := c.Firewalls[name]
 	return append([]hetzner.FirewallRule(nil), r...), ok, nil
 }
+
+// FirewallCreate creates an empty firewall.
 func (c *Cloud) FirewallCreate(_ context.Context, name string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -147,6 +161,8 @@ func (c *Cloud) FirewallCreate(_ context.Context, name string) error {
 	c.Firewalls[name] = nil
 	return nil
 }
+
+// FirewallAddRule adds a rule to a firewall.
 func (c *Cloud) FirewallAddRule(_ context.Context, name string, r hetzner.FirewallRule) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -154,6 +170,8 @@ func (c *Cloud) FirewallAddRule(_ context.Context, name string, r hetzner.Firewa
 	c.Firewalls[name] = append(c.Firewalls[name], r)
 	return nil
 }
+
+// ServerCreate creates a server.
 func (c *Cloud) ServerCreate(_ context.Context, s hetzner.ServerSpec) (*hetzner.Server, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -166,6 +184,8 @@ func (c *Cloud) ServerCreate(_ context.Context, s hetzner.ServerSpec) (*hetzner.
 	cp := *srv
 	return &cp, nil
 }
+
+// DeleteServer deletes a server by ID.
 func (c *Cloud) DeleteServer(_ context.Context, id int64) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -182,6 +202,7 @@ func (c *Cloud) DeleteServer(_ context.Context, id int64) error {
 
 // --- Cloudflare
 
+// Set creates or updates the DNS record of a host.
 func (c *Cloud) Set(_ context.Context, host, ip string) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -196,6 +217,7 @@ func (c *Cloud) Set(_ context.Context, host, ip string) (string, error) {
 	return host + " -> " + ip, nil
 }
 
+// Delete removes the DNS record of a host if it still points to expectedIP.
 func (c *Cloud) Delete(_ context.Context, host, expectedIP string) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -215,6 +237,7 @@ func (c *Cloud) Delete(_ context.Context, host, expectedIP string) (string, erro
 	return "DNS record removed (if present)", nil
 }
 
+// Check reports whether the zone is usable for the domain.
 func (c *Cloud) Check(_ context.Context, domain, host string) ([]string, bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

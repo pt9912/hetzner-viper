@@ -10,6 +10,15 @@ import (
 type options struct {
 	machine, repo, cmd, dir string
 	force, full             bool
+	h                       *host // the outside world; nil means the real one
+}
+
+// host returns the outside world of the command, the real one unless a test set another.
+func (o *options) host() *host {
+	if o.h == nil {
+		o.h = defaultHost()
+	}
+	return o.h
 }
 
 type machineMode int
@@ -29,36 +38,32 @@ type command struct {
 
 var errHelp = errors.New("help")
 
-var globalFlags = []string{"dir"}
-var valueFlags = map[string]bool{"repo": true, "cmd": true, "dir": true}
+// isValueFlag reports whether the option takes a value.
+func isValueFlag(n string) bool { return n == "repo" || n == "cmd" || n == "dir" }
 
-var commands = map[string]command{
-	"setup":     {usage: "", machine: noMachine, run: nativeSetup},
-	"preflight": {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"}, run: nativePreflight},
-	"up":        {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"}, run: nativeUp},
-	"check":     {usage: "<machine>", machine: needMachine, run: nativeCheck},
-	"ssh":       {usage: "<machine> [--cmd COMMAND]", machine: needMachine, flags: []string{"cmd"}, run: nativeSSH},
-	"down":      {usage: "<machine> [--force]", machine: needMachine, flags: []string{"force"}, run: nativeDown},
-	"dns":       {usage: "<machine>", machine: needMachine, run: nativeDNS},
-	"log":       {usage: "[<machine>] [--full]", machine: maybeMachine, flags: []string{"full"}, run: nativeLog},
-	"version":   {usage: "", machine: noMachine},
+// commands are the commands of viper by name.
+func commands() map[string]command {
+	return map[string]command{
+		"setup":     {usage: "", machine: noMachine, run: nativeSetup},
+		"preflight": {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"}, run: nativePreflight},
+		"up":        {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"}, run: nativeUp},
+		"check":     {usage: "<machine>", machine: needMachine, run: nativeCheck},
+		"ssh":       {usage: "<machine> [--cmd COMMAND]", machine: needMachine, flags: []string{"cmd"}, run: nativeSSH},
+		"down":      {usage: "<machine> [--force]", machine: needMachine, flags: []string{"force"}, run: nativeDown},
+		"dns":       {usage: "<machine>", machine: needMachine, run: nativeDNS},
+		"log":       {usage: "[<machine>] [--full]", machine: maybeMachine, flags: []string{"full"}, run: nativeLog},
+		"version":   {usage: "", machine: noMachine},
+	}
 }
 
 func parse(args []string) (string, options, error) {
 	var o options
-	if len(args) == 0 {
-		return "", o, errHelp
-	}
-	name := args[0]
-	if name == "help" || name == "-h" || name == "--help" {
-		return "", o, errHelp
-	}
-	c, ok := commands[name]
-	if !ok {
-		return "", o, fmt.Errorf("unknown command %q (viper help lists them)", name)
+	name, c, err := lookupCommand(args)
+	if err != nil {
+		return "", o, err
 	}
 	allowed := map[string]bool{}
-	for _, f := range append(append([]string{}, globalFlags...), c.flags...) {
+	for _, f := range append([]string{"dir"}, c.flags...) {
 		allowed[f] = true
 	}
 	var positional []string
@@ -71,56 +76,53 @@ func parse(args []string) (string, options, error) {
 			positional = append(positional, a)
 			continue
 		}
-		n, v, hasValue := strings.Cut(a[2:], "=")
-		if !allowed[n] {
-			return "", o, fmt.Errorf("viper %s: unknown option --%s\n%s", name, n, usageLine(name))
-		}
-		if valueFlags[n] {
-			if !hasValue {
-				if i++; i >= len(args) {
-					return "", o, fmt.Errorf("viper %s: --%s needs a value", name, n)
-				}
-				v = args[i]
-			}
-			switch n {
-			case "repo":
-				o.repo = v
-			case "cmd":
-				o.cmd = v
-			case "dir":
-				o.dir = v
-			}
-			continue
-		}
-		if hasValue {
-			return "", o, fmt.Errorf("viper %s: --%s takes no value", name, n)
-		}
-		switch n {
-		case "force":
-			o.force = true
-		case "full":
-			o.full = true
+		if err := parseFlag(&o, name, args, &i, allowed); err != nil {
+			return "", o, err
 		}
 	}
-	if len(positional) > 0 {
-		if c.machine == noMachine || len(positional) > 1 {
-			return "", o, fmt.Errorf("viper %s: unexpected argument %q\n%s", name, positional[len(positional)-1], usageLine(name))
-		}
-		o.machine = positional[0]
-	}
-	if c.machine == needMachine && o.machine == "" {
-		return "", o, fmt.Errorf("%s", usageLine(name))
+	if err := setMachine(&o, name, c, positional); err != nil {
+		return "", o, err
 	}
 	return name, o, nil
 }
 
+// lookupCommand finds the command named by the first argument.
+func lookupCommand(args []string) (string, command, error) {
+	if len(args) == 0 {
+		return "", command{}, errHelp
+	}
+	name := args[0]
+	if name == "help" || name == "-h" || name == "--help" {
+		return "", command{}, errHelp
+	}
+	c, ok := commands()[name]
+	if !ok {
+		return "", command{}, fmt.Errorf("unknown command %q (viper help lists them)", name)
+	}
+	return name, c, nil
+}
+
+// setMachine takes the machine name from the positional arguments, as the command requires.
+func setMachine(o *options, name string, c command, positional []string) error {
+	if len(positional) > 0 {
+		if c.machine == noMachine || len(positional) > 1 {
+			return fmt.Errorf("viper %s: unexpected argument %q\n%s", name, positional[len(positional)-1], usageLine(name))
+		}
+		o.machine = positional[0]
+	}
+	if c.machine == needMachine && o.machine == "" {
+		return fmt.Errorf("%s", usageLine(name))
+	}
+	return nil
+}
+
 func usageLine(name string) string {
-	return strings.TrimRight("Usage: viper "+name+" "+commands[name].usage, " ")
+	return strings.TrimRight("Usage: viper "+name+" "+commands()[name].usage, " ")
 }
 
 func helpText() string {
-	names := make([]string, 0, len(commands))
-	for n := range commands {
+	names := make([]string, 0, len(commands()))
+	for n := range commands() {
 		names = append(names, n)
 	}
 	sort.Strings(names)
@@ -137,4 +139,39 @@ Option for every command:
 Values that start with a dash need the form --cmd=VALUE, for example viper ssh web --cmd="ls -la".
 `)
 	return b.String()
+}
+
+// parseFlag handles the option args[*i] (starting with "--"); a value in the next argument advances *i.
+func parseFlag(o *options, name string, args []string, i *int, allowed map[string]bool) error {
+	n, v, hasValue := strings.Cut(args[*i][2:], "=")
+	if !allowed[n] {
+		return fmt.Errorf("viper %s: unknown option --%s\n%s", name, n, usageLine(name))
+	}
+	if isValueFlag(n) {
+		if !hasValue {
+			if *i++; *i >= len(args) {
+				return fmt.Errorf("viper %s: --%s needs a value", name, n)
+			}
+			v = args[*i]
+		}
+		switch n {
+		case "repo":
+			o.repo = v
+		case "cmd":
+			o.cmd = v
+		case "dir":
+			o.dir = v
+		}
+		return nil
+	}
+	if hasValue {
+		return fmt.Errorf("viper %s: --%s takes no value", name, n)
+	}
+	switch n {
+	case "force":
+		o.force = true
+	case "full":
+		o.full = true
+	}
+	return nil
 }

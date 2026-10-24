@@ -1,4 +1,4 @@
-package integration
+package integration_test
 
 import (
 	"os"
@@ -125,7 +125,7 @@ func TestCodeServerFailuresAreNotFatal(t *testing.T) {
 		t.Error("config without the program")
 	}
 	delete(e.Srv.Env, "MOCK_CODE_SERVER_FAIL")
-	os.Remove(filepath.Join(e.Srv.State, "code-server-installed"))
+	_ = os.Remove(filepath.Join(e.Srv.State, "code-server-installed")) // may not exist
 	e.Srv.Env["MOCK_SYSTEMCTL_FAIL"] = "1"
 	r = e.Up("web", "")
 	r.Has(t, "WARNING: code-server could not be configured or started", "Ready: ssh hetzner-claude-web")
@@ -143,7 +143,7 @@ func TestCheckReportsCodeServer(t *testing.T) {
 	}
 	r.Has(t, "FAIL  code-server 4.96.4 abcdef123 with Code 1.96.4 is not running")
 	delete(e.Srv.Env, "MOCK_CODE_SERVER_DOWN")
-	os.Remove(filepath.Join(e.Srv.State, "code-server-installed"))
+	_ = os.Remove(filepath.Join(e.Srv.State, "code-server-installed")) // may not exist
 	e.Check("web").Has(t, "FAIL  code-server not installed")
 	e.Machine("web", "VIPER_CODE_SERVER=0\n")
 	if r := e.Check("web"); strings.Contains(r.Out, "code-server") {

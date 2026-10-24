@@ -17,8 +17,8 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/stop"
 )
 
-// replaced by the tests
-var newDownDeps = func(c *config.Config) stop.Deps {
+// defaultDownDeps are the real dependencies of down.
+func defaultDownDeps(c *config.Config) stop.Deps {
 	cf := &cloudflare.Client{Token: c.Get("CLOUDFLARE_API_TOKEN"), ZoneID: c.Get("CLOUDFLARE_ZONE_ID")}
 	return stop.Deps{
 		Hetzner:        hetzner.New(c.Get("HCLOUD_TOKEN"), ""),
@@ -40,10 +40,10 @@ func runDown(ctx context.Context, o *options, env config.Env, in io.Reader, stdo
 	if err != nil {
 		return err
 	}
-	ctx, stop_ := notifyContext(ctx)
-	defer stop_()
+	ctx, cancel := notifyContext(ctx)
+	defer cancel()
 
-	deps := newDownDeps(c)
+	deps := o.host().newDownDeps(c)
 	deps.Ask = newAsker(ctx, in, l.Err)
 	code, err := stop.Run(ctx, c, o.force, deps, l, l.Out, l.Err)
 	switch {
@@ -105,7 +105,7 @@ func newAsker(ctx context.Context, in io.Reader, prompts io.Writer) func(string)
 }
 
 func nativeDown(o *options) error {
-	if err := need("ssh"); err != nil {
+	if err := o.host().need("ssh"); err != nil {
 		return err
 	}
 	env, err := hostEnv()

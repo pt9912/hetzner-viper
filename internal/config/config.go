@@ -60,8 +60,10 @@ func (c *Config) Get(name string) string {
 	return c.env.Getenv(name)
 }
 
-// Tokens are the settings only the commands that talk to Hetzner and Cloudflare need.
-var tokens = []string{"HCLOUD_TOKEN", "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ZONE_ID"}
+// tokens are the settings only the commands that talk to Hetzner and Cloudflare need.
+func tokens() []string {
+	return []string{"HCLOUD_TOKEN", "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ZONE_ID"}
+}
 
 // LoadFile reads .env.local of dir (without a machine).
 func LoadFile(dir string, env Env) (map[string]string, error) {
@@ -125,7 +127,7 @@ func Load(dir, machine string, env Env, needTokens bool) (*Config, error) {
 
 	required := []string{"DNS_DOMAIN"}
 	if needTokens {
-		required = append(required, tokens...)
+		required = append(required, tokens()...)
 	}
 	var missing []string
 	for _, v := range required {

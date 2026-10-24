@@ -98,10 +98,10 @@ func ForgetStalePin(c *config.Config, id string, out io.Writer) {
 		return
 	}
 	fmt.Fprintf(out, "Server %s was recreated (ID %s -> %s); dropping its old pinned host key.\n", c.ServerName, recorded, id)
-	os.Remove(c.KnownPin)
+	_ = os.Remove(c.KnownPin) // best effort: a stale pin that stays is reported by the next ssh
 }
 
-// PinFromServer: without a pin, the connection was verified through the host CA; record the
+// PinFromServer pins the host key of the server: without a pin, the connection was verified through the host CA; record the
 // server's host key, read over that verified channel, as the pin. It does nothing if the key
 // cannot be read.
 func PinFromServer(c *config.Config, id string, ssh func(args ...string) (string, error), out io.Writer) {
@@ -116,8 +116,8 @@ func PinFromServer(c *config.Config, id string, ssh func(args ...string) (string
 	if err := os.WriteFile(c.KnownPin, []byte(c.DNSHost+" "+f[0]+" "+f[1]+"\n"), 0o600); err != nil {
 		return
 	}
-	os.Chmod(c.KnownPin, 0o600)
-	os.WriteFile(c.IDState, []byte(id+"\n"), 0o600)
+	_ = os.Chmod(c.KnownPin, 0o600)                     // the file was just written with 600; this covers an older, looser one
+	_ = os.WriteFile(c.IDState, []byte(id+"\n"), 0o600) // best effort: without it the next run asks the API
 	fmt.Fprintf(out, "Pinned host key of %s (verified via host CA).\n", c.ServerName)
 }
 
@@ -129,20 +129,20 @@ func SSHInclude(c *config.Config, action string) error {
 	cfg, err := filepath.EvalSymlinks(filepath.Join(c.SSHDir, "config"))
 	if err != nil {
 		cfg = filepath.Join(c.SSHDir, "config")
-		if f, cerr := os.OpenFile(cfg, os.O_CREATE|os.O_WRONLY, 0o600); cerr != nil {
+		f, cerr := os.OpenFile(cfg, os.O_CREATE|os.O_WRONLY, 0o600)
+		if cerr != nil {
 			return cerr
-		} else {
-			f.Close()
 		}
+		_ = f.Close() // only created
 		if cfg, err = filepath.EvalSymlinks(cfg); err != nil {
 			return err
 		}
 	}
-	if f, err := os.OpenFile(cfg, os.O_WRONLY, 0); err != nil {
+	f, err := os.OpenFile(cfg, os.O_WRONLY, 0)
+	if err != nil {
 		return err
-	} else {
-		f.Close()
 	}
+	_ = f.Close() // only opened to see that it is writable
 	unlock, err := lockFile(filepath.Join(c.StateDir, "ssh-config.lock"))
 	if err != nil {
 		return err

@@ -1,4 +1,4 @@
-package integration
+package integration_test
 
 import (
 	"bytes"
@@ -24,7 +24,8 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/stop"
 )
 
-var now = time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+// now is the fixed time of the fake world.
+func now() time.Time { return time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC) }
 
 // Env is a computer with a settings directory and a home, a cloud and a server.
 type Env struct {
@@ -67,7 +68,7 @@ func New(t *testing.T, settings string) *Env {
 	root := t.TempDir()
 	brew := filepath.Join(root, "linuxbrew", "bin", "brew")
 	e := &Env{t: t, Dir: filepath.Join(root, "settings"), Home: filepath.Join(root, "home"), Srv: servertest.New(t, brew),
-		Cloud: servertest.NewCloud(now), Tokens: map[string]string{"HCLOUD_TOKEN": "h", "CLOUDFLARE_API_TOKEN": "c", "CLOUDFLARE_ZONE_ID": "z"}}
+		Cloud: servertest.NewCloud(now()), Tokens: map[string]string{"HCLOUD_TOKEN": "h", "CLOUDFLARE_API_TOKEN": "c", "CLOUDFLARE_ZONE_ID": "z"}}
 	ssh := filepath.Join(e.Home, ".ssh")
 	for _, d := range []string{ssh, filepath.Join(e.Dir, "machines")} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
@@ -81,7 +82,9 @@ func New(t *testing.T, settings string) *Env {
 		}
 	}
 	pub, _ := os.ReadFile(ca + ".pub")
-	os.WriteFile(filepath.Join(ssh, "known_hosts_hetzner_claude_ca"), []byte("@cert-authority *.example.com "+strings.TrimSpace(string(pub))+"\n"), 0o600)
+	if err := os.WriteFile(filepath.Join(ssh, "known_hosts_hetzner_claude_ca"), []byte("@cert-authority *.example.com "+strings.TrimSpace(string(pub))+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	e.WriteSettings(settings)
 	e.HTTP = defaultHTTP
 	return e
@@ -237,7 +240,7 @@ func (e *Env) Up(name, repo string) Result {
 		WriteSSHConfig: func(ip string) error { return machine.WriteSSHConfig(c, ip) },
 		SSHInclude:     func(a string) error { return machine.SSHInclude(c, a) },
 		Sleep:          func(d time.Duration) { e.Sleeps = append(e.Sleeps, d) },
-		Now:            func() time.Time { return now },
+		Now:            func() time.Time { return now() },
 		OpenVSCode:     func(alias, dir string) { e.VSCode = append(e.VSCode, alias+" "+dir) },
 	}
 	code, err := start.Run(context.Background(), c, repo, d, l, l.Out, l.Err)
@@ -305,7 +308,7 @@ func (e *Env) Down(name string, force bool, answers ...string) Result {
 	d := stop.Deps{
 		Hetzner: e.Cloud, DNS: e.Cloud, Run: e.Srv.Run,
 		Ask: func(prompt string) string {
-			l.Err.Write([]byte(prompt))
+			_, _ = l.Err.Write([]byte(prompt))
 			if len(queue) == 0 {
 				return ""
 			}

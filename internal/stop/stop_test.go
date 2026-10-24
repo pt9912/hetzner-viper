@@ -1,9 +1,10 @@
-package stop
+package stop_test
 
 import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/pt9912/hetzner-viper/internal/stop"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,13 +48,17 @@ type world struct {
 func newWorld(t *testing.T) *world {
 	t.Helper()
 	home, dir := t.TempDir(), t.TempDir()
-	os.MkdirAll(filepath.Join(home, ".ssh"), 0o700)
-	os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\nWORKSPACE_DIR=/Development\n"), 0o600)
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\nWORKSPACE_DIR=/Development\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	c, err := config.Load(dir, "web", config.Env{Home: home, Lookup: func(string) (string, bool) { return "", false }}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	lg, err := runlog.Open(c.StateDir, c.ServerName, "down", io_discard{}, io_discard{})
+	lg, err := runlog.Open(c.StateDir, c.ServerName, "down", ioDiscard{}, ioDiscard{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,22 +67,32 @@ func newWorld(t *testing.T) *world {
 	return w
 }
 
-type io_discard struct{}
+type ioDiscard struct{}
 
-func (io_discard) Write(p []byte) (int, error) { return len(p), nil }
+func (ioDiscard) Write(p []byte) (int, error) { return len(p), nil }
 
 func (w *world) local(files ...string) {
 	for _, f := range files {
-		os.MkdirAll(filepath.Dir(f), 0o700)
-		os.WriteFile(f, []byte("x\n"), 0o600)
+		if err := os.MkdirAll(filepath.Dir(f), 0o700); err != nil {
+			w.t.Fatal(err)
+		}
+		if err := os.WriteFile(f, []byte("x\n"), 0o600); err != nil {
+			w.t.Fatal(err)
+		}
 	}
 }
 
 func (w *world) allLocal() {
 	w.local(w.c.SSHConfig, w.c.KnownPin, w.c.IDState, w.c.WorkspaceState, w.c.ReadyState, w.c.RepoState)
-	os.WriteFile(w.c.IDState, []byte("42\n"), 0o600)
-	os.WriteFile(w.c.WorkspaceState, []byte("/Development\n"), 0o600)
-	os.WriteFile(w.c.IPState, []byte("203.0.113.7\n"), 0o600)
+	if err := os.WriteFile(w.c.IDState, []byte("42\n"), 0o600); err != nil {
+		w.t.Fatal(err)
+	}
+	if err := os.WriteFile(w.c.WorkspaceState, []byte("/Development\n"), 0o600); err != nil {
+		w.t.Fatal(err)
+	}
+	if err := os.WriteFile(w.c.IPState, []byte("203.0.113.7\n"), 0o600); err != nil {
+		w.t.Fatal(err)
+	}
 }
 
 type hz struct{ w *world }
@@ -100,8 +115,8 @@ func (d dnsFake) Delete(_ context.Context, host, ip string) (string, error) {
 	return "DNS record removed (if present)", nil
 }
 
-func (w *world) deps() Deps {
-	return Deps{
+func (w *world) deps() stop.Deps {
+	return stop.Deps{
 		Hetzner: hz{w}, DNS: dnsFake{w},
 		Run: func(_ context.Context, stdin, name string, args ...string) (string, string, error) {
 			w.calls = append(w.calls, append([]string{name}, args...))
@@ -140,7 +155,7 @@ func (w *world) deps() Deps {
 func (w *world) run(force bool, answers ...string) (int, error) {
 	w.t.Helper()
 	w.answers = answers
-	code, err := Run(context.Background(), w.c, force, w.deps(), w.lg, &w.out, &w.errb)
+	code, err := stop.Run(context.Background(), w.c, force, w.deps(), w.lg, &w.out, &w.errb)
 	w.lg.Close(err, code)
 	return code, err
 }
@@ -260,12 +275,12 @@ func TestAnIncompleteCheckRefuses(t *testing.T) {
 func TestTheErrorsOfTheServerCheckStayVisible(t *testing.T) {
 	w := newWorld(t)
 	w.reportStderr = "fatal: detected dubious ownership in repository at '/Development/r'\n"
-	w.run(false, "DELETE")
+	_, _ = w.run(false, "DELETE")
 	has(t, w.errb.String(), "fatal: detected dubious ownership in repository at '/Development/r'\n")
 	w = newWorld(t)
 	w.reportStderr = "Connection to 203.0.113.7 closed by remote host."
 	w.reportErr = errors.New("exit 255")
-	w.run(false, "DELETE")
+	_, _ = w.run(false, "DELETE")
 	has(t, w.errb.String(), "Connection to 203.0.113.7 closed by remote host.\nGit check on the server failed.")
 }
 
@@ -283,7 +298,7 @@ func TestAFailingCheckKeepsEverything(t *testing.T) {
 	w := newWorld(t)
 	w.reportErr = errors.New("exit 255")
 	code, err := w.run(false, "DELETE")
-	if code != 1 || !errors.Is(err, ErrShown) || len(w.deleted) != 0 {
+	if code != 1 || !errors.Is(err, stop.ErrShown) || len(w.deleted) != 0 {
 		t.Fatalf("%d %v", code, err)
 	}
 	has(t, w.errb.String(), "Git check on the server failed. NOT deleting server (use --force to skip checks).")
@@ -294,7 +309,7 @@ func TestUnreachableServerNeedsForce(t *testing.T) {
 	w := newWorld(t)
 	w.sshErr = "ssh: connect to host 203.0.113.7 port 22: Connection timed out"
 	code, err := w.run(false, "DELETE")
-	if code != 1 || !errors.Is(err, ErrShown) || len(w.deleted) != 0 {
+	if code != 1 || !errors.Is(err, stop.ErrShown) || len(w.deleted) != 0 {
 		t.Fatalf("%d %v", code, err)
 	}
 	has(t, w.errb.String(), "SSH unreachable. Use viper down web --force to delete without checks.")
@@ -326,7 +341,7 @@ func TestTrustProblemsDoNotRecommendForceBlindly(t *testing.T) {
 	}
 	w = newWorld(t)
 	w.sshErr = "builder@203.0.113.7: Permission denied (publickey)."
-	w.run(false, "DELETE")
+	_, _ = w.run(false, "DELETE")
 	has(t, w.errb.String(), "The server answers, but rejects the login key "+w.c.SSHKey+": builder@203.0.113.7: Permission denied (publickey).",
 		"It was probably created with another login key", "Only if you are sure it holds nothing of value")
 	// --force can still go on
@@ -348,9 +363,13 @@ func TestForceStillChecksAReachableServer(t *testing.T) {
 
 func TestCheckCallGetsTheWorkspacesAndTheScript(t *testing.T) {
 	w := newWorld(t)
-	os.MkdirAll(w.state, 0o700)
-	os.WriteFile(w.c.WorkspaceState, []byte("/Development\n\n/srv/it's here\n"), 0o600)
-	w.run(false, "DELETE")
+	if err := os.MkdirAll(w.state, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(w.c.WorkspaceState, []byte("/Development\n\n/srv/it's here\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = w.run(false, "DELETE")
 	var cmd, stdin string
 	for i, c := range w.calls {
 		if strings.HasPrefix(c[len(c)-1], "bash -s -- ") {
@@ -366,7 +385,7 @@ func TestCheckCallGetsTheWorkspacesAndTheScript(t *testing.T) {
 	has(t, w.errb.String(), "(including /Development /srv/it's here)")
 	// no record: the configured workspace
 	w = newWorld(t)
-	w.run(false, "DELETE")
+	_, _ = w.run(false, "DELETE")
 	for _, c := range w.calls {
 		if strings.HasPrefix(c[len(c)-1], "bash -s -- ") && c[len(c)-1] != `bash -s -- '/Development'` {
 			t.Errorf("command %q", c[len(c)-1])
@@ -376,14 +395,18 @@ func TestCheckCallGetsTheWorkspacesAndTheScript(t *testing.T) {
 
 func TestPinsTheHostKeyOfAServerWithoutOne(t *testing.T) {
 	w := newWorld(t)
-	w.run(false, "DELETE")
+	_, _ = w.run(false, "DELETE")
 	has(t, w.out.String(), "Pinned host key of claude-web (verified via host CA).")
 	// the stale pin of an earlier server is dropped first
 	w = newWorld(t)
-	os.MkdirAll(w.state, 0o700)
+	if err := os.MkdirAll(w.state, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	w.local(w.c.KnownPin)
-	os.WriteFile(w.c.IDState, []byte("41\n"), 0o600)
-	w.run(false, "no")
+	if err := os.WriteFile(w.c.IDState, []byte("41\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = w.run(false, "no")
 	has(t, w.out.String(), "Server claude-web was recreated (ID 41 -> 42); dropping its old pinned host key.")
 }
 
@@ -403,7 +426,7 @@ func TestAnHcloudErrorKeepsEverything(t *testing.T) {
 	w.allLocal()
 	w.listErr = errors.New("hcloud: server responded with status code 401")
 	code, err := w.run(false, "DELETE")
-	if code != 1 || !errors.Is(err, ErrShown) || len(w.deleted) != 0 || len(w.dnsCalls) != 0 {
+	if code != 1 || !errors.Is(err, stop.ErrShown) || len(w.deleted) != 0 || len(w.dnsCalls) != 0 {
 		t.Fatalf("%d %v", code, err)
 	}
 	has(t, w.errb.String(), "Hetzner: listing the servers failed (check HCLOUD_TOKEN / project / network): unauthorized (check HCLOUD_TOKEN)")
@@ -498,7 +521,7 @@ func git(t *testing.T, dir string, args ...string) {
 func runRemote(t *testing.T, home string, workspaces ...string) string {
 	t.Helper()
 	cmd := exec.Command("bash", append([]string{"-s", "--"}, workspaces...)...)
-	cmd.Stdin = strings.NewReader(remote)
+	cmd.Stdin = strings.NewReader(stop.Remote())
 	cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH"), "VIPER_TMP_DIRS=" + filepath.Join(home, "no-tmp"), "GIT_CONFIG_GLOBAL=/dev/null"}
 	out, err := cmd.Output()
 	if err != nil {
@@ -514,9 +537,13 @@ func TestRemoteScriptFindsWhatWouldBeLost(t *testing.T) {
 	home := t.TempDir()
 	ws := filepath.Join(home, "ws")
 	repo := filepath.Join(ws, "r")
-	os.MkdirAll(repo, 0o755)
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	git(t, repo, "init", "-q")
-	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	git(t, repo, "add", ".")
 	git(t, repo, "commit", "-q", "-m", "first")
 	git(t, repo, "remote", "add", "origin", "https://example.invalid/r.git")
@@ -527,22 +554,30 @@ func TestRemoteScriptFindsWhatWouldBeLost(t *testing.T) {
 	if strings.Contains(out, "UNSAVED WORK") || !strings.Contains(out, "== end of check ==") {
 		t.Errorf("a pushed, clean repository loses nothing:\n%s", out)
 	}
-	os.WriteFile(filepath.Join(repo, "b.txt"), []byte("b\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(repo, "b.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if out := runRemote(t, home, ws); !strings.Contains(out, "?? b.txt") || !strings.Contains(out, "UNSAVED WORK") {
 		t.Errorf("untracked file:\n%s", out)
 	}
-	os.Remove(filepath.Join(repo, "b.txt"))
-	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("changed\n"), 0o644)
+	_ = os.Remove(filepath.Join(repo, "b.txt")) // may not exist
+	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if out := runRemote(t, home, ws); !strings.Contains(out, " M a.txt") || !strings.Contains(out, "UNSAVED WORK") {
 		t.Errorf("modified file:\n%s", out)
 	}
 	git(t, repo, "checkout", "-q", "--", "a.txt")
-	os.WriteFile(filepath.Join(ws, "loose.txt"), []byte("x\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(ws, "loose.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if out := runRemote(t, home, ws); !strings.Contains(out, "Not in any git repository (lost):") || !strings.Contains(out, "loose.txt") || !strings.Contains(out, "UNSAVED WORK") {
 		t.Errorf("loose file:\n%s", out)
 	}
-	os.Remove(filepath.Join(ws, "loose.txt"))
-	os.WriteFile(filepath.Join(repo, "c.txt"), []byte("c\n"), 0o644)
+	_ = os.Remove(filepath.Join(ws, "loose.txt")) // may not exist
+	if err := os.WriteFile(filepath.Join(repo, "c.txt"), []byte("c\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	git(t, repo, "add", ".")
 	git(t, repo, "commit", "-q", "-m", "second")
 	if out := runRemote(t, home, ws); !strings.Contains(out, "Commits not on any remote") || !strings.Contains(out, "second") {

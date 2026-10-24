@@ -1,6 +1,7 @@
-package start
+package start_test
 
 import (
+	"github.com/pt9912/hetzner-viper/internal/start"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,12 +25,14 @@ func TestUserDataIsWhatTheScriptMade(t *testing.T) {
 		"one": {read(t, "login.pub")},
 		"two": {read(t, "login.pub"), read(t, "ipad.pub")},
 	} {
-		got, err := UserData(base, keys, read(t, "host_key"), read(t, "host_key.pub"), read(t, "host_key-cert.pub"))
+		got, err := start.UserData(base, keys, read(t, "host_key"), read(t, "host_key.pub"), read(t, "host_key-cert.pub"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		if want := read(t, "userdata_"+name+".golden"); got != want {
-			os.WriteFile(filepath.Join(os.TempDir(), "userdata_"+name+".got"), []byte(got), 0o600)
+			if err := os.WriteFile(filepath.Join(os.TempDir(), "userdata_"+name+".got"), []byte(got), 0o600); err != nil {
+				t.Fatal(err)
+			}
 			t.Errorf("%s differs from the script's output:\n--- got\n%s\n--- want\n%s", name, tail(got), tail(want))
 		}
 	}
@@ -48,7 +51,7 @@ func TestTheRepositoriesCloudInitFitsAndKeepsItsBody(t *testing.T) {
 	if err != nil {
 		t.Skip("no cloud-init.yaml")
 	}
-	got, err := UserData(b, []string{"ssh-ed25519 AAAA k"}, "PRIV\n", "ssh-ed25519 PUB", "ssh-ed25519-cert-v01@openssh.com CERT")
+	got, err := start.UserData(b, []string{"ssh-ed25519 AAAA k"}, "PRIV\n", "ssh-ed25519 PUB", "ssh-ed25519-cert-v01@openssh.com CERT")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,10 +61,10 @@ func TestTheRepositoriesCloudInitFitsAndKeepsItsBody(t *testing.T) {
 	if strings.Contains(string(b), "ssh_keys:") {
 		t.Error("cloud-init.yaml must not define ssh_keys itself")
 	}
-	if _, err := UserData([]byte("no user here\n"), nil, "", "", ""); err == nil {
+	if _, err := start.UserData([]byte("no user here\n"), nil, "", "", ""); err == nil {
 		t.Error("a file without the place for the keys is refused")
 	}
-	if _, err := UserData([]byte(needle+needle), nil, "", "", ""); err == nil {
+	if _, err := start.UserData([]byte(start.Needle()+start.Needle()), nil, "", "", ""); err == nil {
 		t.Error("two places are ambiguous")
 	}
 }
@@ -73,12 +76,14 @@ func TestMakeHostKeyAsksForACertificateOfTheDNSName(t *testing.T) {
 		calls = append(calls, append([]string{name}, args...))
 		key := args[len(args)-1]
 		if strings.HasSuffix(key, "ssh_host_ed25519_key") { // generation
-			os.WriteFile(key, []byte("PRIVATE\n"), 0o600)
+			if err := os.WriteFile(key, []byte("PRIVATE\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
 			return os.WriteFile(key+".pub", []byte("ssh-ed25519 AAAAhost claude-web\n"), 0o644)
 		}
 		return os.WriteFile(strings.TrimSuffix(key, ".pub")+"-cert.pub", []byte("ssh-ed25519-cert-v01@openssh.com AAAAcert claude-web-1\n"), 0o644)
 	}
-	h, err := MakeHostKey(run, "/home/me/.ssh/hetzner_claude_host_ca", "claude-web", "claude-web.example.com", time.Unix(1700000000, 0))
+	h, err := start.MakeHostKey(run, "/home/me/.ssh/hetzner_claude_host_ca", "claude-web", "claude-web.example.com", time.Unix(1700000000, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +104,7 @@ func TestJSONStringIsPythonsJSONDumps(t *testing.T) {
 		"plain": `"plain"`, `a"b\c`: `"a\"b\\c"`, "tab\tnl\ncr\r": `"tab\tnl\ncr\r"`, "\b\f": `"\b\f"`, "\x01\x1f": `"\u0001\u001f"`,
 		"del\x7f": `"del\u007f"`, "<>&": `"<>&"`, `\u003c`: `"\\u003c"`, "ü€": `"\u00fc\u20ac"`, "😀": `"\ud83d\ude00"`, "": `""`, "~ ": `"~ "`,
 	} {
-		if got := jsonString(in); got != want {
+		if got := start.JSONString(in); got != want {
 			t.Errorf("%q: got %s, want %s", in, got, want)
 		}
 	}
@@ -118,7 +123,7 @@ func TestUserDataOfOddKeysIsWhatPythonMade(t *testing.T) {
 	for _, f := range files {
 		key, _ := os.ReadFile(f)
 		want, _ := os.ReadFile(strings.TrimSuffix(f, ".pub") + ".golden")
-		got, err := UserData(base, []string{string(key)}, "P1\nP2\n", "ssh-ed25519 PUB c\n", "ssh-ed25519-cert-v01@openssh.com CERT c\n")
+		got, err := start.UserData(base, []string{string(key)}, "P1\nP2\n", "ssh-ed25519 PUB c\n", "ssh-ed25519-cert-v01@openssh.com CERT c\n")
 		if err != nil || got != string(want) {
 			t.Errorf("%s differs from Python's output (%v)\n--- got\n%s\n--- want\n%s", f, err, tail(got), tail(string(want)))
 		}

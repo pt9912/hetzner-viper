@@ -1,7 +1,8 @@
-package runlog
+package runlog_test
 
 import (
 	"fmt"
+	"github.com/pt9912/hetzner-viper/internal/runlog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,7 +12,7 @@ import (
 func shown(t *testing.T, state, server string, full bool) string {
 	t.Helper()
 	var b strings.Builder
-	if err := Show(state, server, full, &b); err != nil {
+	if err := runlog.Show(state, server, full, &b); err != nil {
 		t.Fatal(err)
 	}
 	return b.String()
@@ -30,7 +31,9 @@ func TestShowEventsOfAllMachinesOrOne(t *testing.T) {
 		}
 		fmt.Fprintf(&all, "2026-10-21T10:00:%02d+02:00 %-24s up        event %d\n", i, name, i)
 	}
-	os.WriteFile(filepath.Join(state, "events.log"), []byte(all.String()), 0o600)
+	if err := os.WriteFile(filepath.Join(state, "events.log"), []byte(all.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	got := shown(t, state, "", false)
 	if lines := strings.Count(got, "\n"); lines != 50 || !strings.Contains(got, "event 59\n") || strings.Contains(got, "event 9\n") {
 		t.Errorf("last 50 lines, got %d lines", lines)
@@ -53,8 +56,12 @@ func TestShowFullTranscript(t *testing.T) {
 	if got := shown(t, state, "claude-web", true); got != "no log for claude-web\n" {
 		t.Errorf("%q", got)
 	}
-	os.MkdirAll(filepath.Join(state, "logs"), 0o700)
-	os.WriteFile(filepath.Join(state, "logs", "claude-web.log"), []byte("\n===== x up claude-web\nReady: ssh hetzner-claude-web\n"), 0o600)
+	if err := os.MkdirAll(filepath.Join(state, "logs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state, "logs", "claude-web.log"), []byte("\n===== x up claude-web\nReady: ssh hetzner-claude-web\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if got := shown(t, state, "claude-web", true); !strings.Contains(got, "Ready: ssh hetzner-claude-web\n") {
 		t.Errorf("%q", got)
 	}

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -16,17 +15,10 @@ import (
 // The commands run on this computer: they need the files of the settings directory (--dir, default
 // the current directory) and the OpenSSH client.
 
-// replaced by the tests
-var (
-	runTool  = runChild
-	execTool = replaceProcess
-	lookPath = exec.LookPath
-)
-
 // need checks that a program the command runs on this computer exists, before anything is
 // changed, and says what to do if not.
-func need(program string) error {
-	if _, err := lookPath(program); err != nil {
+func (h *host) need(program string) error {
+	if _, err := h.lookPath(program); err != nil {
 		return fmt.Errorf("%s not found: install the OpenSSH client", program)
 	}
 	return nil
@@ -47,10 +39,8 @@ func settingsDir(o *options) string {
 	return "."
 }
 
-// setup creates the login key and the host CA and trusts the CA for the domain .
-func setup(o *options, env config.Env, out io.Writer) error {
-	dir := settingsDir(o)
-	file := filepath.Join(dir, ".env.local")
+// createEnvFile writes .env.local from the template unless it already exists.
+func createEnvFile(file string, out io.Writer) error {
 	// O_EXCL: two runs at once do not truncate each other's file; 600: it holds API tokens
 	switch f, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600); {
 	case err == nil:
@@ -63,6 +53,42 @@ func setup(o *options, env config.Env, out io.Writer) error {
 		}
 		fmt.Fprintf(out, "Created %s from the template; set DNS_DOMAIN in it.\n", file)
 	case !os.IsExist(err):
+		return err
+	}
+	return nil
+}
+
+// ensureKeys creates the login key and the host CA key if they are missing.
+func ensureKeys(h *host, key, ca, home string) error {
+	// before anything is created: without OpenSSH a key cannot be made
+	if !exists(key) || !exists(ca) {
+		if err := h.need("ssh-keygen"); err != nil {
+			return err
+		}
+	}
+	for _, d := range []string{filepath.Dir(key), filepath.Join(home, ".ssh")} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			return err
+		}
+	}
+	if !exists(key) {
+		if err := h.runTool("ssh-keygen", "-t", "ed25519", "-f", key, "-N", ""); err != nil {
+			return err
+		}
+	}
+	if !exists(ca) {
+		if err := h.runTool("ssh-keygen", "-t", "ed25519", "-f", ca, "-N", "", "-C", "Hetzner Claude Host CA"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// setup creates the login key and the host CA and trusts the CA for the domain .
+func setup(o *options, env config.Env, out io.Writer) error {
+	dir := settingsDir(o)
+	file := filepath.Join(dir, ".env.local")
+	if err := createEnvFile(file, out); err != nil {
 		return err
 	}
 	vars, err := config.LoadFile(dir, env)
@@ -84,26 +110,8 @@ func setup(o *options, env config.Env, out io.Writer) error {
 	}
 	key := config.KeyPath(get("SSH_KEY"), dir, env.Home)
 	ca := filepath.Join(env.Home, ".ssh", "hetzner_claude_host_ca")
-	// before anything is created: without OpenSSH a key cannot be made
-	if !exists(key) || !exists(ca) {
-		if err := need("ssh-keygen"); err != nil {
-			return err
-		}
-	}
-	for _, d := range []string{filepath.Dir(key), filepath.Join(env.Home, ".ssh")} {
-		if err := os.MkdirAll(d, 0o700); err != nil {
-			return err
-		}
-	}
-	if !exists(key) {
-		if err := runTool("ssh-keygen", "-t", "ed25519", "-f", key, "-N", ""); err != nil {
-			return err
-		}
-	}
-	if !exists(ca) {
-		if err := runTool("ssh-keygen", "-t", "ed25519", "-f", ca, "-N", "", "-C", "Hetzner Claude Host CA"); err != nil {
-			return err
-		}
+	if err := ensureKeys(o.host(), key, ca, env.Home); err != nil {
+		return err
 	}
 	pub, err := os.ReadFile(ca + ".pub")
 	if err != nil {
@@ -148,11 +156,11 @@ func connect(o *options, env config.Env, interactive bool) error {
 	if o.cmd != "" {
 		args = append(args, o.cmd)
 	}
-	if err := need("ssh"); err != nil {
+	if err := o.host().need("ssh"); err != nil {
 		return err
 	}
 	// ssh takes our place (like exec): signals and the exit code are its own
-	return execTool("ssh", args...)
+	return o.host().execTool("ssh", args...)
 }
 
 // dnsName prints the DNS name of a machine: <SERVER_PREFIX>-<machine>.<DNS_DOMAIN>.

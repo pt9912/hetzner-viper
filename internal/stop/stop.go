@@ -56,7 +56,7 @@ func (d Deps) cleanupLocal(c *config.Config, errOut io.Writer) {
 		fmt.Fprintln(errOut, machine.SSHIncludeWarning(c))
 	}
 	for _, f := range stateFiles(c) {
-		os.Remove(f)
+		_ = os.Remove(f) // best effort: may not exist
 	}
 }
 
@@ -90,50 +90,10 @@ func Run(ctx context.Context, c *config.Config, force bool, d Deps, lg *runlog.L
 	if err := d.WriteSSHConfig(ip); err != nil {
 		return 1, err
 	}
-	// Check the directory the server was started with, even if WORKSPACE_DIR changed since:
-	// every workspace the server was started with (start records each), else the configured one.
-	var wss []string
-	for _, l := range strings.Split(readTrim(c.WorkspaceState), "\n") {
-		if l != "" {
-			wss = append(wss, l)
-		}
-	}
-	if len(wss) == 0 {
-		wss = []string{c.WorkspaceDir}
-	}
-
-	// -n: ssh must not swallow the answers that follow on stdin. The git checks run whenever
-	// the server is reachable and trusted, with or without --force.
-	skip := false
-	_, sshErr, err := d.Run(ctx, "", "ssh", "-n", "-F", c.SSHConfig, "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", c.SSHAlias, "true")
-	if err != nil {
-		e := strings.TrimRight(sshErr, "\n")
-		forceHint := fmt.Sprintf("Unsaved work on it cannot be checked. Only if you are sure it holds nothing of value: viper down %s --force", c.Machine)
-		switch machine.SSHFailureKind(e) {
-		case "hostkey":
-			fmt.Fprintf(errOut, "The server answers, but its host key is not trusted: %s\n", e)
-			fmt.Fprintln(errOut, "It may have been recreated from another computer (stale pin) or its certificate expired without a pin.")
-			fmt.Fprintln(errOut, forceHint)
-		case "auth":
-			fmt.Fprintf(errOut, "The server answers, but rejects the login key %s: %s\n", c.SSHKey, e)
-			fmt.Fprintln(errOut, "It was probably created with another login key (another computer or SSH_KEY). Use that one to check and push its work.")
-			fmt.Fprintln(errOut, forceHint)
-		default:
-			fmt.Fprintf(errOut, "SSH unreachable. Use viper down %s --force to delete without checks.\n", c.Machine)
-		}
-		if !force {
-			return 1, ErrShown
-		}
-		fmt.Fprintln(errOut, "WARNING: --force skips the git checks; everything on the server is lost.")
-		skip = true
-	} else if st, err := os.Stat(c.KnownPin); err != nil || st.Size() == 0 {
-		machine.PinFromServer(c, id, func(args ...string) (string, error) {
-			stdout, _, err := d.Run(ctx, "", "ssh", args...)
-			return stdout, err
-		}, out)
-		if err := d.WriteSSHConfig(ip); err != nil {
-			return 1, err
-		}
+	wss := workspaces(c)
+	skip, code, err := probeServer(ctx, c, force, d, id, ip, out, errOut)
+	if code != 0 || err != nil {
+		return code, err
 	}
 	if !skip {
 		if code, err := checkServer(ctx, c, d, lg, wss, out, errOut); code != 0 || err != nil {
@@ -146,6 +106,70 @@ func Run(ctx context.Context, c *config.Config, force bool, d Deps, lg *runlog.L
 		lg.Final("cancelled (no DELETE)")
 		return 1, nil
 	}
+	return destroy(ctx, c, d, lg, srv, skip, out, errOut)
+}
+
+// workspaces are the directories the server was started with (start records each), else the configured one.
+func workspaces(c *config.Config) []string {
+	// Check the directory the server was started with, even if WORKSPACE_DIR changed since.
+	var wss []string
+	for _, l := range strings.Split(readTrim(c.WorkspaceState), "\n") {
+		if l != "" {
+			wss = append(wss, l)
+		}
+	}
+	if len(wss) == 0 {
+		wss = []string{c.WorkspaceDir}
+	}
+	return wss
+}
+
+// probeServer checks that ssh works. It returns skip=true if --force skips the git checks after a
+// failure; code != 0 or err != nil ends the run.
+func probeServer(ctx context.Context, c *config.Config, force bool, d Deps, id, ip string, out, errOut io.Writer) (skip bool, code int, err error) {
+	// -n: ssh must not swallow the answers that follow on stdin. The git checks run whenever
+	// the server is reachable and trusted, with or without --force.
+	_, sshErr, err := d.Run(ctx, "", "ssh", "-n", "-F", c.SSHConfig, "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", c.SSHAlias, "true")
+	if err != nil {
+		explainSSHFailure(c, strings.TrimRight(sshErr, "\n"), errOut)
+		if !force {
+			return false, 1, ErrShown
+		}
+		fmt.Fprintln(errOut, "WARNING: --force skips the git checks; everything on the server is lost.")
+		return true, 0, nil
+	}
+	if st, err := os.Stat(c.KnownPin); err != nil || st.Size() == 0 {
+		machine.PinFromServer(c, id, func(args ...string) (string, error) {
+			stdout, _, err := d.Run(ctx, "", "ssh", args...)
+			return stdout, err
+		}, out)
+		if err := d.WriteSSHConfig(ip); err != nil {
+			return false, 1, err
+		}
+	}
+	return false, 0, nil
+}
+
+// explainSSHFailure says why the server cannot be checked.
+func explainSSHFailure(c *config.Config, e string, errOut io.Writer) {
+	forceHint := fmt.Sprintf("Unsaved work on it cannot be checked. Only if you are sure it holds nothing of value: viper down %s --force", c.Machine)
+	switch machine.SSHFailureKind(e) {
+	case "hostkey":
+		fmt.Fprintf(errOut, "The server answers, but its host key is not trusted: %s\n", e)
+		fmt.Fprintln(errOut, "It may have been recreated from another computer (stale pin) or its certificate expired without a pin.")
+		fmt.Fprintln(errOut, forceHint)
+	case "auth":
+		fmt.Fprintf(errOut, "The server answers, but rejects the login key %s: %s\n", c.SSHKey, e)
+		fmt.Fprintln(errOut, "It was probably created with another login key (another computer or SSH_KEY). Use that one to check and push its work.")
+		fmt.Fprintln(errOut, forceHint)
+	default:
+		fmt.Fprintf(errOut, "SSH unreachable. Use viper down %s --force to delete without checks.\n", c.Machine)
+	}
+}
+
+// destroy deletes the confirmed server, its DNS record and the local state.
+func destroy(ctx context.Context, c *config.Config, d Deps, lg *runlog.Log, srv *hetzner.Server, skip bool, out, errOut io.Writer) (int, error) {
+	ip, id := srv.IPv4, strconv.FormatInt(srv.ID, 10)
 	if err := d.Hetzner.DeleteServer(ctx, srv.ID); err != nil {
 		fmt.Fprintf(errOut, "deleting server %s failed: %s\n", c.ServerName, hetzner.Error(err))
 		return 1, ErrShown

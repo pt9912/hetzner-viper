@@ -1,7 +1,8 @@
-package start
+package start_test
 
 import (
 	"context"
+	"github.com/pt9912/hetzner-viper/internal/start"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -30,7 +31,7 @@ func newSrvWorld(t *testing.T, settings string) *srvWorld {
 	return &srvWorld{world: w, srv: servertest.New(t, brew)}
 }
 
-func (s *srvWorld) deps() Deps {
+func (s *srvWorld) deps() start.Deps {
 	d := s.world.deps()
 	d.Run, d.Stream = s.srv.Run, s.srv.Stream
 	// the fake server reads the certificate of the user-data (ssh-keyscan)
@@ -39,7 +40,7 @@ func (s *srvWorld) deps() Deps {
 
 func (s *srvWorld) run(repo string) (int, error) {
 	s.t.Helper()
-	code, err := Run(context.Background(), s.c, repo, s.deps(), s.lg, &s.out, &s.err)
+	code, err := start.Run(context.Background(), s.c, repo, s.deps(), s.lg, &s.out, &s.err)
 	s.lg.Close(err, code)
 	s.srv.UserData = s.userData
 	return code, err

@@ -53,31 +53,7 @@ func homebrewChecks(r *report, c *config.Config, repoURL string) {
 		if brew != "1" {
 			r.bad("VIPER_BREW_TAPS / VIPER_BREW_TRUST / VIPER_BREW_PACKAGES need VIPER_HOMEBREW=1")
 		}
-		for _, t := range trust {
-			if !trustRe.MatchString(t) {
-				r.bad("VIPER_BREW_TRUST: not a tap (owner/repo) or formula (owner/repo/name), optionally with cask:/command:: %s", t)
-			}
-		}
-		for _, t := range taps {
-			if !tapRe.MatchString(t) {
-				r.bad("VIPER_BREW_TAPS: not a tap (owner/repo or owner/repo=URL): %s", RedactTaps([]string{t}))
-			} else if tapCred.MatchString(t) {
-				// the token would be stored in the tap's .git/config on the server and shown in logs
-				r.bad("VIPER_BREW_TAPS: credentials in the tap URL (%s): use a deploy key (ssh URL) or a public tap", RedactTaps([]string{t}))
-			}
-		}
-		for _, p := range pkgs {
-			if !pkgRe.MatchString(p) {
-				r.bad("VIPER_BREW_PACKAGES: not a formula (name or owner/repo/name): %s", p)
-			}
-		}
-		orNone := func(s string) string {
-			if s == "" {
-				return "none"
-			}
-			return s
-		}
-		r.info("Homebrew taps: %s; trust: %s; formulae: %s", orNone(RedactTaps(taps)), orNone(strings.Join(trust, " ")), orNone(strings.Join(pkgs, " ")))
+		brewListChecks(r, taps, trust, pkgs)
 	}
 	if c.Setting("VIPER_BREWFILE", "0") == "1" {
 		if brew != "1" {
@@ -88,6 +64,40 @@ func homebrewChecks(r *report, c *config.Config, repoURL string) {
 		} else {
 			r.warn("the repository's Brewfile will be applied: it is Ruby code run by brew bundle, and its trusted: entries change Homebrew's trust store")
 		}
+	}
+}
+
+// brewListChecks validates the entries of the tap, trust and package lists and summarizes them.
+func brewListChecks(r *report, taps, trust, pkgs []string) {
+	for _, t := range trust {
+		if !trustRe.MatchString(t) {
+			r.bad("VIPER_BREW_TRUST: not a tap (owner/repo) or formula (owner/repo/name), optionally with cask:/command:: %s", t)
+		}
+	}
+	for _, t := range taps {
+		tapCheck(r, t)
+	}
+	for _, p := range pkgs {
+		if !pkgRe.MatchString(p) {
+			r.bad("VIPER_BREW_PACKAGES: not a formula (name or owner/repo/name): %s", p)
+		}
+	}
+	orNone := func(s string) string {
+		if s == "" {
+			return "none"
+		}
+		return s
+	}
+	r.info("Homebrew taps: %s; trust: %s; formulae: %s", orNone(RedactTaps(taps)), orNone(strings.Join(trust, " ")), orNone(strings.Join(pkgs, " ")))
+}
+
+// tapCheck validates one VIPER_BREW_TAPS entry.
+func tapCheck(r *report, t string) {
+	if !tapRe.MatchString(t) {
+		r.bad("VIPER_BREW_TAPS: not a tap (owner/repo or owner/repo=URL): %s", RedactTaps([]string{t}))
+	} else if tapCred.MatchString(t) {
+		// the token would be stored in the tap's .git/config on the server and shown in logs
+		r.bad("VIPER_BREW_TAPS: credentials in the tap URL (%s): use a deploy key (ssh URL) or a public tap", RedactTaps([]string{t}))
 	}
 }
 
@@ -155,14 +165,7 @@ func repositoryChecks(ctx context.Context, r *report, c *config.Config, d Deps, 
 		// a token in the URL would end up in .git/config on the server and in logs
 		r.bad("REPO_URL contains credentials (%s): use VIPER_GH_TOKEN or GIT_DEPLOY_KEY_FILE instead", shown)
 	case sshRepoRe.MatchString(repoURL):
-		switch {
-		case deployKey != "":
-			r.info("SSH repository %s with deploy key: access is only checked by the clone on the server", shown)
-		case token != "" && (strings.HasPrefix(repoURL, "git@"+host+":") || strings.HasPrefix(repoURL, "ssh://git@"+host+"/")):
-			r.ok("SSH repository %s will be cloned over HTTPS with VIPER_GH_TOKEN", shown)
-		default:
-			r.bad("SSH repository %s needs GIT_DEPLOY_KEY_FILE (the server has no SSH key for the git host); or use an HTTPS URL, or VIPER_GH_TOKEN for %s", shown, host)
-		}
+		sshRepoCheck(r, repoURL, shown, host, token, deployKey)
 	case token != "" && strings.HasPrefix(repoURL, "https://"+host+"/"):
 		// checked through the GitHub API above
 	case d.GitLsRemote != nil:
@@ -173,5 +176,17 @@ func repositoryChecks(ctx context.Context, r *report, c *config.Config, d Deps, 
 		}
 	default:
 		r.info("git not installed locally: repository not checked")
+	}
+}
+
+// sshRepoCheck judges an SSH repository URL against the available credentials.
+func sshRepoCheck(r *report, repoURL, shown, host, token, deployKey string) {
+	switch {
+	case deployKey != "":
+		r.info("SSH repository %s with deploy key: access is only checked by the clone on the server", shown)
+	case token != "" && (strings.HasPrefix(repoURL, "git@"+host+":") || strings.HasPrefix(repoURL, "ssh://git@"+host+"/")):
+		r.ok("SSH repository %s will be cloned over HTTPS with VIPER_GH_TOKEN", shown)
+	default:
+		r.bad("SSH repository %s needs GIT_DEPLOY_KEY_FILE (the server has no SSH key for the git host); or use an HTTPS URL, or VIPER_GH_TOKEN for %s", shown, host)
 	}
 }

@@ -5,3 +5,4 @@
 .env
 machines/*.env.local
 .ssh-pub-key-file
+dist/

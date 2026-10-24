@@ -1,4 +1,4 @@
-package integration
+package integration_test
 
 import (
 	"os"
@@ -100,7 +100,9 @@ func TestUserDataCarriesTheSignedHostKeyViaSshKeys(t *testing.T) {
 		}
 	}
 	certFile := filepath.Join(t.TempDir(), "cert.pub")
-	os.WriteFile(certFile, []byte(keys["ed25519_certificate"].(string)+"\n"), 0o644)
+	if err := os.WriteFile(certFile, []byte(keys["ed25519_certificate"].(string)+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	out, err := exec.Command("ssh-keygen", "-L", "-f", certFile).CombinedOutput()
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
@@ -180,7 +182,9 @@ func TestRepositoryFromTheMachineFileWithADeployKey(t *testing.T) {
 	e := New(t, "")
 	origin := originRepo(t)
 	deploy := filepath.Join(e.Home, ".ssh", "deploy")
-	os.WriteFile(deploy, []byte("key-material\n"), 0o600)
+	if err := os.WriteFile(deploy, []byte("key-material\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	e.Machine("web", "REPO_URL="+origin+"\nGIT_DEPLOY_KEY_FILE="+deploy+"\n")
 	e.MustUp("web", "")
 	if got := e.Srv.File("scp/deploy_key"); got != "key-material\n" {
@@ -205,7 +209,7 @@ func TestMachineFileOverridesTheServerType(t *testing.T) {
 
 func TestStartWithoutSetupFailsCleanly(t *testing.T) {
 	e := New(t, "")
-	os.Remove(filepath.Join(e.Home, ".ssh", "hetzner_claude_host_ca"))
+	_ = os.Remove(filepath.Join(e.Home, ".ssh", "hetzner_claude_host_ca")) // may not exist
 	r := e.Up("web", "")
 	if r.Code != 1 {
 		t.Errorf("code %d", r.Code)
@@ -270,7 +274,7 @@ func TestSshNeverReachableFailsAndKeepsTheServer(t *testing.T) {
 func TestMissingClaudeInstallIsRepairedByStart(t *testing.T) {
 	e := New(t, "")
 	e.MustUp("web", "")
-	os.Remove(filepath.Join(e.Srv.State, "claude-ready"))
+	_ = os.Remove(filepath.Join(e.Srv.State, "claude-ready")) // may not exist
 	n := len(e.Srv.Calls())
 	e.MustUp("web", "")
 	installs := 0
@@ -383,7 +387,9 @@ func TestScriptsUseTheMachinesOwnSshConfigOnly(t *testing.T) {
 	e := New(t, "")
 	origin := originRepo(t)
 	deploy := filepath.Join(e.Home, ".ssh", "deploy")
-	os.WriteFile(deploy, []byte("k\n"), 0o600)
+	if err := os.WriteFile(deploy, []byte("k\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	e.Machine("web", "REPO_URL="+origin+"\nGIT_DEPLOY_KEY_FILE="+deploy+"\n")
 	e.MustUp("web", "")
 	e.Down("web", false, "DELETE")
@@ -454,7 +460,7 @@ func TestGhTokenPerMachine(t *testing.T) {
 	if got := strings.TrimSpace(e.Srv.File("gh-token")); got != "ghp_web_only" {
 		t.Errorf("machine token: %q", got)
 	}
-	os.Remove(filepath.Join(e.Srv.State, "gh-token"))
+	_ = os.Remove(filepath.Join(e.Srv.State, "gh-token")) // may not exist
 	e.MustUp("api", "")
 	if e.Srv.Exists("gh-token") {
 		t.Error("another machine got the token")

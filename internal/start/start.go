@@ -53,7 +53,6 @@ type Deps struct {
 }
 
 type runner struct {
-	ctx    context.Context
 	c      *config.Config
 	d      Deps
 	lg     *runlog.Log
@@ -64,11 +63,11 @@ type runner struct {
 
 // interrupted reports that the run was cancelled (Ctrl-C): nothing more is started, and failures
 // that follow from the cancellation are not shown as problems.
-func (r *runner) interrupted() bool { return r.ctx.Err() != nil }
+func interrupted(ctx context.Context) bool { return ctx.Err() != nil }
 
 // warnf is a warning of a step that is not fatal; it stays quiet after an interruption.
-func (r *runner) warnf(format string, a ...any) {
-	if !r.interrupted() {
+func (r *runner) warnf(ctx context.Context, format string, a ...any) {
+	if !interrupted(ctx) {
 		r.eprintf(format, a...)
 	}
 }
@@ -78,17 +77,17 @@ func (r *runner) eprintf(format string, a ...any) { fmt.Fprintf(r.errOut, format
 
 // ssh runs a command on the server with the machine's own ssh config, output going to the user.
 // Without stdin it passes -n (ssh must not read ours).
-func (r *runner) ssh(stdin, command string) error {
+func (r *runner) ssh(ctx context.Context, stdin, command string) error {
 	args := []string{"-F", r.c.SSHConfig, r.c.SSHAlias, command}
 	if stdin == "" {
 		args = append([]string{"-n"}, args...)
 	}
-	return r.d.Stream(r.ctx, stdin, r.out, r.errOut, "ssh", args...)
+	return r.d.Stream(ctx, stdin, r.out, r.errOut, "ssh", args...)
 }
 
 // script runs one of the scripts on the server, with its arguments quoted.
-func (r *runner) script(script string, args ...string) error {
-	return r.ssh(script, "bash -s -- "+machine.QuoteAll(args...))
+func (r *runner) script(ctx context.Context, script string, args ...string) error {
+	return r.ssh(ctx, script, "bash -s -- "+machine.QuoteAll(args...))
 }
 
 func readTrim(p string) string {
@@ -104,7 +103,7 @@ func (r *runner) fail(format string, a ...any) (int, error) {
 // Run creates or reuses the machine and sets it up. It returns the exit code; a non-nil error is a
 // run that failed (ErrShown: the reason was already shown) and is to be logged as FAILED.
 func Run(ctx context.Context, c *config.Config, repoArg string, d Deps, lg *runlog.Log, out, errOut io.Writer) (int, error) {
-	r := &runner{ctx: ctx, c: c, d: d, lg: lg, out: out, errOut: errOut}
+	r := &runner{c: c, d: d, lg: lg, out: out, errOut: errOut}
 	repoURL, remembered := preflight.ResolveRepoURL(c, repoArg)
 	r.repo = repoURL
 	shown := ""
@@ -113,45 +112,82 @@ func Run(ctx context.Context, c *config.Config, repoArg string, d Deps, lg *runl
 	}
 	lg.Event("start (%s, %s, %s%s)", c.ServerType, c.ServerLocation, c.ServerImage, shown)
 
-	// read-only checks first, so a wrong setting fails before anything is created
-	var pre strings.Builder
-	if d.Preflight(ctx, repoArg, &pre, &pre) > 0 {
-		fmt.Fprint(errOut, pre.String())
-		return 1, ErrShown
+	if code, err := r.preflightChecks(ctx, repoArg); code != 0 || err != nil {
+		return code, err
 	}
-	fmt.Fprint(out, pre.String())
-
 	ca := filepath.Join(c.SSHDir, "hetzner_claude_host_ca")
-	if !exists(ca) || !exists(c.SSHKey+".pub") {
-		return r.fail("Run viper setup first")
-	}
-	home := filepath.Dir(c.SSHDir)
-	deployKey := config.ExpandHome(c.Get("GIT_DEPLOY_KEY_FILE"), home)
-	ipadKey := config.ExpandHome(c.Get("IPAD_SSH_PUBLIC_KEY_FILE"), home)
-	for _, f := range []string{deployKey, ipadKey} {
-		if f == "" {
-			continue
-		}
-		if _, err := os.ReadFile(f); err != nil {
-			return r.fail("File not readable: %s", f)
-		}
-	}
-
-	keyName, code, err := r.loginKey()
+	deployKey, ipadKey, code, err := r.localFiles(ca)
 	if code != 0 || err != nil {
 		return code, err
 	}
-	if code, err := r.firewall(); code != 0 || err != nil {
-		return code, err
-	}
-	srv, reused, code, err := r.server(ca, keyName, ipadKey)
+	srv, reused, code, err := r.ensureServer(ctx, ca, ipadKey)
 	if code != 0 || err != nil {
 		return code, err
 	}
 	id := fmtID(srv.ID)
-	ip := srv.IPv4
-	os.WriteFile(c.IPState, []byte(ip+"\n"), 0o600)
-	lg.Event("ip=%s dns=%s", ip, c.DNSHost)
+	if code, err := r.announceServer(ctx, srv.IPv4); code != 0 || err != nil {
+		return code, err
+	}
+	status, code, err := r.waitForServer(ctx, id, reused)
+	if code != 0 || err != nil {
+		return code, err
+	}
+	if code, err := r.pinHostKey(ctx, id, srv.IPv4); code != 0 || err != nil {
+		return code, err
+	}
+	return r.provision(ctx, status, id, repoURL, remembered, deployKey)
+}
+
+// preflightChecks runs the read-only checks first, so a wrong setting fails before anything is created.
+func (r *runner) preflightChecks(ctx context.Context, repoArg string) (int, error) {
+	var pre strings.Builder
+	if r.d.Preflight(ctx, repoArg, &pre, &pre) > 0 {
+		fmt.Fprint(r.errOut, pre.String())
+		return 1, ErrShown
+	}
+	fmt.Fprint(r.out, pre.String())
+	return 0, nil
+}
+
+// localFiles checks the local key files and returns the deploy key and iPad key paths.
+func (r *runner) localFiles(ca string) (deployKey, ipadKey string, code int, err error) {
+	c := r.c
+	if !exists(ca) || !exists(c.SSHKey+".pub") {
+		code, err = r.fail("Run viper setup first")
+		return "", "", code, err
+	}
+	home := filepath.Dir(c.SSHDir)
+	deployKey = config.ExpandHome(c.Get("GIT_DEPLOY_KEY_FILE"), home)
+	ipadKey = config.ExpandHome(c.Get("IPAD_SSH_PUBLIC_KEY_FILE"), home)
+	for _, f := range []string{deployKey, ipadKey} {
+		if f == "" {
+			continue
+		}
+		if _, rerr := os.ReadFile(f); rerr != nil {
+			code, err = r.fail("File not readable: %s", f)
+			return "", "", code, err
+		}
+	}
+	return deployKey, ipadKey, 0, nil
+}
+
+// ensureServer makes sure the login key, the firewall and the server exist.
+func (r *runner) ensureServer(ctx context.Context, ca, ipadKey string) (srv *hetzner.Server, reused bool, code int, err error) {
+	keyName, code, err := r.loginKey(ctx)
+	if code != 0 || err != nil {
+		return nil, false, code, err
+	}
+	if code, err := r.firewall(ctx); code != 0 || err != nil {
+		return nil, false, code, err
+	}
+	return r.server(ctx, ca, keyName, ipadKey)
+}
+
+// announceServer records the IP, writes the SSH config and sets the DNS name.
+func (r *runner) announceServer(ctx context.Context, ip string) (int, error) {
+	c, d := r.c, r.d
+	_ = os.WriteFile(c.IPState, []byte(ip+"\n"), 0o600)
+	r.lg.Event("ip=%s dns=%s", ip, c.DNSHost)
 	if err := d.WriteSSHConfig(ip); err != nil {
 		return 1, err
 	}
@@ -164,23 +200,21 @@ func Run(ctx context.Context, c *config.Config, repoArg string, d Deps, lg *runl
 		return r.fail("%s", err)
 	}
 	r.printf("%s\n", msg)
+	return 0, nil
+}
 
-	status, code, err := r.waitForServer(id, ip, reused)
-	if code != 0 || err != nil {
-		return code, err
-	}
+// pinHostKey pins the server's host key if there is no pin yet.
+func (r *runner) pinHostKey(ctx context.Context, id, ip string) (int, error) {
+	c, d := r.c, r.d
 	// Verified via the host CA (no pin yet): pin the key from now on.
 	if st, err := os.Stat(c.KnownPin); err != nil || st.Size() == 0 {
 		machine.PinFromServer(c, id, func(args ...string) (string, error) {
 			stdout, _, err := d.Run(ctx, "", "ssh", args...)
 			return stdout, err
-		}, out)
+		}, r.out)
 		if err := d.WriteSSHConfig(ip); err != nil {
 			return 1, err
 		}
-	}
-	if code, err := r.provision(status, id, repoURL, remembered, deployKey); code != 0 || err != nil {
-		return code, err
 	}
 	return 0, nil
 }

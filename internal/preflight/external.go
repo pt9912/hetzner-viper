@@ -31,6 +31,44 @@ func netError(err error) string {
 	return err.Error()
 }
 
+// scopeChecks checks the scopes of a classic token against what gh auth login needs.
+func scopeChecks(r *report, scopes string) {
+	// gh's minimum: repo, and read:org or a broader org scope (write:org, admin:org)
+	have := "," + strings.ReplaceAll(scopes, " ", "") + ","
+	if !strings.Contains(have, ",repo,") {
+		r.bad("classic token lacks scope repo (has: %s); gh auth login will reject it", scopes)
+	}
+	if !strings.Contains(have, ",read:org,") && !strings.Contains(have, ",write:org,") && !strings.Contains(have, ",admin:org,") {
+		r.bad("classic token lacks scope read:org (or write:org/admin:org) (has: %s); gh auth login will reject it", scopes)
+	}
+}
+
+// pushCheck probes whether the token may push to repo.
+func pushCheck(ctx context.Context, r *report, d Deps, host, repo, login, token string) {
+	// the first step of a git push: the ref list of git-receive-pack needs write access
+	// (fine-grained: Contents read and write); nothing is written
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+host+"/"+repo+".git/info/refs?service=git-receive-pack", nil)
+	if err != nil {
+		r.warn("push permission for %s not checked (HTTP error)", repo)
+		return
+	}
+	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(login+":"+token)))
+	push, err := d.client().Do(req)
+	if err != nil {
+		r.warn("push permission for %s not checked (HTTP error)", repo)
+		return
+	}
+	_ = push.Body.Close() // status only
+	switch push.StatusCode {
+	case 200:
+		r.ok("token can push to %s", repo)
+	case 401, 403, 404:
+		r.bad("token cannot push to %s (fine-grained token: Contents must be Read and write)", repo)
+	default:
+		r.warn("push permission for %s not checked (HTTP %d)", repo, push.StatusCode)
+	}
+}
+
 func githubChecks(ctx context.Context, r *report, c *config.Config, d Deps, repoURL string) {
 	fmt.Fprintln(r.out, "== GitHub")
 	token := c.Get("VIPER_GH_TOKEN")
@@ -58,7 +96,7 @@ func githubChecks(ctx context.Context, r *report, c *config.Config, d Deps, repo
 		return
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	resp.Body.Close()
+	_ = resp.Body.Close() // body read
 	if resp.StatusCode >= 400 {
 		r.bad("VIPER_GH_TOKEN rejected by %s: HTTP %d", host, resp.StatusCode)
 		return
@@ -69,14 +107,7 @@ func githubChecks(ctx context.Context, r *report, c *config.Config, d Deps, repo
 	_ = json.Unmarshal(body, &user)
 	r.ok("VIPER_GH_TOKEN valid for %s on %s", user.Login, host)
 	if scopes := strings.TrimSpace(resp.Header.Get("X-OAuth-Scopes")); scopes != "" {
-		// gh's minimum: repo, and read:org or a broader org scope (write:org, admin:org)
-		have := "," + strings.ReplaceAll(scopes, " ", "") + ","
-		if !strings.Contains(have, ",repo,") {
-			r.bad("classic token lacks scope repo (has: %s); gh auth login will reject it", scopes)
-		}
-		if !strings.Contains(have, ",read:org,") && !strings.Contains(have, ",write:org,") && !strings.Contains(have, ",admin:org,") {
-			r.bad("classic token lacks scope read:org (or write:org/admin:org) (has: %s); gh auth login will reject it", scopes)
-		}
+		scopeChecks(r, scopes)
 	}
 	// an SSH URL with a deploy key is cloned with that key, not with the token
 	re := regexp.MustCompile(`^(https://` + regexp.QuoteMeta(host) + `/|git@` + regexp.QuoteMeta(host) + `:)([^/]+)/([^/]+)$`)
@@ -87,35 +118,14 @@ func githubChecks(ctx context.Context, r *report, c *config.Config, d Deps, repo
 	repo := m[2] + "/" + strings.TrimSuffix(m[3], ".git")
 	access, err := get("/repos/" + repo)
 	if err == nil {
-		access.Body.Close()
+		_ = access.Body.Close() // status only
 	}
 	if err != nil || access.StatusCode >= 400 {
 		r.bad("token cannot access %s (fine-grained token without this repository?)", repo)
 		return
 	}
 	r.ok("token can access %s", repo)
-	// the first step of a git push: the ref list of git-receive-pack needs write access
-	// (fine-grained: Contents read and write); nothing is written
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+host+"/"+repo+".git/info/refs?service=git-receive-pack", nil)
-	if err != nil {
-		r.warn("push permission for %s not checked (HTTP error)", repo)
-		return
-	}
-	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(user.Login+":"+token)))
-	push, err := d.client().Do(req)
-	if err != nil {
-		r.warn("push permission for %s not checked (HTTP error)", repo)
-		return
-	}
-	push.Body.Close()
-	switch push.StatusCode {
-	case 200:
-		r.ok("token can push to %s", repo)
-	case 401, 403, 404:
-		r.bad("token cannot push to %s (fine-grained token: Contents must be Read and write)", repo)
-	default:
-		r.warn("push permission for %s not checked (HTTP %d)", repo, push.StatusCode)
-	}
+	pushCheck(ctx, r, d, host, repo, user.Login, token)
 }
 
 var (
@@ -140,11 +150,11 @@ func claudeChecks(ctx context.Context, r *report, c *config.Config, d Deps) {
 	}
 }
 
-func gatewayChecks(ctx context.Context, r *report, c *config.Config, d Deps, baseURL, claudeToken string) {
+// gatewayConfigChecks checks the settings that go with VIPER_ANTHROPIC_BASE_URL.
+func gatewayConfigChecks(r *report, c *config.Config, claudeToken string) {
 	if claudeToken != "" {
 		r.bad("set either VIPER_CLAUDE_TOKEN or VIPER_ANTHROPIC_BASE_URL, not both (the API token would take precedence over the subscription)")
 	}
-	authToken, model := c.Get("VIPER_ANTHROPIC_AUTH_TOKEN"), c.Get("VIPER_CLAUDE_MODEL")
 	for _, v := range []string{"VIPER_ANTHROPIC_AUTH_TOKEN", "VIPER_CLAUDE_MODEL"} {
 		if c.Get(v) == "" {
 			r.bad("%s is required with VIPER_ANTHROPIC_BASE_URL", v)
@@ -153,6 +163,11 @@ func gatewayChecks(ctx context.Context, r *report, c *config.Config, d Deps, bas
 	if n := c.Get("VIPER_CLAUDE_MAX_CONTEXT_TOKENS"); n != "" && !numberRe.MatchString(n) {
 		r.bad("VIPER_CLAUDE_MAX_CONTEXT_TOKENS must be a number of tokens")
 	}
+}
+
+func gatewayChecks(ctx context.Context, r *report, c *config.Config, d Deps, baseURL, claudeToken string) {
+	gatewayConfigChecks(r, c, claudeToken)
+	authToken, model := c.Get("VIPER_ANTHROPIC_AUTH_TOKEN"), c.Get("VIPER_CLAUDE_MODEL")
 	base := strings.TrimSuffix(baseURL, "/")
 	shown := RedactURL(base)
 	if !httpRe.MatchString(base) {
@@ -187,22 +202,27 @@ func gatewayChecks(ctx context.Context, r *report, c *config.Config, d Deps, bas
 		r.bad("%s not reachable: %s", shown, strings.ReplaceAll(netError(err), authToken, "***"))
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() // read-only body
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	msg := errorMessage(raw)
 	with := ""
 	if msg != "" {
 		with = ": " + msg
 	}
-	switch resp.StatusCode {
+	reportGateway(r, shown, modelID, resp.StatusCode, with)
+}
+
+// reportGateway reports the HTTP status of the gateway's answer to the test request.
+func reportGateway(r *report, shown, modelID string, status int, with string) {
+	switch status {
 	case 200:
 		r.ok("%s answers with model %s (Anthropic Messages API)", shown, modelID)
 	case 401, 403:
-		r.bad("%s rejects VIPER_ANTHROPIC_AUTH_TOKEN (HTTP %d%s)", shown, resp.StatusCode, with)
+		r.bad("%s rejects VIPER_ANTHROPIC_AUTH_TOKEN (HTTP %d%s)", shown, status, with)
 	case 404:
 		r.bad("%s: model %s or the Messages API not found (HTTP 404%s)", shown, modelID, with)
 	default:
-		r.bad("%s: HTTP %d%s", shown, resp.StatusCode, with)
+		r.bad("%s: HTTP %d%s", shown, status, with)
 	}
 }
 

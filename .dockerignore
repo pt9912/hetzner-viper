@@ -1,0 +1,4 @@
+.git
+dist
+.env.local
+machines/*.env.local

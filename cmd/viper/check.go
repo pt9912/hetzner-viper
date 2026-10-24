@@ -44,8 +44,8 @@ func runCaptured(ctx context.Context, stdin, name string, args ...string) (strin
 	return out.String(), errb.String(), err
 }
 
-// replaced by the tests
-var newCheckDeps = func(c *config.Config) check.Deps {
+// defaultCheckDeps are the real dependencies of check.
+func defaultCheckDeps(c *config.Config) check.Deps {
 	return check.Deps{
 		Hetzner: hetzner.New(c.Get("HCLOUD_TOKEN"), ""),
 		LookupIPv4: func(ctx context.Context, host string) ([]string, error) {
@@ -74,7 +74,7 @@ func runCheck(ctx context.Context, o *options, env config.Env, stdout, stderr io
 	}
 	ctx, stop := notifyContext(ctx)
 	defer stop()
-	failures, err := check.Run(ctx, c, newCheckDeps(c), l.Out, l.Err)
+	failures, err := check.Run(ctx, c, o.host().newCheckDeps(c), l.Out, l.Err)
 	switch {
 	case ctx.Err() != nil:
 		l.Interrupted()
@@ -95,7 +95,7 @@ func runCheck(ctx context.Context, o *options, env config.Env, stdout, stderr io
 }
 
 func nativeCheck(o *options) error {
-	if err := need("ssh"); err != nil {
+	if err := o.host().need("ssh"); err != nil {
 		return err
 	}
 	env, err := hostEnv()

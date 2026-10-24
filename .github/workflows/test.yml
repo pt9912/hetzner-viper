@@ -14,16 +14,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-      # the tests run the scripts that go to the server for real (bash, git, jq, ssh-keygen),
-      # against a real sshd (it needs /run/sshd) and through shellcheck; a missing tool fails the
-      # tests (VIPER_REQUIRE_TOOLS) instead of skipping them
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends jq shellcheck openssh-server openssh-client git
-      - run: sudo mkdir -p /run/sshd
-      - run: test -z "$(gofmt -l .)"
-      - run: go vet ./...
-      - run: go test -race ./...
-        env:
-          VIPER_REQUIRE_TOOLS: "1"
+      # the same as locally: gofmt, go vet, golangci-lint and the tests run in the containers of
+      # the Dockerfile (Go and the tools the tests need: sshd, ssh-keygen, jq, shellcheck; a missing
+      # tool fails the tests instead of skipping them)
+      - run: make check

@@ -1,8 +1,9 @@
-package hetzner
+package hetzner_test
 
 import (
 	"context"
 	"encoding/json"
+	"github.com/pt9912/hetzner-viper/internal/hetzner"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,7 +18,7 @@ func api(t *testing.T) *httptest.Server {
 		if r.Header.Get("Authorization") != "Bearer good" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(401)
-			json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": "unauthorized", "message": "unable to authenticate"}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": "unauthorized", "message": "unable to authenticate"}})
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -55,22 +56,20 @@ func api(t *testing.T) *httptest.Server {
 			http.NotFound(w, r)
 			return
 		}
-		json.NewEncoder(w).Encode(page)
+		_ = json.NewEncoder(w).Encode(page)
 	}))
 	t.Cleanup(srv.Close)
 	return srv
 }
 
-var ctx = context.Background()
-
 func TestReadsTheProject(t *testing.T) {
 	srv := api(t)
-	h := New("good", srv.URL)
-	names, err := h.ServerNames(ctx)
+	h := hetzner.New("good", srv.URL)
+	names, err := h.ServerNames(context.Background())
 	if err != nil || strings.Join(names, ",") != "claude-web,claude-api" {
 		t.Errorf("%q %v", names, err)
 	}
-	st, err := h.ServerType(ctx, "cpx32")
+	st, err := h.ServerType(context.Background(), "cpx32")
 	if err != nil || st == nil || st.Cores != 4 || st.MemoryGB != 8 || st.DiskGB != 160 || st.Architecture != "x86" {
 		t.Fatalf("%+v %v", st, err)
 	}
@@ -80,22 +79,22 @@ func TestReadsTheProject(t *testing.T) {
 	if st.Locations[1].Available || !st.Locations[1].UnavailableAfter.Equal(time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)) {
 		t.Errorf("nbg1: %+v", st.Locations[1])
 	}
-	if st, err := h.ServerType(ctx, "nope"); err != nil || st != nil {
+	if st, err := h.ServerType(context.Background(), "nope"); err != nil || st != nil {
 		t.Errorf("unknown type: %v %v", st, err)
 	}
-	if ok, err := h.LocationExists(ctx, "fsn1"); !ok || err != nil {
+	if ok, err := h.LocationExists(context.Background(), "fsn1"); !ok || err != nil {
 		t.Errorf("fsn1 %v %v", ok, err)
 	}
-	if ok, _ := h.LocationExists(ctx, "mars1"); ok {
+	if ok, _ := h.LocationExists(context.Background(), "mars1"); ok {
 		t.Error("mars1")
 	}
-	if ok, err := h.ImageExists(ctx, "ubuntu-26.04", "x86"); !ok || err != nil {
+	if ok, err := h.ImageExists(context.Background(), "ubuntu-26.04", "x86"); !ok || err != nil {
 		t.Errorf("image %v %v", ok, err)
 	}
-	if ok, _ := h.ImageExists(ctx, "ubuntu-26.04", "arm"); ok {
+	if ok, _ := h.ImageExists(context.Background(), "ubuntu-26.04", "arm"); ok {
 		t.Error("no arm image")
 	}
-	keys, err := h.SSHKeys(ctx)
+	keys, err := h.SSHKeys(context.Background())
 	if err != nil || len(keys) != 1 || keys[0].Name != "claude-login" || keys[0].Fingerprint != "aa:bb:cc" {
 		t.Errorf("%+v %v", keys, err)
 	}
@@ -103,11 +102,11 @@ func TestReadsTheProject(t *testing.T) {
 
 func TestABadTokenIsAnErrorWithoutTheToken(t *testing.T) {
 	srv := api(t)
-	_, err := New("secret-bad-token", srv.URL).ServerNames(ctx)
-	if err == nil || strings.Contains(Error(err), "secret-bad-token") || !strings.Contains(Error(err), "HCLOUD_TOKEN") {
-		t.Errorf("got %v / %q", err, Error(err))
+	_, err := hetzner.New("secret-bad-token", srv.URL).ServerNames(context.Background())
+	if err == nil || strings.Contains(hetzner.Error(err), "secret-bad-token") || !strings.Contains(hetzner.Error(err), "HCLOUD_TOKEN") {
+		t.Errorf("got %v / %q", err, hetzner.Error(err))
 	}
-	if _, err := New("good", "http://127.0.0.1:1").ServerNames(ctx); err == nil {
+	if _, err := hetzner.New("good", "http://127.0.0.1:1").ServerNames(context.Background()); err == nil {
 		t.Error("an unreachable API is an error")
 	}
 }

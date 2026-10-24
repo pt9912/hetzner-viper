@@ -1,9 +1,10 @@
-package start
+package start_test
 
 import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/pt9912/hetzner-viper/internal/start"
 	"io"
 	"os"
 	"path/filepath"
@@ -65,12 +66,24 @@ func newWorld(t *testing.T, settings string) *world {
 	t.Helper()
 	home, dir := t.TempDir(), t.TempDir()
 	ssh := filepath.Join(home, ".ssh")
-	os.MkdirAll(ssh, 0o700)
-	os.WriteFile(filepath.Join(ssh, "hetzner-build"), []byte("PRIVATE"), 0o600)
-	os.WriteFile(filepath.Join(ssh, "hetzner-build.pub"), []byte(pubKey), 0o644)
-	os.WriteFile(filepath.Join(ssh, "hetzner_claude_host_ca"), []byte("CA"), 0o600)
-	os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\n"+settings), 0o600)
-	os.MkdirAll(filepath.Join(dir, "machines"), 0o755)
+	if err := os.MkdirAll(ssh, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ssh, "hetzner-build"), []byte("PRIVATE"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ssh, "hetzner-build.pub"), []byte(pubKey), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ssh, "hetzner_claude_host_ca"), []byte("CA"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\n"+settings), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "machines"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	c, err := config.Load(dir, "web", config.Env{Home: home, Lookup: func(string) (string, bool) { return "", false }}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -129,13 +142,13 @@ func (d dnsFake) Set(_ context.Context, host, ip string) (string, error) {
 	return host + " -> " + ip, nil
 }
 
-func (w *world) deps() Deps {
-	return Deps{
+func (w *world) deps() start.Deps {
+	return start.Deps{
 		Preflight: func(_ context.Context, _ string, out, _ io.Writer) int {
 			if w.preflightProblems > 0 {
-				io.WriteString(out, "FAIL  something\n\nPreflight: 1 problem(s); nothing was created.\n")
+				_, _ = io.WriteString(out, "FAIL  something\n\nPreflight: 1 problem(s); nothing was created.\n")
 			} else {
-				io.WriteString(out, "== settings\nPreflight OK.\n")
+				_, _ = io.WriteString(out, "== settings\nPreflight OK.\n")
 			}
 			return w.preflightProblems
 		},
@@ -143,7 +156,7 @@ func (w *world) deps() Deps {
 		Run: func(_ context.Context, stdin, name string, args ...string) (string, string, error) {
 			last := args[len(args)-1]
 			switch {
-			case name == "ssh" && last == probe:
+			case name == "ssh" && last == start.Probe():
 				i := w.probeN
 				if i >= len(w.probes) {
 					i = len(w.probes) - 1
@@ -169,7 +182,9 @@ func (w *world) deps() Deps {
 			w.keygenRun = append(w.keygenRun, append([]string{name}, args...))
 			key := args[len(args)-1]
 			if strings.HasSuffix(key, "ssh_host_ed25519_key") {
-				os.WriteFile(key, []byte("HOSTPRIVATE\n"), 0o600)
+				if err := os.WriteFile(key, []byte("HOSTPRIVATE\n"), 0o600); err != nil {
+					w.t.Fatal(err)
+				}
 				return os.WriteFile(key+".pub", []byte("ssh-ed25519 AAAAnewhost claude-web\n"), 0o644)
 			}
 			return os.WriteFile(strings.TrimSuffix(key, ".pub")+"-cert.pub", []byte("ssh-ed25519-cert-v01@openssh.com AAAAcert claude-web-1\n"), 0o644)
@@ -184,7 +199,7 @@ func (w *world) deps() Deps {
 
 func (w *world) run(repo string) (int, error) {
 	w.t.Helper()
-	code, err := Run(context.Background(), w.c, repo, w.deps(), w.lg, &w.out, &w.err)
+	code, err := start.Run(context.Background(), w.c, repo, w.deps(), w.lg, &w.out, &w.err)
 	w.lg.Close(err, code)
 	return code, err
 }
@@ -297,7 +312,7 @@ func TestAProblemInThePreflightStopsBeforeAnythingIsCreated(t *testing.T) {
 	w := newWorld(t, "")
 	w.preflightProblems = 1
 	code, err := w.run("")
-	if code != 1 || !errors.Is(err, ErrShown) {
+	if code != 1 || !errors.Is(err, start.ErrShown) {
 		t.Fatalf("%d %v", code, err)
 	}
 	has(t, w.err.String(), "FAIL  something", "Preflight: 1 problem(s); nothing was created.")
@@ -328,7 +343,7 @@ func TestExistingFirewallWithOnlySshGetsIcmp(t *testing.T) {
 	w := newWorld(t, "SSH_ALLOWED_CIDRS=10.0.0.0/8,192.0.2.0/24\n")
 	rules := []hetzner.FirewallRule{{Direction: "in", Protocol: "tcp", Port: "22"}}
 	w.firewall = &rules
-	w.run("")
+	_, _ = w.run("")
 	if len(w.addedRules) != 1 || w.addedRules[0].Protocol != "icmp" || strings.Join(w.addedRules[0].SourceIPs, ",") != "10.0.0.0/8,192.0.2.0/24" {
 		t.Errorf("added %+v", w.addedRules)
 	}
@@ -339,7 +354,7 @@ func TestKeyNameTakenByAnotherPublicKeyFails(t *testing.T) {
 	w := newWorld(t, "")
 	w.keys = []hetzner.SSHKey{{Name: "claude-login", Fingerprint: "00:11:22"}}
 	code, err := w.run("")
-	if code != 1 || !errors.Is(err, ErrShown) || len(w.created) != 0 {
+	if code != 1 || !errors.Is(err, start.ErrShown) || len(w.created) != 0 {
 		t.Fatalf("%d %v", code, err)
 	}
 	has(t, w.err.String(), "SSH key claude-login in Hetzner belongs to a different public key than "+w.c.SSHKey+".pub")
@@ -371,7 +386,9 @@ func TestARestartOfARunningMachineIsIdempotent(t *testing.T) {
 	rules := []hetzner.FirewallRule{{Direction: "in", Protocol: "tcp", Port: "22"}, {Direction: "in", Protocol: "icmp"}}
 	w.firewall = &rules
 	w.keys = []hetzner.SSHKey{{Name: "claude-login", Fingerprint: preflight.FingerprintMD5(w.c.SSHKey + ".pub")}}
-	os.WriteFile(w.c.IDState, []byte("42\n"), 0o600)
+	if err := os.WriteFile(w.c.IDState, []byte("42\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if code, err := w.run(""); code != 0 || err != nil {
 		t.Fatalf("%d %v\n%s", code, err, w.all())
 	}
@@ -393,7 +410,7 @@ func TestSshNeverReachableFails(t *testing.T) {
 		return "", "ssh: connect to host 203.0.113.7 port 22: Connection timed out\n", errors.New("exit 255")
 	}}
 	code, err := w.run("")
-	if code != 1 || !errors.Is(err, ErrShown) {
+	if code != 1 || !errors.Is(err, start.ErrShown) {
 		t.Fatalf("%d %v", code, err)
 	}
 	has(t, w.err.String(), "SSH not reachable; server retained. Last error: ssh: connect to host 203.0.113.7 port 22: Connection timed out")
@@ -429,7 +446,7 @@ func TestAReusedServerWithAnUntrustedKeyFailsFast(t *testing.T) {
 		return "", "Host key verification failed.\n", errors.New("exit 255")
 	}}
 	code, err := w.run("")
-	if code != 1 || !errors.Is(err, ErrShown) || w.probeN != 1 || len(w.sleeps) != 0 {
+	if code != 1 || !errors.Is(err, start.ErrShown) || w.probeN != 1 || len(w.sleeps) != 0 {
 		t.Fatalf("%d %v attempts %d", code, err, w.probeN)
 	}
 	has(t, w.err.String(), "SSH: the server's host key is not trusted; server retained.", "  Host key verification failed.",
@@ -441,7 +458,7 @@ func TestAReusedServerWithAnUntrustedKeyFailsFast(t *testing.T) {
 	w.probes = []func() (string, string, error){func() (string, string, error) {
 		return "", "builder@203.0.113.7: Permission denied (publickey).\n", errors.New("exit 255")
 	}}
-	w.run("")
+	_, _ = w.run("")
 	has(t, w.err.String(), "SSH: the server rejects the login key "+w.c.SSHKey+" (builder@203.0.113.7: Permission denied (publickey).); server retained.",
 		"Was the server created with another login key?")
 }
@@ -479,7 +496,7 @@ func TestAReusedServerNeedingARebootOnlyWarns(t *testing.T) {
 	w := newWorld(t, "")
 	w.server = &hetzner.Server{ID: 42, Name: "claude-web", IPv4: "203.0.113.7", Created: w.now.Add(-time.Hour)}
 	w.probes = []func() (string, string, error){func() (string, string, error) { return okStatus + "reboot=pending\n", "", nil }}
-	w.run("")
+	_, _ = w.run("")
 	if w.probeN != 1 {
 		t.Errorf("%d attempts", w.probeN)
 	}
@@ -496,19 +513,21 @@ func TestAnInterruptedFirstRunIsNotASetUpServer(t *testing.T) {
 		return w
 	}
 	w := young()
-	w.run("")
+	_, _ = w.run("")
 	if w.probeN != 37 {
 		t.Errorf("young server without marker: %d attempts", w.probeN)
 	}
 	w = young()
-	os.WriteFile(w.c.ReadyState, []byte("42\n"), 0o600)
-	w.run("")
+	if err := os.WriteFile(w.c.ReadyState, []byte("42\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = w.run("")
 	if w.probeN != 1 {
 		t.Errorf("marker on this computer: %d attempts", w.probeN)
 	}
 	w = young()
 	w.probes = []func() (string, string, error){func() (string, string, error) { return "reboot=pending\nready=42\n" + okStatus, "", nil }}
-	w.run("")
+	_, _ = w.run("")
 	if w.probeN != 1 {
 		t.Errorf("marker on the server: %d attempts", w.probeN)
 	}
@@ -517,7 +536,7 @@ func TestAnInterruptedFirstRunIsNotASetUpServer(t *testing.T) {
 func TestAMissingPinIsRecordedAfterTheHostCAVerifiedTheConnection(t *testing.T) {
 	w := newWorld(t, "")
 	w.server = &hetzner.Server{ID: 42, Name: "claude-web", IPv4: "203.0.113.7", Created: w.now.Add(-time.Hour)}
-	w.run("")
+	_, _ = w.run("")
 	if pin, _ := os.ReadFile(w.c.KnownPin); string(pin) != "claude-web.example.com ssh-ed25519 AAAAhostkey\n" {
 		t.Errorf("pin %q", pin)
 	}
@@ -525,9 +544,13 @@ func TestAMissingPinIsRecordedAfterTheHostCAVerifiedTheConnection(t *testing.T) 
 	// the stale pin of an earlier server is dropped
 	w = newWorld(t, "")
 	w.server = &hetzner.Server{ID: 42, Name: "claude-web", IPv4: "203.0.113.7", Created: w.now.Add(-time.Hour)}
-	os.WriteFile(w.c.KnownPin, []byte("old pin\n"), 0o600)
-	os.WriteFile(w.c.IDState, []byte("41\n"), 0o600)
-	w.run("")
+	if err := os.WriteFile(w.c.KnownPin, []byte("old pin\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(w.c.IDState, []byte("41\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = w.run("")
 	has(t, w.out.String(), "Server claude-web was recreated (ID 41 -> 42); dropping its old pinned host key.")
 }
 
@@ -552,7 +575,7 @@ func TestClaudeInstallIsRetriedWhenRateLimitedAndFailureIsReported(t *testing.T)
 	w.failing["claude.ai/install.sh"] = errors.New("exit 22")
 	_ = n
 	code, err := w.run("")
-	if code != 1 || !errors.Is(err, ErrShown) {
+	if code != 1 || !errors.Is(err, start.ErrShown) {
 		t.Fatalf("%d %v", code, err)
 	}
 	if len(w.remote("claude.ai/install.sh")) != 5 {
@@ -579,7 +602,7 @@ func TestDockerNotRunningFailsAndCloudInitErrorsOnlyWarn(t *testing.T) {
 	w := newWorld(t, "")
 	w.probes = []func() (string, string, error){func() (string, string, error) { return "cloud-init=0\nclaude=ok\nready=\n", "", nil }}
 	code, err := w.run("")
-	if code != 1 || !errors.Is(err, ErrShown) {
+	if code != 1 || !errors.Is(err, start.ErrShown) {
 		t.Fatalf("%d %v", code, err)
 	}
 	has(t, w.err.String(), "Docker is not running; see /var/log/cloud-init-output.log on the server. Server retained.")
@@ -612,9 +635,11 @@ func TestWorkspaceIsRecordedOnTheServerBeforeLaterSteps(t *testing.T) {
 	}
 	// a second run records it only once
 	w2 := newWorld(t, "")
-	os.WriteFile(w2.c.WorkspaceState, []byte("/Development\n"), 0o600)
+	if err := os.WriteFile(w2.c.WorkspaceState, []byte("/Development\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	w2.server = &hetzner.Server{ID: 42, Name: "claude-web", IPv4: "203.0.113.7", Created: w2.now.Add(-time.Hour)}
-	w2.run("")
+	_, _ = w2.run("")
 	if b, _ := os.ReadFile(w2.c.WorkspaceState); string(b) != "/Development\n" {
 		t.Errorf("recorded twice: %q", b)
 	}
@@ -644,7 +669,7 @@ func TestGithubTokenGoesThroughStdinBeforeTheClone(t *testing.T) {
 		if strings.Contains(call.command(), "gh auth login") {
 			loginAt = i
 		}
-		if call.stdin == cloneScript {
+		if call.stdin == start.CloneScript() {
 			cloneAt = i
 		}
 	}
@@ -655,7 +680,9 @@ func TestGithubTokenGoesThroughStdinBeforeTheClone(t *testing.T) {
 
 func TestADeployKeyIsNotBypassedByTheGithubToken(t *testing.T) {
 	key := filepath.Join(t.TempDir(), "deploy")
-	os.WriteFile(key, []byte("DEPLOY"), 0o600)
+	if err := os.WriteFile(key, []byte("DEPLOY"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	w := newWorld(t, "VIPER_GH_TOKEN=x\nGIT_DEPLOY_KEY_FILE="+key+"\n")
 	if code, err := w.run("git@github.com:o/r.git"); code != 0 || err != nil {
 		t.Fatalf("%d %v\n%s", code, err, w.all())
@@ -672,7 +699,7 @@ func TestADeployKeyIsNotBypassedByTheGithubToken(t *testing.T) {
 			scp = call
 		case strings.HasSuffix(call.command(), "chmod 600 ~/.ssh/deploy_key"):
 			chmod = call
-		case call.stdin == cloneScript:
+		case call.stdin == start.CloneScript():
 			clone = call
 		}
 	}
@@ -686,7 +713,7 @@ func TestADeployKeyIsNotBypassedByTheGithubToken(t *testing.T) {
 
 func TestNoGithubLoginWithoutAToken(t *testing.T) {
 	w := newWorld(t, "")
-	w.run("")
+	_, _ = w.run("")
 	if len(w.remote("gh auth login")) != 0 {
 		t.Error("gh login without a token")
 	}
@@ -700,7 +727,7 @@ func TestCloneArgumentsAreQuotedAndTheRepositoryIsRemembered(t *testing.T) {
 	}
 	var clone sshCall
 	for _, call := range w.calls {
-		if call.stdin == cloneScript {
+		if call.stdin == start.CloneScript() {
 			clone = call
 		}
 	}
@@ -714,16 +741,18 @@ func TestCloneArgumentsAreQuotedAndTheRepositoryIsRemembered(t *testing.T) {
 	has(t, w.out.String(), "Ready: ssh hetzner-claude-web (work dir: /Development/odd path; rm -rf $HOME)")
 	// given once, remembered for the next run
 	w2 := newWorld(t, "")
-	os.WriteFile(w2.c.RepoState, []byte("https://user:tok3n@git.example.com/o/r.git\n"), 0o600)
+	if err := os.WriteFile(w2.c.RepoState, []byte("https://user:tok3n@git.example.com/o/r.git\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	w2.server = &hetzner.Server{ID: 42, Name: "claude-web", IPv4: "203.0.113.7", Created: w2.now.Add(-time.Hour)}
-	w2.run("")
+	_, _ = w2.run("")
 	has(t, w2.out.String(), "Repository (remembered from an earlier start): https://***@git.example.com/o/r.git")
 	hasNot(t, w2.all(), "tok3n")
 }
 
 func TestClaudeLoginAndGatewayStayOutOfArgv(t *testing.T) {
 	w := newWorld(t, "VIPER_CLAUDE_TOKEN=\"sk-ant-secret\\$x'y\"\n")
-	w.run("")
+	_, _ = w.run("")
 	c := w.remote("claude.env")
 	if len(c) != 1 || c[0].stdin != "export CLAUDE_CODE_OAUTH_TOKEN='sk-ant-secret$x'\\''y'\n" {
 		t.Fatalf("claude login %+v", c)
@@ -737,7 +766,7 @@ func TestClaudeLoginAndGatewayStayOutOfArgv(t *testing.T) {
 	has(t, w.out.String(), "claude: logged in with VIPER_CLAUDE_TOKEN")
 
 	g := newWorld(t, "VIPER_ANTHROPIC_BASE_URL=https://user:pw@gw.example.com\nVIPER_ANTHROPIC_AUTH_TOKEN=gw-token\nVIPER_CLAUDE_MODEL=glm-4.6\nVIPER_CLAUDE_MAX_CONTEXT_TOKENS=1048576\n")
-	g.run("")
+	_, _ = g.run("")
 	c = g.remote("claude.env")
 	want := "export ANTHROPIC_BASE_URL='https://user:pw@gw.example.com'\nexport ANTHROPIC_AUTH_TOKEN='gw-token'\nexport ANTHROPIC_API_KEY=\"\"\nunset CLAUDE_CODE_OAUTH_TOKEN\n" +
 		"export ANTHROPIC_MODEL='glm-4.6'\nexport ANTHROPIC_DEFAULT_OPUS_MODEL='glm-4.6'\nexport ANTHROPIC_DEFAULT_SONNET_MODEL='glm-4.6'\n" +
@@ -749,7 +778,7 @@ func TestClaudeLoginAndGatewayStayOutOfArgv(t *testing.T) {
 	hasNot(t, g.all(), "user:pw", "gw-token")
 	// neither: no login
 	n := newWorld(t, "")
-	n.run("")
+	_, _ = n.run("")
 	if len(n.remote("claude.env")) != 0 {
 		t.Error("login without a token")
 	}
@@ -757,10 +786,10 @@ func TestClaudeLoginAndGatewayStayOutOfArgv(t *testing.T) {
 
 func TestGitIdentityScriptGetsItsSettings(t *testing.T) {
 	w := newWorld(t, "VIPER_GIT_USER_NAME=\"Ada Lovelace\"\nVIPER_GIT_USER_EMAIL=ada@example.com\nVIPER_GH_TOKEN=x\nVIPER_GH_HOST=ghe.example.com\n")
-	w.run("")
+	_, _ = w.run("")
 	var id sshCall
 	for _, call := range w.calls {
-		if call.stdin == gitIDScript {
+		if call.stdin == start.GitIDScript() {
 			id = call
 		}
 	}
@@ -769,15 +798,15 @@ func TestGitIdentityScriptGetsItsSettings(t *testing.T) {
 	}
 	w = newWorld(t, "")
 	w.failing["git config --global user.name"] = errors.New("exit 1")
-	w.run("")
+	_, _ = w.run("")
 	has(t, w.err.String(), "WARNING: git user.name/user.email could not be set on the server")
 }
 
 func TestSwapIsOptInAndNotFatal(t *testing.T) {
 	w := newWorld(t, "")
-	w.run("")
+	_, _ = w.run("")
 	for _, call := range w.calls {
-		if call.stdin == swapScript {
+		if call.stdin == start.SwapScript() {
 			t.Error("swap without VIPER_SWAP")
 		}
 	}
@@ -789,7 +818,7 @@ func TestSwapIsOptInAndNotFatal(t *testing.T) {
 	}
 	var swap sshCall
 	for _, call := range w.calls {
-		if call.stdin == swapScript {
+		if call.stdin == start.SwapScript() {
 			swap = call
 		}
 	}
@@ -801,14 +830,14 @@ func TestSwapIsOptInAndNotFatal(t *testing.T) {
 
 func TestHomebrewIsInstalledSkippedAndFailuresOnlyWarn(t *testing.T) {
 	w := newWorld(t, "")
-	w.run("")
+	_, _ = w.run("")
 	c := w.remote("Homebrew/install/HEAD/install.sh")
 	if len(c) != 1 || !strings.HasPrefix(c[0].command(), "test -x /home/linuxbrew/.linuxbrew/bin/brew || {") {
 		t.Fatalf("install %+v", c)
 	}
 	has(t, w.out.String(), "Homebrew: installing (skipped if present) ...")
 	w = newWorld(t, "VIPER_HOMEBREW=0\n")
-	w.run("")
+	_, _ = w.run("")
 	if len(w.remote("Homebrew/install")) != 0 {
 		t.Error("installed although off")
 	}
@@ -822,10 +851,10 @@ func TestHomebrewIsInstalledSkippedAndFailuresOnlyWarn(t *testing.T) {
 
 func TestBrewTapsTrustAndPackagesGoToTheScriptInOrder(t *testing.T) {
 	w := newWorld(t, "VIPER_BREW_TAPS=\"hashicorp/tap o/t=https://git.example.com/o/t.git\"\nVIPER_BREW_TRUST=hashicorp/tap/terraform\nVIPER_BREW_PACKAGES=\"ripgrep fd\"\nVIPER_BREWFILE=1\n")
-	w.run("https://git.example.com/o/r.git")
+	_, _ = w.run("https://git.example.com/o/r.git")
 	var brew sshCall
 	for _, call := range w.calls {
-		if call.stdin == brewPkgScript {
+		if call.stdin == start.BrewPkgScript() {
 			brew = call
 		}
 	}
@@ -835,9 +864,9 @@ func TestBrewTapsTrustAndPackagesGoToTheScriptInOrder(t *testing.T) {
 	}
 	// nothing asked for: no script
 	n := newWorld(t, "")
-	n.run("")
+	_, _ = n.run("")
 	for _, call := range n.calls {
-		if call.stdin == brewPkgScript {
+		if call.stdin == start.BrewPkgScript() {
 			t.Error("brew script without settings")
 		}
 	}
@@ -845,9 +874,9 @@ func TestBrewTapsTrustAndPackagesGoToTheScriptInOrder(t *testing.T) {
 	f := newWorld(t, "VIPER_BREW_PACKAGES=ripgrep\n")
 	f.failing["brew install"] = errors.New("x")
 	f.failing["Homebrew missing"] = errors.New("x")
-	f.run("")
+	_, _ = f.run("")
 	for _, call := range f.calls {
-		if call.stdin == brewPkgScript {
+		if call.stdin == start.BrewPkgScript() {
 			return
 		}
 	}
@@ -856,7 +885,7 @@ func TestBrewTapsTrustAndPackagesGoToTheScriptInOrder(t *testing.T) {
 
 func TestCodeServerIsOptInWithThePasswordOnStdin(t *testing.T) {
 	w := newWorld(t, "")
-	w.run("")
+	_, _ = w.run("")
 	if len(w.remote("code-server")) != 0 {
 		t.Error("code-server without VIPER_CODE_SERVER")
 	}
@@ -887,16 +916,16 @@ func TestCodeServerIsOptInWithThePasswordOnStdin(t *testing.T) {
 
 func TestTheShellSetupAndInventoryRunLast(t *testing.T) {
 	w := newWorld(t, "")
-	w.run("https://git.example.com/o/r.git")
-	var cd, inv int = -1, -1
+	_, _ = w.run("https://git.example.com/o/r.git")
+	cd, inv := -1, -1
 	for i, call := range w.calls {
-		if call.stdin == cdLineScript {
+		if call.stdin == start.CdLineScript() {
 			cd = i
 			if call.command() != "bash -s -- '/Development/r' '/Development' '/home/linuxbrew/.linuxbrew/bin/brew' '42'" {
 				t.Errorf("cdline %q", call.command())
 			}
 		}
-		if call.stdin == inventoryScript {
+		if call.stdin == start.InventoryScript() {
 			inv = i
 			cmd := call.command()
 			has(t, cmd, "'/home/linuxbrew/.linuxbrew/bin/brew' 'gnupg' 'git' 'gh'", "'openssh-server'", "'docker-ce' 'docker-ce-cli' 'containerd.io' 'docker-buildx-plugin' 'docker-compose-plugin'")
@@ -922,7 +951,7 @@ func TestDnsFailureStopsBeforeWaiting(t *testing.T) {
 	w := newWorld(t, "")
 	w.dnsErr = errors.New("Existing DNS record is not managed by this setup; refusing overwrite")
 	code, err := w.run("")
-	if code != 1 || !errors.Is(err, ErrShown) || w.probeN != 0 {
+	if code != 1 || !errors.Is(err, start.ErrShown) || w.probeN != 0 {
 		t.Fatalf("%d %v probes %d", code, err, w.probeN)
 	}
 	has(t, w.err.String(), "Existing DNS record is not managed by this setup; refusing overwrite")
@@ -943,9 +972,9 @@ func TestAnInterruptionEndsTheRunWithoutMisleadingWarnings(t *testing.T) {
 		}
 		return stream(c, stdin, o, e, name, args...)
 	}
-	code, err := Run(ctx, w.c, "", d, w.lg, &w.out, &w.err)
+	code, err := start.Run(ctx, w.c, "", d, w.lg, &w.out, &w.err)
 	w.lg.Close(err, code)
-	if code != 1 || !errors.Is(err, ErrShown) {
+	if code != 1 || !errors.Is(err, start.ErrShown) {
 		t.Fatalf("%d %v", code, err)
 	}
 	hasNot(t, w.err.String(), "WARNING")
@@ -963,9 +992,9 @@ func TestAnInterruptedClaudeInstallDoesNotWaitOrRetry(t *testing.T) {
 		cancel()
 		return context.Canceled
 	}
-	code, err := Run(ctx, w.c, "", d, w.lg, &w.out, &w.err)
+	code, err := start.Run(ctx, w.c, "", d, w.lg, &w.out, &w.err)
 	w.lg.Close(err, code)
-	if code != 1 || !errors.Is(err, ErrShown) {
+	if code != 1 || !errors.Is(err, start.ErrShown) {
 		t.Fatalf("%d %v", code, err)
 	}
 	for _, s := range w.sleeps {

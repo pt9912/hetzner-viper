@@ -1,7 +1,6 @@
-package integration
+package integration_test
 
 import (
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -130,5 +129,4 @@ func TestCheckOfAMachineWithSwapCanBeTurnedOff(t *testing.T) {
 	if r := e.Check("web"); strings.Contains(r.Out, "swap") {
 		t.Errorf("swap checked:\n%s", r.Out)
 	}
-	_ = os.Stdout
 }

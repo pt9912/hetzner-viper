@@ -1,9 +1,10 @@
-package check
+package check_test
 
 import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/pt9912/hetzner-viper/internal/check"
 	"io"
 	"net/http"
 	"os"
@@ -15,14 +16,14 @@ import (
 )
 
 func TestParseProbeKeepsTheFirstValue(t *testing.T) {
-	got := parseProbe("cloudinit=done\nclaude_answer=OK\nmem=1 MB available of 2 MB\nweird line\ncloudinit=other\nx=a=b\n")
+	got := check.ParseProbe("cloudinit=done\nclaude_answer=OK\nmem=1 MB available of 2 MB\nweird line\ncloudinit=other\nx=a=b\n")
 	if got["cloudinit"] != "done" || got["claude_answer"] != "OK" || got["mem"] != "1 MB available of 2 MB" || got["x"] != "a=b" {
 		t.Errorf("%q", got)
 	}
 }
 
 func TestProbeIsAValidBashScript(t *testing.T) {
-	if strings.TrimSpace(probe) == "" || !strings.HasPrefix(probe, "set -uo pipefail\n") {
+	if strings.TrimSpace(check.Probe()) == "" || !strings.HasPrefix(check.Probe(), "set -uo pipefail\n") {
 		t.Error("probe not embedded")
 	}
 	_ = context.Background
@@ -46,13 +47,19 @@ func newFixture(t *testing.T, settings string) (*fixture, *config.Config) {
 	f := &fixture{t: t, home: t.TempDir(), server: &hetzner.Server{ID: 1, Name: "claude-web", IPv4: "203.0.113.7"}, local: []string{"203.0.113.7"},
 		probeOut: okProbe, doh: map[string]string{}}
 	dir := t.TempDir()
-	os.MkdirAll(f.home+"/.ssh", 0o700)
-	os.WriteFile(dir+"/.env.local", []byte("DNS_DOMAIN=example.com\n"+settings), 0o600)
+	if err := os.MkdirAll(f.home+"/.ssh", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dir+"/.env.local", []byte("DNS_DOMAIN=example.com\n"+settings), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	c, err := config.Load(dir, "web", config.Env{Home: f.home, Lookup: func(string) (string, bool) { return "", false }}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(c.SSHConfig, []byte("Host x\n"), 0o600)
+	if err := os.WriteFile(c.SSHConfig, []byte("Host x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	return f, c
 }
 
@@ -74,8 +81,8 @@ mem=900 MB available of 1900 MB
 disk=30G free of 38G
 `
 
-func (f *fixture) deps() Deps {
-	return Deps{
+func (f *fixture) deps() check.Deps {
+	return check.Deps{
 		Hetzner: serverFake{f},
 		HTTP: &http.Client{Transport: rt(func(r *http.Request) (*http.Response, error) {
 			key := r.URL.Host + " " + r.URL.Query().Get("type")
@@ -129,7 +136,7 @@ func dohAnswer(ips ...string) string {
 func (f *fixture) run(c *config.Config) (string, int, error) {
 	f.t.Helper()
 	var out, errb bytes.Buffer
-	n, err := Run(context.Background(), c, f.deps(), &out, &errb)
+	n, err := check.Run(context.Background(), c, f.deps(), &out, &errb)
 	return out.String() + errb.String(), n, err
 }
 
@@ -220,8 +227,6 @@ func TestSshToTheServerFails(t *testing.T) {
 		t.Error("no server")
 	}
 }
-
-func probeWith(extra string) string { return okProbe + extra }
 
 func TestClaudeCode(t *testing.T) {
 	for _, c := range []struct {
@@ -341,12 +346,12 @@ func TestSshdRebootCloudInitAndRepository(t *testing.T) {
 
 func TestWritesTheSshConfigIfThereIsNone(t *testing.T) {
 	f, c := newFixture(t, "")
-	os.Remove(c.SSHConfig)
+	_ = os.Remove(c.SSHConfig) // may not exist
 	var wrote string
 	d := f.deps()
 	d.WriteSSHConfig = func(ip string) error { wrote = ip; return nil }
 	var out bytes.Buffer
-	Run(context.Background(), c, d, &out, &out)
+	_, _ = check.Run(context.Background(), c, d, &out, &out)
 	if wrote != "203.0.113.7" {
 		t.Errorf("wrote %q", wrote)
 	}

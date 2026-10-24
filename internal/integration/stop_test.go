@@ -1,4 +1,4 @@
-package integration
+package integration_test
 
 import (
 	"os"
@@ -251,7 +251,7 @@ func TestStopWrongProjectWithoutConfirmationChangesNothing(t *testing.T) {
 func TestStopAbsentWithoutRecordedIpLeavesDns(t *testing.T) {
 	e := boot(t)
 	delete(e.Cloud.Servers, "claude-web")
-	os.Remove(e.leftover("ip-claude-web"))
+	_ = os.Remove(e.leftover("ip-claude-web")) // may not exist
 	e.Down("web", false, "CLEANUP")
 	if len(e.Cloud.DNSRecords) != 1 {
 		t.Errorf("dns %v", e.Cloud.DNSRecords)
@@ -278,9 +278,7 @@ func TestStopFlagsLooseFilesInTheWorkspace(t *testing.T) {
 
 func TestStopFlagsAMissingWorkspace(t *testing.T) {
 	e := boot(t)
-	if err := os.Remove(e.ws()); err != nil {
-		t.Fatal(err)
-	}
+	_ = os.Remove(e.ws()) // may not exist
 	r := e.Down("web", false, "no")
 	r.Has(t, "does not exist", "UNSAVED WORK")
 }
@@ -365,7 +363,9 @@ func TestNewServerForgetsTheWorkspacesOfAnEarlierOne(t *testing.T) {
 	e := boot(t)
 	f := e.leftover("workspace-claude-web")
 	old, _ := os.ReadFile(f)
-	os.WriteFile(f, append(old, []byte(filepath.Join(t.TempDir(), "gone")+"\n")...), 0o600)
+	if err := os.WriteFile(f, append(old, []byte(filepath.Join(t.TempDir(), "gone")+"\n")...), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	delete(e.Cloud.Servers, "claude-web") // deleted in the console
 	e.MustUp("web", "")
 	if got := strings.TrimSpace(string(mustRead(t, f))); got != e.ws() {
@@ -432,7 +432,10 @@ func TestStopChecksWorkspacesRecordedOnTheServer(t *testing.T) {
 	e.write(filepath.Join(srv, "proj", "f"), "x\n")
 	f := filepath.Join(e.Srv.Home, ".config", "viper", "workspaces")
 	old, _ := os.ReadFile(f)
-	os.WriteFile(f, append(old, []byte(srv+"\n")...), 0o644) // started from another computer
+	// started from another computer
+	if err := os.WriteFile(f, append(old, []byte(srv+"\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	e.Down("web", false, "no").Has(t, "== "+filepath.Join(srv, "proj")+" ==", "UNSAVED WORK")
 }
 

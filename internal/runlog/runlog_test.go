@@ -1,8 +1,9 @@
-package runlog
+package runlog_test
 
 import (
 	"bytes"
 	"errors"
+	"github.com/pt9912/hetzner-viper/internal/runlog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,15 +12,15 @@ import (
 	"time"
 )
 
-func open(t *testing.T) (*Log, string, *bytes.Buffer, *bytes.Buffer) {
+func open(t *testing.T) (*runlog.Log, string, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
 	state := filepath.Join(t.TempDir(), "state")
 	var out, errb bytes.Buffer
-	l, err := Open(state, "claude-web", "up", &out, &errb)
+	l, err := runlog.Open(state, "claude-web", "up", &out, &errb)
 	if err != nil {
 		t.Fatal(err)
 	}
-	l.now = func() time.Time { return time.Date(2026, 10, 21, 15, 12, 3, 0, time.FixedZone("CEST", 2*3600)) }
+	l.SetNow(func() time.Time { return time.Date(2026, 10, 21, 15, 12, 3, 0, time.FixedZone("CEST", 2*3600)) })
 	return l, state, &out, &errb
 }
 
@@ -46,8 +47,8 @@ func TestEventsHaveTheFormatOfTheScripts(t *testing.T) {
 
 func TestOutputGoesToTheTerminalAndTheTranscript(t *testing.T) {
 	l, state, out, errb := open(t)
-	l.Out.Write([]byte("hello\n"))
-	l.Err.Write([]byte("oops\n"))
+	_, _ = l.Out.Write([]byte("hello\n"))
+	_, _ = l.Err.Write([]byte("oops\n"))
 	l.Close(nil, 0)
 	if out.String() != "hello\n" || errb.String() != "oops\n" {
 		t.Errorf("terminal %q %q", out, errb)

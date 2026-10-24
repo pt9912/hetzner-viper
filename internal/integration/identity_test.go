@@ -1,4 +1,4 @@
-package integration
+package integration_test
 
 import (
 	"os"
@@ -59,7 +59,9 @@ func TestOnlyTheMissingPartComesFromGithub(t *testing.T) {
 func TestDerivedIdentityDoesNotOverwriteAValueAlreadyOnTheServer(t *testing.T) {
 	e := New(t, "")
 	e.withGitHubToken()
-	os.MkdirAll(e.Srv.Home, 0o755)
+	if err := os.MkdirAll(e.Srv.Home, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if out, err := gitCmd("", "config", "--file", filepath.Join(e.Srv.Home, ".gitconfig"), "user.name", "Set By Hand"); err != nil {
 		t.Fatal(out)
 	}

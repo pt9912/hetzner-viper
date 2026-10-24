@@ -1,4 +1,4 @@
-package integration
+package integration_test
 
 import (
 	"fmt"
@@ -43,7 +43,7 @@ func freePort(t *testing.T) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	return l.Addr().(*net.TCPAddr).Port
 }
 
@@ -53,9 +53,11 @@ func (s *realSshd) start(validity string) {
 	t.Helper()
 	s.stop()
 	d := s.dir
-	os.MkdirAll(d, 0o755)
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	for _, f := range []string{"hk", "hk.pub", "hk-cert.pub"} {
-		os.Remove(filepath.Join(d, f))
+		_ = os.Remove(filepath.Join(d, f)) // may not exist
 	}
 	run := func(args ...string) {
 		if out, err := exec.Command("ssh-keygen", args...).CombinedOutput(); err != nil {
@@ -65,17 +67,21 @@ func (s *realSshd) start(validity string) {
 	run("-q", "-t", "ed25519", "-N", "", "-C", "claude-web", "-f", filepath.Join(d, "hk"))
 	run("-q", "-s", filepath.Join(s.e.Home, ".ssh", "hetzner_claude_host_ca"), "-I", "t", "-h", "-n", "claude-web.example.com", "-V", validity, filepath.Join(d, "hk.pub"))
 	pub, _ := os.ReadFile(filepath.Join(s.e.Home, ".ssh", "hetzner-build.pub"))
-	os.WriteFile(filepath.Join(d, "authorized_keys"), pub, 0o600)
+	if err := os.WriteFile(filepath.Join(d, "authorized_keys"), pub, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	cfg := fmt.Sprintf("Port %d\nListenAddress 127.0.0.1\nHostKey %s\nHostCertificate %s\nPidFile %s\nUsePAM no\nStrictModes no\nAuthorizedKeysFile %s\n",
 		s.port, filepath.Join(d, "hk"), filepath.Join(d, "hk-cert.pub"), filepath.Join(d, "pid"), filepath.Join(d, "authorized_keys"))
-	os.WriteFile(filepath.Join(d, "sshd_config"), []byte(cfg), 0o644)
+	if err := os.WriteFile(filepath.Join(d, "sshd_config"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	s.cmd = exec.Command("/usr/sbin/sshd", "-D", "-e", "-f", filepath.Join(d, "sshd_config"))
 	if err := s.cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 50; i++ {
 		if c, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", s.port), 100*time.Millisecond); err == nil {
-			c.Close()
+			_ = c.Close()
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -85,8 +91,8 @@ func (s *realSshd) start(validity string) {
 
 func (s *realSshd) stop() {
 	if s.cmd != nil && s.cmd.Process != nil {
-		s.cmd.Process.Kill()
-		s.cmd.Wait()
+		_ = s.cmd.Process.Kill()
+		_ = s.cmd.Wait()
 		s.cmd = nil
 	}
 }
@@ -94,7 +100,9 @@ func (s *realSshd) stop() {
 func (s *realSshd) pin(pubFile string) {
 	b, _ := os.ReadFile(pubFile)
 	f := strings.Fields(string(b))
-	os.WriteFile(filepath.Join(s.e.Home, ".ssh", "known_hosts_hetzner_claude-web"), []byte("claude-web.example.com "+f[0]+" "+f[1]+"\n"), 0o600)
+	if err := os.WriteFile(filepath.Join(s.e.Home, ".ssh", "known_hosts_hetzner_claude-web"), []byte("claude-web.example.com "+f[0]+" "+f[1]+"\n"), 0o600); err != nil {
+		s.e.t.Fatal(err)
+	}
 }
 
 // config writes the ssh config like start and stop do.
@@ -156,7 +164,7 @@ func TestRealSshTrustLogic(t *testing.T) {
 	}
 
 	s.start("-5m:+7d")
-	os.Remove(filepath.Join(s.e.Home, ".ssh", "known_hosts_hetzner_claude-web"))
+	_ = os.Remove(filepath.Join(s.e.Home, ".ssh", "known_hosts_hetzner_claude-web")) // may not exist
 	s.config()
 	if out, err := s.ssh(); err != nil {
 		t.Errorf("no pin: CA fallback with a valid cert: %v\n%s", err, out)
@@ -181,7 +189,9 @@ func TestRealSshIgnoresTheUsersForwardAgent(t *testing.T) {
 	s.config()
 	home := s.e.Home
 	// the user's own config enables agent forwarding for every host, below our Include line
-	os.WriteFile(filepath.Join(home, ".ssh", "config"), []byte("Include "+filepath.Join(home, ".ssh", "config_hetzner_claude-web")+"\nHost *\n    ForwardAgent yes\n    ForwardX11 yes\n"), 0o600)
+	if err := os.WriteFile(filepath.Join(home, ".ssh", "config"), []byte("Include "+filepath.Join(home, ".ssh", "config_hetzner_claude-web")+"\nHost *\n    ForwardAgent yes\n    ForwardX11 yes\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	cmd := exec.Command("/usr/bin/ssh", "-G", "-F", filepath.Join(home, ".ssh", "config"), "hetzner-claude-web")
 	out, err := cmd.CombinedOutput()
 	if err != nil {

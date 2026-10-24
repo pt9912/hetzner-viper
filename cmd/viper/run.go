@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -11,7 +12,7 @@ import (
 // survive it and wait, so that it can clean up. SIGTERM and SIGHUP are forwarded: they do not
 // reach the child on their own.
 func runChild(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
+	cmd := exec.CommandContext(context.Background(), name, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := cmd.Start(); err != nil {
 		return err

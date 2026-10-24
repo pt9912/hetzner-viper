@@ -1,8 +1,9 @@
-package preflight
+package preflight_test
 
 import (
 	"context"
 	"errors"
+	"github.com/pt9912/hetzner-viper/internal/preflight"
 	"net/http"
 	"strings"
 	"testing"
@@ -75,7 +76,7 @@ func TestGithubTokenChecks(t *testing.T) {
 	out, _, _ = e.run("web", "")
 	mustContain(t, out, "FAIL  classic token lacks scope repo (has: read:org)")
 	e.http = github("", false, true, false) // a fine-grained token sends no scopes
-	out, _, n = e.run("web", "https://github.com/o/r.git")
+	out, _, _ = e.run("web", "https://github.com/o/r.git")
 	mustContain(t, out, "FAIL  token cannot access o/r (fine-grained token without this repository?)")
 	mustNotContain(t, out, "lacks scope")
 	e.http = github("", false, false, true)
@@ -309,13 +310,13 @@ func TestRepositoryChecks(t *testing.T) {
 }
 
 func TestRedaction(t *testing.T) {
-	if got := RedactURL("https://user:tok@host/x"); got != "https://***@host/x" {
+	if got := preflight.RedactURL("https://user:tok@host/x"); got != "https://***@host/x" {
 		t.Error(got)
 	}
-	if got := RedactURL("git@host:o/r.git"); got != "git@host:o/r.git" {
+	if got := preflight.RedactURL("git@host:o/r.git"); got != "git@host:o/r.git" {
 		t.Error(got)
 	}
-	if got := RedactTaps([]string{"a/b", "c/d=https://u:t@h/x"}); got != "a/b c/d=https://***@h/x" {
+	if got := preflight.RedactTaps([]string{"a/b", "c/d=https://u:t@h/x"}); got != "a/b c/d=https://***@h/x" {
 		t.Error(got)
 	}
 }

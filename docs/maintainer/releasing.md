@@ -15,7 +15,7 @@ Die Handbuch-Version (`Version:` im Kopf von `docs/user/handbuch.md`) zählt una
 
 1. Wechseln Sie auf `main` und holen Sie den neuesten Stand: `git switch main && git pull`.
 2. Der Arbeitsbaum ist sauber (`git status`) und alles ist gepusht.
-3. Die Tests laufen lokal: `go vet ./... && go test -race ./...`. Sie brauchen `bash`, `git`, `jq` und `ssh-keygen`; mit `sshd` (und `/run/sshd`) läuft zusätzlich der Test gegen einen echten `sshd`, mit `shellcheck` die Prüfung der Server-Skripte.
+3. Die Prüfungen laufen lokal mit `make check` (gofmt, `go vet`, golangci-lint, `go test -race`). Alles läuft in Containern aus dem `Dockerfile`; nötig sind nur Docker und `make`. Das Test-Image enthält `bash`, `git`, `jq`, `ssh-keygen`, `sshd` und `shellcheck`; fehlt eines, schlägt der Test fehl. `make help` zeigt alle Ziele, `make build` baut `dist/viper`.
 4. Der letzte Lauf des Workflows `tests` auf `main` ist grün: `gh run list --branch main --limit 3`.
 5. **Probelauf gegen echte Dienste** (die Tests laufen nur gegen Fakes): Mit einem kleinen Server (`SERVER_TYPE=cpx02` in `machines/test.env.local`) nacheinander `viper preflight test`, `viper up test`, `viper check test`, `viper ssh test --cmd "echo ok"` und `viper down test`. Das kostet wenige Cent.
 6. Das Handbuch ist aktuell (`docs/user/handbuch.md`):

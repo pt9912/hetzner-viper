@@ -40,7 +40,6 @@ type Server struct {
 	mu      sync.Mutex
 	calls   []string
 	mockDir string
-	hostKey string
 }
 
 // SkipOrFail ends a test that cannot run here because a tool is missing. With VIPER_REQUIRE_TOOLS=1
@@ -76,13 +75,17 @@ func New(t *testing.T, brewPath string) *Server {
 		}
 	}
 	// the sleeps of the scripts do not wait
-	os.WriteFile(filepath.Join(s.mockDir, "sleep"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
+	if err := os.WriteFile(filepath.Join(s.mockDir, "sleep"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	return s
 }
 
 // SetHostKey sets the public host key the server reports (ssh_host_ed25519_key.pub).
 func (s *Server) SetHostKey(pub string) {
-	os.WriteFile(filepath.Join(s.State, "remote-hostkey.pub"), []byte(pub), 0o644)
+	if err := os.WriteFile(filepath.Join(s.State, "remote-hostkey.pub"), []byte(pub), 0o644); err != nil {
+		s.t.Error(err)
+	}
 }
 
 // Calls are the ssh and scp calls so far, one per line, like the Bash mock's calls.log.
@@ -104,10 +107,17 @@ func (s *Server) Exists(name string) bool {
 	return err == nil
 }
 
+// mkdir creates a directory of the sandbox; a failure fails the test.
+func (s *Server) mkdir(dir string) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		s.t.Error(err)
+	}
+}
+
 // Write puts a file under State (for tests that prepare the server).
 func (s *Server) Write(name, content string) {
 	p := filepath.Join(s.State, name)
-	os.MkdirAll(filepath.Dir(p), 0o755)
+	s.mkdir(filepath.Dir(p))
 	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 		s.t.Fatal(err)
 	}
@@ -143,7 +153,7 @@ func (s *Server) log(line string) {
 	f, err := os.OpenFile(filepath.Join(s.State, "calls.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err == nil {
 		fmt.Fprintln(f, line)
-		f.Close()
+		_ = f.Close() // the log is best effort
 	}
 }
 
@@ -152,7 +162,7 @@ func (s *Server) exec(ctx context.Context, stdin string, stdout, stderr io.Write
 	case "scp":
 		s.log("scp " + strings.Join(args, " "))
 		// the deploy key lands in State/scp/<name>
-		os.MkdirAll(filepath.Join(s.State, "scp"), 0o755)
+		s.mkdir(filepath.Join(s.State, "scp"))
 		src, dst := args[len(args)-2], args[len(args)-1]
 		b, err := os.ReadFile(src)
 		if err != nil {
@@ -174,7 +184,7 @@ func (s *Server) exec(ctx context.Context, stdin string, stdout, stderr io.Write
 
 var certRe = regexp.MustCompile(`(?m)^\s*ed25519_certificate:\s*"([^"]*)"`)
 
-func (s *Server) keyscan(args []string, stdout io.Writer) error {
+func (s *Server) keyscan(_ []string, stdout io.Writer) error {
 	if m := certRe.FindStringSubmatch(s.UserData); m != nil {
 		// like the real ssh-keyscan -c: "<type> <base64>" without the comment
 		f := strings.Fields(m[1])
@@ -214,7 +224,20 @@ func (s *Server) bash(ctx context.Context, remote, stdin string, stdout, stderr 
 // the remote shell parses again.
 func (s *Server) ssh(ctx context.Context, stdin string, stdout, stderr io.Writer, args []string) error {
 	s.log("ssh " + strings.Join(args, " "))
-	i, noStdin := 0, false
+	remote, noStdin := s.sshRemote(args)
+	if noStdin {
+		stdin = ""
+	}
+	if failed, err := s.sshFailure(args, stderr); failed {
+		return err
+	}
+	s.prepareSandbox()
+	return s.dispatch(ctx, remote, stdin, stdout, stderr)
+}
+
+// sshRemote splits the arguments of the fake ssh into the remote command and the -n flag.
+func (s *Server) sshRemote(args []string) (remote string, noStdin bool) {
+	i := 0
 	for i < len(args) && !strings.HasPrefix(args[i], "hetzner-") {
 		if args[i] == "-n" {
 			noStdin = true
@@ -224,77 +247,63 @@ func (s *Server) ssh(ctx context.Context, stdin string, stdout, stderr io.Writer
 		}
 		i++
 	}
-	remote := ""
 	if i+1 < len(args) {
 		remote = strings.Join(args[i+1:], " ")
 	}
-	if noStdin {
-		stdin = ""
-	}
-	flag := func(k string) bool { return s.Env[k] != "" }
+	return remote, noStdin
+}
+
+func (s *Server) flag(k string) bool { return s.Env[k] != "" }
+
+// sshFailure is the simulated connection failure (MOCK_SSH_*), if one is switched on.
+func (s *Server) sshFailure(args []string, stderr io.Writer) (bool, error) {
+	flag := s.flag
 	switch {
 	case flag("MOCK_SSH_DOWN"):
-		return fail(stderr, 255, "ssh: connect to host 203.0.113.10 port 22: Connection timed out")
+		return true, fail(stderr, 255, "ssh: connect to host 203.0.113.10 port 22: Connection timed out")
 	case flag("MOCK_SSH_HOSTKEY_FAIL"):
-		return fail(stderr, 255, "Host key verification failed.")
+		return true, fail(stderr, 255, "Host key verification failed.")
 	case flag("MOCK_SSH_AUTH_FAIL"):
-		return fail(stderr, 255, "builder@203.0.113.10: Permission denied (publickey).")
+		return true, fail(stderr, 255, "builder@203.0.113.10: Permission denied (publickey).")
 	}
 	// connection like another device (only the host CA is trusted): MOCK_CA_FAIL = expired certificate
 	if strings.Contains(strings.Join(args, " "), "known_hosts_hetzner_claude_ca") && flag("MOCK_CA_FAIL") {
 		fmt.Fprintln(stderr, "Certificate invalid: expired")
-		return fail(stderr, 255, "Host key verification failed.")
+		return true, fail(stderr, 255, "Host key verification failed.")
 	}
-	os.MkdirAll(s.Home, 0o755)
-	os.MkdirAll(filepath.Join(s.State, "remote-tmp"), 0o755)
-	os.MkdirAll(filepath.Join(s.State, "remote-sysctl.d"), 0o755)
+	return false, nil
+}
+
+// prepareSandbox makes sure the directories and files the fake server needs exist.
+func (s *Server) prepareSandbox() {
+	s.mkdir(s.Home)
+	s.mkdir(filepath.Join(s.State, "remote-tmp"))
+	s.mkdir(filepath.Join(s.State, "remote-sysctl.d"))
 	if !s.Exists("meminfo") {
 		s.Write("meminfo", "MemTotal:        7800000 kB\n")
 	}
+}
+
+// dispatch runs the remote command the way the matching case of the fake server does.
+func (s *Server) dispatch(ctx context.Context, remote, stdin string, stdout, stderr io.Writer) error {
+	flag := s.flag
 	switch {
 	// readiness probe: fake cloud-init/docker, sandboxed marker file
 	case strings.HasPrefix(remote, "cloud-init status"):
 		err := s.bash(ctx, strings.ReplaceAll(remote, "/var/tmp/claude-ready", filepath.Join(s.State, "claude-ready")), "", stdout, stderr)
 		// the pending reboot happens right after this probe, unless the test keeps the flag
 		if !s.Exists("reboot-required.keep") {
-			os.Remove(filepath.Join(s.State, "reboot-required"))
+			_ = os.Remove(filepath.Join(s.State, "reboot-required")) // may not exist
 		}
 		return err
 	// Homebrew's installer (MOCK_BREW_FAIL: it fails); must come before Claude's install.sh
 	case strings.Contains(remote, "Homebrew/install"):
-		if flag("MOCK_BREW_FAIL") {
-			fmt.Fprintln(stdout, "Error: Failed to download")
-			return exitError{1}
-		}
-		// the installer puts brew where the scripts expect it
-		if _, err := os.Stat(s.BrewPath); err != nil {
-			os.MkdirAll(filepath.Dir(s.BrewPath), 0o755)
-			os.Symlink(filepath.Join(s.mockDir, "brew"), s.BrewPath)
-		}
+		return s.installBrew(stdout)
 	// code-server's installer (MOCK_CODE_SERVER_FAIL: it fails); before Claude's install.sh
 	case strings.Contains(remote, "code-server.dev/install.sh"):
-		if flag("MOCK_CODE_SERVER_FAIL") {
-			fmt.Fprintln(stdout, "Error: no .deb for this system")
-			return exitError{1}
-		}
-		s.Write("code-server-installed", "")
+		return s.installCodeServer(stdout)
 	case strings.Contains(remote, "install.sh"):
-		if flag("MOCK_INSTALL_FAIL") {
-			return exitError{1}
-		}
-		// MOCK_INSTALL_FAIL_TIMES=N: the first N attempts fail (rate limit), then it works
-		if n := s.Env["MOCK_INSTALL_FAIL_TIMES"]; n != "" {
-			var limit, done int
-			fmt.Sscan(n, &limit)
-			fmt.Sscan(s.File("install-attempts"), &done)
-			s.Write("install-attempts", fmt.Sprint(done+1)+"\n")
-			if done >= limit {
-				// works
-			} else {
-				return fail(stderr, 22, "curl: (22) The requested URL returned error: 429")
-			}
-		}
-		s.Write("claude-ready", "")
+		return s.installClaude(stderr)
 	// Claude token login: run it for real in the sandbox home (stdin = token)
 	case strings.Contains(remote, "viper/claude.env"):
 		return s.bash(ctx, remote, stdin, stdout, stderr)
@@ -319,5 +328,51 @@ func (s *Server) ssh(ctx context.Context, stdin string, stdout, stderr io.Writer
 		}
 		return s.bash(ctx, remote, stdin, stdout, stderr)
 	}
+	return nil
+}
+
+// installBrew is Homebrew's installer (MOCK_BREW_FAIL: it fails).
+func (s *Server) installBrew(stdout io.Writer) error {
+	flag := s.flag
+	if flag("MOCK_BREW_FAIL") {
+		fmt.Fprintln(stdout, "Error: Failed to download")
+		return exitError{1}
+	}
+	// the installer puts brew where the scripts expect it
+	if _, err := os.Stat(s.BrewPath); err != nil {
+		s.mkdir(filepath.Dir(s.BrewPath))
+		_ = os.Symlink(filepath.Join(s.mockDir, "brew"), s.BrewPath)
+	}
+	return nil
+}
+
+// installCodeServer is code-server's installer (MOCK_CODE_SERVER_FAIL: it fails).
+func (s *Server) installCodeServer(stdout io.Writer) error {
+	flag := s.flag
+	if flag("MOCK_CODE_SERVER_FAIL") {
+		fmt.Fprintln(stdout, "Error: no .deb for this system")
+		return exitError{1}
+	}
+	s.Write("code-server-installed", "")
+	return nil
+}
+
+// installClaude is Claude's install.sh (MOCK_INSTALL_FAIL, MOCK_INSTALL_FAIL_TIMES).
+func (s *Server) installClaude(stderr io.Writer) error {
+	flag := s.flag
+	if flag("MOCK_INSTALL_FAIL") {
+		return exitError{1}
+	}
+	// MOCK_INSTALL_FAIL_TIMES=N: the first N attempts fail (rate limit), then it works
+	if n := s.Env["MOCK_INSTALL_FAIL_TIMES"]; n != "" {
+		var limit, done int
+		_, _ = fmt.Sscan(n, &limit)
+		_, _ = fmt.Sscan(s.File("install-attempts"), &done)
+		s.Write("install-attempts", fmt.Sprint(done+1)+"\n")
+		if done < limit {
+			return fail(stderr, 22, "curl: (22) The requested URL returned error: 429")
+		}
+	}
+	s.Write("claude-ready", "")
 	return nil
 }

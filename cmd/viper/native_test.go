@@ -17,9 +17,11 @@ import (
 func TestSetupResolvesARelativeKeyInTheSettingsDirectory(t *testing.T) {
 	env, _ := nativeEnv(t)
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\nSSH_KEY=keys/rel\n"), 0o600)
-	calls := fakeTools(t)
-	if err := setup(&options{dir: dir}, env, io.Discard); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\nSSH_KEY=keys/rel\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls, h := fakeTools(t)
+	if err := setup(&options{h: h, dir: dir}, env, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if got := (*calls)[0][4]; got != filepath.Join(dir, "keys", "rel") {
@@ -30,9 +32,11 @@ func TestSetupResolvesARelativeKeyInTheSettingsDirectory(t *testing.T) {
 func TestSetupRefusesADomainThatIsNotOne(t *testing.T) {
 	env, home := nativeEnv(t)
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=\"a.com\nb\"\n"), 0o600)
-	calls := fakeTools(t)
-	if err := setup(&options{dir: dir}, env, io.Discard); err == nil || !strings.Contains(err.Error(), "DNS_DOMAIN must be a domain") {
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=\"a.com\nb\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls, h := fakeTools(t)
+	if err := setup(&options{h: h, dir: dir}, env, io.Discard); err == nil || !strings.Contains(err.Error(), "DNS_DOMAIN must be a domain") {
 		t.Errorf("got %v", err)
 	}
 	if len(*calls) != 0 || exists(filepath.Join(home, ".ssh")) {
@@ -43,10 +47,12 @@ func TestSetupRefusesADomainThatIsNotOne(t *testing.T) {
 func TestMissingOpenSSHIsReportedBeforeAnythingIsCreated(t *testing.T) {
 	env, home := nativeEnv(t)
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\n"), 0o600)
-	fakeTools(t)
-	lookPath = func(string) (string, error) { return "", errors.New("not found") }
-	err := setup(&options{dir: dir}, env, io.Discard)
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, h := fakeTools(t)
+	h.lookPath = func(string) (string, error) { return "", errors.New("not found") }
+	err := setup(&options{h: h, dir: dir}, env, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "OpenSSH") || !strings.Contains(err.Error(), "ssh-keygen") {
 		t.Fatalf("got %v", err)
 	}
@@ -54,16 +60,26 @@ func TestMissingOpenSSHIsReportedBeforeAnythingIsCreated(t *testing.T) {
 		t.Error("~/.ssh was created before the check")
 	}
 	// ssh: the same
-	os.MkdirAll(filepath.Join(home, ".ssh"), 0o700)
-	os.WriteFile(filepath.Join(home, ".ssh", "config_hetzner_claude-web"), nil, 0o600)
-	if err := connect(&options{dir: dir, machine: "web"}, env, false); err == nil || !strings.Contains(err.Error(), "OpenSSH") {
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".ssh", "config_hetzner_claude-web"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := connect(&options{h: h, dir: dir, machine: "web"}, env, false); err == nil || !strings.Contains(err.Error(), "OpenSSH") {
 		t.Errorf("ssh: got %v", err)
 	}
 	// keys that exist need no ssh-keygen
-	os.WriteFile(filepath.Join(home, ".ssh", "hetzner-build"), nil, 0o600)
-	os.WriteFile(filepath.Join(home, ".ssh", "hetzner_claude_host_ca"), nil, 0o600)
-	os.WriteFile(filepath.Join(home, ".ssh", "hetzner_claude_host_ca.pub"), []byte("ssh-ed25519 AAAA c\n"), 0o644)
-	if err := setup(&options{dir: dir}, env, io.Discard); err != nil {
+	if err := os.WriteFile(filepath.Join(home, ".ssh", "hetzner-build"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".ssh", "hetzner_claude_host_ca"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".ssh", "hetzner_claude_host_ca.pub"), []byte("ssh-ed25519 AAAA c\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := setup(&options{h: h, dir: dir}, env, io.Discard); err != nil {
 		t.Errorf("existing keys: %v", err)
 	}
 }
@@ -71,18 +87,20 @@ func TestMissingOpenSSHIsReportedBeforeAnythingIsCreated(t *testing.T) {
 func TestSetupCreatesTheTemplateOnlyOnce(t *testing.T) {
 	env, _ := nativeEnv(t)
 	dir := t.TempDir()
-	fakeTools(t)
+	_, h := fakeTools(t)
 	var out strings.Builder
-	setup(&options{dir: dir}, env, &out)
+	_ = setup(&options{h: h, dir: dir}, env, &out)
 	if !strings.Contains(out.String(), "Created ") {
 		t.Errorf("says it created the file: %q", out.String())
 	}
 	if st, err := os.Stat(filepath.Join(dir, ".env.local")); err != nil || st.Mode().Perm() != 0o600 {
 		t.Errorf("a new .env.local holds tokens and must be private: %v %v", st, err)
 	}
-	os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=mine.example.com\n"), 0o600)
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=mine.example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	out.Reset()
-	if err := setup(&options{dir: dir}, env, &out); err != nil || strings.Contains(out.String(), "Created ") {
+	if err := setup(&options{h: h, dir: dir}, env, &out); err != nil || strings.Contains(out.String(), "Created ") {
 		t.Errorf("an existing file is kept: %v %q", err, out.String())
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, ".env.local")); string(b) != "DNS_DOMAIN=mine.example.com\n" {
@@ -100,7 +118,9 @@ func TestRealSshKeygenAcceptsWhatSetupAsks(t *testing.T) {
 	}
 	env, home := nativeEnv(t)
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\n"), 0o600)
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := setup(&options{dir: dir}, env, io.Discard); err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +145,9 @@ func TestChildExitCodesAndSignals(t *testing.T) {
 	// SIGTERM sent to viper is passed on to the child
 	go func() {
 		time.Sleep(300 * time.Millisecond)
-		syscall.Kill(os.Getpid(), syscall.SIGTERM)
+		if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+			t.Error(err)
+		}
 	}()
 	start := time.Now()
 	err = runChild("sleep", "30")
@@ -138,7 +160,9 @@ func TestChildExitCodesAndSignals(t *testing.T) {
 	// SIGINT (Ctrl-C) reaches the child with the terminal, not through us; viper only survives it
 	go func() {
 		time.Sleep(300 * time.Millisecond)
-		syscall.Kill(os.Getpid(), syscall.SIGINT)
+		if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
+			t.Error(err)
+		}
 	}()
 	if err := runChild("sleep", "1"); err != nil {
 		t.Errorf("viper survives SIGINT and waits: %v", err)
@@ -148,26 +172,34 @@ func TestChildExitCodesAndSignals(t *testing.T) {
 func TestLogReadsThePrefixAndShowsTheMachine(t *testing.T) {
 	env, home := nativeEnv(t)
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\nSERVER_PREFIX=cs # c\n"), 0o600)
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\nSERVER_PREFIX=cs # c\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	state := filepath.Join(home, ".local", "state", "hetzner-claude")
-	os.MkdirAll(filepath.Join(state, "logs"), 0o700)
-	os.WriteFile(filepath.Join(state, "events.log"), []byte("t cs-web up ready\nt claude-api up ready\n"), 0o600)
-	os.WriteFile(filepath.Join(state, "logs", "cs-web.log"), []byte("full output\n"), 0o600)
+	if err := os.MkdirAll(filepath.Join(state, "logs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state, "events.log"), []byte("t cs-web up ready\nt claude-api up ready\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state, "logs", "cs-web.log"), []byte("full output\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	var out strings.Builder
 	if err := showLog(&options{dir: dir, machine: "web"}, env, &out); err != nil || out.String() != "t cs-web up ready\n" {
 		t.Errorf("%q %v", out.String(), err)
 	}
 	out.Reset()
-	showLog(&options{dir: dir, machine: "web", full: true}, env, &out)
+	_ = showLog(&options{dir: dir, machine: "web", full: true}, env, &out)
 	if out.String() != "full output\n" {
 		t.Errorf("%q", out.String())
 	}
 	out.Reset()
-	showLog(&options{dir: dir}, env, &out)
+	_ = showLog(&options{dir: dir}, env, &out)
 	if !strings.Contains(out.String(), "claude-api") || !strings.Contains(out.String(), "cs-web") {
 		t.Errorf("all: %q", out.String())
 	}
-	if commands["log"].run == nil {
+	if commands()["log"].run == nil {
 		t.Error("log is native")
 	}
 }
@@ -233,9 +265,9 @@ func TestAskerNeverConfirmsAfterAnInterruption(t *testing.T) {
 }
 
 func TestUpDownAndCheckNeedOpenSSHBeforeAnythingHappens(t *testing.T) {
-	fakeTools(t)
+	_, h := fakeTools(t)
 	missing := map[string]bool{}
-	lookPath = func(p string) (string, error) {
+	h.lookPath = func(p string) (string, error) {
 		if missing[p] {
 			return "", errors.New("not found")
 		}
@@ -249,7 +281,7 @@ func TestUpDownAndCheckNeedOpenSSHBeforeAnythingHappens(t *testing.T) {
 		{"up", "ssh", nativeUp}, {"up", "ssh-keygen", nativeUp}, {"up", "scp", nativeUp}, {"down", "ssh", nativeDown}, {"check", "ssh", nativeCheck},
 	} {
 		missing = map[string]bool{c.program: true}
-		err := c.run(&options{machine: "web", dir: t.TempDir()})
+		err := c.run(&options{h: h, machine: "web", dir: t.TempDir()})
 		if err == nil || !strings.Contains(err.Error(), c.program+" not found") || !strings.Contains(err.Error(), "OpenSSH") {
 			t.Errorf("%s without %s: %v", c.command, c.program, err)
 		}

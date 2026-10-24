@@ -12,15 +12,6 @@ import (
 	"testing"
 )
 
-func mustParse(t *testing.T, args ...string) (string, options) {
-	t.Helper()
-	name, o, err := parse(args)
-	if err != nil {
-		t.Fatalf("parse %v: %v", args, err)
-	}
-	return name, o
-}
-
 func TestAMissingMachineNameGivesTheUsage(t *testing.T) {
 	for _, name := range []string{"preflight", "up", "check", "ssh", "down", "dns"} {
 		_, _, err := parse([]string{name})
@@ -51,12 +42,11 @@ func nativeEnv(t *testing.T) (config.Env, string) {
 }
 
 // fakeTools records the programs run on the host; ssh-keygen creates the key files it would.
-func fakeTools(t *testing.T) *[][]string {
+func fakeTools(t *testing.T) (*[][]string, *host) {
 	t.Helper()
 	var calls [][]string
-	oldRun, oldExec, oldLook := runTool, execTool, lookPath
-	t.Cleanup(func() { runTool, execTool, lookPath = oldRun, oldExec, oldLook })
-	lookPath = func(string) (string, error) { return "/usr/bin/tool", nil }
+	h := defaultHost()
+	h.lookPath = func(string) (string, error) { return "/usr/bin/tool", nil }
 	record := func(name string, args ...string) error {
 		calls = append(calls, append([]string{name}, args...))
 		if name == "ssh-keygen" {
@@ -67,20 +57,22 @@ func fakeTools(t *testing.T) *[][]string {
 			if err := os.MkdirAll(filepath.Dir(f), 0o700); err != nil {
 				return err
 			}
-			os.WriteFile(f, []byte("PRIVATE\n"), 0o600)
+			if err := os.WriteFile(f, []byte("PRIVATE\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
 			return os.WriteFile(f+".pub", []byte("ssh-ed25519 AAAAkey comment\n"), 0o644)
 		}
 		return nil
 	}
-	runTool, execTool = record, record
-	return &calls
+	h.runTool, h.execTool = record, record
+	return &calls, h
 }
 
 func TestSetupCreatesTheKeysAndTrustsTheCA(t *testing.T) {
 	env, home := nativeEnv(t)
 	dir := t.TempDir()
-	calls := fakeTools(t)
-	o := &options{dir: dir}
+	calls, h := fakeTools(t)
+	o := &options{h: h, dir: dir}
 	var out strings.Builder
 	// no .env.local yet: created from the template (it has no DNS_DOMAIN)
 	if err := setup(o, env, &out); err == nil || !strings.Contains(err.Error(), "Set DNS_DOMAIN in .env.local") {
@@ -93,7 +85,9 @@ func TestSetupCreatesTheKeysAndTrustsTheCA(t *testing.T) {
 	if len(*calls) != 0 {
 		t.Errorf("nothing generated without a domain: %q", *calls)
 	}
-	os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\n"), 0o600)
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := setup(o, env, &out); err != nil {
 		t.Fatal(err)
 	}
@@ -122,9 +116,11 @@ func TestSetupCreatesTheKeysAndTrustsTheCA(t *testing.T) {
 func TestSetupUsesTheConfiguredKeyPath(t *testing.T) {
 	env, home := nativeEnv(t)
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\nSSH_KEY=~/keys/mine\n"), 0o600)
-	calls := fakeTools(t)
-	if err := setup(&options{dir: dir}, env, io.Discard); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\nSSH_KEY=~/keys/mine\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls, h := fakeTools(t)
+	if err := setup(&options{h: h, dir: dir}, env, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if (*calls)[0][4] != filepath.Join(home, "keys", "mine") {
@@ -135,15 +131,21 @@ func TestSetupUsesTheConfiguredKeyPath(t *testing.T) {
 func TestConnectUsesTheMachinesOwnSshConfig(t *testing.T) {
 	env, home := nativeEnv(t)
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\n"), 0o600)
-	calls := fakeTools(t)
-	o := &options{dir: dir, machine: "web"}
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls, h := fakeTools(t)
+	o := &options{h: h, dir: dir, machine: "web"}
 	if err := connect(o, env, true); err == nil || err.Error() != "No SSH config for claude-web: run viper up web first" {
 		t.Fatalf("got %v", err)
 	}
 	cfg := filepath.Join(home, ".ssh", "config_hetzner_claude-web")
-	os.MkdirAll(filepath.Dir(cfg), 0o700)
-	os.WriteFile(cfg, nil, 0o600)
+	if err := os.MkdirAll(filepath.Dir(cfg), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := connect(o, env, true); err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +169,9 @@ func TestConnectUsesTheMachinesOwnSshConfig(t *testing.T) {
 func TestDnsNamePrintsTheMachinesName(t *testing.T) {
 	env, _ := nativeEnv(t)
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\nSERVER_PREFIX=lab\n"), 0o600)
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\nSERVER_PREFIX=lab\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	var out strings.Builder
 	if err := dnsName(&options{dir: dir, machine: "web"}, env, &out); err != nil || out.String() != "lab-web.example.com\n" {
 		t.Errorf("%q %v", out.String(), err)

@@ -19,8 +19,8 @@ type exitStatus int
 
 func (e exitStatus) Error() string { return fmt.Sprintf("exit status %d", int(e)) }
 
-// replaced by the tests
-var newPreflightDeps = func(c *config.Config) preflight.Deps {
+// defaultPreflightDeps are the real dependencies of preflight.
+func defaultPreflightDeps(c *config.Config) preflight.Deps {
 	d := preflight.Deps{
 		Hetzner: hetzner.New(c.Get("HCLOUD_TOKEN"), ""),
 		DNS:     &cloudflare.Client{Token: c.Get("CLOUDFLARE_API_TOKEN"), ZoneID: c.Get("CLOUDFLARE_ZONE_ID")},
@@ -48,7 +48,7 @@ func runPreflight(ctx context.Context, o *options, env config.Env, stdout, stder
 	}
 	ctx, stop := notifyContext(ctx)
 	defer stop()
-	failures := preflight.Run(ctx, c, o.repo, newPreflightDeps(c), l.Out, l.Err)
+	failures := preflight.Run(ctx, c, o.repo, o.host().newPreflightDeps(c), l.Out, l.Err)
 	switch {
 	case ctx.Err() != nil:
 		l.Interrupted()

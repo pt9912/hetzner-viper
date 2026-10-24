@@ -37,6 +37,9 @@ func (p *parser) errf(format string, a ...any) error {
 
 func (p *parser) eof() bool { return p.i >= len(p.s) }
 
+// isWordEnd reports whether c ends an unquoted word: whitespace, a line end or ';'.
+func isWordEnd(c byte) bool { return c == '\n' || isSpace(c) || c == '\r' || c == ';' }
+
 func isSpace(c byte) bool { return c == ' ' || c == '\t' }
 func isNameStart(c byte) bool {
 	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
@@ -76,20 +79,28 @@ func (p *parser) name() string {
 	return p.s[start:p.i]
 }
 
-func (p *parser) statement() error {
-	name := p.name()
+// target reads the variable name of a statement, after an optional "export ".
+func (p *parser) target() (name string, exported bool, err error) {
+	name = p.name()
 	if name == "" {
-		return p.errf("not an assignment")
+		return "", false, p.errf("not an assignment")
 	}
-	exported := false
 	if name == "export" && !p.eof() && isSpace(p.s[p.i]) {
 		for !p.eof() && isSpace(p.s[p.i]) {
 			p.i++
 		}
 		if name = p.name(); name == "" {
-			return p.errf("not an assignment")
+			return "", false, p.errf("not an assignment")
 		}
 		exported = true
+	}
+	return name, exported, nil
+}
+
+func (p *parser) statement() error {
+	name, exported, err := p.target()
+	if err != nil {
+		return err
 	}
 	if p.eof() || p.s[p.i] != '=' {
 		// `export NAME` only marks a variable for export, which sourcing here does anyway
@@ -117,64 +128,85 @@ func (p *parser) value(name string) (string, error) {
 	return "", p.errf("variable %s is not set", name)
 }
 
+// singleQuoted copies a '...' literal at p.i.
+func (p *parser) singleQuoted(b *strings.Builder) error {
+	end := strings.IndexByte(p.s[p.i+1:], '\'')
+	if end < 0 {
+		return p.errf("unterminated '")
+	}
+	lit := p.s[p.i+1 : p.i+1+end]
+	b.WriteString(lit)
+	p.line += strings.Count(lit, "\n")
+	p.i += end + 2
+	return nil
+}
+
+// backslash handles a backslash outside quotes at p.i.
+func (p *parser) backslash(b *strings.Builder) {
+	if p.i+1 >= len(p.s) {
+		b.WriteByte('\\') // a backslash at the very end stays
+		p.i++
+		return
+	}
+	if p.s[p.i+1] == '\n' { // line continuation
+		p.line++
+	} else {
+		b.WriteByte(p.s[p.i+1])
+	}
+	p.i += 2
+}
+
+// tilde expands a ~ at p.i that starts a word or follows a colon.
+func (p *parser) tilde(b *strings.Builder) error {
+	next := byte('\n')
+	if p.i+1 < len(p.s) {
+		next = p.s[p.i+1]
+	}
+	switch {
+	case next == '/' || next == '\n' || next == ';' || next == ':' || isSpace(next):
+		home, err := p.value("HOME")
+		if err != nil {
+			return err
+		}
+		b.WriteString(home)
+	case isNameChar(next) || next == '+' || next == '-':
+		return p.errf("unsupported ~ form (only ~ and ~/...)")
+	default:
+		b.WriteByte('~')
+	}
+	p.i++
+	return nil
+}
+
 // word reads the value of an assignment up to unquoted whitespace, ';' or a line end.
 func (p *parser) word() (string, error) {
 	var b strings.Builder
-	start, afterColon := true, false
+	tildeOK := true // a ~ expands at the start of the word and after a colon
 	for !p.eof() {
 		c := p.s[p.i]
 		colon := false
 		switch {
-		case c == '\n' || isSpace(c) || c == '\r' || c == ';':
+		case isWordEnd(c):
 			return b.String(), nil
 		case c == '\'':
-			end := strings.IndexByte(p.s[p.i+1:], '\'')
-			if end < 0 {
-				return "", p.errf("unterminated '")
+			if err := p.singleQuoted(&b); err != nil {
+				return "", err
 			}
-			lit := p.s[p.i+1 : p.i+1+end]
-			b.WriteString(lit)
-			p.line += strings.Count(lit, "\n")
-			p.i += end + 2
 		case c == '"':
 			p.i++
 			if err := p.double(&b, p.line); err != nil {
 				return "", err
 			}
 		case c == '\\':
-			if p.i+1 >= len(p.s) {
-				b.WriteByte(c) // a backslash at the very end stays
-				p.i++
-				break
-			}
-			if p.s[p.i+1] == '\n' { // line continuation
-				p.line++
-			} else {
-				b.WriteByte(p.s[p.i+1])
-			}
-			p.i += 2
+			p.backslash(&b)
 		case c == '$':
 			if err := p.dollar(&b, false); err != nil {
 				return "", err
 			}
-		case c == '~' && (start || afterColon):
-			next := byte('\n')
-			if p.i+1 < len(p.s) {
-				next = p.s[p.i+1]
+		case c == '~' && tildeOK:
+			if err := p.tilde(&b); err != nil {
+				return "", err
 			}
-			switch {
-			case next == '/' || next == '\n' || next == ';' || next == ':' || isSpace(next):
-				home, err := p.value("HOME")
-				if err != nil {
-					return "", err
-				}
-				b.WriteString(home)
-			case isNameChar(next) || next == '+' || next == '-':
-				return "", p.errf("unsupported ~ form (only ~ and ~/...)")
-			default:
-				b.WriteByte(c)
-			}
-			p.i++
 		case strings.IndexByte("`|&<>()", c) >= 0:
 			return "", p.errf("unsupported shell syntax %q (quote the value)", string(c))
 		default:
@@ -182,7 +214,7 @@ func (p *parser) word() (string, error) {
 			p.i++
 			colon = c == ':'
 		}
-		start, afterColon = false, colon
+		tildeOK = colon
 	}
 	return b.String(), nil
 }
@@ -227,6 +259,30 @@ func (p *parser) double(b *strings.Builder, startLine int) error {
 	return p.errf("unterminated \"")
 }
 
+// isSpecialParam reports whether $c is a special parameter ($$, $?, $1 ...), which is not supported.
+func isSpecialParam(c byte) bool {
+	return c == '$' || c == '?' || c == '!' || c == '@' || c == '*' || c == '#' || c == '-' || (c >= '0' && c <= '9')
+}
+
+// braced expands ${NAME} at p.i (the '{').
+func (p *parser) braced(b *strings.Builder) error {
+	end := strings.IndexByte(p.s[p.i:], '}')
+	if end < 0 {
+		return p.errf("unterminated ${")
+	}
+	name := p.s[p.i+1 : p.i+end]
+	if name == "" || !isNameStart(name[0]) || strings.IndexFunc(name, func(r rune) bool { return r > 127 || !isNameChar(byte(r)) }) >= 0 {
+		return p.errf("unsupported expansion ${...} (only ${NAME})")
+	}
+	v, err := p.value(name)
+	if err != nil {
+		return err
+	}
+	b.WriteString(v)
+	p.i += end + 1
+	return nil
+}
+
 // dollar expands $NAME and ${NAME} at p.i.
 func (p *parser) dollar(b *strings.Builder, inQuotes bool) error {
 	p.i++ // $
@@ -236,20 +292,7 @@ func (p *parser) dollar(b *strings.Builder, inQuotes bool) error {
 	}
 	switch c := p.s[p.i]; {
 	case c == '{':
-		end := strings.IndexByte(p.s[p.i:], '}')
-		if end < 0 {
-			return p.errf("unterminated ${")
-		}
-		name := p.s[p.i+1 : p.i+end]
-		if name == "" || !isNameStart(name[0]) || strings.IndexFunc(name, func(r rune) bool { return r > 127 || !isNameChar(byte(r)) }) >= 0 {
-			return p.errf("unsupported expansion ${...} (only ${NAME})")
-		}
-		v, err := p.value(name)
-		if err != nil {
-			return err
-		}
-		b.WriteString(v)
-		p.i += end + 1
+		return p.braced(b)
 	case isNameStart(c):
 		name := p.name()
 		v, err := p.value(name)
@@ -261,7 +304,7 @@ func (p *parser) dollar(b *strings.Builder, inQuotes bool) error {
 		return p.errf("unsupported shell syntax: command substitution")
 	case (c == '\'' || c == '"') && !inQuotes:
 		return p.errf("unsupported shell syntax: $%c...%c quoting", c, c)
-	case c == '$' || c == '?' || c == '!' || c == '@' || c == '*' || c == '#' || c == '-' || (c >= '0' && c <= '9'):
+	case isSpecialParam(c):
 		return p.errf("unsupported expansion $%c", c)
 	default:
 		b.WriteByte('$') // a lone $ is literal

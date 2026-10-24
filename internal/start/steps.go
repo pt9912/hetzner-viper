@@ -1,6 +1,7 @@
 package start
 
 import (
+	"context"
 	"os"
 	"strconv"
 	"strings"
@@ -14,14 +15,14 @@ import (
 
 // loginKey makes sure the login key is in the project and returns the name it has there.
 // Hetzner allows each public key only once per project: reuse it under whatever name it has.
-func (r *runner) loginKey() (string, int, error) {
+func (r *runner) loginKey(ctx context.Context) (string, int, error) {
 	c := r.c
 	fp := preflight.FingerprintMD5(c.SSHKey + ".pub")
 	if fp == "" {
 		code, err := r.fail("cannot read the public key %s.pub", c.SSHKey)
 		return "", code, err
 	}
-	keys, err := r.d.Hetzner.SSHKeys(r.ctx)
+	keys, err := r.d.Hetzner.SSHKeys(ctx)
 	if err != nil {
 		code, err := r.fail("Hetzner: listing the SSH keys failed (check HCLOUD_TOKEN / project / network)")
 		return "", code, err
@@ -41,7 +42,7 @@ func (r *runner) loginKey() (string, int, error) {
 	if err != nil {
 		return "", 1, err
 	}
-	if err := r.d.Hetzner.SSHKeyCreate(r.ctx, c.KeyName, string(pub)); err != nil {
+	if err := r.d.Hetzner.SSHKeyCreate(ctx, c.KeyName, string(pub)); err != nil {
 		code, err := r.fail("uploading the SSH key %s failed: %s", c.KeyName, hetzner.Error(err))
 		return "", code, err
 	}
@@ -52,14 +53,14 @@ func (r *runner) loginKey() (string, int, error) {
 // firewall makes sure the shared firewall exists and has the rules for SSH (TCP 22) and ICMP
 // (ping, for diagnosis) from SSH_ALLOWED_CIDRS. A missing rule is added (also to an existing
 // firewall); other rules are left alone.
-func (r *runner) firewall() (int, error) {
+func (r *runner) firewall(ctx context.Context) (int, error) {
 	c := r.c
-	rules, exists, err := r.d.Hetzner.FirewallRules(r.ctx, c.FirewallName)
+	rules, exists, err := r.d.Hetzner.FirewallRules(ctx, c.FirewallName)
 	if err != nil {
 		return r.fail("Hetzner: listing the firewalls failed (check HCLOUD_TOKEN / project / network): %s", hetzner.Error(err))
 	}
 	if !exists {
-		if err := r.d.Hetzner.FirewallCreate(r.ctx, c.FirewallName); err != nil {
+		if err := r.d.Hetzner.FirewallCreate(ctx, c.FirewallName); err != nil {
 			return r.fail("creating the firewall %s failed: %s", c.FirewallName, hetzner.Error(err))
 		}
 		r.printf("Firewall %s created.\n", c.FirewallName)
@@ -76,12 +77,12 @@ func (r *runner) firewall() (int, error) {
 	cidrs := strings.Split(c.Setting("SSH_ALLOWED_CIDRS", "0.0.0.0/0,::/0"), ",")
 	hadBoth := has("tcp", "22") && has("icmp", "")
 	if !has("tcp", "22") {
-		if err := r.d.Hetzner.FirewallAddRule(r.ctx, c.FirewallName, hetzner.FirewallRule{Direction: "in", Protocol: "tcp", Port: "22", SourceIPs: cidrs}); err != nil {
+		if err := r.d.Hetzner.FirewallAddRule(ctx, c.FirewallName, hetzner.FirewallRule{Direction: "in", Protocol: "tcp", Port: "22", SourceIPs: cidrs}); err != nil {
 			return r.fail("adding the SSH rule to firewall %s failed: %s", c.FirewallName, hetzner.Error(err))
 		}
 	}
 	if !has("icmp", "") {
-		if err := r.d.Hetzner.FirewallAddRule(r.ctx, c.FirewallName, hetzner.FirewallRule{Direction: "in", Protocol: "icmp", SourceIPs: cidrs}); err != nil {
+		if err := r.d.Hetzner.FirewallAddRule(ctx, c.FirewallName, hetzner.FirewallRule{Direction: "in", Protocol: "icmp", SourceIPs: cidrs}); err != nil {
 			return r.fail("adding the ICMP rule to firewall %s failed: %s", c.FirewallName, hetzner.Error(err))
 		}
 	}
@@ -93,9 +94,9 @@ func (r *runner) firewall() (int, error) {
 
 // server creates the server, with a host key signed by the host CA, or reuses the existing one.
 // reused is true if it counts as set up by a completed run.
-func (r *runner) server(ca, keyName, ipadKeyFile string) (srv *hetzner.Server, reused bool, code int, err error) {
+func (r *runner) server(ctx context.Context, ca, keyName, ipadKeyFile string) (srv *hetzner.Server, reused bool, code int, err error) {
 	c := r.c
-	existing, err := r.d.Hetzner.ServerByName(r.ctx, c.ServerName)
+	existing, err := r.d.Hetzner.ServerByName(ctx, c.ServerName)
 	if err != nil {
 		code, err := r.fail("Hetzner: listing the servers failed (check HCLOUD_TOKEN / project / network): %s", hetzner.Error(err))
 		return nil, false, code, err
@@ -140,8 +141,8 @@ func (r *runner) server(ca, keyName, ipadKeyFile string) (srv *hetzner.Server, r
 	if err := os.WriteFile(c.KnownPin, []byte(hk.KnownHostsLine+"\n"), 0o600); err != nil {
 		return nil, false, 1, err
 	}
-	os.Chmod(c.KnownPin, 0o600)
-	created, err := r.d.Hetzner.ServerCreate(r.ctx, hetzner.ServerSpec{
+	_ = os.Chmod(c.KnownPin, 0o600)
+	created, err := r.d.Hetzner.ServerCreate(ctx, hetzner.ServerSpec{
 		Name: c.ServerName, Type: c.ServerType, Location: c.ServerLocation, Image: c.ServerImage,
 		SSHKey: keyName, Firewall: c.FirewallName, UserData: userData,
 	})
@@ -151,11 +152,11 @@ func (r *runner) server(ca, keyName, ipadKeyFile string) (srv *hetzner.Server, r
 	}
 	r.printf("Server %s created.\n", c.ServerName)
 	id := fmtID(created.ID)
-	os.WriteFile(c.IDState, []byte(id+"\n"), 0o600)
+	_ = os.WriteFile(c.IDState, []byte(id+"\n"), 0o600)
 	r.lg.Event("server created id=%s", id)
 	// a new server has none of the workspaces an earlier one with this name had
-	os.Remove(c.WorkspaceState)
-	os.Remove(c.ReadyState)
+	_ = os.Remove(c.WorkspaceState) // best effort: may not exist
+	_ = os.Remove(c.ReadyState)
 	return r.ipOrFail(created, false)
 }
 
@@ -192,52 +193,28 @@ func lineValue(s, key string) string {
 	return ""
 }
 
-// waitForServer waits until ssh works and cloud-init is done. While a new server boots, sshd may
-// briefly present a key other than the provisioned one and builder may not exist yet, so host-key
-// and auth errors are retried too. A reused server is already up: those errors are permanent
-// there and end the wait at once.
-func (r *runner) waitForServer(id, ip string, reused bool) (string, int, error) {
+// rebootWait counts the waits for the reboot that follows a new server's updates.
+type rebootWait struct {
+	waits     int
+	announced bool
+}
+
+// wait reports whether to keep waiting for the reboot (at most 36 times), saying so once.
+func (w *rebootWait) wait(r *runner) bool {
+	w.waits++
+	if w.waits > 36 {
+		return false
+	}
+	if !w.announced {
+		r.printf("Updates need a reboot; waiting for the server to restart ...\n")
+		w.announced = true
+	}
+	return true
+}
+
+// reportSSHFailure explains why the wait for ssh ended without success.
+func (r *runner) reportSSHFailure(errMsg string) {
 	c := r.c
-	r.printf("Waiting for SSH and cloud-init ...\n")
-	status, errMsg := "", ""
-	announced, rebootWaits := false, 0
-	for i := 1; i <= 120; i++ {
-		if r.ctx.Err() != nil {
-			return "", 1, ErrShown
-		}
-		stdout, stderr, err := r.d.Run(r.ctx, "", "ssh", "-n", "-F", c.SSHConfig, "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", c.SSHAlias, probe)
-		if err == nil {
-			status = stdout
-			// set up by a completed run (from this or another computer): the server records it itself
-			if lineValue(status, "ready") == id {
-				reused = true
-			}
-			// A new server restarts once after its updates: wait for it instead of working into it.
-			// The post-upgrade reboot follows cloud-init within a minute or so; after ~3 minutes the
-			// flag is from something else (e.g. later unattended upgrades): carry on with a warning.
-			if !reused && hasLine(status, "reboot=pending") {
-				rebootWaits++
-				if rebootWaits <= 36 {
-					if !announced {
-						r.printf("Updates need a reboot; waiting for the server to restart ...\n")
-						announced = true
-					}
-					status, errMsg = "", "the server did not come back after the reboot for its updates"
-					r.d.Sleep(5 * time.Second)
-					continue
-				}
-			}
-			break
-		}
-		status, errMsg = "", strings.TrimRight(stderr, "\n")
-		if reused && machine.SSHFailureKind(errMsg) != "network" {
-			break
-		}
-		r.d.Sleep(5 * time.Second)
-	}
-	if status != "" {
-		return status, 0, nil
-	}
 	switch machine.SSHFailureKind(errMsg) {
 	case "hostkey":
 		r.eprintf("SSH: the server's host key is not trusted; server retained.\n")
@@ -253,5 +230,47 @@ func (r *runner) waitForServer(id, ip string, reused bool) (string, int, error) 
 		}
 		r.eprintf("SSH not reachable; server retained.%s\n", last)
 	}
+}
+
+// waitForServer waits until ssh works and cloud-init is done. While a new server boots, sshd may
+// briefly present a key other than the provisioned one and builder may not exist yet, so host-key
+// and auth errors are retried too. A reused server is already up: those errors are permanent
+// there and end the wait at once.
+func (r *runner) waitForServer(ctx context.Context, id string, reused bool) (string, int, error) {
+	c := r.c
+	r.printf("Waiting for SSH and cloud-init ...\n")
+	status, errMsg := "", ""
+	var rw rebootWait
+	for i := 1; i <= 120; i++ {
+		if ctx.Err() != nil {
+			return "", 1, ErrShown
+		}
+		stdout, stderr, err := r.d.Run(ctx, "", "ssh", "-n", "-F", c.SSHConfig, "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", c.SSHAlias, probe)
+		if err == nil {
+			status = stdout
+			// set up by a completed run (from this or another computer): the server records it itself
+			if lineValue(status, "ready") == id {
+				reused = true
+			}
+			// A new server restarts once after its updates: wait for it instead of working into it.
+			// The post-upgrade reboot follows cloud-init within a minute or so; after ~3 minutes the
+			// flag is from something else (e.g. later unattended upgrades): carry on with a warning.
+			if !reused && hasLine(status, "reboot=pending") && rw.wait(r) {
+				status, errMsg = "", "the server did not come back after the reboot for its updates"
+				r.d.Sleep(5 * time.Second)
+				continue
+			}
+			break
+		}
+		status, errMsg = "", strings.TrimRight(stderr, "\n")
+		if reused && machine.SSHFailureKind(errMsg) != "network" {
+			break
+		}
+		r.d.Sleep(5 * time.Second)
+	}
+	if status != "" {
+		return status, 0, nil
+	}
+	r.reportSSHFailure(errMsg)
 	return "", 1, ErrShown
 }

@@ -23,6 +23,7 @@ const defaultBase = "https://api.cloudflare.com/client/v4"
 
 var ipv4Re = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$`)
 
+// Client talks to the Cloudflare DNS API of one zone.
 type Client struct {
 	Token, ZoneID string
 	Base          string       // default: the Cloudflare API
@@ -74,7 +75,7 @@ func (c *Client) do(ctx context.Context, method, path string, payload any) (json
 	if err != nil {
 		return nil, fmt.Errorf("Cloudflare API error: %w", urlErrorWithoutURL(err))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() // read-only body
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
 		return nil, fmt.Errorf("Cloudflare API error: %w", err)

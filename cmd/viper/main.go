@@ -4,6 +4,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 )
@@ -12,31 +13,31 @@ import (
 var version = "dev"
 
 func main() {
-	os.Exit(run(os.Args[1:]))
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-func run(args []string) int {
+func run(args []string, stdout, stderr io.Writer) int {
 	name, o, err := parse(args)
 	switch {
 	case errors.Is(err, errHelp):
-		fmt.Print(helpText())
+		fmt.Fprint(stdout, helpText())
 		return 0
 	case err != nil:
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 2
 	}
 	if name == "version" {
-		fmt.Println("viper", version)
+		fmt.Fprintln(stdout, "viper", version)
 		return 0
 	}
-	err = dispatch(commands[name], &o)
+	err = dispatch(commands()[name], &o)
 	if err == nil {
 		return 0
 	}
 	var ee *exec.ExitError
 	var es exitStatus
 	if !errors.As(err, &ee) && !errors.As(err, &es) {
-		fmt.Fprintln(os.Stderr, "viper:", err)
+		fmt.Fprintln(stderr, "viper:", err)
 	}
 	return exitCode(err)
 }

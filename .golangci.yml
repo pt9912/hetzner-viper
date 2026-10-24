@@ -1,0 +1,204 @@
+# .golangci.yml — lint profile of viper (make lint), same strictness as odata-recorder.
+#
+# Exceptions live only here, each as a rule under `exclusions.rules` with a comment block whose
+# first line starts with "# Why:". No //nolint in the code; nolintlint reports one without a
+# reason, a named linter or an effect.
+
+version: "2"
+
+run:
+  relative-path-mode: cfg
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - containedctx
+    - contextcheck
+    - cyclop
+    - depguard
+    - dupl
+    - fatcontext
+    - forbidigo
+    - funlen
+    - gochecknoglobals
+    - gochecknoinits
+    - gocognit
+    - gocyclo
+    - iface
+    - inamedparam
+    - interfacebloat
+    - ireturn
+    - maintidx
+    - nestif
+    - nolintlint
+    - noctx
+    - reassign
+    - revive
+    - testpackage
+    - unparam
+
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+
+    cyclop:
+      max-complexity: 15
+
+    dupl:
+      threshold: 150
+
+    forbidigo:
+      forbid:
+        - pattern: ^fmt\.Print(f|ln)?$
+          msg: write to an io.Writer that is passed in
+        - pattern: ^print(ln)?$
+          msg: write to an io.Writer that is passed in
+        - pattern: ^os\.Std(out|err)$
+          msg: only cmd/viper uses os.Stdout and os.Stderr
+
+    funlen:
+      lines: 100
+      statements: 60
+
+    gocognit:
+      min-complexity: 20
+
+    gocyclo:
+      min-complexity: 15
+
+    interfacebloat:
+      max: 10
+
+    ireturn:
+      allow:
+        - error
+        - empty
+        - anon
+        - stdlib
+        - generic
+
+    maintidx:
+      under: 20
+
+    nestif:
+      min-complexity: 5
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+
+    # Dependency direction: the packages of internal/ do not import each other except along these
+    # lines; cmd/viper wires them. servertest and integration are for tests only.
+    depguard:
+      rules:
+        leaf-packages:
+          list-mode: lax
+          files:
+            - $all
+            - "!**/cmd/viper/**"
+            - "!**/internal/integration/**"
+          deny:
+            - pkg: github.com/pt9912/hetzner-viper/cmd
+              desc: nothing imports the composition root
+            - pkg: github.com/pt9912/hetzner-viper/internal/integration
+              desc: integration tests are not a library
+        no-test-fakes-in-code:
+          list-mode: lax
+          files:
+            - "!$test"
+            - "!**/internal/integration/**"
+          deny:
+            - pkg: github.com/pt9912/hetzner-viper/internal/servertest
+              desc: the fakes are for tests only
+        clients-are-leaves:
+          list-mode: lax
+          files:
+            - "**/internal/hetzner/**"
+            - "**/internal/cloudflare/**"
+            - "**/internal/config/**"
+            - "**/internal/runlog/**"
+          deny:
+            - pkg: github.com/pt9912/hetzner-viper/internal/start
+              desc: the API clients and config do not depend on the commands
+            - pkg: github.com/pt9912/hetzner-viper/internal/stop
+              desc: the API clients and config do not depend on the commands
+            - pkg: github.com/pt9912/hetzner-viper/internal/check
+              desc: the API clients and config do not depend on the commands
+            - pkg: github.com/pt9912/hetzner-viper/internal/preflight
+              desc: the API clients and config do not depend on the commands
+
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: empty-block
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: exported
+        - name: if-return
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: unused-parameter
+        - name: var-declaration
+        - name: var-naming
+        - name: unused-receiver
+
+    testpackage:
+      skip-regexp: (^|/)export_test\.go$
+
+  exclusions:
+    warn-unused: true
+    rules:
+      # Why: table-driven tests have higher complexity without a design flaw.
+      - linters:
+          - cyclop
+          - gocognit
+          - gocyclo
+          - nestif
+          - funlen
+        path: ^.+_test\.go$
+
+      # Why: tests need neither context passing nor used-up parameters.
+      - linters:
+          - noctx
+          - unparam
+        path: ^.+_test\.go$
+
+      # Why: fakes in test files fill an interface with parameters and receivers they do not use.
+      - linters:
+          - revive
+        path: ^.+_test\.go$
+        text: ^unused-(parameter|receiver)
+
+      # Why: messages shown to the user begin with a capital letter ("Set DNS_DOMAIN ...").
+      - linters:
+          - staticcheck
+        text: ^ST1005
+
+      # Why: cmd/viper is the composition root; it connects the process to its standard streams.
+      - linters:
+          - forbidigo
+        path: ^cmd/viper/
+        text: os\.Std(out|err)

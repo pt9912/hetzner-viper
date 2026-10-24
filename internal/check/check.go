@@ -79,7 +79,7 @@ func (d Deps) doh(ctx context.Context, endpoint, name, typ string) (answer, auth
 	if err != nil {
 		return nil, nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() // read-only body
 	if resp.StatusCode >= 400 {
 		return nil, nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
@@ -163,26 +163,7 @@ func dnsChecks(ctx context.Context, r *report, c *config.Config, d Deps, ip stri
 	for _, resolver := range []struct{ name, url string }{
 		{"Cloudflare 1.1.1.1", "https://cloudflare-dns.com/dns-query"}, {"Google 8.8.8.8", "https://dns.google/resolve"},
 	} {
-		answer, _, err := d.doh(ctx, resolver.url, c.DNSHost, "A")
-		if err != nil {
-			r.warn("%s could not be asked", resolver.name)
-			continue
-		}
-		var addrs []string
-		for _, a := range answer {
-			if a.Type == 1 {
-				addrs = append(addrs, a.Data)
-			}
-		}
-		joined := strings.Join(addrs, ",")
-		if strings.Contains(","+joined+",", ","+ip+",") {
-			r.ok("%s resolves to %s", resolver.name, ip)
-		} else {
-			if joined == "" {
-				joined = "nothing"
-			}
-			r.bad("%s resolves to '%s', expected %s (new record? wait a few minutes)", resolver.name, joined, ip)
-		}
+		publicResolverCheck(ctx, r, c, d, resolver.name, resolver.url, ip)
 	}
 	// the resolver this process uses
 	where := "this computer's resolver"
@@ -200,6 +181,41 @@ func dnsChecks(ctx context.Context, r *report, c *config.Config, d Deps, ip stri
 	}
 	// A resolver that looked the name up while it did not exist (e.g. between down and up)
 	// may keep answering "no such name" for the zone's negative-caching time (last SOA field).
+	negTTL := negativeCacheTTL(ctx, c, d)
+	shown := first
+	if shown == "" {
+		shown = "nothing"
+	}
+	r.info("%s resolves it to '%s'. If the public resolvers above are right, it still", where, shown)
+	r.info("  remembers 'no such name' from a lookup while the record did not exist, for up to %s s (often a VPN's DNS server)", negTTL)
+}
+
+// publicResolverCheck compares the A records one public resolver returns with the server's IP.
+func publicResolverCheck(ctx context.Context, r *report, c *config.Config, d Deps, name, url, ip string) {
+	answer, _, err := d.doh(ctx, url, c.DNSHost, "A")
+	if err != nil {
+		r.warn("%s could not be asked", name)
+		return
+	}
+	var addrs []string
+	for _, a := range answer {
+		if a.Type == 1 {
+			addrs = append(addrs, a.Data)
+		}
+	}
+	joined := strings.Join(addrs, ",")
+	if strings.Contains(","+joined+",", ","+ip+",") {
+		r.ok("%s resolves to %s", name, ip)
+	} else {
+		if joined == "" {
+			joined = "nothing"
+		}
+		r.bad("%s resolves to '%s', expected %s (new record? wait a few minutes)", name, joined, ip)
+	}
+}
+
+// negativeCacheTTL is the zone's negative-caching time (last SOA field), or "?".
+func negativeCacheTTL(ctx context.Context, c *config.Config, d Deps) string {
 	negTTL := "?"
 	if answer, authority, err := d.doh(ctx, "https://cloudflare-dns.com/dns-query", c.DNSDomain, "SOA"); err == nil {
 		for _, rec := range append(answer, authority...) {
@@ -211,12 +227,7 @@ func dnsChecks(ctx context.Context, r *report, c *config.Config, d Deps, ip stri
 			}
 		}
 	}
-	shown := first
-	if shown == "" {
-		shown = "nothing"
-	}
-	r.info("%s resolves it to '%s'. If the public resolvers above are right, it still", where, shown)
-	r.info("  remembers 'no such name' from a lookup while the record did not exist, for up to %s s (often a VPN's DNS server)", negTTL)
+	return negTTL
 }
 
 var certRe = regexp.MustCompile(`ssh-ed25519-cert-v01@openssh\.com [A-Za-z0-9+/=]+`)
@@ -236,19 +247,7 @@ func sshAsAnotherDevice(ctx context.Context, r *report, c *config.Config, d Deps
 	valid := ""
 	if scan, _, err := d.Run(ctx, "", "ssh-keyscan", "-c", "-t", "ed25519", c.DNSHost); err == nil {
 		if cert := certRe.FindString(scan); cert != "" {
-			if f, err := os.CreateTemp("", "cert"); err == nil {
-				f.WriteString(cert + "\n")
-				f.Close()
-				if desc, _, err := d.Run(ctx, "", "ssh-keygen", "-L", "-f", f.Name()); err == nil {
-					for _, line := range strings.Split(desc, "\n") {
-						if t := strings.TrimLeft(line, " "); strings.HasPrefix(t, "Valid: ") {
-							valid = strings.TrimPrefix(t, "Valid: ")
-							break
-						}
-					}
-				}
-				os.Remove(f.Name())
-			}
+			valid = certValidity(ctx, d, cert)
 		}
 	}
 	if valid != "" {
@@ -280,6 +279,42 @@ func serverChecks(r *report, c *config.Config, val map[string]string, workdir, r
 	v := func(k string) string { return val[k] }
 	rerun := "viper up " + c.Machine
 
+	cloudInitChecks(r, v)
+	claudeChecks(r, c, v, rerun)
+	ghChecks(r, c, v, rerun)
+	if v("git_name") != "" && v("git_email") != "" {
+		r.ok("git commits as %s <%s>", v("git_name"), v("git_email"))
+	} else {
+		r.warn("git user.name/user.email are not set on the server: commits fail (VIPER_GIT_USER_NAME, VIPER_GIT_USER_EMAIL, then rerun %s)", rerun)
+	}
+	if v("docker") == "ok" {
+		r.ok("docker running")
+	} else {
+		r.bad("docker not running")
+	}
+	swapAndCodeServerChecks(r, c, v, rerun)
+	if c.Setting("VIPER_HOMEBREW", "1") == "1" {
+		brewChecks(r, c, v, rerun)
+	}
+	if repoURL != "" {
+		if v("repo") != "" {
+			r.ok("repository %s at %s (%s uncommitted changes)", workdir, v("repo"), strings.TrimSpace(v("repo_changes")))
+		} else {
+			r.bad("repository missing: %s", workdir)
+		}
+	}
+	if v("sshd") == "authenticationmethods publickey;passwordauthentication no;permitrootlogin no;" {
+		r.ok("sshd: public key only, no password, no root login")
+	} else {
+		r.bad("sshd hardening not in effect: %s", v("sshd"))
+	}
+	if v("reboot") == "required" {
+		r.warn("updates need a reboot: viper ssh %s --cmd 'sudo reboot' (tmux sessions end)", c.Machine)
+	}
+	r.info("memory: %s; disk: %s", v("mem"), v("disk"))
+}
+
+func cloudInitChecks(r *report, v func(string) string) {
 	switch v("cloudinit") {
 	case "done":
 		r.ok("cloud-init: done")
@@ -293,6 +328,9 @@ func serverChecks(r *report, c *config.Config, val map[string]string, workdir, r
 	if startsNZ.MatchString(v("cloudinit_errors")) {
 		r.warn("cloud-init reported %s error(s) at the first boot, e.g.: %s (see /var/log/cloud-init.log)", v("cloudinit_errors"), v("cloudinit_error"))
 	}
+}
+
+func claudeChecks(r *report, c *config.Config, v func(string) string, rerun string) {
 	// the test request must really answer OK, not merely mention it in an error
 	answeredOK := answerOKRe.MatchString(strings.Join(strings.Fields(v("claude_answer")), ""))
 	baseURL, model, token := c.Get("VIPER_ANTHROPIC_BASE_URL"), c.Get("VIPER_CLAUDE_MODEL"), c.Get("VIPER_CLAUDE_TOKEN")
@@ -319,6 +357,9 @@ func serverChecks(r *report, c *config.Config, val map[string]string, workdir, r
 	default:
 		r.info("Claude Code %s: no VIPER_CLAUDE_TOKEN or VIPER_ANTHROPIC_BASE_URL, log in with claude (/login)", v("claude_version"))
 	}
+}
+
+func ghChecks(r *report, c *config.Config, v func(string) string, rerun string) {
 	switch {
 	case v("gh_version") == "":
 		r.bad("gh not installed")
@@ -329,16 +370,9 @@ func serverChecks(r *report, c *config.Config, val map[string]string, workdir, r
 	default:
 		r.info("%s: not logged in (no VIPER_GH_TOKEN)", v("gh_version"))
 	}
-	if v("git_name") != "" && v("git_email") != "" {
-		r.ok("git commits as %s <%s>", v("git_name"), v("git_email"))
-	} else {
-		r.warn("git user.name/user.email are not set on the server: commits fail (VIPER_GIT_USER_NAME, VIPER_GIT_USER_EMAIL, then rerun %s)", rerun)
-	}
-	if v("docker") == "ok" {
-		r.ok("docker running")
-	} else {
-		r.bad("docker not running")
-	}
+}
+
+func swapAndCodeServerChecks(r *report, c *config.Config, v func(string) string, rerun string) {
 	if swap := c.Setting("VIPER_SWAP", "0"); swap != "0" {
 		if mb, _ := strconv.Atoi(v("swap_mb")); mb > 0 {
 			r.ok("swap active (%d MB)", mb)
@@ -356,25 +390,6 @@ func serverChecks(r *report, c *config.Config, val map[string]string, workdir, r
 			r.ok("code-server %s on 127.0.0.1:8080 (tunnel: ssh -L 8080:127.0.0.1:8080 %s)", v("code_server_version"), c.SSHAlias)
 		}
 	}
-	if c.Setting("VIPER_HOMEBREW", "1") == "1" {
-		brewChecks(r, c, v, rerun)
-	}
-	if repoURL != "" {
-		if v("repo") != "" {
-			r.ok("repository %s at %s (%s uncommitted changes)", workdir, v("repo"), strings.TrimSpace(v("repo_changes")))
-		} else {
-			r.bad("repository missing: %s", workdir)
-		}
-	}
-	if v("sshd") == "authenticationmethods publickey;passwordauthentication no;permitrootlogin no;" {
-		r.ok("sshd: public key only, no password, no root login")
-	} else {
-		r.bad("sshd hardening not in effect: %s", v("sshd"))
-	}
-	if v("reboot") == "required" {
-		r.warn("updates need a reboot: viper ssh %s --cmd 'sudo reboot' (tmux sessions end)", c.Machine)
-	}
-	r.info("memory: %s; disk: %s", v("mem"), v("disk"))
 }
 
 func brewChecks(r *report, c *config.Config, v func(string) string, rerun string) {
@@ -408,4 +423,27 @@ func brewChecks(r *report, c *config.Config, v func(string) string, rerun string
 	case "missing":
 		r.warn("Homebrew: Brewfile of the repository not fully installed (rerun %s)", rerun)
 	}
+}
+
+// certValidity is the "Valid: ..." line ssh-keygen -L shows for a host certificate, or "".
+func certValidity(ctx context.Context, d Deps, cert string) string {
+	f, err := os.CreateTemp("", "cert")
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = os.Remove(f.Name()) }() // temporary file
+	_, werr := f.WriteString(cert + "\n")
+	if cerr := f.Close(); werr != nil || cerr != nil {
+		return ""
+	}
+	desc, _, err := d.Run(ctx, "", "ssh-keygen", "-L", "-f", f.Name())
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(desc, "\n") {
+		if t := strings.TrimLeft(line, " "); strings.HasPrefix(t, "Valid: ") {
+			return strings.TrimPrefix(t, "Valid: ")
+		}
+	}
+	return ""
 }

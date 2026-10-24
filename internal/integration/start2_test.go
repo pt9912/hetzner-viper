@@ -1,4 +1,4 @@
-package integration
+package integration_test
 
 import (
 	"errors"
@@ -42,7 +42,9 @@ func TestCloneWithADeployKeyAndNoBranch(t *testing.T) {
 	e := New(t, "")
 	origin := originRepo(t)
 	key := filepath.Join(e.Home, ".ssh", "deploy")
-	os.WriteFile(key, []byte("k\n"), 0o600)
+	if err := os.WriteFile(key, []byte("k\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	e.Machine("web", "REPO_URL="+origin+"\nGIT_DEPLOY_KEY_FILE="+key+"\n")
 	e.MustUp("web", "")
 	if _, err := os.Stat(filepath.Join(e.Config("web").WorkspaceDir, "origin", ".git")); err != nil {
@@ -67,7 +69,7 @@ func TestScriptsTrustOnlyThePinnedHostKey(t *testing.T) {
 func TestWithoutAPinTheHostCAIsTrusted(t *testing.T) {
 	e := New(t, "")
 	e.MustUp("web", "")
-	os.Remove(filepath.Join(e.Home, ".ssh", "known_hosts_hetzner_claude-web")) // e.g. server created on another computer
+	_ = os.Remove(filepath.Join(e.Home, ".ssh", "known_hosts_hetzner_claude-web")) // e.g. server created on another computer
 	e.MustUp("web", "")
 	if !strings.Contains(e.sshConfigFile("web"), "UserKnownHostsFile "+filepath.Join(e.Home, ".ssh", "known_hosts_hetzner_claude_ca")+"\n") {
 		t.Errorf("ssh config:\n%s", e.sshConfigFile("web"))
@@ -201,8 +203,12 @@ func TestStalePinIsDroppedWhenTheServerWasRecreated(t *testing.T) {
 func TestMissingPinIsRecordedAfterTheCAVerifiedTheConnection(t *testing.T) {
 	e := New(t, "")
 	e.MustUp("web", "")
-	os.Remove(filepath.Join(e.Home, ".ssh", "known_hosts_hetzner_claude-web"))
-	os.Remove(filepath.Join(e.Home, ".local", "state", "hetzner-claude", "id-claude-web"))
+	if err := os.Remove(filepath.Join(e.Home, ".ssh", "known_hosts_hetzner_claude-web")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(e.Home, ".local", "state", "hetzner-claude", "id-claude-web")); err != nil {
+		t.Fatal(err)
+	}
 	e.Srv.SetHostKey("ssh-ed25519 AAAAserverkey root@host\n")
 	e.MustUp("web", "")
 	pin := filepath.Join(e.Home, ".ssh", "known_hosts_hetzner_claude-web")
@@ -218,8 +224,12 @@ func TestSymlinkedSshConfigStaysASymlink(t *testing.T) {
 	e := New(t, "")
 	dots := t.TempDir()
 	target := filepath.Join(dots, "ssh_config")
-	os.WriteFile(target, []byte("Host other\n"), 0o644)
-	os.Symlink(target, filepath.Join(e.Home, ".ssh", "config"))
+	if err := os.WriteFile(target, []byte("Host other\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(e.Home, ".ssh", "config")); err != nil {
+		t.Fatal(err)
+	}
 	e.MustUp("web", "")
 	if st, _ := os.Lstat(filepath.Join(e.Home, ".ssh", "config")); st.Mode()&os.ModeSymlink == 0 {
 		t.Error("no longer a symlink")
@@ -247,9 +257,15 @@ func TestHostKeyCommentIsTheServerNameAndSshConfigIsSafe(t *testing.T) {
 
 // a home like Ubuntu's: .bashrc returns early for non-interactive shells
 func ubuntuHome(e *Env) {
-	os.MkdirAll(e.Srv.Home, 0o755)
-	os.WriteFile(filepath.Join(e.Srv.Home, ".bashrc"), []byte("case $- in\n    *i*) ;;\n      *) return;;\nesac\nexport FROM_BASHRC=1\n"), 0o644)
-	os.WriteFile(filepath.Join(e.Srv.Home, ".profile"), []byte("if [ -n \"$BASH_VERSION\" ] && [ -f \"$HOME/.bashrc\" ]; then . \"$HOME/.bashrc\"; fi\n"), 0o644)
+	if err := os.MkdirAll(e.Srv.Home, 0o755); err != nil {
+		e.t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(e.Srv.Home, ".bashrc"), []byte("case $- in\n    *i*) ;;\n      *) return;;\nesac\nexport FROM_BASHRC=1\n"), 0o644); err != nil {
+		e.t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(e.Srv.Home, ".profile"), []byte("if [ -n \"$BASH_VERSION\" ] && [ -f \"$HOME/.bashrc\" ]; then . \"$HOME/.bashrc\"; fi\n"), 0o644); err != nil {
+		e.t.Fatal(err)
+	}
 }
 
 func (e *Env) shell(args ...string) string {
@@ -332,8 +348,12 @@ func TestUnwritableSshConfigOnlyWarns(t *testing.T) {
 	e := New(t, "")
 	dots := t.TempDir()
 	target := filepath.Join(dots, "ssh_config")
-	os.WriteFile(target, []byte("Host other\n"), 0o444)
-	os.Symlink(target, filepath.Join(e.Home, ".ssh", "config"))
+	if err := os.WriteFile(target, []byte("Host other\n"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(e.Home, ".ssh", "config")); err != nil {
+		t.Fatal(err)
+	}
 	e.Preflight("web", "").Has(t, "WARN  ~/.ssh/config (")
 	r := e.MustUp("web", "")
 	r.Has(t, "Ready: ssh hetzner-claude-web", "WARNING: could not edit ~/.ssh/config")
@@ -382,15 +402,12 @@ func TestRepoUrlStartingWithADashIsRejected(t *testing.T) {
 func TestReusedServerWithAnUntrustedKeyFailsFast(t *testing.T) {
 	e := New(t, "")
 	e.MustUp("web", "")
-	n := e.probes()
 	e.Srv.Env["MOCK_SSH_HOSTKEY_FAIL"] = "1"
 	r := e.Up("web", "")
 	if r.Code != 1 {
 		t.Errorf("code %d", r.Code)
 	}
 	r.Has(t, "host key is not trusted")
-	if e.probes()-n != 0 { // the fake fails before the probe runs; the attempt is one ssh call
-	}
 	delete(e.Srv.Env, "MOCK_SSH_HOSTKEY_FAIL")
 	e.Srv.Env["MOCK_SSH_AUTH_FAIL"] = "1"
 	sleeps := len(e.Sleeps)
@@ -609,7 +626,9 @@ func TestWorkspaceIsRecordedOnTheServerOnce(t *testing.T) {
 func TestDeployKeyIsNotBypassedByTheGithubToken(t *testing.T) {
 	e := New(t, "")
 	key := filepath.Join(e.Home, ".ssh", "deploy")
-	os.WriteFile(key, []byte("k\n"), 0o600)
+	if err := os.WriteFile(key, []byte("k\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	e.Machine("web", "GIT_DEPLOY_KEY_FILE="+key+"\nVIPER_GH_TOKEN=ghp_x\n")
 	e.HTTP = func(r *http.Request) (*http.Response, error) {
 		if r.URL.Host == "api.github.com" && strings.HasPrefix(r.URL.Path, "/repos/") {
@@ -691,7 +710,7 @@ func TestReadyMarkerOnTheServerCountsForAnotherComputer(t *testing.T) {
 	if got := strings.TrimSpace(e.ServerFile(".config/viper/ready")); got != e.state("id-claude-web") || got == "" {
 		t.Fatalf("server marker %q, id %q", got, e.state("id-claude-web"))
 	}
-	os.Remove(filepath.Join(e.Home, ".local", "state", "hetzner-claude", "ready-claude-web")) // like a second computer
+	_ = os.Remove(filepath.Join(e.Home, ".local", "state", "hetzner-claude", "ready-claude-web")) // like a second computer
 	e.Srv.Write("reboot-required", "")
 	e.Srv.Write("reboot-required.keep", "")
 	n := e.probes()
@@ -764,7 +783,7 @@ func TestWorkspaceRecordedOnTheServerSurvivesALaterFailure(t *testing.T) {
 func TestHomebrewInstallerRunsWhenBrewIsMissing(t *testing.T) {
 	e := New(t, "")
 	e.MustUp("web", "")
-	os.Remove(e.Srv.BrewPath) // a fresh server has no brew
+	_ = os.Remove(e.Srv.BrewPath) // a fresh server has no brew
 	e.MustUp("web", "")
 	if _, err := os.Stat(e.Srv.BrewPath); err != nil {
 		t.Errorf("not installed by the (fake) installer: %v", err)
@@ -777,8 +796,12 @@ func TestHomebrewInstallerRunsWhenBrewIsMissing(t *testing.T) {
 func TestOldServerCountsAsSetUpOnAnotherComputer(t *testing.T) {
 	e := New(t, "")
 	e.MustUp("web", "")
-	os.Remove(filepath.Join(e.Home, ".local", "state", "hetzner-claude", "ready-claude-web"))
-	os.Remove(filepath.Join(e.Srv.Home, ".config/viper/ready"))
+	if err := os.Remove(filepath.Join(e.Home, ".local", "state", "hetzner-claude", "ready-claude-web")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(e.Srv.Home, ".config/viper/ready")); err != nil {
+		t.Fatal(err)
+	}
 	e.Cloud.Servers["claude-web"].Created = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	e.Srv.Env["MOCK_SSH_HOSTKEY_FAIL"] = "1"
 	sleeps := len(e.Sleeps)

@@ -1,9 +1,10 @@
-package preflight
+package preflight_test
 
 import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/pt9912/hetzner-viper/internal/preflight"
 	"io"
 	"net/http"
 	"os"
@@ -96,19 +97,35 @@ func fixture(t *testing.T, settings string) *env {
 	t.Helper()
 	e := &env{t: t, home: t.TempDir(), dir: t.TempDir(), h: defaultHetzner(), dns: fakeDNS{ok: true, lines: []string{"ok    Cloudflare zone example.com readable (edit permission is only seen when viper up writes the record)", "ok    claude-web.example.com: no record yet"}}}
 	ssh := filepath.Join(e.home, ".ssh")
-	os.MkdirAll(ssh, 0o700)
-	os.WriteFile(filepath.Join(ssh, "hetzner-build"), []byte("PRIVATE"), 0o600)
-	os.WriteFile(filepath.Join(ssh, "hetzner-build.pub"), []byte(pubKey), 0o644)
-	os.WriteFile(filepath.Join(ssh, "hetzner_claude_host_ca"), []byte("PRIVATE"), 0o600)
-	os.WriteFile(filepath.Join(ssh, "known_hosts_hetzner_claude_ca"), []byte("@cert-authority *.example.com ssh-ed25519 AAAA\n"), 0o600)
-	os.WriteFile(filepath.Join(e.dir, ".env.local"), []byte("DNS_DOMAIN=example.com\n"+settings), 0o600)
-	os.MkdirAll(filepath.Join(e.dir, "machines"), 0o755)
+	if err := os.MkdirAll(ssh, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ssh, "hetzner-build"), []byte("PRIVATE"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ssh, "hetzner-build.pub"), []byte(pubKey), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ssh, "hetzner_claude_host_ca"), []byte("PRIVATE"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ssh, "known_hosts_hetzner_claude_ca"), []byte("@cert-authority *.example.com ssh-ed25519 AAAA\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(e.dir, ".env.local"), []byte("DNS_DOMAIN=example.com\n"+settings), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(e.dir, "machines"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	e.http = func(r *http.Request) (*http.Response, error) { return reply(404, "", nil), nil }
 	return e
 }
 
 func (e *env) machine(name, settings string) {
-	os.WriteFile(filepath.Join(e.dir, "machines", name+".env.local"), []byte(settings), 0o600)
+	if err := os.WriteFile(filepath.Join(e.dir, "machines", name+".env.local"), []byte(settings), 0o600); err != nil {
+		e.t.Fatal(err)
+	}
 }
 
 func (e *env) config(machine string) *config.Config {
@@ -127,11 +144,11 @@ func (e *env) config(machine string) *config.Config {
 func (e *env) run(machine, repo string) (string, string, int) {
 	e.t.Helper()
 	var out, errb bytes.Buffer
-	d := Deps{Hetzner: e.h, DNS: e.dns, GitLsRemote: e.git, HTTP: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+	d := preflight.Deps{Hetzner: e.h, DNS: e.dns, GitLsRemote: e.git, HTTP: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
 		e.reqs = append(e.reqs, r)
 		return e.http(r)
 	})}}
-	n := Run(context.Background(), e.config(machine), repo, d, &out, &errb)
+	n := preflight.Run(context.Background(), e.config(machine), repo, d, &out, &errb)
 	return out.String(), errb.String(), n
 }
 
@@ -174,8 +191,10 @@ func TestEverythingFineAndReadOnly(t *testing.T) {
 
 func TestMissingLoginKeyAndCATrust(t *testing.T) {
 	e := fixture(t, "")
-	os.Remove(filepath.Join(e.home, ".ssh", "hetzner-build.pub"))
-	os.WriteFile(filepath.Join(e.home, ".ssh", "known_hosts_hetzner_claude_ca"), []byte("@cert-authority *.other.org AAAA\n"), 0o600)
+	_ = os.Remove(filepath.Join(e.home, ".ssh", "hetzner-build.pub")) // may not exist
+	if err := os.WriteFile(filepath.Join(e.home, ".ssh", "known_hosts_hetzner_claude_ca"), []byte("@cert-authority *.other.org AAAA\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	out, _, n := e.run("web", "")
 	mustContain(t, out, "FAIL  login key or host CA missing: Run viper setup first", "FAIL  host CA trust for *.example.com missing", "Preflight: 2 problem(s); nothing was created.")
 	if n != 2 {
@@ -233,7 +252,7 @@ func TestHetznerApiProblem(t *testing.T) {
 
 func TestLoginKeyAlreadyInTheProject(t *testing.T) {
 	e := fixture(t, "")
-	fp := FingerprintMD5(filepath.Join(e.home, ".ssh", "hetzner-build.pub"))
+	fp := preflight.FingerprintMD5(filepath.Join(e.home, ".ssh", "hetzner-build.pub"))
 	if len(fp) != 47 {
 		t.Fatalf("fingerprint %q", fp)
 	}
@@ -280,17 +299,25 @@ func TestBadAllowedCidrs(t *testing.T) {
 
 func TestReadableConfigWithTokensIsWarnedAbout(t *testing.T) {
 	e := fixture(t, "")
-	os.Chmod(filepath.Join(e.dir, ".env.local"), 0o644)
+	if err := os.Chmod(filepath.Join(e.dir, ".env.local"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	e.machine("web", "SERVER_TYPE=cpx32\n")
-	os.Chmod(filepath.Join(e.dir, "machines", "web.env.local"), 0o640)
+	if err := os.Chmod(filepath.Join(e.dir, "machines", "web.env.local"), 0o640); err != nil {
+		t.Fatal(err)
+	}
 	out, _, n := e.run("web", "")
 	mustContain(t, out, "WARN  .env.local is readable by other users; it may hold tokens: chmod 600 .env.local",
 		"WARN  "+filepath.Join("machines", "web.env.local")+" is readable by other users")
 	if n != 0 {
 		t.Errorf("a warning is no problem: %d", n)
 	}
-	os.Chmod(filepath.Join(e.dir, ".env.local"), 0o600)
-	os.Chmod(filepath.Join(e.dir, "machines", "web.env.local"), 0o600)
+	if err := os.Chmod(filepath.Join(e.dir, ".env.local"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(e.dir, "machines", "web.env.local"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	out, _, _ = e.run("web", "")
 	mustNotContain(t, out, "WARN")
 }
@@ -298,14 +325,20 @@ func TestReadableConfigWithTokensIsWarnedAbout(t *testing.T) {
 func TestKeyFilesOfTheSettings(t *testing.T) {
 	e := fixture(t, "")
 	priv := filepath.Join(e.home, ".ssh", "ipad")
-	os.WriteFile(priv, []byte("-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n"), 0o600)
+	if err := os.WriteFile(priv, []byte("-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	good := filepath.Join(e.home, ".ssh", "ipad.pub")
-	os.WriteFile(good, []byte(pubKey), 0o644)
+	if err := os.WriteFile(good, []byte(pubKey), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	e.machine("a", "IPAD_SSH_PUBLIC_KEY_FILE="+priv+"\n")
 	e.machine("b", "IPAD_SSH_PUBLIC_KEY_FILE=~/.ssh/ipad.pub\nGIT_DEPLOY_KEY_FILE="+priv+"\n")
 	e.machine("c", "IPAD_SSH_PUBLIC_KEY_FILE=/nonexistent/key.pub\n")
 	e.machine("d", "IPAD_SSH_PUBLIC_KEY_FILE="+good+"\n")
-	os.WriteFile(filepath.Join(e.home, ".ssh", "garbage.pub"), []byte("not a key\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(e.home, ".ssh", "garbage.pub"), []byte("not a key\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	e.machine("e", "IPAD_SSH_PUBLIC_KEY_FILE=~/.ssh/garbage.pub\n")
 	a, _, _ := e.run("a", "")
 	b, _, _ := e.run("b", "")
@@ -325,7 +358,9 @@ func TestSshConfigNotWritableWarns(t *testing.T) {
 	}
 	e := fixture(t, "")
 	cfg := filepath.Join(e.home, ".ssh", "config")
-	os.WriteFile(cfg, []byte("Host x\n"), 0o400)
+	if err := os.WriteFile(cfg, []byte("Host x\n"), 0o400); err != nil {
+		t.Fatal(err)
+	}
 	out, _, n := e.run("web", "")
 	mustContain(t, out, "WARN  ~/.ssh/config ("+cfg+") is not writable: viper up cannot add 'Include "+filepath.Join(e.home, ".ssh", "config_hetzner_claude-web")+"'")
 	if n != 0 {

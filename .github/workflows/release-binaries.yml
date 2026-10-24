@@ -17,11 +17,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends jq shellcheck openssh-server openssh-client git
-      - run: sudo mkdir -p /run/sshd
-      - run: go test ./...
-        env:
-          VIPER_REQUIRE_TOOLS: "1"
+      - run: make check
       - name: Build
         run: |
           mkdir dist

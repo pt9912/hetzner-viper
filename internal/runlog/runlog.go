@@ -56,7 +56,7 @@ func (l *Log) Event(format string, a ...any) {
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // the log is best effort
 	fmt.Fprintf(f, "%s %-24s %-9s %s\n", l.stamp(), l.server, l.action, fmt.Sprintf(format, a...))
 }
 
@@ -71,7 +71,7 @@ func (l *Log) Close(err error, exitCode int) {
 	if err != nil && !l.final {
 		l.Event("FAILED (exit %d; see logs/%s.log)", exitCode, l.server)
 	}
-	l.transcript.Close()
+	_ = l.transcript.Close() // the transcript is best effort
 }
 
 // Interrupted records a run ended by Ctrl-C, a closed terminal or kill.

@@ -47,19 +47,26 @@ func preflightSetup(t *testing.T, dnsOK bool) (config.Env, string, *options) {
 	envMap := map[string]string{"HOME": home, "HCLOUD_TOKEN": "h", "CLOUDFLARE_API_TOKEN": "c", "CLOUDFLARE_ZONE_ID": "z"}
 	env.Lookup = func(k string) (string, bool) { v, ok := envMap[k]; return v, ok }
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\n"), 0o600)
-	ssh := filepath.Join(home, ".ssh")
-	os.MkdirAll(ssh, 0o700)
-	for _, f := range []string{"hetzner-build", "hetzner-build.pub", "hetzner_claude_host_ca"} {
-		os.WriteFile(filepath.Join(ssh, f), []byte("ssh-ed25519 AAAA k\n"), 0o600)
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(ssh, "known_hosts_hetzner_claude_ca"), []byte("@cert-authority *.example.com AAAA\n"), 0o600)
-	old := newPreflightDeps
-	t.Cleanup(func() { newPreflightDeps = old })
-	newPreflightDeps = func(*config.Config) preflight.Deps {
+	ssh := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(ssh, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"hetzner-build", "hetzner-build.pub", "hetzner_claude_host_ca"} {
+		if err := os.WriteFile(filepath.Join(ssh, f), []byte("ssh-ed25519 AAAA k\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(ssh, "known_hosts_hetzner_claude_ca"), []byte("@cert-authority *.example.com AAAA\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h := defaultHost()
+	h.newPreflightDeps = func(*config.Config) preflight.Deps {
 		return preflight.Deps{Hetzner: okHetzner{}, DNS: okDNS{ok: dnsOK}}
 	}
-	return env, home, &options{dir: dir, machine: "web"}
+	return env, home, &options{dir: dir, machine: "web", h: h}
 }
 
 func TestPreflightLogsTheRunAndItsOutcome(t *testing.T) {
@@ -109,11 +116,11 @@ func TestPreflightNeedsTheSettingsBeforeAnything(t *testing.T) {
 }
 
 func TestPreflightRunsHereByDefault(t *testing.T) {
-	if commands["preflight"].run == nil {
+	if commands()["preflight"].run == nil {
 		t.Error("preflight is native")
 	}
 	for _, name := range []string{"up", "down", "check", "log", "setup", "ssh", "dns"} {
-		if commands[name].run == nil {
+		if commands()[name].run == nil {
 			t.Errorf("%s is native", name)
 		}
 	}
@@ -132,10 +139,8 @@ func (s serverHetzner) ServerByName(context.Context, string) (*hetzner.Server, e
 func TestCheckLogsTheRunAndItsOutcome(t *testing.T) {
 	env, home, o := preflightSetup(t, true)
 	state := filepath.Join(home, ".local", "state", "hetzner-claude")
-	old := newCheckDeps
-	t.Cleanup(func() { newCheckDeps = old })
 	var probeOK = true
-	newCheckDeps = func(c *config.Config) check.Deps {
+	o.host().newCheckDeps = func(c *config.Config) check.Deps {
 		return check.Deps{
 			Hetzner: serverHetzner{&hetzner.Server{Name: "claude-web", IPv4: "203.0.113.7"}},
 			HTTP: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
@@ -172,7 +177,7 @@ func TestCheckLogsTheRunAndItsOutcome(t *testing.T) {
 	if exitCode(err) != 1 || !strings.HasSuffix(string(events), "check     FAILED (exit 1; see logs/claude-web.log)\n") {
 		t.Errorf("%v / events %q", err, events)
 	}
-	if commands["check"].run == nil {
+	if commands()["check"].run == nil {
 		t.Error("check is native")
 	}
 }
@@ -200,9 +205,7 @@ func TestDownReadsItsAnswersFromAPipeAndLogsTheOutcome(t *testing.T) {
 	env, home, o := preflightSetup(t, true)
 	state := filepath.Join(home, ".local", "state", "hetzner-claude")
 	var deleted []int64
-	old := newDownDeps
-	t.Cleanup(func() { newDownDeps = old })
-	newDownDeps = func(c *config.Config) stop.Deps {
+	o.host().newDownDeps = func(c *config.Config) stop.Deps {
 		return stop.Deps{
 			Hetzner: downHetzner{&hetzner.Server{ID: 42, Name: "claude-web", IPv4: "203.0.113.7"}, &deleted},
 			DNS:     dnsDeleter{},
@@ -241,7 +244,7 @@ func TestDownReadsItsAnswersFromAPipeAndLogsTheOutcome(t *testing.T) {
 	if !strings.HasSuffix(string(events), "down      cancelled (no DELETE)\n") {
 		t.Errorf("events %q", events)
 	}
-	if commands["down"].run == nil {
+	if commands()["down"].run == nil {
 		t.Error("down is native")
 	}
 }
@@ -257,11 +260,9 @@ func TestVSCodeDoesNotInheritTheTokens(t *testing.T) {
 
 func TestUpStopsAtPreflightProblemsAndLogsThem(t *testing.T) {
 	env, home, o := preflightSetup(t, false) // the DNS check fails: one problem
-	old := newUpDeps
-	t.Cleanup(func() { newUpDeps = old })
 	created := false
-	newUpDeps = func(c *config.Config, pd func() preflight.Deps) start.Deps {
-		d := old(c, pd)
+	o.host().newUpDeps = func(c *config.Config, pd func() preflight.Deps) start.Deps {
+		d := defaultUpDeps(c, pd)
 		d.Hetzner = failIfCreated{&created}
 		return d
 	}
@@ -306,9 +307,7 @@ func TestInterruptionAtAPromptIsLoggedNotAFailure(t *testing.T) {
 	env, home, o := preflightSetup(t, true)
 	state := filepath.Join(home, ".local", "state", "hetzner-claude")
 	var deleted []int64
-	old := newDownDeps
-	t.Cleanup(func() { newDownDeps = old })
-	newDownDeps = func(c *config.Config) stop.Deps {
+	o.host().newDownDeps = func(c *config.Config) stop.Deps {
 		return stop.Deps{
 			Hetzner: downHetzner{&hetzner.Server{ID: 42, Name: "claude-web", IPv4: "203.0.113.7"}, &deleted},
 			DNS:     dnsDeleter{},
@@ -322,8 +321,8 @@ func TestInterruptionAtAPromptIsLoggedNotAFailure(t *testing.T) {
 			SSHInclude:     func(string) error { return nil },
 		}
 	}
-	pr, pw := io.Pipe() // nothing is typed: the prompt waits
-	defer pw.Close()
+	pr, pw := io.Pipe()               // nothing is typed: the prompt waits
+	defer func() { _ = pw.Close() }() // only unblocks the prompt reader
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	var out, errb syncBuffer
