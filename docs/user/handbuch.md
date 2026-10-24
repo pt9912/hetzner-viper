@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.37  
+Version: 1.38  
 Software-Version: v0.5.0  
 Stand: 23.10.2026
 
@@ -101,7 +101,8 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 * **Abbruch:** Ein erstes Ctrl-C beendet den laufenden Befehl und wird protokolliert (`interrupted`); ein zweites beendet `viper` sofort. Ein abgebrochenes `viper up` lässt den Server stehen; ein erneutes `viper up` setzt die Einrichtung fort.
 * **macOS:** Ein Binary aus dem Browser versieht macOS mit einer Quarantäne-Markierung, die das Starten verhindert. Entfernen Sie sie mit `xattr -d com.apple.quarantine ~/bin/viper`. Auf macOS ist `viper` bisher nicht getestet.
 * **Windows** wird nicht unterstützt. Nutzen Sie `viper` dort innerhalb von WSL.
-* **Quellcode:** Das Release enthält auch den Quellcode. `viper` baut man mit Go (`go build ./cmd/viper`); für die Benutzung ist das nicht nötig.
+* **Quellcode:** Das Release enthält auch den Quellcode. Mit Docker und `make` bauen Sie `viper` selbst, ohne Go zu installieren: `make build` legt `dist/viper` ab (`make build GOOS=darwin GOARCH=arm64` für ein anderes System, `make help` zeigt alle Ziele). Mit installiertem Go geht auch `go build ./cmd/viper`. Für die Benutzung ist das nicht nötig.
+* **Noch kein Release mit dem neuen `viper`:** Das letzte veröffentlichte Release ist `v0.4.0`; es enthält noch die frühere Container-Variante. Bis `v0.5.0` erscheint, bauen Sie `viper` wie oben aus dem Quellcode.
 
 ### Erstmalige Einrichtung
 
@@ -880,3 +881,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.35 | v0.4.0 | Neues Programm `viper` (eine Datei, nur Docker nötig) ersetzt `make` für den Container-Betrieb; Binaries für Linux und macOS am Release. Die erzeugte `/etc/passwd` liegt jetzt im Zustandsverzeichnis, damit `make` auch mit einer VM wie Colima funktioniert. |
 | 1.36 | v0.5.0 | Alle Befehle von `viper` laufen direkt auf Ihrem Rechner, ohne Container, Docker und Klon (nur OpenSSH nötig). `.env.local` wird von `viper` selbst gelesen. |
 | 1.37 | v0.5.0 | Die Bash-Skripte, `make` und das Container-Image entfallen; `viper` ist der einzige Weg. Dieses Handbuch beschreibt nur noch `viper`; die älteren Zeilen dieser Tabelle nennen die damaligen Skripte und `make`-Ziele. |
+| 1.38 | v0.5.0 | Entwicklung: `make build` baut `viper` in Docker (`dist/viper`), `make check` führt gofmt, `go vet`, golangci-lint und alle Tests in Containern aus (`make help` listet die Ziele). Für die Benutzung ändert sich nichts. |
