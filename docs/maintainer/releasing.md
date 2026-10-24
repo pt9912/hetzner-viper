@@ -1,6 +1,6 @@
 # Release erstellen
 
-Diese Anleitung richtet sich an Maintainer. Ein Release besteht aus dem Git-Tag mit der Release-Seite auf GitHub (das Quellarchiv erzeugt GitHub selbst) und den `viper`-Binaries für Linux und macOS (amd64 und arm64) mit `SHA256SUMS`. Die Binaries baut der Workflow `release binaries` (`.github/workflows/release-binaries.yml`), sobald ein Tag der Form `vX.Y.Z` gepusht wird; Go baut alle Plattformen auf einem Runner. Die Version kommt per `-ldflags` aus dem Tag und erscheint in `viper version`.
+Diese Anleitung richtet sich an Maintainer. Ein Release besteht aus dem Git-Tag mit der Release-Seite auf GitHub (das Quellarchiv erzeugt GitHub selbst) und den `viper`-Binaries für Linux und macOS (amd64 und arm64) mit `SHA256SUMS`. Die Binaries baut der Workflow `release binaries` (`.github/workflows/release-binaries.yml`), sobald ein Tag der Form `vX.Y.Z` gepusht wird. Er führt zuerst `make check` aus (schlägt es fehl, entsteht kein Binary) und baut dann alle Plattformen mit Go auf einem Runner. Die Version kommt per `-ldflags` aus dem Tag und erscheint in `viper version`.
 
 ## Versionsnummer
 
@@ -15,7 +15,7 @@ Die Handbuch-Version (`Version:` im Kopf von `docs/user/handbuch.md`) zählt una
 
 1. Wechseln Sie auf `main` und holen Sie den neuesten Stand: `git switch main && git pull`.
 2. Der Arbeitsbaum ist sauber (`git status`) und alles ist gepusht.
-3. Die Prüfungen laufen lokal mit `make check` (gofmt, `go vet`, golangci-lint, `go test -race`). Alles läuft in Containern aus dem `Dockerfile`; nötig sind nur Docker und `make`. Das Test-Image enthält `bash`, `git`, `jq`, `ssh-keygen`, `sshd` und `shellcheck`; fehlt eines, schlägt der Test fehl. `make help` zeigt alle Ziele, `make build` baut `dist/viper`.
+3. Die Prüfungen laufen lokal mit `make check` (gofmt, `go vet`, golangci-lint, `go test -race`). Alles läuft in Containern aus dem `Dockerfile`; nötig sind nur Docker und `make`. Das Test-Image enthält `bash`, `git`, `jq`, `ssh-keygen`, `sshd` und `shellcheck`; fehlt eines, schlägt der Test fehl. `make help` zeigt alle Ziele. Mit `make build` bauen Sie `viper` vorab für Ihren Rechner (`dist/viper`; `make build VERSION=v0.5.0 GOOS=darwin GOARCH=arm64` für ein anderes Ziel) und prüfen mit `./dist/viper version`.
 4. Der letzte Lauf des Workflows `tests` auf `main` ist grün: `gh run list --branch main --limit 3`.
 5. **Probelauf gegen echte Dienste** (die Tests laufen nur gegen Fakes): Mit einem kleinen Server (`SERVER_TYPE=cpx02` in `machines/test.env.local`) nacheinander `viper preflight test`, `viper up test`, `viper check test`, `viper ssh test --cmd "echo ok"` und `viper down test`. Das kostet wenige Cent.
 6. Das Handbuch ist aktuell (`docs/user/handbuch.md`):
