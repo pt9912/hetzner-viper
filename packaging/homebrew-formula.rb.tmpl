@@ -1,0 +1,38 @@
+# viper.rb — Homebrew formula skeleton. The release workflow (job `homebrew`) fills the marked
+# placeholders from the SHA256SUMS of the same tag, attaches the result to the release as
+# viper.rb and puts it into the tap pt9912/homebrew-viper. Four platforms: Homebrew has no Windows.
+class Viper < Formula
+  desc "Set up and use Hetzner machines for Claude Code"
+  homepage "https://github.com/pt9912/hetzner-viper"
+  license "MIT"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/pt9912/hetzner-viper/releases/download/__TAG__/viper___TAG___darwin_arm64"
+      sha256 "__SHA256_DARWIN_ARM64__"
+    end
+    on_intel do
+      url "https://github.com/pt9912/hetzner-viper/releases/download/__TAG__/viper___TAG___darwin_amd64"
+      sha256 "__SHA256_DARWIN_AMD64__"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/pt9912/hetzner-viper/releases/download/__TAG__/viper___TAG___linux_arm64"
+      sha256 "__SHA256_LINUX_ARM64__"
+    end
+    on_intel do
+      url "https://github.com/pt9912/hetzner-viper/releases/download/__TAG__/viper___TAG___linux_amd64"
+      sha256 "__SHA256_LINUX_AMD64__"
+    end
+  end
+
+  def install
+    bin.install Dir["viper_*"].fetch(0) => "viper"
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/viper version")
+  end
+end

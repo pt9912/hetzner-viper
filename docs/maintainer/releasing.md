@@ -2,6 +2,17 @@
 
 Diese Anleitung richtet sich an Maintainer. Ein Release besteht aus dem Git-Tag mit der Release-Seite auf GitHub (das Quellarchiv erzeugt GitHub selbst) und den `viper`-Binaries für Linux und macOS (amd64 und arm64) mit `SHA256SUMS`. Die Binaries baut der Workflow `release binaries` (`.github/workflows/release-binaries.yml`), sobald ein Tag der Form `vX.Y.Z` gepusht wird. Er führt zuerst `make check` aus (schlägt es fehl, entsteht kein Binary) und baut dann alle Plattformen mit Go auf einem Runner. Die Version kommt per `-ldflags` aus dem Tag und erscheint in `viper version`.
 
+## Homebrew
+
+Zu jedem stabilen Release gehört eine Formel. Der Job `homebrew` im Workflow `release binaries` füllt die Vorlage `packaging/homebrew-formula.rb.tmpl` mit den vier Prüfsummen aus der `SHA256SUMS` desselben Tags (fehlt eine, bricht er ab), hängt das Ergebnis als `viper.rb` an das Release und legt es im Tap `pt9912/homebrew-viper` ab (`Formula/viper.rb`). Benutzer installieren mit `brew install pt9912/viper/viper`. Eine Vorabversion (Tag mit `-`) ändert den Tap nicht.
+
+Einmalig einzurichten (Handlung des Betreibers):
+
+1. Das Repository `pt9912/homebrew-viper` anlegen (öffentlich, mit einem ersten Commit).
+2. Einen fein granularen Token erzeugen, der nur für dieses Repository gilt (*Contents: Read and write*, mit Ablaufdatum), und ihn im Repository `hetzner-viper` als Geheimnis `HOMEBREW_TAP_GITHUB_TOKEN` hinterlegen (`gh secret set HOMEBREW_TAP_GITHUB_TOKEN`).
+
+Fehlt das Geheimnis, endet der Schritt mit einem Hinweis, das Release bleibt unberührt, und `viper.rb` hängt trotzdem am Release. Vorab prüfen Sie die Vorlage mit `brew audit --strict` in einem lokalen Tap (`brew tap-new --no-git local/probe`, die gefüllte Formel nach `Formula/viper.rb` kopieren).
+
 ## Versionsnummer
 
 Die Versionen folgen [SemVer](https://semver.org/lang/de/) mit dem Präfix `v` (`v0.5.0`):

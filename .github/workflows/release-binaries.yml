@@ -35,3 +35,52 @@ jobs:
           for _ in $(seq 12); do gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 && break; sleep 5; done
           gh release view "$GITHUB_REF_NAME" >/dev/null   # fails here, clearly, if there is none
           gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+
+  # The Homebrew formula: filled from the SHA256SUMS of this tag, attached to the release as
+  # viper.rb and put into the tap pt9912/homebrew-viper (secret HOMEBREW_TAP_GITHUB_TOKEN: a
+  # fine-grained token with Contents read and write for that one repository). Without the secret
+  # the job stops with a notice and the release is untouched; a pre-release (tag with "-") does
+  # not change the tap.
+  homebrew:
+    needs: binaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Fill the formula
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          gh release download "$tag" --pattern SHA256SUMS
+          formula=viper.rb
+          sed -e "s/__TAG__/${tag}/g" packaging/homebrew-formula.rb.tmpl > "$formula"
+          for plat in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
+            digest=$(awk -v n="viper_${tag}_${plat}" '$2 == n {print $1}' SHA256SUMS)
+            [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || { echo "no valid SHA256SUMS entry for viper_${tag}_${plat}"; exit 1; }
+            sed -i "s/__SHA256_$(echo "$plat" | tr a-z A-Z)__/${digest}/" "$formula"
+          done
+          ! grep -n '__[A-Z0-9_]*__' "$formula"   # no placeholder is left
+          gh release upload "$tag" "$formula" --clobber
+      - name: Put it into the tap
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          if [ -z "$TAP_TOKEN" ]; then echo "::notice::HOMEBREW_TAP_GITHUB_TOKEN is not set: the tap is not updated (viper.rb is attached to the release)"; exit 0; fi
+          if [[ "$tag" == *-* ]]; then echo "$tag is a pre-release: the tap stays as it is"; exit 0; fi
+          auth="Authorization: Basic $(printf 'x-access-token:%s' "$TAP_TOKEN" | base64 -w0)"
+          git -c http.extraheader="$auth" clone --depth 1 https://github.com/pt9912/homebrew-viper.git tap
+          mkdir -p tap/Formula
+          cp viper.rb tap/Formula/viper.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/viper.rb
+          if git diff --cached --quiet; then echo "the tap has this formula already"; exit 0; fi
+          git commit -m "viper ${tag#v}"
+          git -c http.extraheader="$auth" push origin HEAD
