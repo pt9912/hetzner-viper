@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.41  
+Version: 1.42  
 Software-Version: v0.5.1  
 Stand: 24.10.2026
 
@@ -75,6 +75,8 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 * Der OpenSSH-Client mit `ssh`, `ssh-keygen`, `ssh-keyscan` und `scp`. `viper` meldet es, bevor es etwas anlegt, wenn ein Programm fehlt.
 
 #### Vorgehen
+
+**Mit Homebrew** (Linux und macOS): `brew install pt9912/viper/viper`, dann `viper version` (Update: `brew upgrade viper`). Sonst von Hand:
 
 1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.5.1_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`), und `SHA256SUMS`.
 2. Prüfen Sie die Datei und machen Sie sie ausführbar:
@@ -884,3 +886,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.39 | v0.5.0 | Neue Option `viper up <rechner> --no-code`: VS Code wird nach dem Start nicht geöffnet. |
 | 1.40 | v0.5.0 | Release `v0.5.0` mit den `viper`-Binaries für Linux und macOS. |
 | 1.41 | v0.5.1 | `viper setup` legt zusätzlich `machines/example.env.local.example` an (Vorlage für die Einstellungen eines Rechners). Die Meldung bei fehlender `.env.local` verweist auf `viper setup`. |
+| 1.42 | v0.5.1 | `viper` lässt sich auch mit Homebrew installieren: `brew install pt9912/viper/viper`. |
