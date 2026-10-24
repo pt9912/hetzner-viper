@@ -12,7 +12,7 @@ It is meant for developers with their own Hetzner and Cloudflare accounts.
 
 ## What can I do today?
 
-`viper` is one file (Linux, macOS) from the [Releases page](https://github.com/pt9912/hetzner-viper/releases), or with Homebrew: `brew install pt9912/viper/viper`. It needs the OpenSSH client (`ssh`, `ssh-keygen`, `ssh-keyscan`, `scp`) and nothing else: no Docker, `make`, `hcloud` or `jq` (`git` is used for the repository check and `code` to open VS Code, both optional).
+`viper` is one file (Linux) from the [Releases page](https://github.com/pt9912/hetzner-viper/releases), or with Homebrew: `brew install pt9912/viper/viper`. It needs the OpenSSH client (`ssh`, `ssh-keygen`, `ssh-keyscan`, `scp`) and nothing else: no Docker, `make`, `hcloud` or `jq` (`git` is used for the repository check and `code` to open VS Code, both optional).
 
 ```bash
 mkdir ~/viper && cd ~/viper        # where your .env.local lives
@@ -40,12 +40,6 @@ viper log [web] [--full]           # events of the machines, or one machine's fu
 
 The full guide with all tasks, settings and troubleshooting is the [user manual](docs/user/handbuch.md) (German). For a first real run, start with the section „Erster Testlauf mit einem kleinen Server“ there (server type `cpx02`, a few cents per hour).
 
-## State of verification
-
-The tests run the commands against a fake cloud and a fake server: the scripts that go to the server are executed for real (in a sandbox, with fake `brew`, `claude`, `gh` and so on, against real Git repositories), the host keys are made and signed with a real `ssh-keygen`, and the trust logic is checked against a real `sshd`.
-
-**Not yet run for real with the Go program:** any command against the real Hetzner and Cloudflare APIs. Also not yet run for real: `VIPER_GH_TOKEN`/gh, deploy keys, the iPad, a vLLM server, macOS (see [Limits](#security-and-limits)). Try `viper preflight` first (it only reads), then a small server.
-
 ## Why Hetzner Viper?
 
 A code agent like Claude Code should run on a machine that is not your own laptop: powerful, isolated from your own data and credentials, reachable at any time through tmux, and usable from an iPad. Running such a machine permanently does not pay off. Setting up server, firewall, DNS, SSH hardening and repository by hand on every start is tedious and error-prone. `viper` turns this into one command to start and one to delete.
@@ -71,7 +65,7 @@ Machines are disposable: everything that matters lives in the Git repository. Th
 - **Everything on the server is lost when it is deleted**, including a Claude `/login` (with `VIPER_CLAUDE_TOKEN` every new server is logged in again automatically).
 - The per-machine SSH config never forwards your ssh-agent or X11 to the server, even if your own `~/.ssh/config` does.
 - `viper` creates paid resources. Never put API tokens into Git.
-- Parts are not yet run against real services (see above). Use a dedicated Hetzner project and try new settings with `viper preflight` and a small server first.
+- Use a dedicated Hetzner project and try new settings with `viper preflight` and a small server first.
 
 ## Requirements
 

@@ -12,7 +12,7 @@ Zielgruppe sind Entwicklerinnen und Entwickler mit eigenem Hetzner- und Cloudfla
 
 ## Was kann ich heute tun?
 
-`viper` ist eine Datei (Linux, macOS) von der [Releases-Seite](https://github.com/pt9912/hetzner-viper/releases) oder mit Homebrew: `brew install pt9912/viper/viper`. Es braucht den OpenSSH-Client (`ssh`, `ssh-keygen`, `ssh-keyscan`, `scp`) und sonst nichts: kein Docker, `make`, `hcloud` oder `jq` (`git` dient der Repository-Prüfung und `code` dem Öffnen von VS Code, beides optional).
+`viper` ist eine Datei (Linux) von der [Releases-Seite](https://github.com/pt9912/hetzner-viper/releases) oder mit Homebrew: `brew install pt9912/viper/viper`. Es braucht den OpenSSH-Client (`ssh`, `ssh-keygen`, `ssh-keyscan`, `scp`) und sonst nichts: kein Docker, `make`, `hcloud` oder `jq` (`git` dient der Repository-Prüfung und `code` dem Öffnen von VS Code, beides optional).
 
 ```bash
 mkdir ~/viper && cd ~/viper        # hier liegt Ihre .env.local
@@ -40,12 +40,6 @@ viper log [web] [--full]           # Ereignisse der Rechner oder die vollständi
 
 Die vollständige Anleitung mit allen Aufgaben, Einstellungen und der Fehlerbehebung steht im [Benutzerhandbuch](docs/user/handbuch.md). Für den ersten echten Lauf beginnen Sie dort mit dem Abschnitt „Erster Testlauf mit einem kleinen Server“ (Servertyp `cpx02`, wenige Cent pro Stunde).
 
-## Stand der Prüfung
-
-Die Tests führen die Befehle gegen eine Fake-Cloud und einen Fake-Server aus: Die Skripte, die auf den Server gehen, laufen echt (in einer Sandbox, mit gefälschten `brew`, `claude`, `gh` usw., gegen echte Git-Repositories), die Host-Schlüssel werden mit einem echten `ssh-keygen` erzeugt und signiert, und die Vertrauenslogik wird gegen einen echten `sshd` geprüft.
-
-**Noch nicht echt gelaufen mit dem Go-Programm:** jeder Befehl gegen die echten APIs von Hetzner und Cloudflare. Ebenfalls noch nicht echt gelaufen: `VIPER_GH_TOKEN`/gh, Deploy-Keys, das iPad, ein vLLM-Server, macOS (siehe [Grenzen](#sicherheit-und-grenzen)). Probieren Sie zuerst `viper preflight` (liest nur), dann einen kleinen Server.
-
 ## Warum Hetzner Viper?
 
 Ein Code-Agent wie Claude Code soll auf einem Rechner arbeiten, der nicht der eigene Laptop ist: mit viel Leistung, isoliert von den eigenen Daten und Zugängen, dauerhaft erreichbar per tmux und vom iPad bedienbar. Ein Dauerbetrieb lohnt sich dafür nicht. Von Hand sind Server, Firewall, DNS, SSH-Härtung und Repository-Setup bei jedem Start mühsam und fehleranfällig. `viper` macht daraus einen Befehl zum Starten und einen zum Löschen.
@@ -71,7 +65,7 @@ Rechner sind Wegwerfware: Alles, was zählt, liegt im Git-Repository. Deshalb gi
 - **Alles auf dem Server geht beim Löschen verloren**, auch eine Claude-Anmeldung per `/login` (mit `VIPER_CLAUDE_TOKEN` ist jeder neue Server automatisch wieder angemeldet).
 - Die SSH-Konfiguration jedes Rechners leitet Ihren ssh-agent und X11 nie an den Server weiter, auch wenn Ihre eigene `~/.ssh/config` das tut.
 - `viper` legt kostenpflichtige Ressourcen an. Legen Sie API-Tokens nie in Git ab.
-- Teile sind noch nicht gegen echte Dienste gelaufen (siehe oben). Nutzen Sie ein eigenes Hetzner-Projekt und probieren Sie neue Einstellungen zuerst mit `viper preflight` und einem kleinen Server aus.
+- Nutzen Sie ein eigenes Hetzner-Projekt und probieren Sie neue Einstellungen zuerst mit `viper preflight` und einem kleinen Server aus.
 
 ## Voraussetzungen
 
