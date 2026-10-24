@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -137,8 +138,24 @@ Option for every command:
               (default: the current directory)
 
 Values that start with a dash need the form --cmd=VALUE, for example viper ssh web --cmd="ls -la".
-`)
+
+` + manualLines(version))
 	return b.String()
+}
+
+var releaseVersion = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+
+const manualBase = "https://github.com/pt9912/hetzner-viper/blob/"
+
+// manualLines name the user manual (German): of this version, if it is a release, and the current
+// one on main.
+func manualLines(v string) string {
+	const path = "/docs/user/handbuch.md"
+	if !releaseVersion.MatchString(v) {
+		return "Manual (German): " + manualBase + "main" + path + "\n"
+	}
+	return "Manual (German), this version: " + manualBase + v + path + "\n" +
+		"                      current:      " + manualBase + "main" + path + "\n"
 }
 
 // parseFlag handles the option args[*i] (starting with "--"); a value in the next argument advances *i.

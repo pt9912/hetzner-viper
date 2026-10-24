@@ -180,3 +180,21 @@ func TestDnsNamePrintsTheMachinesName(t *testing.T) {
 		t.Error("no settings")
 	}
 }
+
+func TestHelpPointsToTheManual(t *testing.T) {
+	rel := manualLines("v0.5.1")
+	for _, want := range []string{"/blob/v0.5.1/docs/user/handbuch.md", "/blob/main/docs/user/handbuch.md"} {
+		if !strings.Contains(rel, want) {
+			t.Errorf("release: %q lacks %s", rel, want)
+		}
+	}
+	for _, v := range []string{"dev", "v0.5.1-3-gabc123-dirty", ""} {
+		got := manualLines(v)
+		if !strings.Contains(got, "/blob/main/") || strings.Count(got, "http") != 1 {
+			t.Errorf("%q: %s", v, got)
+		}
+	}
+	if !strings.Contains(helpText(), "Manual (German)") {
+		t.Errorf("help: %s", helpText())
+	}
+}

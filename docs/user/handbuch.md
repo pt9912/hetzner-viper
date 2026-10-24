@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.42  
+Version: 1.43  
 Software-Version: v0.5.1  
 Stand: 24.10.2026
 
@@ -887,3 +887,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.40 | v0.5.0 | Release `v0.5.0` mit den `viper`-Binaries für Linux und macOS. |
 | 1.41 | v0.5.1 | `viper setup` legt zusätzlich `machines/example.env.local.example` an (Vorlage für die Einstellungen eines Rechners). Die Meldung bei fehlender `.env.local` verweist auf `viper setup`. |
 | 1.42 | v0.5.1 | `viper` lässt sich auch mit Homebrew installieren: `brew install pt9912/viper/viper`. |
+| 1.43 | v0.5.2 | `viper help` nennt am Ende die Adresse dieses Handbuchs (der installierten Version und der aktuellen auf `main`). |
