@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.38  
+Version: 1.39  
 Software-Version: v0.5.0  
 Stand: 23.10.2026
 
@@ -97,7 +97,7 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 * **Verbindung:** `viper ssh` ersetzt sich selbst durch `ssh`: Signale und Exit-Code sind die von `ssh`.
 * **Prüfungen:** `viper preflight` und `viper check` sprechen die APIs von Hetzner, Cloudflare und (falls gesetzt) GitHub und Ihrem Claude-Gateway direkt an. `viper check` sendet ein Prüfskript per SSH auf den Server und ändert dort nichts. `viper dns` prüft zusätzlich Rechnername, `DNS_DOMAIN`, `SERVER_PREFIX` und die Länge des Servernamens.
 * **Server-Skripte:** Die Programme, die auf dem Server laufen (Einrichtung, Prüfung, Sicherheitsprüfung vor dem Löschen), sind in `viper` eingebaut.
-* **VS Code:** `viper up` öffnet VS Code, wenn `code` vorhanden ist, ohne dass VS Code Ihre Tokens erbt.
+* **VS Code:** `viper up` öffnet VS Code, wenn `code` vorhanden ist, ohne dass VS Code Ihre Tokens erbt. Mit `--no-code` öffnet es VS Code nicht.
 * **Abbruch:** Ein erstes Ctrl-C beendet den laufenden Befehl und wird protokolliert (`interrupted`); ein zweites beendet `viper` sofort. Ein abgebrochenes `viper up` lässt den Server stehen; ein erneutes `viper up` setzt die Einrichtung fort.
 * **macOS:** Ein Binary aus dem Browser versieht macOS mit einer Quarantäne-Markierung, die das Starten verhindert. Entfernen Sie sie mit `xattr -d com.apple.quarantine ~/bin/viper`. Auf macOS ist `viper` bisher nicht getestet.
 * **Windows** wird nicht unterstützt. Nutzen Sie `viper` dort innerhalb von WSL.
@@ -202,7 +202,7 @@ Die erstmalige Einrichtung ist abgeschlossen und die drei Zugangsdaten sind gese
    ```
    Ohne URL wird `REPO_URL` aus `machines/web.env.local` verwendet (siehe Kapitel 4).
 2. Warten Sie. `viper up` legt Server, Firewall und DNS-Eintrag an und wartet auf den Abschluss der Servereinrichtung. Das dauert meist einige Minuten, höchstens etwa 20. Dabei werden alle Ubuntu-Updates eingespielt. Brauchen sie einen Neustart (etwa ein neuer Kernel), startet der Server einmal neu, und `viper up` wartet darauf. Nach der Ersteinrichtung schaltet sich cloud-init ab (`/etc/cloud/cloud-init.disabled`), spätere Neustarts laufen ohne cloud-init; `cloud-init status` zeigt dann `disabled`.
-3. VS Code öffnet sich automatisch mit dem geklonten Repository, sofern der Befehl `code` vorhanden ist. Sonst öffnen Sie die Verbindung `hetzner-claude-web` in VS Code Remote-SSH selbst.
+3. VS Code öffnet sich automatisch mit dem geklonten Repository, sofern der Befehl `code` vorhanden ist. Mit `viper up <rechner> --no-code` bleibt es zu. Sonst öffnen Sie die Verbindung `hetzner-claude-web` in VS Code Remote-SSH selbst.
 
 #### Ergebnis
 
@@ -882,3 +882,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.36 | v0.5.0 | Alle Befehle von `viper` laufen direkt auf Ihrem Rechner, ohne Container, Docker und Klon (nur OpenSSH nötig). `.env.local` wird von `viper` selbst gelesen. |
 | 1.37 | v0.5.0 | Die Bash-Skripte, `make` und das Container-Image entfallen; `viper` ist der einzige Weg. Dieses Handbuch beschreibt nur noch `viper`; die älteren Zeilen dieser Tabelle nennen die damaligen Skripte und `make`-Ziele. |
 | 1.38 | v0.5.0 | Entwicklung: `make build` baut `viper` in Docker (`dist/viper`), `make check` führt gofmt, `go vet`, golangci-lint und alle Tests in Containern aus (`make help` listet die Ziele). Für die Benutzung ändert sich nichts. |
+| 1.39 | v0.5.0 | Neue Option `viper up <rechner> --no-code`: VS Code wird nach dem Start nicht geöffnet. |

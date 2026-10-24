@@ -90,7 +90,16 @@ func (e *keygenError) Error() string {
 	return e.err.Error()
 }
 
-// runUp is start.sh: create or reuse the machine and set it up.
+// upDeps are the dependencies of viper up; --no-code takes away the opening of VS Code.
+func (o *options) upDeps(c *config.Config) start.Deps {
+	deps := o.host().newUpDeps(c, func() preflight.Deps { return o.host().newPreflightDeps(c) })
+	if o.noCode {
+		deps.OpenVSCode = nil
+	}
+	return deps
+}
+
+// runUp creates or reuses the machine and sets it up.
 func runUp(ctx context.Context, o *options, env config.Env, stdout, stderr io.Writer) error {
 	c, err := config.Load(settingsDir(o), o.machine, env, true)
 	if err != nil {
@@ -102,7 +111,7 @@ func runUp(ctx context.Context, o *options, env config.Env, stdout, stderr io.Wr
 	}
 	ctx, stop := notifyContext(ctx)
 	defer stop()
-	deps := o.host().newUpDeps(c, func() preflight.Deps { return o.host().newPreflightDeps(c) })
+	deps := o.upDeps(c)
 	// the pauses end with an interruption
 	deps.Sleep = func(d time.Duration) {
 		select {

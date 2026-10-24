@@ -366,3 +366,33 @@ func (s *syncBuffer) String() string {
 	defer s.mu.Unlock()
 	return s.b.String()
 }
+
+func TestNoCodeKeepsVSCodeClosed(t *testing.T) {
+	_, _, o := preflightSetup(t, false)
+	c := &config.Config{}
+	opened := false
+	o.host().newUpDeps = func(*config.Config, func() preflight.Deps) start.Deps {
+		return start.Deps{OpenVSCode: func(string, string) { opened = true }}
+	}
+	if d := o.upDeps(c); d.OpenVSCode == nil {
+		t.Fatal("VS Code is opened by default")
+	} else {
+		d.OpenVSCode("a", "b")
+	}
+	if !opened {
+		t.Error("the hook was not kept")
+	}
+	_, po, err := parse([]string{"up", "web", "--no-code"})
+	if err != nil || !po.noCode {
+		t.Fatalf("--no-code: %v %+v", err, po)
+	}
+	o.noCode = po.noCode
+	if d := o.upDeps(c); d.OpenVSCode != nil {
+		t.Error("--no-code still opens VS Code")
+	}
+	for _, args := range [][]string{{"check", "web", "--no-code"}, {"up", "web", "--no-code=1"}} {
+		if _, _, err := parse(args); err == nil {
+			t.Errorf("%v: want an error", args)
+		}
+	}
+}

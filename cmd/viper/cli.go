@@ -9,7 +9,7 @@ import (
 
 type options struct {
 	machine, repo, cmd, dir string
-	force, full             bool
+	force, full, noCode     bool
 	h                       *host // the outside world; nil means the real one
 }
 
@@ -46,7 +46,7 @@ func commands() map[string]command {
 	return map[string]command{
 		"setup":     {usage: "", machine: noMachine, run: nativeSetup},
 		"preflight": {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"}, run: nativePreflight},
-		"up":        {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"}, run: nativeUp},
+		"up":        {usage: "<machine> [--repo URL] [--no-code]", machine: needMachine, flags: []string{"repo", "no-code"}, run: nativeUp},
 		"check":     {usage: "<machine>", machine: needMachine, run: nativeCheck},
 		"ssh":       {usage: "<machine> [--cmd COMMAND]", machine: needMachine, flags: []string{"cmd"}, run: nativeSSH},
 		"down":      {usage: "<machine> [--force]", machine: needMachine, flags: []string{"force"}, run: nativeDown},
@@ -172,6 +172,8 @@ func parseFlag(o *options, name string, args []string, i *int, allowed map[strin
 		o.force = true
 	case "full":
 		o.full = true
+	case "no-code":
+		o.noCode = true
 	}
 	return nil
 }
