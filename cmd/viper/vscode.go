@@ -18,7 +18,7 @@ func outputOf(name string, args ...string) (string, error) {
 // remoteWorkdir asks the machine for its work directory (viper up wrote it there); empty if it
 // cannot be read, e.g. on a machine set up by an older viper.
 func remoteWorkdir(o *options, c *config.Config) string {
-	out, err := o.host().outputTool("ssh", "-o", "BatchMode=yes", "-F", c.SSHConfig, c.SSHAlias, "cat ~/.config/viper/workdir")
+	out, err := o.host().outputTool("ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-F", c.SSHConfig, c.SSHAlias, "cat ~/.config/viper/workdir")
 	dir := strings.TrimSpace(out)
 	if err != nil || !strings.HasPrefix(dir, "/") {
 		return ""

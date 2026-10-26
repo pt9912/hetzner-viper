@@ -47,7 +47,7 @@ func TestVSCodeOpensTheWorkDirectoryOfTheMachine(t *testing.T) {
 	if alias != "hetzner-claude-web" || workdir != "/home/builder/work/web" {
 		t.Errorf("opened %q %q", alias, workdir)
 	}
-	want := []string{"ssh", "-o", "BatchMode=yes", "-F", cfg, "hetzner-claude-web", "cat ~/.config/viper/workdir"}
+	want := []string{"ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-F", cfg, "hetzner-claude-web", "cat ~/.config/viper/workdir"}
 	if !reflect.DeepEqual(asked, want) {
 		t.Errorf("asked %q", asked)
 	}
