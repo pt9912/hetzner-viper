@@ -22,6 +22,8 @@ viper preflight web                # read-only checks: settings, Hetzner, Cloudf
 viper up web --repo https://example.org/org/web.git   # set up machine "web", clone the repo
 viper check web                    # read-only: DNS, access by name like another device, server state
 viper ssh web                      # shell on the machine (--cmd "..." for one command)
+viper ssh web --tmux                # attach to the tmux session "claude" (the one VS Code uses)
+viper vscode web                   # open VS Code on the machine again (as viper up does)
 viper down web                     # check for unsaved work, then delete machine "web"
 viper dns web                      # print the DNS name of machine "web"
 viper log [web] [--full]           # events of the machines, or one machine's full output

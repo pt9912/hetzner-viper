@@ -15,6 +15,8 @@ import (
 type host struct {
 	runTool          func(name string, args ...string) error
 	execTool         func(name string, args ...string) error
+	outputTool       func(name string, args ...string) (string, error)
+	launchVSCode     func(alias, workdir string) error
 	lookPath         func(file string) (string, error)
 	newCheckDeps     func(c *config.Config) check.Deps
 	newDownDeps      func(c *config.Config) stop.Deps
@@ -26,6 +28,8 @@ func defaultHost() *host {
 	return &host{
 		runTool:          runChild,
 		execTool:         replaceProcess,
+		outputTool:       outputOf,
+		launchVSCode:     launchVSCode,
 		lookPath:         exec.LookPath,
 		newCheckDeps:     defaultCheckDeps,
 		newDownDeps:      defaultDownDeps,

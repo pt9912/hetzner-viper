@@ -22,6 +22,8 @@ viper preflight web                # nur lesende Prüfung: Einstellungen, Hetzne
 viper up web --repo https://example.org/org/web.git   # Rechner "web" einrichten, Repo klonen
 viper check web                    # nur lesend: DNS, Zugriff über den Namen wie ein anderes Gerät, Server-Zustand
 viper ssh web                      # Shell auf dem Rechner (--cmd "..." für einen Befehl)
+viper ssh web --tmux                # an die tmux-Sitzung "claude" anhängen (die von VS Code)
+viper vscode web                   # VS Code erneut auf dem Rechner öffnen (wie viper up)
 viper down web                     # auf ungesicherte Arbeit prüfen, dann Rechner "web" löschen
 viper dns web                      # DNS-Name des Rechners "web" ausgeben
 viper log [web] [--full]           # Ereignisse der Rechner oder die vollständige Ausgabe eines Rechners

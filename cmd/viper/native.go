@@ -157,6 +157,10 @@ Host CA public key for iPad SSH clients (only if they support OpenSSH host CAs):
 
 func exists(p string) bool { _, err := os.Stat(p); return err == nil }
 
+// tmuxCommand attaches to the tmux session "claude" of the machine, the one the terminals of VS Code
+// use, or creates it in the work directory (a command over ssh does not start in it by itself).
+const tmuxCommand = `cd "$(cat ~/.config/viper/workdir 2>/dev/null)" 2>/dev/null; exec tmux new-session -A -s claude`
+
 // connect opens a shell or runs one command on a machine, with the machine's own ssh config
 // (pinned host key). With a command ssh gets a terminal only if we have one.
 func connect(o *options, env config.Env, interactive bool) error {
@@ -167,13 +171,23 @@ func connect(o *options, env config.Env, interactive bool) error {
 	if !exists(c.SSHConfig) {
 		return fmt.Errorf("No SSH config for %s: run viper up %s first", c.ServerName, o.machine)
 	}
+	command := o.cmd
+	if o.tmux {
+		if o.cmd != "" {
+			return fmt.Errorf("viper ssh: --tmux and --cmd exclude each other")
+		}
+		if !interactive {
+			return fmt.Errorf("viper ssh: --tmux needs a terminal")
+		}
+		command = tmuxCommand
+	}
 	var args []string
-	if o.cmd != "" && interactive {
+	if command != "" && interactive {
 		args = append(args, "-t")
 	}
 	args = append(args, "-F", c.SSHConfig, c.SSHAlias)
-	if o.cmd != "" {
-		args = append(args, o.cmd)
+	if command != "" {
+		args = append(args, command)
 	}
 	if err := o.host().need("ssh"); err != nil {
 		return err

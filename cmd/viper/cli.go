@@ -9,9 +9,9 @@ import (
 )
 
 type options struct {
-	machine, repo, cmd, dir string
-	force, full, noCode     bool
-	h                       *host // the outside world; nil means the real one
+	machine, repo, cmd, dir   string
+	force, full, noCode, tmux bool
+	h                         *host // the outside world; nil means the real one
 }
 
 // host returns the outside world of the command, the real one unless a test set another.
@@ -49,8 +49,9 @@ func commands() map[string]command {
 		"preflight": {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"}, run: nativePreflight},
 		"up":        {usage: "<machine> [--repo URL] [--no-code]", machine: needMachine, flags: []string{"repo", "no-code"}, run: nativeUp},
 		"check":     {usage: "<machine>", machine: needMachine, run: nativeCheck},
-		"ssh":       {usage: "<machine> [--cmd COMMAND]", machine: needMachine, flags: []string{"cmd"}, run: nativeSSH},
+		"ssh":       {usage: "<machine> [--cmd COMMAND | --tmux]", machine: needMachine, flags: []string{"cmd", "tmux"}, run: nativeSSH},
 		"down":      {usage: "<machine> [--force]", machine: needMachine, flags: []string{"force"}, run: nativeDown},
+		"vscode":    {usage: "<machine>", machine: needMachine, run: nativeVSCode},
 		"dns":       {usage: "<machine>", machine: needMachine, run: nativeDNS},
 		"log":       {usage: "[<machine>] [--full]", machine: maybeMachine, flags: []string{"full"}, run: nativeLog},
 		"version":   {usage: "", machine: noMachine},
@@ -191,6 +192,8 @@ func parseFlag(o *options, name string, args []string, i *int, allowed map[strin
 		o.full = true
 	case "no-code":
 		o.noCode = true
+	case "tmux":
+		o.tmux = true
 	}
 	return nil
 }

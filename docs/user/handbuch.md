@@ -1,7 +1,7 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.45  
-Software-Version: v0.6.0  
+Version: 1.47  
+Software-Version: v0.7.0  
 Stand: 26.10.2026  
 
 ## 1. Einleitung
@@ -22,7 +22,7 @@ Auf Ihrem lokalen Rechner (Linux oder macOS):
 
 * Das Programm `viper` (eine einzelne Datei aus dem Release, siehe „`viper` installieren“).
 * Der OpenSSH-Client mit `ssh`, `ssh-keygen`, `ssh-keyscan` und `scp`. Mehr brauchen Sie nicht: `hcloud`, `jq`, `curl`, Docker und `make` sind nicht nötig.
-* Optional VS Code mit der Erweiterung **Remote-SSH**. Sie nutzt den OpenSSH-Client Ihres Rechners. Ohne VS Code verbinden Sie sich mit `viper ssh <rechner>`.
+* Optional VS Code mit der Erweiterung **Remote-SSH**. Sie nutzt den OpenSSH-Client Ihres Rechners. Ohne VS Code verbinden Sie sich mit `viper ssh <rechner>`; VS Code öffnen Sie später mit `viper vscode <rechner>` erneut.
 
 Bei den Anbietern:
 
@@ -45,7 +45,8 @@ Bei den Anbietern:
 | `viper preflight <rechner>` | Prüft vorab nur lesend Einstellungen, Setup, Hetzner, Cloudflare und GitHub. Legt nichts an. `viper up` führt es zuerst aus. |
 | `viper up <rechner>` | Richtet einen Rechner ein, setzt den DNS-Eintrag, legt das Arbeitsverzeichnis an und klont das Repository. |
 | `viper check <rechner>` | Prüft einen laufenden Rechner nur lesend: DNS, Zugriff über den Namen wie ein anderes Gerät, Zustand des Servers. |
-| `viper ssh <rechner>` | Öffnet eine Shell auf dem Rechner oder führt mit `--cmd` einen Befehl aus, mit der SSH-Konfiguration des Rechners. |
+| `viper ssh <rechner>` | Öffnet eine Shell auf dem Rechner oder führt mit `--cmd` einen Befehl aus, mit der SSH-Konfiguration des Rechners. Mit `--tmux` hängt sich die Verbindung an die tmux-Sitzung `claude` an (oder legt sie im Arbeitsverzeichnis an), dieselbe wie in den VS-Code-Terminals; `--tmux` braucht ein Terminal und lässt sich nicht mit `--cmd` kombinieren. |
+| `viper vscode <rechner>` | Öffnet VS Code (Remote-SSH) auf dem laufenden Rechner im Arbeitsverzeichnis, so wie `viper up` es nach dem Einrichten tut. Braucht den Befehl `code`. Die Terminals dort hängen sich an die tmux-Sitzung `claude`. |
 | `viper down <rechner>` | Prüft den Git-Stand, warnt vor ungesicherter Arbeit und löscht Server und DNS-Eintrag. |
 | `viper dns <rechner>` | Gibt den DNS-Namen des Rechners aus (`<SERVER_PREFIX>-<rechner>.<DNS_DOMAIN>`), ohne Zugriff auf Hetzner oder Cloudflare. |
 | `viper log [<rechner>]` | Zeigt die lokalen Protokolle: Ereignisse aller Rechner, eines Rechners oder mit `--full` dessen vollständige Ausgabe. |
@@ -78,12 +79,12 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 
 **Mit Homebrew** (Linux und macOS): `brew install pt9912/viper/viper`, dann `viper version` (Update: `brew upgrade viper`). Sonst von Hand:
 
-1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.6.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`), und `SHA256SUMS`.
+1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.7.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`), und `SHA256SUMS`.
 2. Prüfen Sie die Datei und machen Sie sie ausführbar:
    ```bash
-   grep viper_v0.6.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
-   chmod +x viper_v0.6.0_linux_amd64
-   mv viper_v0.6.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
+   grep viper_v0.7.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
+   chmod +x viper_v0.7.0_linux_amd64
+   mv viper_v0.7.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
    ```
 3. Prüfen Sie die Installation: `viper version`.
 
@@ -269,7 +270,7 @@ Geprüft werden:
    claude
    ```
 4. Zum Verlassen der Sitzung drücken Sie **Strg+B**, dann **D**. Die Sitzung läuft weiter.
-5. Verbinden Sie sich später erneut, etwa mit `viper ssh <rechner> --cmd "tmux attach -t claude"` (bei einem Befehl im Terminal fordert `viper ssh` ein Terminal an, das tmux braucht) oder von einem beliebigen SSH-Client mit `tmux attach -t claude`.
+5. Verbinden Sie sich später erneut, am einfachsten mit `viper ssh <rechner> --tmux`, oder mit `viper ssh <rechner> --cmd "tmux attach -t claude"` (bei einem Befehl im Terminal fordert `viper ssh` ein Terminal an, das tmux braucht) oder von einem beliebigen SSH-Client mit `tmux attach -t claude`.
 
 #### Ergebnis
 
@@ -891,3 +892,5 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.43 | v0.5.2 | `viper help` nennt am Ende die Adresse dieses Handbuchs (der installierten Version und der aktuellen auf `main`). |
 | 1.44 | v0.5.2 | macOS gilt nicht mehr als „nicht erprobt“: `viper` startet dort. |
 | 1.45 | v0.6.0 | Neue Server stellen für VS Code Remote-SSH ein tmux-Terminal-Profil ein: Die Shell überlebt das Schließen von VS Code. |
+| 1.46 | v0.7.0 | Neu: `viper vscode <rechner>` öffnet VS Code auf einem laufenden Rechner erneut. |
+| 1.47 | v0.7.0 | Neu: `viper ssh <rechner> --tmux` hängt sich an die tmux-Sitzung `claude` an. |

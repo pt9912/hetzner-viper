@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -45,6 +46,22 @@ func vscodeEnv(environ []string) []string {
 	return out
 }
 
+// launchVSCode opens VS Code on the machine (Remote-SSH) in the work directory, or without a folder
+// if workdir is empty; it waits for the `code` command, which returns once the window is requested.
+func launchVSCode(alias, workdir string) error {
+	path, err := exec.LookPath("code")
+	if err != nil {
+		return fmt.Errorf("code not found: install VS Code and its command line tool `code`")
+	}
+	args := []string{"--remote", "ssh-remote+" + alias}
+	if workdir != "" {
+		args = append(args, workdir)
+	}
+	cmd := exec.CommandContext(context.Background(), path, args...)
+	cmd.Env = vscodeEnv(os.Environ())
+	return cmd.Run()
+}
+
 // defaultUpDeps are the real dependencies of up.
 func defaultUpDeps(c *config.Config, preflightDeps func() preflight.Deps) start.Deps {
 	return start.Deps{
@@ -66,15 +83,7 @@ func defaultUpDeps(c *config.Config, preflightDeps func() preflight.Deps) start.
 		SSHInclude:     func(action string) error { return machine.SSHInclude(c, action) },
 		Sleep:          time.Sleep,
 		Now:            time.Now,
-		OpenVSCode: func(alias, workdir string) {
-			path, err := exec.LookPath("code")
-			if err != nil {
-				return
-			}
-			cmd := exec.CommandContext(context.Background(), path, "--remote", "ssh-remote+"+alias, workdir)
-			cmd.Env = vscodeEnv(os.Environ())
-			_ = cmd.Run()
-		},
+		OpenVSCode:     func(alias, workdir string) { _ = launchVSCode(alias, workdir) },
 	}
 }
 

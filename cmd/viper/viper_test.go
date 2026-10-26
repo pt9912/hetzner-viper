@@ -13,7 +13,7 @@ import (
 )
 
 func TestAMissingMachineNameGivesTheUsage(t *testing.T) {
-	for _, name := range []string{"preflight", "up", "check", "ssh", "down", "dns"} {
+	for _, name := range []string{"preflight", "up", "check", "ssh", "vscode", "down", "dns"} {
 		_, _, err := parse([]string{name})
 		if err == nil || !strings.HasPrefix(err.Error(), "Usage: viper "+name+" <machine>") {
 			t.Errorf("%s: %v", name, err)
@@ -196,5 +196,39 @@ func TestHelpPointsToTheManual(t *testing.T) {
 	}
 	if !strings.Contains(helpText(), "Manual (German)") {
 		t.Errorf("help: %s", helpText())
+	}
+}
+
+func TestConnectWithTmuxAttachesToTheClaudeSession(t *testing.T) {
+	env, home := nativeEnv(t)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(home, ".ssh", "config_hetzner_claude-web")
+	if err := os.MkdirAll(filepath.Dir(cfg), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls, h := fakeTools(t)
+	o := &options{h: h, dir: dir, machine: "web", tmux: true}
+	if err := connect(o, env, true); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{{"ssh", "-t", "-F", cfg, "hetzner-claude-web", tmuxCommand}}
+	if !reflect.DeepEqual(*calls, want) || !strings.Contains(tmuxCommand, "new-session -A -s claude") {
+		t.Errorf("calls %q", *calls)
+	}
+	if err := connect(o, env, false); err == nil || !strings.Contains(err.Error(), "needs a terminal") {
+		t.Errorf("without a terminal: %v", err)
+	}
+	o.cmd = "ls"
+	if err := connect(o, env, true); err == nil || !strings.Contains(err.Error(), "exclude each other") {
+		t.Errorf("with --cmd: %v", err)
+	}
+	if len(*calls) != 1 {
+		t.Errorf("ssh ran for a refused call: %q", *calls)
 	}
 }
