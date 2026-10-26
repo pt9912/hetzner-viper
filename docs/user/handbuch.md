@@ -1,8 +1,8 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.44  
-Software-Version: v0.5.2  
-Stand: 24.10.2026  
+Version: 1.45  
+Software-Version: v0.6.0  
+Stand: 26.10.2026  
 
 ## 1. Einleitung
 
@@ -78,12 +78,12 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 
 **Mit Homebrew** (Linux und macOS): `brew install pt9912/viper/viper`, dann `viper version` (Update: `brew upgrade viper`). Sonst von Hand:
 
-1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.5.2_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`), und `SHA256SUMS`.
+1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.6.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`), und `SHA256SUMS`.
 2. Prüfen Sie die Datei und machen Sie sie ausführbar:
    ```bash
-   grep viper_v0.5.2_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
-   chmod +x viper_v0.5.2_linux_amd64
-   mv viper_v0.5.2_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
+   grep viper_v0.6.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
+   chmod +x viper_v0.6.0_linux_amd64
+   mv viper_v0.6.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
    ```
 3. Prüfen Sie die Installation: `viper version`.
 
@@ -279,6 +279,7 @@ Claude Code läuft in einer Sitzung, die einen Verbindungsabbruch übersteht.
 
 * Docker (Engine, `docker buildx` und `docker compose`) kommt aus Dockers eigenem apt-Repository, nicht aus Ubuntus älterem Paket `docker.io`. Der Signaturschlüssel wird beim Einrichten gegen Dockers veröffentlichten Fingerabdruck geprüft. Beim Einrichten holt `package_upgrade` den neuesten Stand; die automatischen Ubuntu-Sicherheitsupdates erfassen Pakete aus Dockers Repository nicht, später aktualisieren Sie mit `sudo apt update && sudo apt upgrade`. Bei einem bestehenden Server mit `docker.io` wechseln Sie, indem Sie ihn neu anlegen.
 * Neue Server bekommen eine `~/.tmux.conf` für `builder` (Maus an, Fenster ab 1 nummeriert, `Esc` ohne Verzögerung, großer Verlauf). Mit **Alt+1** bis **Alt+9** wechseln Sie direkt zwischen Fenstern; sonst gelten die üblichen Kürzel (**Strg+B**, dann **N**/**P** oder eine Ziffer, **C** für ein neues Fenster). Mit eingeschalteter Maus markieren Sie Text zum Kopieren mit gedrückter **Umschalttaste**. Auf einem bestehenden Server wirkt die Datei nicht; legen Sie sie dort von Hand an. Eigene Änderungen gehen mit dem Server verloren.
+* Neue Server stellen für VS Code Remote-SSH das Terminal-Profil `tmux` als Standard ein (`~/.vscode-server/data/Machine/settings.json`). Jedes neue VS-Code-Terminal hängt sich an die tmux-Sitzung `claude` an oder legt sie an. Schließen Sie VS Code, bleibt die Shell samt laufender Programme erhalten, und nach dem erneuten Verbinden zeigt ein neues Terminal sie wieder. Mehrere Terminals zeigen dieselbe Sitzung und spiegeln dasselbe tmux-Fenster: Eingaben und Ausgaben erscheinen in allen. Für getrennte Shells legen Sie darin tmux-Fenster an (**Strg+B**, dann **C**). VS-Code-Tasks und Erweiterungen starten dagegen eine normale `bash`, nicht die tmux-Sitzung. Auf einem bestehenden Server wirkt die Einstellung nicht; tragen Sie sie dort von Hand ein.
 * Homebrew (`brew`) wird beim ersten Einrichten mit dem offiziellen Installationsskript nach `/home/linuxbrew/.linuxbrew` installiert und ist in allen Shells verfügbar, auch für Claude Code. Das kostet ein bis zwei Minuten. Mit `VIPER_HOMEBREW=0` (etwa in `machines/<rechner>.env.local`) entfällt es. Scheitert die Installation, warnt `viper up` nur; ein erneuter `viper up` versucht es wieder.
 * Interaktive Shells starten im Arbeitsverzeichnis des Rechners (beim geklonten Repository), wenn sie im Home-Verzeichnis beginnen würden. Das gilt für `viper ssh`, tmux und einen normalen SSH-Login. VS-Code-Terminals öffnen ohnehin im Projektordner, und einzelne SSH-Befehle sind nicht betroffen.
 * Ohne `VIPER_CLAUDE_TOKEN` müssen Sie das Anmelden bei Claude nach jedem neuen Server wiederholen, weil `/home/builder/.claude` mit dem Server gelöscht wird. Mit Token entfällt das (siehe „Claude Code ohne erneute Anmeldung nutzen“).
@@ -889,3 +890,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.42 | v0.5.1 | `viper` lässt sich auch mit Homebrew installieren: `brew install pt9912/viper/viper`. |
 | 1.43 | v0.5.2 | `viper help` nennt am Ende die Adresse dieses Handbuchs (der installierten Version und der aktuellen auf `main`). |
 | 1.44 | v0.5.2 | macOS gilt nicht mehr als „nicht erprobt“: `viper` startet dort. |
+| 1.45 | v0.6.0 | Neue Server stellen für VS Code Remote-SSH ein tmux-Terminal-Profil ein: Die Shell überlebt das Schließen von VS Code. |

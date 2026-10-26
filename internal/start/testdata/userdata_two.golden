@@ -76,6 +76,21 @@ write_files:
       bind -n M-8 select-window -t 8
       bind -n M-9 select-window -t 9
 
+  # VS Code Remote-SSH reads machine settings from here: terminals attach to the tmux session "claude"
+  # (or create it), so closing VS Code does not end the shell; tasks and extensions keep plain bash
+  - path: /home/builder/.vscode-server/data/Machine/settings.json
+    owner: builder:builder
+    permissions: '0644'
+    defer: true
+    content: |
+      {
+        "terminal.integrated.profiles.linux": {
+          "tmux": { "path": "tmux", "args": ["new-session", "-A", "-s", "claude"] }
+        },
+        "terminal.integrated.defaultProfile.linux": "tmux",
+        "terminal.integrated.automationProfile.linux": { "path": "/bin/bash" }
+      }
+
 runcmd:
   - sshd -t
   - systemctl try-reload-or-restart ssh
@@ -93,6 +108,8 @@ runcmd:
       DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     )
   - systemctl enable --now docker
+  # write_files creates the parent directories as root; VS Code's server (user builder) writes into them
+  - chown -R builder:builder /home/builder/.vscode-server
   - mkdir -p /home/builder/.ssh
   - chown builder:builder /home/builder/.ssh
   - chmod 700 /home/builder/.ssh
