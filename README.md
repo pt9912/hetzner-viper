@@ -6,9 +6,9 @@
 
 ## What is Hetzner Viper?
 
-A single program, `viper`, that sets up a remote Linux machine on Hetzner Cloud with one command. On that machine the code agent [Claude Code](https://github.com/anthropics/claude-code) works remotely in your repository: it reads and changes code, runs builds and tests, and commits. There is one machine per Git repository, and the repository is cloned automatically during setup. You steer the agent via SSH, VS Code Remote-SSH or from an iPad, inside a tmux session that survives dropped connections. When you are done, you delete the machine again, and nothing keeps running or costing money.
+A single program, `viper`, that sets up a remote Linux machine at a cloud provider (Hetzner Cloud, AWS, Google Cloud or Azure) with one command. On that machine the code agent [Claude Code](https://github.com/anthropics/claude-code) works remotely in your repository: it reads and changes code, runs builds and tests, and commits. There is one machine per Git repository, and the repository is cloned automatically during setup. You steer the agent via SSH, VS Code Remote-SSH or from an iPad, inside a tmux session that survives dropped connections. When you are done, you delete the machine again, and nothing keeps running or costing money.
 
-It is meant for developers with their own Hetzner Cloud account (or an AWS account: `PROVIDER=aws` sets the machine up on Amazon EC2; `gcp` and `azure` exist but are not yet tried in a real account) and a Cloudflare account.
+It is meant for developers with their own cloud account: **Hetzner Cloud** (the default) or **AWS** (`PROVIDER=aws`, Amazon EC2). Google Cloud and Azure (`PROVIDER=gcp`, `azure`) exist but are not yet tried in a real account. The DNS name of the machines comes from a Cloudflare zone; without Cloudflare and without a domain (`DNS_PROVIDER=none`) a machine is reached by its address.
 
 ## What can I do today?
 
@@ -16,9 +16,9 @@ It is meant for developers with their own Hetzner Cloud account (or an AWS accou
 
 ```bash
 mkdir ~/viper && cd ~/viper        # where your .env.local lives
-viper setup                        # creates .env.local from a template; set DNS_DOMAIN and the tokens, then run it again:
+viper setup                        # creates .env.local from a template; set DNS_DOMAIN (or DNS_PROVIDER=none) and the credentials, then run it again:
 viper setup                        # login key and local host CA
-viper preflight web                # read-only checks: settings, Hetzner, Cloudflare, GitHub
+viper preflight web                # read-only checks: settings, cloud provider, Cloudflare, GitHub
 viper up web --repo https://example.org/org/web.git   # set up machine "web", clone the repo
 viper check web                    # read-only: DNS, access by name like another device, server state
 viper ssh web                      # shell on the machine (--cmd "..." for one command)
@@ -31,7 +31,9 @@ viper log [web] [--full]           # events of the machines, or one machine's fu
 
 | Feature | Setting | What it does |
 |---|---|---|
-| Read-only check | `viper preflight <name>` | Checks everything before anything is created: settings, local setup, Hetzner token, server type available at the location, image, Cloudflare zone and record, GitHub token and repository access. `viper up` runs it first. |
+| Read-only check | `viper preflight <name>` | Checks everything before anything is created: settings, local setup, cloud login (a Hetzner token, an AWS login, ...), server type available at the location, image, Cloudflare zone and record, GitHub token and repository access. `viper up` runs it first. |
+| Cloud provider | `PROVIDER=hetzner` (default), `aws`, `gcp`, `azure` | Where the machines run. Credentials, server type, location and image have defaults per provider; AWS and Hetzner are the tried ones, `gcp` and `azure` are not yet tried in a real account. |
+| No Cloudflare (optional) | `DNS_PROVIDER=none` | No DNS record, no domain and no Cloudflare account: a machine is reached with `viper ssh <name>` or by its address (on AWS `viper up` also shows the name EC2 gives it). |
 | Several machines | `viper up api …` next to `web` | Each machine has its own server and DNS name `<SERVER_PREFIX>-<name>.<DNS_DOMAIN>` (default prefix `claude`). |
 | GitHub | `VIPER_GH_TOKEN` | A GitHub PAT, ideally fine-grained per machine with Contents and Pull requests read and write (a `GH_TOKEN` exported for your local `gh` is deliberately not used). The GitHub CLI `gh` is logged in on the server and `git` pushes over HTTPS, so the agent can also open pull requests. |
 | Claude subscription | `VIPER_CLAUDE_TOKEN` | A long-lived token for your Claude subscription from `claude setup-token`. Claude Code is logged in on the server, so there is no `/login` after each new server. |
@@ -57,6 +59,7 @@ Machines are disposable: everything that matters lives in the Git repository. Th
 
 - **Tests:** `make check` (gofmt, vet, golangci-lint and more than 300 tests, all in Docker; CI on every push; `make help` lists the targets, `make build` builds `dist/viper` without a Go installation). They cover setup, readiness check, multiple machines, Git clone, firewall and DNS protection, the safety prompts of `viper down`, the interruption by Ctrl-C and the parser of `.env.local` (compared with real bash). The generated cloud-init user-data is compared with reference files and parsed as YAML.
 - **Protection of foreign resources:** `viper` only changes and deletes DNS records it created itself.
+- **Real runs:** the end-to-end tests (build tag `e2e`) set a machine up on a real AWS account and delete it again (`viper up` and `viper down`, x86 and Arm, without Cloudflare); see [`docs/maintainer/architektur.md`](docs/maintainer/architektur.md) (German) for the architecture and the tests.
 - **Manual:** [`docs/user/handbuch.md`](docs/user/handbuch.md) (German) with version and change history.
 - **Releases:** versions are tagged on the [Releases page](https://github.com/pt9912/hetzner-viper/releases) with the `viper` binaries and checksums; see [`docs/maintainer/releasing.md`](docs/maintainer/releasing.md) (German) for creating one.
 - **License:** MIT, see [`LICENSE`](LICENSE).
@@ -70,11 +73,11 @@ Machines are disposable: everything that matters lives in the Git repository. Th
 - **Everything on the server is lost when it is deleted**, including a Claude `/login` (with `VIPER_CLAUDE_TOKEN` every new server is logged in again automatically).
 - The per-machine SSH config never forwards your ssh-agent or X11 to the server, even if your own `~/.ssh/config` does.
 - `viper` creates paid resources. Never put API tokens into Git.
-- Use a dedicated Hetzner project and try new settings with `viper preflight` and a small server first.
+- Use a dedicated project or account at your cloud provider and try new settings with `viper preflight` and a small server first.
 
 ## Requirements
 
-Linux or macOS, the `viper` binary and an OpenSSH client. VS Code Remote-SSH uses the local OpenSSH client; without VS Code use `viper ssh`. Plus a Hetzner Cloud API token (read and write), or an AWS login (`aws login`) with `PROVIDER=aws`, and a Cloudflare token with **Zone DNS Edit/Read** and the zone ID.
+Linux or macOS, the `viper` binary and an OpenSSH client. VS Code Remote-SSH uses the local OpenSSH client; without VS Code use `viper ssh`. Plus an account at a cloud provider (a Hetzner Cloud API token with read and write, or an AWS login with `aws login` and `PROVIDER=aws`; Google Cloud and Azure are described in the manual) and, for the DNS name, a Cloudflare token with **Zone DNS Edit/Read** and the zone ID (not needed with `DNS_PROVIDER=none`).
 
 ## License
 

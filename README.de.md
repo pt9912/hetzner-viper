@@ -6,9 +6,9 @@
 
 ## Was ist Hetzner Viper?
 
-Ein einzelnes Programm, `viper`, das mit einem Befehl einen entfernten Linux-Rechner bei Hetzner Cloud einrichtet. Auf diesem Rechner arbeitet der Code-Agent [Claude Code](https://github.com/anthropics/claude-code) remote in Ihrem Repository: Er liest und ändert Code, führt Builds und Tests aus und committet. Pro Git-Repository gibt es einen eigenen Rechner. Das Repository wird beim Einrichten automatisch geklont. Sie steuern den Agenten per SSH, VS Code Remote-SSH oder vom iPad, in einer tmux-Sitzung, die Verbindungsabbrüche übersteht. Wer fertig ist, löscht den Rechner wieder, und es entstehen keine laufenden Kosten.
+Ein einzelnes Programm, `viper`, das mit einem Befehl einen entfernten Linux-Rechner bei einem Cloud-Anbieter (Hetzner Cloud, AWS, Google Cloud oder Azure) einrichtet. Auf diesem Rechner arbeitet der Code-Agent [Claude Code](https://github.com/anthropics/claude-code) remote in Ihrem Repository: Er liest und ändert Code, führt Builds und Tests aus und committet. Pro Git-Repository gibt es einen eigenen Rechner. Das Repository wird beim Einrichten automatisch geklont. Sie steuern den Agenten per SSH, VS Code Remote-SSH oder vom iPad, in einer tmux-Sitzung, die Verbindungsabbrüche übersteht. Wer fertig ist, löscht den Rechner wieder, und es entstehen keine laufenden Kosten.
 
-Zielgruppe sind Entwicklerinnen und Entwickler mit eigenem Hetzner-Cloud-Konto (oder AWS-Konto: `PROVIDER=aws` richtet den Rechner bei Amazon EC2 ein; `gcp` und `azure` gibt es, sie sind aber noch nicht in einem echten Konto erprobt) und einem Cloudflare-Konto.
+Zielgruppe sind Entwicklerinnen und Entwickler mit eigenem Cloud-Konto: **Hetzner Cloud** (Standard) oder **AWS** (`PROVIDER=aws`, Amazon EC2). Google Cloud und Azure (`PROVIDER=gcp`, `azure`) gibt es, sie sind aber noch nicht in einem echten Konto erprobt. Der DNS-Name der Rechner kommt aus einer Cloudflare-Zone; ohne Cloudflare und ohne Domain (`DNS_PROVIDER=none`) erreichen Sie einen Rechner über seine Adresse.
 
 ## Was kann ich heute tun?
 
@@ -16,9 +16,9 @@ Zielgruppe sind Entwicklerinnen und Entwickler mit eigenem Hetzner-Cloud-Konto (
 
 ```bash
 mkdir ~/viper && cd ~/viper        # hier liegt Ihre .env.local
-viper setup                        # legt .env.local aus einer Vorlage an; DNS_DOMAIN und Tokens eintragen, dann erneut:
+viper setup                        # legt .env.local aus einer Vorlage an; DNS_DOMAIN (oder DNS_PROVIDER=none) und Zugangsdaten eintragen, dann erneut:
 viper setup                        # Login-Key und lokale Host-CA anlegen
-viper preflight web                # nur lesende Prüfung: Einstellungen, Hetzner, Cloudflare, GitHub
+viper preflight web                # nur lesende Prüfung: Einstellungen, Cloud-Anbieter, Cloudflare, GitHub
 viper up web --repo https://example.org/org/web.git   # Rechner "web" einrichten, Repo klonen
 viper check web                    # nur lesend: DNS, Zugriff über den Namen wie ein anderes Gerät, Server-Zustand
 viper ssh web                      # Shell auf dem Rechner (--cmd "..." für einen Befehl)
@@ -31,7 +31,9 @@ viper log [web] [--full]           # Ereignisse der Rechner oder die vollständi
 
 | Funktion | Einstellung | Wirkung |
 |---|---|---|
-| Prüfung nur lesend | `viper preflight <name>` | Prüft vorab, bevor etwas angelegt wird: Einstellungen, lokales Setup, Hetzner-Token, Bestellbarkeit des Servertyps am Standort, Image, Cloudflare-Zone und -Eintrag, GitHub-Token und Repo-Zugriff. `viper up` führt es zuerst aus. |
+| Prüfung nur lesend | `viper preflight <name>` | Prüft vorab, bevor etwas angelegt wird: Einstellungen, lokales Setup, Cloud-Anmeldung (Hetzner-Token, AWS-Anmeldung, ...), Bestellbarkeit des Servertyps am Standort, Image, Cloudflare-Zone und -Eintrag, GitHub-Token und Repo-Zugriff. `viper up` führt es zuerst aus. |
+| Cloud-Anbieter | `PROVIDER=hetzner` (Standard), `aws`, `gcp`, `azure` | Wo die Rechner laufen. Zugangsdaten, Servertyp, Standort und Image haben Standardwerte je Anbieter; AWS und Hetzner sind erprobt, `gcp` und `azure` noch nicht in einem echten Konto. |
+| Ohne Cloudflare (optional) | `DNS_PROVIDER=none` | Kein DNS-Eintrag, keine Domain, kein Cloudflare-Konto: Ein Rechner ist mit `viper ssh <name>` oder über seine Adresse erreichbar (bei AWS zeigt `viper up` auch den Namen, den EC2 vergibt). |
 | Mehrere Rechner | `viper up api …` neben `web` | Jeder Rechner hat eigenen Server und DNS-Namen `<SERVER_PREFIX>-<name>.<DNS_DOMAIN>` (Standard-Präfix `claude`). |
 | GitHub | `VIPER_GH_TOKEN` | GitHub-PAT, am besten fein granular pro Rechner mit Contents und Pull requests: Read and write (ein für das lokale `gh` exportiertes `GH_TOKEN` wird bewusst nicht verwendet). Auf dem Server ist die GitHub-CLI `gh` angemeldet, und `git` pusht über HTTPS. Der Agent kann so auch Pull Requests anlegen. |
 | Claude-Abo | `VIPER_CLAUDE_TOKEN` | Langlebiges Token Ihres Claude-Abos aus `claude setup-token`. Claude Code ist auf dem Server angemeldet, ohne `/login` nach jedem neuen Server. |
@@ -57,6 +59,7 @@ Rechner sind Wegwerfware: Alles, was zählt, liegt im Git-Repository. Deshalb gi
 
 - **Tests:** `make check` (gofmt, vet, golangci-lint und über 300 Tests, alles in Docker; CI bei jedem Push; `make help` zeigt die Ziele, `make build` baut `dist/viper` ohne Go-Installation). Sie decken Einrichtung, Bereitschaftsprüfung, Mehrrechner-Betrieb, Git-Clone, Firewall- und DNS-Schutz, die Sicherheitsabfragen von `viper down`, den Abbruch mit Ctrl-C und den Parser für `.env.local` (verglichen mit echtem Bash) ab. Die erzeugten cloud-init-User-Data werden mit Referenzdateien verglichen und als YAML gelesen.
 - **Schutz fremder Ressourcen:** `viper` ändert und löscht nur DNS-Einträge, die es selbst angelegt hat.
+- **Echte Läufe:** Die End-to-End-Tests (Build-Tag `e2e`) richten einen Rechner in einem echten AWS-Konto ein und löschen ihn wieder (`viper up` und `viper down`, x86 und Arm, ohne Cloudflare); Architektur und Tests beschreibt [`docs/maintainer/architektur.md`](docs/maintainer/architektur.md).
 - **Handbuch:** [`docs/user/handbuch.md`](docs/user/handbuch.md) mit Versions- und Änderungshistorie.
 - **Releases:** Versionen stehen als Tags auf der [Releases-Seite](https://github.com/pt9912/hetzner-viper/releases) mit den `viper`-Binaries und Prüfsummen; zum Erstellen siehe [`docs/maintainer/releasing.md`](docs/maintainer/releasing.md).
 - **Lizenz:** MIT, siehe [`LICENSE`](LICENSE).
@@ -70,11 +73,11 @@ Rechner sind Wegwerfware: Alles, was zählt, liegt im Git-Repository. Deshalb gi
 - **Alles auf dem Server geht beim Löschen verloren**, auch eine Claude-Anmeldung per `/login` (mit `VIPER_CLAUDE_TOKEN` ist jeder neue Server automatisch wieder angemeldet).
 - Die SSH-Konfiguration jedes Rechners leitet Ihren ssh-agent und X11 nie an den Server weiter, auch wenn Ihre eigene `~/.ssh/config` das tut.
 - `viper` legt kostenpflichtige Ressourcen an. Legen Sie API-Tokens nie in Git ab.
-- Nutzen Sie ein eigenes Hetzner-Projekt und probieren Sie neue Einstellungen zuerst mit `viper preflight` und einem kleinen Server aus.
+- Nutzen Sie ein eigenes Projekt oder Konto beim Cloud-Anbieter und probieren Sie neue Einstellungen zuerst mit `viper preflight` und einem kleinen Server aus.
 
 ## Voraussetzungen
 
-Linux oder macOS, das Binary `viper` und ein OpenSSH-Client. VS Code Remote-SSH nutzt den lokalen OpenSSH-Client; ohne VS Code nutzen Sie `viper ssh`. Dazu ein Hetzner-Cloud-API-Token (Lesen und Schreiben) oder, mit `PROVIDER=aws`, eine AWS-Anmeldung (`aws login`) und ein Cloudflare-Token mit **Zone DNS Edit/Read** samt Zone-ID.
+Linux oder macOS, das Binary `viper` und ein OpenSSH-Client. VS Code Remote-SSH nutzt den lokalen OpenSSH-Client; ohne VS Code nutzen Sie `viper ssh`. Dazu ein Konto bei einem Cloud-Anbieter (ein Hetzner-Cloud-API-Token mit Lesen und Schreiben oder, mit `PROVIDER=aws`, eine AWS-Anmeldung per `aws login`; Google Cloud und Azure beschreibt das Handbuch) und, für den DNS-Namen, ein Cloudflare-Token mit **Zone DNS Edit/Read** samt Zone-ID (mit `DNS_PROVIDER=none` nicht nötig).
 
 ## Lizenz
 
