@@ -8,7 +8,7 @@
 
 A single program, `viper`, that sets up a remote Linux machine on Hetzner Cloud with one command. On that machine the code agent [Claude Code](https://github.com/anthropics/claude-code) works remotely in your repository: it reads and changes code, runs builds and tests, and commits. There is one machine per Git repository, and the repository is cloned automatically during setup. You steer the agent via SSH, VS Code Remote-SSH or from an iPad, inside a tmux session that survives dropped connections. When you are done, you delete the machine again, and nothing keeps running or costing money.
 
-It is meant for developers with their own Hetzner Cloud account (or an AWS account: `PROVIDER=aws` sets the machine up on Amazon EC2) and a Cloudflare account.
+It is meant for developers with their own Hetzner Cloud account (or an AWS account: `PROVIDER=aws` sets the machine up on Amazon EC2; `gcp` and `azure` exist but are not yet tried in a real account) and a Cloudflare account.
 
 ## What can I do today?
 

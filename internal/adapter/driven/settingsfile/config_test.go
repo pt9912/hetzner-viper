@@ -195,7 +195,7 @@ func TestLoadIgnoresPROVIDERFromTheShellAndTakesItInLowerCase(t *testing.T) {
 func TestLoadRejectsAnUnknownProvider(t *testing.T) {
 	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
 	_, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nPROVIDER=nope\n", ""), "web", env, false)
-	if err == nil || err.Error() != "PROVIDER: unknown provider nope (one of: aws, hetzner)" {
+	if err == nil || err.Error() != "PROVIDER: unknown provider nope (one of: aws, azure, gcp, hetzner)" {
 		t.Errorf("got %v", err)
 	}
 }

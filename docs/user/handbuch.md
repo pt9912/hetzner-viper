@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.49  
+Version: 1.50  
 Software-Version: v0.7.0  
 Stand: 26.10.2026  
 
@@ -607,13 +607,17 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | Einstellung | Bedeutung | Standard |
 |---|---|---|
 | `SERVER_PREFIX` | Namensanfang aller Ressourcen | `claude` |
-| `PROVIDER` | Cloud-Anbieter: `hetzner` oder `aws`; wird nur aus den Einstellungsdateien gelesen, nicht aus der Shell | `hetzner` |
-| `SERVER_TYPE` | Servertyp (Hetzner) bzw. Instanztyp (AWS) | `cpx32` bzw. `t3.large` |
-| `SERVER_LOCATION` | Standort (Hetzner) bzw. Region oder Zone (AWS, z. B. `eu-central-1` oder `eu-central-1b`) | `fsn1` bzw. `eu-central-1` |
-| `SERVER_IMAGE` | Betriebssystem-Image; bei AWS `ubuntu-<Version>` oder eine AMI-ID (`ami-…`) | `ubuntu-26.04` bzw. `ubuntu-24.04` |
+| `PROVIDER` | Cloud-Anbieter: `hetzner`, `aws`, `gcp` oder `azure`; wird nur aus den Einstellungsdateien gelesen, nicht aus der Shell | `hetzner` |
+| `SERVER_TYPE` | Servertyp (Hetzner), Instanztyp (AWS), Maschinentyp (GCP) bzw. VM-Größe (Azure) | `cpx32`, `t3.large`, `e2-standard-2` bzw. `Standard_D2s_v5` |
+| `SERVER_LOCATION` | Standort (Hetzner), Region oder Zone (AWS, z. B. `eu-central-1b`), Zone (GCP, z. B. `europe-west3-b`) bzw. Region (Azure, z. B. `germanywestcentral`) | `fsn1`, `eu-central-1`, `europe-west3-b` bzw. `germanywestcentral` |
+| `SERVER_IMAGE` | Betriebssystem-Image; bei AWS, GCP und Azure `ubuntu-<Version>` (AWS auch `ami-…`, GCP auch `projects/…`, Azure auch `Herausgeber:Angebot:SKU:Version`) | `ubuntu-26.04` (Hetzner), sonst `ubuntu-24.04` |
 | `AWS_PROFILE` | AWS-Profil für die Anmeldung (nur AWS) | Standardkette |
 | `AWS_SUBNET_ID`, `AWS_VPC_ID` | Subnetz bzw. VPC für den Server (nur AWS) | Default-VPC |
 | `AWS_ROOT_GB` | Größe der Systemplatte in GB (nur AWS) | `50` |
+| `GCP_PROJECT` | Google-Cloud-Projekt (nur GCP, Pflichtangabe) | leer |
+| `GCP_NETWORK`, `GCP_ROOT_GB` | VPC-Netz bzw. Größe der Bootplatte in GB (nur GCP) | `default` bzw. `50` |
+| `AZURE_SUBSCRIPTION_ID` | Azure-Abonnement (nur Azure, Pflichtangabe) | leer |
+| `AZURE_RESOURCE_GROUP`, `AZURE_SUBNET_ID`, `AZURE_ROOT_GB` | Ressourcengruppe, vorhandenes Subnetz bzw. Größe der Systemplatte in GB (nur Azure) | `viper`, eigenes Netz bzw. `64` |
 | `DNS_DOMAIN` | Ihre Domain, Pflichtangabe | leer |
 | `SSH_KEY` | Pfad Ihres Login-Schlüssels | `~/.ssh/hetzner-build` |
 | `SSH_ALLOWED_CIDRS` | Netze, die Port 22 erreichen dürfen | `0.0.0.0/0,::/0` |
@@ -650,6 +654,14 @@ Mit `PROVIDER=aws` in `.env.local` (oder in `machines/<rechner>.env.local`) legt
 * **Image:** `ubuntu-24.04` löst `viper` über den von Canonical veröffentlichten AMI-Parameter auf, passend zur Architektur des Instanztyps (`t3.*` x86, `t4g.*` ARM). Eine eigene AMI geben Sie als `ami-…` an.
 * **Berechtigungen:** Die Rolle muss Instanzen starten, beschreiben und beenden, Security Groups anlegen und ergänzen, Schlüsselpaare importieren und den SSM-Parameter von Canonical lesen dürfen.
 * **Kosten:** AWS rechnet die Instanz und die Platte ab, solange der Server existiert. `viper down <rechner>` beendet die Instanz; Schlüsselpaar und Security Group bleiben für weitere Rechner erhalten.
+
+### Google Cloud und Azure als Anbieter (nicht in einem echten Konto getestet)
+
+Mit `PROVIDER=gcp` bzw. `PROVIDER=azure` richtet `viper up` den Server bei Google Compute Engine bzw. Microsoft Azure ein. **Diese beiden Anbieter sind gebaut und gegen nachgebildete Schnittstellen getestet, aber noch nicht in einem echten Konto ausprobiert.** Prüfen Sie zuerst mit `viper preflight <rechner>` und einem kleinen Server, und rechnen Sie mit Fehlern. Hetzner und AWS sind dagegen in echten Konten getestet.
+
+* **Google Cloud:** Anmeldung mit `gcloud auth application-default login` (oder einer Dienstkonto-Datei in `GOOGLE_APPLICATION_CREDENTIALS`). `GCP_PROJECT` ist Pflicht. Der Server ist eine VM in der Zone aus `SERVER_LOCATION` im Netz `default` (oder `GCP_NETWORK`) mit öffentlicher Adresse. Die Firewall besteht aus zwei VPC-Regeln `<SERVER_PREFIX>-ssh` (IPv4) und `<SERVER_PREFIX>-ssh-ipv6`, die für VMs mit dem Netzwerk-Tag `<SERVER_PREFIX>-ssh` gelten. Die Rolle braucht Rechte für Compute-Instanzen und Firewall-Regeln.
+* **Azure:** Anmeldung mit `az login`. `AZURE_SUBSCRIPTION_ID` ist Pflicht. `viper` legt in der Ressourcengruppe (`viper`) ein virtuelles Netz `viper-vnet` mit Subnetz, eine Netzwerksicherheitsgruppe `<SERVER_PREFIX>-ssh` sowie je Server eine öffentliche Adresse, eine Netzwerkkarte und eine VM an. Alles trägt das Tag `viper`. `viper down` löscht VM, Netzwerkkarte, Adresse und Platte; Gruppe, Netz und Sicherheitsgruppe bleiben.
+* **Schlüssel:** Beide Anbieter kennen keine Schlüsselobjekte; der Login-Schlüssel geht mit dem Server (cloud-init).
 
 ### Firewall und Anmeldung
 

@@ -8,7 +8,7 @@
 
 Ein einzelnes Programm, `viper`, das mit einem Befehl einen entfernten Linux-Rechner bei Hetzner Cloud einrichtet. Auf diesem Rechner arbeitet der Code-Agent [Claude Code](https://github.com/anthropics/claude-code) remote in Ihrem Repository: Er liest und ändert Code, führt Builds und Tests aus und committet. Pro Git-Repository gibt es einen eigenen Rechner. Das Repository wird beim Einrichten automatisch geklont. Sie steuern den Agenten per SSH, VS Code Remote-SSH oder vom iPad, in einer tmux-Sitzung, die Verbindungsabbrüche übersteht. Wer fertig ist, löscht den Rechner wieder, und es entstehen keine laufenden Kosten.
 
-Zielgruppe sind Entwicklerinnen und Entwickler mit eigenem Hetzner-Cloud-Konto (oder AWS-Konto: `PROVIDER=aws` richtet den Rechner bei Amazon EC2 ein) und einem Cloudflare-Konto.
+Zielgruppe sind Entwicklerinnen und Entwickler mit eigenem Hetzner-Cloud-Konto (oder AWS-Konto: `PROVIDER=aws` richtet den Rechner bei Amazon EC2 ein; `gcp` und `azure` gibt es, sie sind aber noch nicht in einem echten Konto erprobt) und einem Cloudflare-Konto.
 
 ## Was kann ich heute tun?
 

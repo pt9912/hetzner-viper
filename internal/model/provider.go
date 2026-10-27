@@ -16,13 +16,19 @@ type ProviderInfo struct {
 const DefaultProvider = "hetzner"
 
 // ProviderNames are the names PROVIDER takes.
-func ProviderNames() []string { return []string{"aws", "hetzner"} }
+func ProviderNames() []string { return []string{"aws", "azure", "gcp", "hetzner"} }
 
 // LookupProvider is what viper knows of the provider of that name; ok is false for an unknown one.
 func LookupProvider(name string) (info ProviderInfo, ok bool) {
 	switch name {
 	case "hetzner":
 		return ProviderInfo{Credentials: []string{"HCLOUD_TOKEN"}, Secrets: []string{"HCLOUD_TOKEN"}, Size: "cpx32", Region: "fsn1", Image: "ubuntu-26.04"}, true
+	case "azure":
+		// the credentials come from the default Azure credentials (az login, environment, managed identity); the subscription is a setting
+		return ProviderInfo{Credentials: []string{"AZURE_SUBSCRIPTION_ID"}, Secrets: []string{"AZURE_CLIENT_SECRET", "AZURE_CLIENT_CERTIFICATE_PASSWORD", "AZURE_PASSWORD"}, Size: "Standard_D2s_v5", Region: "germanywestcentral", Image: "ubuntu-24.04"}, true
+	case "gcp":
+		// the credentials come from Google's application default credentials; the project is a setting
+		return ProviderInfo{Credentials: []string{"GCP_PROJECT"}, Secrets: []string{"GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_OAUTH_ACCESS_TOKEN"}, Size: "e2-standard-2", Region: "europe-west3-b", Image: "ubuntu-24.04"}, true
 	case "aws":
 		// the credentials come from the AWS credentials chain (aws login, SSO, keys): none is required
 		return ProviderInfo{Secrets: []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"}, Size: "t3.large", Region: "eu-central-1", Image: "ubuntu-24.04"}, true
