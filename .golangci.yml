@@ -65,7 +65,7 @@ linters:
         - pattern: ^print(ln)?$
           msg: write to an io.Writer that is passed in
         - pattern: ^os\.Std(out|err)$
-          msg: only cmd/viper uses os.Stdout and os.Stderr
+          msg: only the command line (internal/adapter/driving/cli) and cmd/viper use os.Stdout and os.Stderr
 
     funlen:
       lines: 100
@@ -120,6 +120,63 @@ linters:
             - pkg: github.com/pt9912/hetzner-viper/internal/servertest
               desc: the fakes are for tests only
 
+        # The layers: model <- port <- usecase <- app; adapters sit beside the use cases, between
+        # the ports and app. Only app (the composition root) knows all of them.
+        model-imports-nothing:
+          list-mode: lax
+          files:
+            - "**/internal/model/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/pt9912/hetzner-viper/internal
+              desc: the model is plain types; it imports nothing of viper
+        ports-know-only-the-model:
+          list-mode: lax
+          files:
+            - "**/internal/port/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/pt9912/hetzner-viper/internal/adapter
+              desc: a port is a contract; an adapter fulfils it
+            - pkg: github.com/pt9912/hetzner-viper/internal/usecase
+              desc: a port is a contract; a use case uses or offers it
+            - pkg: github.com/pt9912/hetzner-viper/internal/app
+              desc: only app wires
+        usecases-know-ports-not-adapters:
+          list-mode: lax
+          files:
+            - "**/internal/usecase/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/pt9912/hetzner-viper/internal/adapter
+              desc: a use case knows its providers only through internal/port; app picks the adapter
+            - pkg: github.com/pt9912/hetzner-viper/internal/app
+              desc: only app wires
+        driven-adapters-fulfil-ports:
+          list-mode: lax
+          files:
+            - "**/internal/adapter/driven/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/pt9912/hetzner-viper/internal/usecase
+              desc: a driven adapter serves the use cases through a port, it does not call them
+            - pkg: github.com/pt9912/hetzner-viper/internal/adapter/driving
+              desc: driven and driving adapters do not know each other
+            - pkg: github.com/pt9912/hetzner-viper/internal/app
+              desc: only app wires
+        driving-adapters-call-ports:
+          list-mode: lax
+          files:
+            - "**/internal/adapter/driving/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/pt9912/hetzner-viper/internal/usecase
+              desc: a driving adapter calls the use cases through internal/port/driving
+            - pkg: github.com/pt9912/hetzner-viper/internal/adapter/driven
+              desc: driven and driving adapters do not know each other; app connects them
+            - pkg: github.com/pt9912/hetzner-viper/internal/app
+              desc: only app wires
+
     revive:
       rules:
         - name: blank-imports
@@ -154,6 +211,18 @@ linters:
   exclusions:
     warn-unused: true
     rules:
+      # Why: app is the composition root; the functions that pick or open an adapter return the
+      # port it fulfils (cloud.Provider, runlog.Run) by design.
+      - linters:
+          - ireturn
+        path: ^internal/app/
+
+      # Why: the tests of the command line drive its unexported commands (options, host, runUp), as
+      # they did when the commands were package main; an external test package cannot reach them.
+      - linters:
+          - testpackage
+        path: ^internal/adapter/driving/cli/.+_test\.go$
+
       # Why: table-driven tests have higher complexity without a design flaw.
       - linters:
           - cyclop
@@ -181,8 +250,8 @@ linters:
           - staticcheck
         text: ^ST1005
 
-      # Why: cmd/viper is the composition root; it connects the process to its standard streams.
+      # Why: the command line is the driving adapter; it connects the process to its standard streams.
       - linters:
           - forbidigo
-        path: ^cmd/viper/
+        path: ^(cmd/viper|internal/adapter/driving/cli)/
         text: os\.Std(out|err)

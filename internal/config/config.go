@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/pt9912/hetzner-viper/internal/model"
 )
 
 var (
@@ -29,40 +31,39 @@ func (e Env) Getenv(name string) string {
 	return v
 }
 
-// Config is the settings of one machine with the names and paths derived from them (common.sh).
-type Config struct {
-	Machine string
-	Dir     string // where .env.local is
-	vars    map[string]string
-	env     Env
-
-	DNSDomain, ServerType, ServerLocation, ServerImage, ServerPrefix, WorkspaceDir string
-	SSHKey                                                                         string
-
-	ServerName, SSHAlias, DNSHost, KeyName, FirewallName string
-	StateDir, SSHDir, SSHConfig, KnownPin                string
-
-	// state files of the machine (common.sh), all keyed by the server name
-	IPState, IDState, WorkspaceState, ReadyState, RepoState string
-	EventsLog, LogDir                                       string
+// ProviderInfo is what the settings know of a cloud provider.
+type ProviderInfo struct {
+	// Credentials are the settings the provider's API needs (empty if it finds them itself, like
+	// a credentials chain does).
+	Credentials []string
+	// Size, Region and Image are the defaults of SERVER_TYPE, SERVER_LOCATION and SERVER_IMAGE.
+	Size, Region, Image string
 }
 
-// Setting is a setting with a default for when it is unset or empty (${NAME:-default}).
-func (c *Config) Setting(name, def string) string {
-	return or(c.Get(name), def)
+// DefaultProvider is the provider when PROVIDER is not set.
+const DefaultProvider = "hetzner"
+
+// ProviderOf is the provider the settings files name: PROVIDER, in lower case, else the default.
+// It is not read from the shell: the name is too common to take from the environment.
+func ProviderOf(vars map[string]string) string {
+	return or(strings.ToLower(strings.TrimSpace(vars["PROVIDER"])), DefaultProvider)
 }
 
-// Get returns a setting: the files take precedence over the environment, like with `source`.
-func (c *Config) Get(name string) string {
-	if v, ok := c.vars[name]; ok {
-		return v
+// ProviderNames are the names PROVIDER takes.
+func ProviderNames() []string { return []string{"hetzner"} }
+
+// Provider is what the settings know of the provider of that name; ok is false for an unknown one.
+func Provider(name string) (info ProviderInfo, ok bool) {
+	switch name {
+	case "hetzner":
+		return ProviderInfo{Credentials: []string{"HCLOUD_TOKEN"}, Size: "cpx32", Region: "fsn1", Image: "ubuntu-26.04"}, true
 	}
-	return c.env.Getenv(name)
+	return ProviderInfo{}, false
 }
 
-// tokens are the settings only the commands that talk to Hetzner and Cloudflare need.
-func tokens() []string {
-	return []string{"HCLOUD_TOKEN", "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ZONE_ID"}
+// tokens are the settings only the commands that talk to the cloud and Cloudflare need.
+func tokens(p ProviderInfo) []string {
+	return append(append([]string{}, p.Credentials...), "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ZONE_ID")
 }
 
 // LoadFile reads .env.local of dir (without a machine).
@@ -109,7 +110,7 @@ func Prefix(dir, machine string, env Env) string {
 
 // Load reads .env.local and machines/<machine>.env.local of dir and checks the settings. With
 // needTokens it requires the three API credentials as well (all commands that call an API).
-func Load(dir, machine string, env Env, needTokens bool) (*Config, error) {
+func Load(dir, machine string, env Env, needTokens bool) (*model.Machine, error) {
 	if machine == "" {
 		return nil, errors.New("Machine name required")
 	}
@@ -123,11 +124,22 @@ func Load(dir, machine string, env Env, needTokens bool) (*Config, error) {
 	if err := sourceFile(vars, filepath.Join(dir, "machines", machine+".env.local"), env); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	c := &Config{Machine: machine, Dir: dir, vars: vars, env: env}
+	c := &model.Machine{Name: machine, Dir: dir}
+	c.Vars = func(name string) string {
+		if v, ok := vars[name]; ok {
+			return v
+		}
+		return env.Getenv(name)
+	}
 
+	c.Provider = ProviderOf(vars)
+	prov, ok := Provider(c.Provider)
+	if !ok {
+		return nil, fmt.Errorf("PROVIDER: unknown provider %s (one of: %s)", c.Provider, strings.Join(ProviderNames(), ", "))
+	}
 	required := []string{"DNS_DOMAIN"}
 	if needTokens {
-		required = append(required, tokens()...)
+		required = append(required, tokens(prov)...)
 	}
 	var missing []string
 	for _, v := range required {
@@ -143,9 +155,9 @@ func Load(dir, machine string, env Env, needTokens bool) (*Config, error) {
 		return nil, err
 	}
 	c.SSHKey = KeyPath(c.Get("SSH_KEY"), dir, env.Home)
-	c.ServerType = or(c.Get("SERVER_TYPE"), "cpx32")
-	c.ServerLocation = or(c.Get("SERVER_LOCATION"), "fsn1")
-	c.ServerImage = or(c.Get("SERVER_IMAGE"), "ubuntu-26.04")
+	c.ServerType = or(c.Get("SERVER_TYPE"), prov.Size)
+	c.ServerLocation = or(c.Get("SERVER_LOCATION"), prov.Region)
+	c.ServerImage = or(c.Get("SERVER_IMAGE"), prov.Image)
 	c.WorkspaceDir = or(c.Get("WORKSPACE_DIR"), "/Development")
 	c.ServerPrefix = or(c.Get("SERVER_PREFIX"), "claude")
 	if !nameRe.MatchString(c.ServerPrefix) {

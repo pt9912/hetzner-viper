@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.47  
+Version: 1.48  
 Software-Version: v0.7.0  
 Stand: 26.10.2026  
 
@@ -607,7 +607,8 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | Einstellung | Bedeutung | Standard |
 |---|---|---|
 | `SERVER_PREFIX` | Namensanfang aller Ressourcen | `claude` |
-| `SERVER_TYPE` | Hetzner-Servertyp | `cpx32` |
+| `PROVIDER` | Cloud-Anbieter (derzeit nur `hetzner`); wird nur aus den Einstellungsdateien gelesen, nicht aus der Shell | `hetzner` |
+| `SERVER_TYPE` | Servertyp des Anbieters (Hetzner: Servertyp) | `cpx32` |
 | `SERVER_LOCATION` | Standort | `fsn1` |
 | `SERVER_IMAGE` | Betriebssystem-Image | `ubuntu-26.04` |
 | `DNS_DOMAIN` | Ihre Domain, Pflichtangabe | leer |

@@ -4,20 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/pt9912/hetzner-viper/internal/hetzner"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/hetzner"
+	"github.com/pt9912/hetzner-viper/internal/model"
 )
 
 // Cloud is a Hetzner project and a Cloudflare zone with state: what the commands create is there
 // for the next command. It implements the interfaces of preflight, start, check and stop.
 type Cloud struct {
+	hetzner.Identity
 	mu sync.Mutex
 
 	Now           time.Time
-	Servers       map[string]*hetzner.Server
+	Servers       map[string]*model.Server
 	nextID        int64
 	Keys          []hetzner.SSHKey
 	Firewalls     map[string][]hetzner.FirewallRule
@@ -25,7 +28,7 @@ type Cloud struct {
 	Locations     map[string]bool
 	Images        map[string]bool // "name/arch"
 	UserData      map[string]string
-	Created       []hetzner.ServerSpec
+	Created       []model.ServerSpec
 	Deleted       []string
 	Calls         []string // what was changed, in order: "key create ...", "server create ...", ...
 	ListErr       error    // every call of the project fails with it
@@ -53,7 +56,7 @@ func NewCloud(now time.Time) *Cloud {
 		return out
 	}
 	return &Cloud{
-		Now: now, Servers: map[string]*hetzner.Server{}, nextID: 1000, Firewalls: map[string][]hetzner.FirewallRule{},
+		Now: now, Servers: map[string]*model.Server{}, nextID: 1000, Firewalls: map[string][]hetzner.FirewallRule{},
 		Types: map[string]*hetzner.ServerType{
 			"cpx32": {Name: "cpx32", Cores: 4, MemoryGB: 8, DiskGB: 160, Architecture: "x86", Locations: loc("fsn1", "nbg1", "hel1")},
 			"cpx02": {Name: "cpx02", Cores: 2, MemoryGB: 4, DiskGB: 80, Architecture: "x86", Locations: loc("fsn1", "nbg1")},
@@ -91,7 +94,7 @@ func (c *Cloud) ServerNames(context.Context) ([]string, error) {
 }
 
 // ServerByName returns a copy of the server, or nil.
-func (c *Cloud) ServerByName(_ context.Context, name string) (*hetzner.Server, error) {
+func (c *Cloud) ServerByName(_ context.Context, name string) (*model.Server, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.ListErr != nil {
@@ -171,13 +174,13 @@ func (c *Cloud) FirewallAddRule(_ context.Context, name string, r hetzner.Firewa
 	return nil
 }
 
-// ServerCreate creates a server.
-func (c *Cloud) ServerCreate(_ context.Context, s hetzner.ServerSpec) (*hetzner.Server, error) {
+// CreateServer creates a server.
+func (c *Cloud) CreateServer(_ context.Context, s model.ServerSpec) (*model.Server, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.call("server create %s --type %s --location %s --image %s --ssh-key %s --firewall %s", s.Name, s.Type, s.Location, s.Image, s.SSHKey, s.Firewall)
+	c.call("server create %s --type %s --location %s --image %s --ssh-key %s --firewall %s", s.Name, s.Size, s.Region, s.Image, s.SSHKey, s.Firewall)
 	c.nextID++
-	srv := &hetzner.Server{ID: c.nextID, Name: s.Name, IPv4: fmt.Sprintf("203.0.113.%d", 10+len(c.Servers)), Created: c.Now}
+	srv := &model.Server{ID: strconv.FormatInt(c.nextID, 10), Name: s.Name, IPv4: fmt.Sprintf("203.0.113.%d", 10+len(c.Servers)), Created: c.Now}
 	c.Servers[s.Name] = srv
 	c.UserData[s.Name] = s.UserData
 	c.Created = append(c.Created, s)
@@ -186,7 +189,7 @@ func (c *Cloud) ServerCreate(_ context.Context, s hetzner.ServerSpec) (*hetzner.
 }
 
 // DeleteServer deletes a server by ID.
-func (c *Cloud) DeleteServer(_ context.Context, id int64) error {
+func (c *Cloud) DeleteServer(_ context.Context, id string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for n, s := range c.Servers {
@@ -259,3 +262,18 @@ func (c *Cloud) Check(_ context.Context, domain, host string) ([]string, bool, e
 
 // fingerprintOf is the MD5 fingerprint of an OpenSSH public key line.
 func fingerprintOf(pub string) string { return Fingerprint(pub) }
+
+// Validate is the preflight of a Hetzner project over this state.
+func (c *Cloud) Validate(ctx context.Context, ch model.Check) []model.Finding {
+	return hetzner.Validator{API: c}.Validate(ctx, ch)
+}
+
+// EnsureLoginKey makes sure the public key is in the project.
+func (c *Cloud) EnsureLoginKey(ctx context.Context, name, pub string) (model.LoginKey, error) {
+	return hetzner.EnsureLoginKey(ctx, c, name, pub)
+}
+
+// EnsureFirewall makes sure the firewall allows SSH and ping.
+func (c *Cloud) EnsureFirewall(ctx context.Context, name string, sources []string) (model.FirewallResult, error) {
+	return hetzner.EnsureFirewall(ctx, c, name, sources)
+}

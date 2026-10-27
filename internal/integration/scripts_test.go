@@ -10,7 +10,7 @@ import (
 func TestScriptsThatRunOnTheServerParse(t *testing.T) {
 	tool(t, "bash")
 	var files []string
-	for _, pattern := range []string{"../start/scripts/*.sh", "../check/probe.sh", "../stop/remote.sh", "../servertest/remote/*"} {
+	for _, pattern := range []string{"../usecase/start/scripts/*.sh", "../usecase/check/probe.sh", "../usecase/stop/remote.sh", "../servertest/remote/*"} {
 		m, _ := filepath.Glob(pattern)
 		files = append(files, m...)
 	}
@@ -28,7 +28,7 @@ func TestScriptsThatRunOnTheServerParse(t *testing.T) {
 func TestScriptsThatRunOnTheServerPassShellcheck(t *testing.T) {
 	tool(t, "shellcheck")
 	var files []string
-	for _, pattern := range []string{"../start/scripts/*.sh", "../check/probe.sh", "../stop/remote.sh"} {
+	for _, pattern := range []string{"../usecase/start/scripts/*.sh", "../usecase/check/probe.sh", "../usecase/stop/remote.sh"} {
 		m, _ := filepath.Glob(pattern)
 		files = append(files, m...)
 	}

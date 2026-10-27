@@ -13,15 +13,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pt9912/hetzner-viper/internal/check"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/hetzner"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/runlog"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/sshconfig"
 	"github.com/pt9912/hetzner-viper/internal/config"
-	"github.com/pt9912/hetzner-viper/internal/hetzner"
-	"github.com/pt9912/hetzner-viper/internal/machine"
-	"github.com/pt9912/hetzner-viper/internal/preflight"
-	"github.com/pt9912/hetzner-viper/internal/runlog"
+	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/servertest"
-	"github.com/pt9912/hetzner-viper/internal/start"
-	"github.com/pt9912/hetzner-viper/internal/stop"
+	"github.com/pt9912/hetzner-viper/internal/usecase/check"
+	"github.com/pt9912/hetzner-viper/internal/usecase/preflight"
+	"github.com/pt9912/hetzner-viper/internal/usecase/start"
+	"github.com/pt9912/hetzner-viper/internal/usecase/stop"
 )
 
 // now is the fixed time of the fake world.
@@ -145,7 +146,7 @@ func (e *Env) client() *http.Client {
 }
 
 // Config is the machine's configuration as the commands read it.
-func (e *Env) Config(name string) *config.Config {
+func (e *Env) Config(name string) *model.Machine {
 	e.t.Helper()
 	c, err := config.Load(e.Dir, name, config.Env{Home: e.Home, Lookup: func(k string) (string, bool) { v, ok := e.Tokens[k]; return v, ok }}, true)
 	if err != nil {
@@ -155,7 +156,7 @@ func (e *Env) Config(name string) *config.Config {
 }
 
 func (e *Env) preflightDeps() preflight.Deps {
-	return preflight.Deps{Hetzner: e.Cloud, DNS: e.Cloud, HTTP: e.client(), GitLsRemote: func(ctx context.Context, url string) error {
+	return preflight.Deps{Cloud: e.Cloud, DNS: e.Cloud, HTTP: e.client(), GitLsRemote: func(ctx context.Context, url string) error {
 		cmd := exec.CommandContext(ctx, "git", "ls-remote", "--", url)
 		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 		return cmd.Run()
@@ -189,7 +190,7 @@ func (r Result) HasNot(t *testing.T, parts ...string) {
 	}
 }
 
-func open(e *Env, c *config.Config, action string, out, errb *bytes.Buffer) *runlog.Log {
+func open(e *Env, c *model.Machine, action string, out, errb *bytes.Buffer) *runlog.Log {
 	e.t.Helper()
 	l, err := runlog.Open(c.StateDir, c.ServerName, action, out, errb)
 	if err != nil {
@@ -208,7 +209,7 @@ func (e *Env) Preflight(name, repo string) Result {
 	c := e.Config(name)
 	var out, errb bytes.Buffer
 	l := open(e, c, "preflight", &out, &errb)
-	n := preflight.Run(context.Background(), c, repo, e.preflightDeps(), l.Out, l.Err)
+	n := preflight.Run(context.Background(), c, repo, e.preflightDeps(), l.Out(), l.Err())
 	code := 0
 	if n > 0 {
 		l.Final("preflight: %d problem(s)", n)
@@ -230,20 +231,19 @@ func (e *Env) Up(name, repo string) Result {
 		Preflight: func(ctx context.Context, repoArg string, o, eo io.Writer) int {
 			return preflight.Run(ctx, c, repoArg, e.preflightDeps(), o, eo)
 		},
-		Hetzner: e.Cloud, DNS: e.Cloud, Run: e.Srv.Run, Stream: e.Srv.Stream,
+		Cloud: e.Cloud, DNS: e.Cloud, Run: e.Srv.Run, Stream: e.Srv.Stream,
 		Keygen: func(name string, args ...string) error {
 			if o, err := exec.Command(name, args...).CombinedOutput(); err != nil {
 				return &toolError{err, string(o)}
 			}
 			return nil
 		},
-		WriteSSHConfig: func(ip string) error { return machine.WriteSSHConfig(c, ip) },
-		SSHInclude:     func(a string) error { return machine.SSHInclude(c, a) },
-		Sleep:          func(d time.Duration) { e.Sleeps = append(e.Sleeps, d) },
-		Now:            func() time.Time { return now() },
-		OpenVSCode:     func(alias, dir string) { e.VSCode = append(e.VSCode, alias+" "+dir) },
+		SSH:        sshconfig.Files{},
+		Sleep:      func(d time.Duration) { e.Sleeps = append(e.Sleeps, d) },
+		Now:        func() time.Time { return now() },
+		OpenVSCode: func(alias, dir string) { e.VSCode = append(e.VSCode, alias+" "+dir) },
 	}
-	code, err := start.Run(context.Background(), c, repo, d, l, l.Out, l.Err)
+	code, err := start.Run(context.Background(), c, repo, d, l, l.Out(), l.Err())
 	l.Close(err, code)
 	if s := e.Cloud.Servers[c.ServerName]; s != nil {
 		e.Srv.UserData = e.Cloud.UserData[c.ServerName]
@@ -266,7 +266,7 @@ func (e *Env) Check(name string) Result {
 	l := open(e, c, "check", &out, &errb)
 	local := e.LocalIP
 	d := check.Deps{
-		Hetzner: e.Cloud, HTTP: e.client(),
+		Cloud: e.Cloud, HTTP: e.client(),
 		LookupIPv4: func(_ context.Context, host string) ([]string, error) {
 			if local == "none" {
 				return nil, nil
@@ -279,10 +279,10 @@ func (e *Env) Check(name string) Result {
 			}
 			return nil, nil
 		},
-		Run:            e.Srv.Run,
-		WriteSSHConfig: func(ip string) error { return machine.WriteSSHConfig(c, ip) },
+		Run: e.Srv.Run,
+		SSH: sshconfig.Files{},
 	}
-	n, err := check.Run(context.Background(), c, d, l.Out, l.Err)
+	n, err := check.Run(context.Background(), c, d, l.Out(), l.Err())
 	code := 0
 	switch {
 	case err != nil:
@@ -306,9 +306,9 @@ func (e *Env) Down(name string, force bool, answers ...string) Result {
 	l := open(e, c, "down", &out, &errb)
 	queue := append([]string(nil), answers...)
 	d := stop.Deps{
-		Hetzner: e.Cloud, DNS: e.Cloud, Run: e.Srv.Run,
+		Cloud: e.Cloud, DNS: e.Cloud, Run: e.Srv.Run,
 		Ask: func(prompt string) string {
-			_, _ = l.Err.Write([]byte(prompt))
+			_, _ = l.Err().Write([]byte(prompt))
 			if len(queue) == 0 {
 				return ""
 			}
@@ -316,10 +316,9 @@ func (e *Env) Down(name string, force bool, answers ...string) Result {
 			queue = queue[1:]
 			return a
 		},
-		WriteSSHConfig: func(ip string) error { return machine.WriteSSHConfig(c, ip) },
-		SSHInclude:     func(a string) error { return machine.SSHInclude(c, a) },
+		SSH: sshconfig.Files{},
 	}
-	code, err := stop.Run(context.Background(), c, force, d, l, l.Out, l.Err)
+	code, err := stop.Run(context.Background(), c, force, d, l, l.Out(), l.Err())
 	l.Close(err, code)
 	return result(code, err, &out, &errb)
 }
@@ -448,7 +447,7 @@ func hetznerKey(name, pub string) hetzner.SSHKey {
 
 var errBoom = errors.New("hcloud: server responded with status code 500")
 
-func configLoad(e *Env, name string) (*config.Config, error) {
+func configLoad(e *Env, name string) (*model.Machine, error) {
 	return config.Load(e.Dir, name, config.Env{Home: e.Home, Lookup: func(k string) (string, bool) { v, ok := e.Tokens[k]; return v, ok }}, true)
 }
 

@@ -1,13 +1,14 @@
 package config_test
 
 import (
-	"github.com/pt9912/hetzner-viper/internal/config"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/pt9912/hetzner-viper/internal/config"
 )
 
 func envOf(m map[string]string) func(string) (string, bool) {
@@ -163,6 +164,37 @@ func TestLoadReportsEverySettingThatIsMissing(t *testing.T) {
 	}
 	if _, err := config.Load(setupDir(t, "DNS_DOMAIN=example.com\n", ""), "web", env, false); err != nil {
 		t.Errorf("tokens are not needed to reach a machine: %v", err)
+	}
+}
+
+func TestLoadTakesHetznerAsTheDefaultProvider(t *testing.T) {
+	env := config.Env{Lookup: envOf(nil), Home: "/h"}
+	c, err := config.Load(setupDir(t, "DNS_DOMAIN=example.com\n", ""), "web", env, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Provider != "hetzner" || c.ServerType != "cpx32" || c.ServerLocation != "fsn1" || c.ServerImage != "ubuntu-26.04" {
+		t.Errorf("%s %s %s %s", c.Provider, c.ServerType, c.ServerLocation, c.ServerImage)
+	}
+}
+
+func TestLoadIgnoresPROVIDERFromTheShellAndTakesItInLowerCase(t *testing.T) {
+	env := config.Env{Lookup: envOf(map[string]string{"PROVIDER": "aws"}), Home: "/h"}
+	c, err := config.Load(setupDir(t, "DNS_DOMAIN=example.com\n", ""), "web", env, false)
+	if err != nil || c.Provider != "hetzner" {
+		t.Fatalf("the shell must not choose the provider: %v %v", c, err)
+	}
+	c, err = config.Load(setupDir(t, "DNS_DOMAIN=example.com\nPROVIDER=\" Hetzner \"\n", ""), "web", env, false)
+	if err != nil || c.Provider != "hetzner" {
+		t.Errorf("PROVIDER in the files: %v %v", c, err)
+	}
+}
+
+func TestLoadRejectsAnUnknownProvider(t *testing.T) {
+	env := config.Env{Lookup: envOf(nil), Home: "/h"}
+	_, err := config.Load(setupDir(t, "DNS_DOMAIN=example.com\nPROVIDER=nope\n", ""), "web", env, false)
+	if err == nil || err.Error() != "PROVIDER: unknown provider nope (one of: hetzner)" {
+		t.Errorf("got %v", err)
 	}
 }
 

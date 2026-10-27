@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -23,4 +24,13 @@ func Fingerprint(pub string) string {
 		parts[i] = fmt.Sprintf("%02x", x)
 	}
 	return strings.Join(parts, ":")
+}
+
+// FingerprintFile is the fingerprint of the OpenSSH public key in a file ("" if it cannot be read).
+func FingerprintFile(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return Fingerprint(string(b))
 }

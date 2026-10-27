@@ -202,8 +202,8 @@ func TestMachineFileOverridesTheServerType(t *testing.T) {
 	e.Machine("small", "SERVER_TYPE=cpx02\n")
 	e.MustUp("small", "")
 	e.MustUp("big", "")
-	if e.Cloud.Created[0].Type != "cpx02" || e.Cloud.Created[1].Type != "cpx32" {
-		t.Errorf("types %s, %s", e.Cloud.Created[0].Type, e.Cloud.Created[1].Type)
+	if e.Cloud.Created[0].Size != "cpx02" || e.Cloud.Created[1].Size != "cpx32" {
+		t.Errorf("types %s, %s", e.Cloud.Created[0].Size, e.Cloud.Created[1].Size)
 	}
 }
 

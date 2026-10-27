@@ -11,7 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pt9912/hetzner-viper/internal/machine"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/sshconfig"
+	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/servertest"
 )
 
@@ -107,7 +108,7 @@ func (s *realSshd) pin(pubFile string) {
 
 // config writes the ssh config like start and stop do.
 func (s *realSshd) config() {
-	if err := machine.WriteSSHConfig(s.e.Config("web"), "127.0.0.1"); err != nil {
+	if err := (sshconfig.Files{}).WriteConfig(s.e.Config("web"), "127.0.0.1"); err != nil {
 		s.t.Fatal(err)
 	}
 }
@@ -159,7 +160,7 @@ func TestRealSshTrustLogic(t *testing.T) {
 	if err == nil {
 		t.Error("a stale pin must be rejected despite a valid CA cert")
 	}
-	if k := machine.SSHFailureKind(out); k != "hostkey" {
+	if k := model.SSHFailureKind(out); k != "hostkey" {
 		t.Errorf("stale pin: kind %s\n%s", k, out)
 	}
 
@@ -173,14 +174,14 @@ func TestRealSshTrustLogic(t *testing.T) {
 	s.start("20200101:20200102")
 	s.config()
 	out, err = s.ssh()
-	if err == nil || machine.SSHFailureKind(out) != "hostkey" {
-		t.Errorf("no pin + expired cert is a host key problem: %v kind %s\n%s", err, machine.SSHFailureKind(out), out)
+	if err == nil || model.SSHFailureKind(out) != "hostkey" {
+		t.Errorf("no pin + expired cert is a host key problem: %v kind %s\n%s", err, model.SSHFailureKind(out), out)
 	}
 
 	s.stop()
 	out, err = s.ssh()
-	if err == nil || machine.SSHFailureKind(out) != "network" {
-		t.Errorf("nothing listening is a network problem: %v kind %s\n%s", err, machine.SSHFailureKind(out), out)
+	if err == nil || model.SSHFailureKind(out) != "network" {
+		t.Errorf("nothing listening is a network problem: %v kind %s\n%s", err, model.SSHFailureKind(out), out)
 	}
 }
 

@@ -190,7 +190,7 @@ func TestStalePinIsDroppedWhenTheServerWasRecreated(t *testing.T) {
 	old, _ := os.ReadFile(pin)
 	// another computer deletes and recreates claude-web: a new ID, a new host key
 	srv := e.Cloud.Servers["claude-web"]
-	srv.ID += 100
+	srv.ID += "00"
 	e.Srv.SetHostKey("ssh-ed25519 AAAAnewkey claude-web\n")
 	r := e.MustUp("web", "")
 	r.Has(t, "was recreated")
