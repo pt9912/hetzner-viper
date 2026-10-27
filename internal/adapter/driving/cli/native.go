@@ -112,12 +112,14 @@ func setup(o *options, env settings.Env, out io.Writer) error {
 		}
 		return env.Getenv(k)
 	}
-	domain := get("DNS_DOMAIN")
-	if domain == "" {
-		return fmt.Errorf("Set DNS_DOMAIN in .env.local")
-	}
-	if err := model.CheckDomain(domain); err != nil {
-		return err
+	domain := model.NoDNSDomain
+	if o.host().Services.Settings.DNSProviderOf(vars) == model.DNSCloudflare {
+		if domain = get("DNS_DOMAIN"); domain == "" {
+			return fmt.Errorf("Set DNS_DOMAIN in .env.local")
+		}
+		if err := model.CheckDomain(domain); err != nil {
+			return err
+		}
 	}
 	key := model.KeyPath(get("SSH_KEY"), dir, env.Home)
 	ca := filepath.Join(env.Home, ".ssh", "hetzner_claude_host_ca")
@@ -140,7 +142,7 @@ func setup(o *options, env settings.Env, out io.Writer) error {
 %sThen run viper up <machine> [--repo URL]
 Host CA public key for iPad SSH clients (only if they support OpenSSH host CAs):
 %s
-`, exportLines(o.host().Services.Settings.ProviderOf(vars)), pubKey)
+`, exportLines(o.host().Services.Settings.ProviderOf(vars), o.host().Services.Settings.DNSProviderOf(vars)), pubKey)
 	return nil
 }
 
@@ -185,11 +187,25 @@ func connect(o *options, env settings.Env, interactive bool) error {
 	return o.host().ExecTool("ssh", args...)
 }
 
+// readTrim is a file's content without the trailing newline, "" if it cannot be read.
+func readTrim(path string) string {
+	b, _ := os.ReadFile(path)
+	return strings.TrimRight(string(b), "\n")
+}
+
 // dnsName prints the DNS name of a machine: <SERVER_PREFIX>-<machine>.<DNS_DOMAIN>.
 func dnsName(o *options, env settings.Env, out io.Writer) error {
 	c, err := o.host().Services.Settings.Load(settingsDir(o), o.machine, env, false)
 	if err != nil {
 		return err
+	}
+	if !c.HasDNS() {
+		if ip := readTrim(c.IPState); ip != "" {
+			fmt.Fprintf(out, "No DNS name (DNS_PROVIDER=none); the address of %s is %s\n", c.ServerName, ip)
+		} else {
+			fmt.Fprintf(out, "No DNS name (DNS_PROVIDER=none), and no address is recorded for %s: is it running?\n", c.ServerName)
+		}
+		return nil
 	}
 	fmt.Fprintln(out, c.DNSHost)
 	return nil
@@ -239,10 +255,14 @@ func nativeDNS(o *options) error {
 }
 
 // exportLines are the credentials of the provider and of Cloudflare, as lines to paste.
-func exportLines(provider string) string {
+func exportLines(provider, dnsProvider string) string {
 	prov, _ := model.LookupProvider(provider)
+	names := append([]string{}, prov.Credentials...)
+	if dnsProvider == model.DNSCloudflare {
+		names = append(names, "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ZONE_ID")
+	}
 	var b strings.Builder
-	for _, name := range append(append([]string{}, prov.Credentials...), "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ZONE_ID") {
+	for _, name := range names {
 		fmt.Fprintf(&b, "  export %s='...'\n", name)
 	}
 	return b.String()

@@ -362,3 +362,17 @@ func TestWritesTheSshConfigIfThereIsNone(t *testing.T) {
 		t.Errorf("wrote %q", wrote)
 	}
 }
+
+func TestWithoutDNSNoNameIsChecked(t *testing.T) {
+	f, c := newFixture(t, "DNS_PROVIDER=none\n")
+	var out bytes.Buffer
+	if _, err := check.Run(context.Background(), c, f.deps(), &out, &out); err != nil {
+		t.Fatal(err)
+	}
+	contains(t, out.String(), "== DNS (none)\ninfo  DNS_PROVIDER=none: no DNS name to check; connect with viper ssh web\n")
+	for _, not := range []string{"== DNS (claude-web", "== SSH like another device"} {
+		if strings.Contains(out.String(), not) {
+			t.Errorf("%q must not run without a DNS name:\n%s", not, out.String())
+		}
+	}
+}

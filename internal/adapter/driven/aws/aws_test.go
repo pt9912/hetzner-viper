@@ -48,6 +48,9 @@ func TestCreateServerMakesTheInstanceAndWaitsForItsAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if srv.Hostname != "ec2-203-0-113-9.eu-central-1.compute.amazonaws.com" {
+		t.Errorf("hostname %q: the public name the cloud gives the instance", srv.Hostname)
+	}
 	if srv.ID != "i-0001" || srv.IPv4 != "203.0.113.9" || srv.Name != "claude-web" || srv.Created.IsZero() {
 		t.Errorf("%+v", srv)
 	}

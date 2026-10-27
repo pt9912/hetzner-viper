@@ -118,7 +118,7 @@ func Run(ctx context.Context, c *model.Machine, repoArg string, d Deps, lg runlo
 		return code, err
 	}
 	id := srv.ID
-	if code, err := r.announceServer(ctx, srv.IPv4); code != 0 || err != nil {
+	if code, err := r.announceServer(ctx, srv); code != 0 || err != nil {
 		return code, err
 	}
 	status, code, err := r.waitForServer(ctx, id, reused)
@@ -177,8 +177,8 @@ func (r *runner) ensureServer(ctx context.Context, ca, ipadKey string) (srv *mod
 }
 
 // announceServer records the IP, writes the SSH config and sets the DNS name.
-func (r *runner) announceServer(ctx context.Context, ip string) (int, error) {
-	c, d := r.c, r.d
+func (r *runner) announceServer(ctx context.Context, srv *model.Server) (int, error) {
+	c, d, ip := r.c, r.d, srv.IPv4
 	_ = os.WriteFile(c.IPState, []byte(ip+"\n"), 0o600)
 	r.lg.Event("ip=%s dns=%s", ip, c.DNSHost)
 	if err := d.SSH.WriteConfig(c, ip); err != nil {
@@ -193,6 +193,9 @@ func (r *runner) announceServer(ctx context.Context, ip string) (int, error) {
 		return r.fail("%s", err)
 	}
 	r.printf("%s\n", msg)
+	if !c.HasDNS() && srv.Hostname != "" {
+		r.printf("The cloud names it %s (that name changes with the address).\n", srv.Hostname)
+	}
 	return 0, nil
 }
 

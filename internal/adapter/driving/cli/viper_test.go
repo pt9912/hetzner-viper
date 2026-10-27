@@ -234,3 +234,27 @@ func TestConnectWithTmuxAttachesToTheClaudeSession(t *testing.T) {
 		t.Errorf("ssh ran for a refused call: %q", *calls)
 	}
 }
+
+func TestDnsNameWithoutDNSGivesTheAddress(t *testing.T) {
+	env, home := nativeEnv(t)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_PROVIDER=none\nSERVER_PREFIX=lab\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	opts := &cli.Opts{Host: testHost(), Dir: dir, Machine: "web"}
+	if err := cli.DNSName(opts, env, &out); err != nil || !strings.Contains(out.String(), "no address is recorded for lab-web") {
+		t.Errorf("not running: %q %v", out.String(), err)
+	}
+	state := filepath.Join(home, ".local", "state", "hetzner-claude")
+	if err := os.MkdirAll(state, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state, "ip-lab-web"), []byte("203.0.113.7\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := cli.DNSName(opts, env, &out); err != nil || out.String() != "No DNS name (DNS_PROVIDER=none); the address of lab-web is 203.0.113.7\n" {
+		t.Errorf("running: %q %v", out.String(), err)
+	}
+}

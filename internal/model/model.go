@@ -17,6 +17,8 @@ type Server struct {
 	ID   string
 	Name string
 	IPv4 string
+	// Hostname is the public name the cloud gives the server, "" if it gives none.
+	Hostname string
 	// Created is when the server was created.
 	Created time.Time
 }

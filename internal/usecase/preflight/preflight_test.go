@@ -377,3 +377,16 @@ func writeFile(p, s string) error {
 	}
 	return os.WriteFile(p, []byte(s), 0o600)
 }
+
+func TestWithoutDNSThePreflightSaysSo(t *testing.T) {
+	e := fixture(t, "DNS_PROVIDER=none\n")
+	e.dns = fakeDNS{ok: true, lines: []string{"ok    DNS_PROVIDER=none: no DNS record is made, the server is reached by its address"}}
+	out, _, n := e.run("web", "")
+	if n != 0 {
+		t.Fatalf("problems: %d\n%s", n, out)
+	}
+	mustContain(t, out, "== DNS (none)\nok    DNS_PROVIDER=none")
+	if strings.Contains(out, "== Cloudflare DNS") {
+		t.Errorf("no Cloudflare without a DNS name:\n%s", out)
+	}
+}

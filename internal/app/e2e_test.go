@@ -25,19 +25,6 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/port/driving"
 )
 
-// noDNS stands in for Cloudflare: the test has no zone and must not touch one.
-type noDNS struct{}
-
-func (noDNS) Set(_ context.Context, host, ip string) (string, error) {
-	return "DNS skipped in the e2e test: " + host + " -> " + ip, nil
-}
-func (noDNS) Delete(context.Context, string, string) (string, error) {
-	return "DNS skipped in the e2e test", nil
-}
-func (noDNS) Check(context.Context, string, string) ([]string, bool, error) {
-	return []string{"ok    DNS skipped in the e2e test"}, true, nil
-}
-
 // logWriter writes what the use cases print to the test log, line by line, as it comes.
 type logWriter struct {
 	t  *testing.T
@@ -80,7 +67,8 @@ func publicIP(t *testing.T) string {
 }
 
 // TestE2EUpAndDown sets a machine up on a real AWS account and deletes it again, with the real use
-// cases and adapters (preflight, up with cloud-init, ssh, down). Only DNS is a stub. SSH is open to
+// cases and adapters (preflight, up with cloud-init, ssh, down). DNS_PROVIDER=none: it needs no
+// domain and no Cloudflare account. SSH is open to
 // the address of this computer only. It takes about ten minutes and costs a few cents. Run it with
 //
 //	VIPER_E2E_AWS=<profile> go test -tags e2e -run TestE2EUpAndDown -v -timeout 40m ./internal/app/
@@ -107,7 +95,7 @@ func TestE2EUpAndDown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	known := fmt.Sprintf("@cert-authority *.example.test %s\n", strings.TrimSpace(string(caPub)))
+	known := fmt.Sprintf("@cert-authority *.viper.invalid %s\n", strings.TrimSpace(string(caPub)))
 	if err := os.WriteFile(filepath.Join(sshDir, "known_hosts_hetzner_claude_ca"), []byte(known), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -120,10 +108,10 @@ func TestE2EUpAndDown(t *testing.T) {
 	cidr := publicIP(t) + "/32"
 	t.Logf("machine %s-web (%s), ssh open to %s only", prefix, size, cidr)
 	envFile := strings.Join([]string{
-		"DNS_DOMAIN=example.test", "PROVIDER=aws", "SERVER_PREFIX=" + prefix, "AWS_PROFILE=" + profile,
+		"DNS_PROVIDER=none", "PROVIDER=aws", "SERVER_PREFIX=" + prefix, "AWS_PROFILE=" + profile,
 		"SERVER_TYPE=" + size, "SSH_ALLOWED_CIDRS=" + cidr, "VIPER_HOMEBREW=0",
 		"SSH_KEY=" + filepath.Join(sshDir, "hetzner-build"),
-		"CLOUDFLARE_API_TOKEN=unused", "CLOUDFLARE_ZONE_ID=unused", "",
+		"",
 	}, "\n")
 	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte(envFile), 0o600); err != nil {
 		t.Fatal(err)
@@ -164,12 +152,6 @@ func TestE2EUpAndDown(t *testing.T) {
 
 	// up
 	up := app.Up(m, driving.UpOptions{NoCode: true})
-	up.Deps.DNS = noDNS{}
-	up.Deps.Preflight = func(ctx context.Context, repo string, o, e io.Writer) int {
-		p := app.Preflight(m)
-		p.Deps.DNS = noDNS{}
-		return p.Preflight(ctx, m, repo, o, e)
-	}
 	lg, err := runlogfile.Open(m.StateDir, m.ServerName, "up", out, out)
 	if err != nil {
 		t.Fatal(err)
@@ -187,7 +169,6 @@ func TestE2EUpAndDown(t *testing.T) {
 
 	// down
 	down := app.Down(m, driving.DownOptions{Ask: func(string) string { return "DELETE" }})
-	down.Deps.DNS = noDNS{}
 	lg, err = runlogfile.Open(m.StateDir, m.ServerName, "down", out, out)
 	if err != nil {
 		t.Fatal(err)

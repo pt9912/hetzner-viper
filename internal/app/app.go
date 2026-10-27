@@ -10,6 +10,7 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/cloudflare"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/editor"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/git"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/nodns"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/resolver"
 	runlogfile "github.com/pt9912/hetzner-viper/internal/adapter/driven/runlog"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
@@ -18,6 +19,7 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/adapter/driving/cli"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/dns"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/runlog"
 	"github.com/pt9912/hetzner-viper/internal/port/driving"
 	"github.com/pt9912/hetzner-viper/internal/usecase/check"
@@ -62,8 +64,14 @@ func Run(version string, args []string, stdin io.Reader, stdout, stderr io.Write
 	})
 }
 
-func dnsOf(c *model.Machine) *cloudflare.Client {
-	return &cloudflare.Client{Token: c.Get("CLOUDFLARE_API_TOKEN"), ZoneID: c.Get("CLOUDFLARE_ZONE_ID")}
+// DNS is the DNS service chosen for a machine.
+type DNS struct{ dns.Provider }
+
+func dnsOf(c *model.Machine) DNS {
+	if c.DNSProvider == model.DNSNone {
+		return DNS{nodns.Client{}}
+	}
+	return DNS{&cloudflare.Client{Token: c.Get("CLOUDFLARE_API_TOKEN"), ZoneID: c.Get("CLOUDFLARE_ZONE_ID")}}
 }
 
 // Preflight is the use case Preflight for the machine of c.
@@ -71,7 +79,7 @@ func Preflight(c *model.Machine) preflight.Service {
 	return preflightOf(providerOf(c), dnsOf(c))
 }
 
-func preflightOf(cl cloud.Provider, dns *cloudflare.Client) preflight.Service {
+func preflightOf(cl cloud.Provider, dns DNS) preflight.Service {
 	d := preflight.Deps{Cloud: cl, DNS: dns}
 	if git.Available() {
 		d.GitLsRemote = git.LsRemote

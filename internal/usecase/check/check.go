@@ -124,8 +124,13 @@ func Run(ctx context.Context, c *model.Machine, d Deps, out, errOut io.Writer) (
 		}
 	}
 
-	dnsChecks(ctx, r, c, d, ip)
-	sshAsAnotherDevice(ctx, r, c, d)
+	if c.HasDNS() {
+		dnsChecks(ctx, r, c, d, ip)
+		sshAsAnotherDevice(ctx, r, c, d)
+	} else {
+		fmt.Fprintln(out, "== DNS (none)")
+		r.info("DNS_PROVIDER=none: no DNS name to check; connect with viper ssh %s", c.Name)
+	}
 
 	fmt.Fprintf(out, "== server (%s, %s)\n", c.ServerName, ip)
 	workdir := c.WorkDir(repoURL)

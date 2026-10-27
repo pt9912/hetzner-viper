@@ -88,7 +88,11 @@ func Run(ctx context.Context, c *model.Machine, repoArg string, d Deps, out, err
 	localSetup(r, c)
 	cloudChecks(ctx, r, c, d)
 
-	fmt.Fprintln(out, "== Cloudflare DNS")
+	if c.HasDNS() {
+		fmt.Fprintln(out, "== Cloudflare DNS")
+	} else {
+		fmt.Fprintln(out, "== DNS (none)")
+	}
 	lines, ok, err := d.DNS.Check(ctx, c.DNSDomain, c.DNSHost)
 	for _, l := range lines {
 		fmt.Fprintln(out, l)
@@ -121,7 +125,11 @@ func exists(p string) bool { _, err := os.Stat(p); return err == nil }
 
 func localSetup(r *report, c *model.Machine) {
 	fmt.Fprintf(r.out, "== settings and local setup (%s)\n", c.ServerName)
-	r.ok("settings complete: %s in %s, %s, DNS %s", c.ServerType, c.ServerLocation, c.ServerImage, c.DNSHost)
+	dnsName := c.DNSHost
+	if !c.HasDNS() {
+		dnsName = "none"
+	}
+	r.ok("settings complete: %s in %s, %s, DNS %s", c.ServerType, c.ServerLocation, c.ServerImage, dnsName)
 	ca := filepath.Join(c.SSHDir, "hetzner_claude_host_ca")
 	if exists(c.SSHKey) && exists(c.SSHKey+".pub") && exists(ca) {
 		r.ok("login key %s and host CA present", c.SSHKey)
@@ -129,9 +137,12 @@ func localSetup(r *report, c *model.Machine) {
 		r.bad("login key or host CA missing: Run viper setup first")
 	}
 	known, _ := os.ReadFile(filepath.Join(c.SSHDir, "known_hosts_hetzner_claude_ca"))
-	if strings.Contains(string(known), "@cert-authority *."+c.DNSDomain+" ") {
+	switch {
+	case !c.HasDNS():
+		// other devices verify the server by its DNS name; without one there is nothing to trust
+	case strings.Contains(string(known), "@cert-authority *."+c.DNSDomain+" "):
 		r.ok("host CA trusted for *.%s", c.DNSDomain)
-	} else {
+	default:
 		r.bad("host CA trust for *.%s missing (new or changed DNS_DOMAIN?): run viper setup", c.DNSDomain)
 	}
 	keyFileChecks(r, c)

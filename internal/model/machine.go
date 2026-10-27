@@ -17,6 +17,9 @@ type Machine struct {
 	// Provider is the cloud the server is made in (PROVIDER).
 	Provider string
 
+	// DNSProvider is who makes the DNS name of the server: DNSCloudflare, or DNSNone for no name.
+	DNSProvider string
+
 	DNSDomain, ServerType, ServerLocation, ServerImage, ServerPrefix, WorkspaceDir string
 	SSHKey                                                                         string
 

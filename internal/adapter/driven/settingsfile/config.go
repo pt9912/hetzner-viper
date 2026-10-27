@@ -17,15 +17,26 @@ var (
 	nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 )
 
+// DNSProviderOf is the DNS provider the settings files name: DNS_PROVIDER, in lower case, else
+// Cloudflare. Like PROVIDER it is not read from the shell.
+func DNSProviderOf(vars map[string]string) string {
+	return or(strings.ToLower(strings.TrimSpace(vars["DNS_PROVIDER"])), model.DNSCloudflare)
+}
+
 // ProviderOf is the provider the settings files name: PROVIDER, in lower case, else the default.
 // It is not read from the shell: the name is too common to take from the environment.
 func ProviderOf(vars map[string]string) string {
 	return or(strings.ToLower(strings.TrimSpace(vars["PROVIDER"])), model.DefaultProvider)
 }
 
-// tokens are the settings only the commands that talk to the cloud and Cloudflare need.
-func tokens(p model.ProviderInfo) []string {
-	return append(append([]string{}, p.Credentials...), "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ZONE_ID")
+// tokens are the settings only the commands that talk to the cloud (and Cloudflare, if viper makes
+// the DNS name there) need.
+func tokens(p model.ProviderInfo, dnsProvider string) []string {
+	out := append([]string{}, p.Credentials...)
+	if dnsProvider == model.DNSCloudflare {
+		out = append(out, "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ZONE_ID")
+	}
+	return out
 }
 
 // LoadFile reads .env.local of dir (without a machine).
@@ -94,19 +105,8 @@ func Load(dir, machine string, env settings.Env, needTokens bool) (*model.Machin
 		return env.Getenv(name)
 	}
 
-	c.Provider = ProviderOf(vars)
-	prov, ok := model.LookupProvider(c.Provider)
-	if !ok {
-		return nil, fmt.Errorf("PROVIDER: unknown provider %s (one of: %s)", c.Provider, strings.Join(model.ProviderNames(), ", "))
-	}
-	if err := checkDiskSizes(c); err != nil {
-		return nil, err
-	}
-	if err := checkRequired(c, prov, needTokens); err != nil {
-		return nil, err
-	}
-	c.DNSDomain = c.Get("DNS_DOMAIN")
-	if err := model.CheckDomain(c.DNSDomain); err != nil {
+	prov, err := applyProviders(c, vars, needTokens)
+	if err != nil {
 		return nil, err
 	}
 	c.SSHKey = model.KeyPath(c.Get("SSH_KEY"), dir, env.Home)
@@ -153,6 +153,9 @@ func (Files) Prefix(dir, machine string, env settings.Env) string { return Prefi
 // ProviderOf is the provider the settings in vars name; see ProviderOf.
 func (Files) ProviderOf(vars map[string]string) string { return ProviderOf(vars) }
 
+// DNSProviderOf is the DNS provider the settings in vars name; see DNSProviderOf.
+func (Files) DNSProviderOf(vars map[string]string) string { return DNSProviderOf(vars) }
+
 // diskSize is the setting for the size of the system disk of a provider that has one, and the
 // smallest size the provider's Ubuntu image fits on; ok is false for a provider without one.
 func diskSize(provider string) (name string, smallest int, ok bool) {
@@ -184,9 +187,12 @@ func checkDiskSizes(c *model.Machine) error {
 
 // checkRequired reports the settings that are missing, all at once.
 func checkRequired(c *model.Machine, prov model.ProviderInfo, needTokens bool) error {
-	required := []string{"DNS_DOMAIN"}
+	var required []string
+	if c.DNSProvider == model.DNSCloudflare {
+		required = append(required, "DNS_DOMAIN")
+	}
 	if needTokens {
-		required = append(required, tokens(prov)...)
+		required = append(required, tokens(prov, c.DNSProvider)...)
 	}
 	var missing []string
 	for _, v := range required {
@@ -219,4 +225,31 @@ func derivePaths(c *model.Machine, home string) {
 	c.RepoState = filepath.Join(c.StateDir, "repo-"+c.ServerName)
 	c.EventsLog = filepath.Join(c.StateDir, "events.log")
 	c.LogDir = filepath.Join(c.StateDir, "logs")
+}
+
+// applyProviders sets the cloud provider and the DNS provider of the machine and the domain that
+// follows from them, and checks what they need. It returns what is known of the cloud provider.
+func applyProviders(c *model.Machine, vars map[string]string, needTokens bool) (model.ProviderInfo, error) {
+	c.Provider = ProviderOf(vars)
+	prov, ok := model.LookupProvider(c.Provider)
+	if !ok {
+		return model.ProviderInfo{}, fmt.Errorf("PROVIDER: unknown provider %s (one of: %s)", c.Provider, strings.Join(model.ProviderNames(), ", "))
+	}
+	if err := checkDiskSizes(c); err != nil {
+		return prov, err
+	}
+	c.DNSProvider = DNSProviderOf(vars)
+	if c.DNSProvider != model.DNSCloudflare && c.DNSProvider != model.DNSNone {
+		return prov, fmt.Errorf("DNS_PROVIDER: %s or %s: %s", model.DNSCloudflare, model.DNSNone, c.DNSProvider)
+	}
+	if err := checkRequired(c, prov, needTokens); err != nil {
+		return prov, err
+	}
+	c.DNSDomain = c.Get("DNS_DOMAIN")
+	if c.DNSProvider == model.DNSNone {
+		c.DNSDomain = model.NoDNSDomain
+	} else if err := model.CheckDomain(c.DNSDomain); err != nil {
+		return prov, err
+	}
+	return prov, nil
 }

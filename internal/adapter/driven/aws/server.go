@@ -27,7 +27,7 @@ func apiCode(err error) string {
 }
 
 func serverFrom(i types.Instance, name string) *model.Server {
-	s := &model.Server{ID: str(i.InstanceId), Name: name, IPv4: str(i.PublicIpAddress)}
+	s := &model.Server{ID: str(i.InstanceId), Name: name, IPv4: str(i.PublicIpAddress), Hostname: str(i.PublicDnsName)}
 	if i.LaunchTime != nil {
 		s.Created = *i.LaunchTime
 	}

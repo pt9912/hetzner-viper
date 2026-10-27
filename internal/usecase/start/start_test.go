@@ -1018,3 +1018,22 @@ func TestAnInterruptedClaudeInstallDoesNotWaitOrRetry(t *testing.T) {
 	}
 	hasNot(t, w.err.String(), "retrying in")
 }
+
+func TestWithoutDNSTheCloudsOwnNameIsShown(t *testing.T) {
+	w := newWorld(t, "DNS_PROVIDER=none\n")
+	w.createdServer.Hostname = "ec2-203-0-113-7.eu-central-1.compute.amazonaws.com"
+	if code, err := w.run(""); code != 0 || err != nil {
+		t.Fatalf("%d %v\n%s", code, err, w.all())
+	}
+	has(t, w.out.String(), "The cloud names it ec2-203-0-113-7.eu-central-1.compute.amazonaws.com (that name changes with the address).")
+
+	// with DNS the name of the cloud is not mentioned
+	w = newWorld(t, "")
+	w.createdServer.Hostname = "ec2-203-0-113-7.eu-central-1.compute.amazonaws.com"
+	if code, err := w.run(""); code != 0 || err != nil {
+		t.Fatalf("%d %v\n%s", code, err, w.all())
+	}
+	if strings.Contains(w.out.String(), "The cloud names it") {
+		t.Errorf("a DNS name is made: the cloud's name is no news\n%s", w.out.String())
+	}
+}

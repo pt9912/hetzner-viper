@@ -116,6 +116,7 @@ func (f *fakeAWS) DescribeInstances(_ context.Context, in *ec2.DescribeInstances
 			if i.State.Name == types.InstanceStateNamePending && f.describes[id] >= 2 {
 				i.State.Name = types.InstanceStateNameRunning
 				i.PublicIpAddress = ptr("203.0.113.9")
+				i.PublicDnsName = ptr("ec2-203-0-113-9.eu-central-1.compute.amazonaws.com")
 			}
 			// a terminated instance is shutting down for one look, then it is gone
 			defer func() {

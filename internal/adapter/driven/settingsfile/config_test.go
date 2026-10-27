@@ -205,6 +205,33 @@ func TestLoadRejectsADiskSizeThatIsNoNumber(t *testing.T) {
 	}
 }
 
+func TestLoadWithoutDNSNeedsNeitherADomainNorCloudflare(t *testing.T) {
+	env := settings.Env{Lookup: envOf(map[string]string{"HCLOUD_TOKEN": "h"}), Home: "/home/me"}
+	c, err := settingsfile.Load(setupDir(t, "DNS_PROVIDER=none\nSERVER_PREFIX=lab\n", ""), "web", env, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.DNSProvider != "none" || c.HasDNS() || c.DNSDomain != "viper.invalid" || c.DNSHost != "lab-web.viper.invalid" {
+		t.Errorf("%q %v %q %q", c.DNSProvider, c.HasDNS(), c.DNSDomain, c.DNSHost)
+	}
+	// the cloud's own credentials are still required
+	if _, err := settingsfile.Load(setupDir(t, "DNS_PROVIDER=none\n", ""), "web", settings.Env{Lookup: envOf(nil), Home: "/h"}, true); err == nil || !strings.HasPrefix(err.Error(), "Missing settings: HCLOUD_TOKEN ") {
+		t.Errorf("got %v", err)
+	}
+}
+
+func TestLoadTakesCloudflareAsTheDefaultDNSAndChecksTheValue(t *testing.T) {
+	env := settings.Env{Lookup: envOf(map[string]string{"DNS_PROVIDER": "none"}), Home: "/h"}
+	c, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\n", ""), "web", env, false)
+	if err != nil || c.DNSProvider != "cloudflare" || !c.HasDNS() {
+		t.Errorf("the shell must not choose the DNS provider: %v %v", c, err)
+	}
+	_, err = settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nDNS_PROVIDER=route53\n", ""), "web", env, false)
+	if err == nil || err.Error() != "DNS_PROVIDER: cloudflare or none: route53" {
+		t.Errorf("got %v", err)
+	}
+}
+
 func TestLoadRejectsAnUnknownProvider(t *testing.T) {
 	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
 	_, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nPROVIDER=nope\n", ""), "web", env, false)
