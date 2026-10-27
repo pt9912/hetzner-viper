@@ -1,9 +1,11 @@
-package cli
+package cli_test
 
 import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driving/cli"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"io"
 	"net/http"
 	"os"
@@ -14,7 +16,6 @@ import (
 	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/hetzner"
-	"github.com/pt9912/hetzner-viper/internal/config"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/runlog"
 	"github.com/pt9912/hetzner-viper/internal/port/driving"
@@ -44,7 +45,7 @@ func (d okDNS) Check(context.Context, string, string) ([]string, bool, error) {
 	return []string{"ok    zone"}, true, nil
 }
 
-func preflightSetup(t *testing.T, dnsOK bool) (config.Env, string, *options) {
+func preflightSetup(t *testing.T, dnsOK bool) (settings.Env, string, *cli.Opts) {
 	t.Helper()
 	env, home := nativeEnv(t)
 	t.Setenv("X", "")
@@ -67,16 +68,16 @@ func preflightSetup(t *testing.T, dnsOK bool) (config.Env, string, *options) {
 		t.Fatal(err)
 	}
 	h := testHost()
-	h.services.Preflight = func(*model.Machine) driving.Preflight {
+	h.Services.Preflight = func(*model.Machine) driving.Preflight {
 		return preflight.Service{Deps: preflight.Deps{Cloud: hetzner.Validator{API: okHetzner{}}, DNS: okDNS{ok: dnsOK}}}
 	}
-	return env, home, &options{dir: dir, machine: "web", h: h}
+	return env, home, &cli.Opts{Dir: dir, Machine: "web", Host: h}
 }
 
 func TestPreflightLogsTheRunAndItsOutcome(t *testing.T) {
 	env, home, o := preflightSetup(t, true)
 	var out, errb bytes.Buffer
-	if err := runPreflight(context.Background(), o, env, &out, &errb); err != nil {
+	if err := cli.RunPreflight(context.Background(), o, env, &out, &errb); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	if !strings.Contains(out.String(), "Preflight OK.") {
@@ -96,8 +97,8 @@ func TestPreflightLogsTheRunAndItsOutcome(t *testing.T) {
 func TestPreflightProblemsGiveExitStatus1(t *testing.T) {
 	env, home, o := preflightSetup(t, false)
 	var out, errb bytes.Buffer
-	err := runPreflight(context.Background(), o, env, &out, &errb)
-	if exitCode(err) != 1 || !strings.Contains(out.String(), "Preflight: 1 problem(s); nothing was created.") {
+	err := cli.RunPreflight(context.Background(), o, env, &out, &errb)
+	if cli.ExitCode(err) != 1 || !strings.Contains(out.String(), "Preflight: 1 problem(s); nothing was created.") {
 		t.Fatalf("%v / %q", err, out.String())
 	}
 	events, _ := os.ReadFile(filepath.Join(home, ".local", "state", "hetzner-claude", "events.log"))
@@ -110,7 +111,7 @@ func TestPreflightNeedsTheSettingsBeforeAnything(t *testing.T) {
 	env, home, o := preflightSetup(t, true)
 	env.Lookup = func(k string) (string, bool) { return map[string]string{"HOME": home}[k], k == "HOME" }
 	var out, errb bytes.Buffer
-	err := runPreflight(context.Background(), o, env, &out, &errb)
+	err := cli.RunPreflight(context.Background(), o, env, &out, &errb)
 	if err == nil || !strings.Contains(err.Error(), "Missing settings: HCLOUD_TOKEN CLOUDFLARE_API_TOKEN CLOUDFLARE_ZONE_ID") {
 		t.Errorf("got %v", err)
 	}
@@ -120,11 +121,11 @@ func TestPreflightNeedsTheSettingsBeforeAnything(t *testing.T) {
 }
 
 func TestPreflightRunsHereByDefault(t *testing.T) {
-	if commands()["preflight"].run == nil {
+	if !cli.IsNative("preflight") {
 		t.Error("preflight is native")
 	}
 	for _, name := range []string{"up", "down", "check", "log", "setup", "ssh", "dns"} {
-		if commands()[name].run == nil {
+		if !cli.IsNative(name) {
 			t.Errorf("%s is native", name)
 		}
 	}
@@ -147,7 +148,7 @@ func TestCheckLogsTheRunAndItsOutcome(t *testing.T) {
 	env, home, o := preflightSetup(t, true)
 	state := filepath.Join(home, ".local", "state", "hetzner-claude")
 	var probeOK = true
-	o.host().services.Check = func(c *model.Machine) driving.Check {
+	o.Host.Services.Check = func(c *model.Machine) driving.Check {
 		return check.Service{Deps: check.Deps{
 			Cloud: serverHetzner{srv: &model.Server{Name: "claude-web", IPv4: "203.0.113.7"}},
 			HTTP: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
@@ -167,7 +168,7 @@ func TestCheckLogsTheRunAndItsOutcome(t *testing.T) {
 		}}
 	}
 	var out, errb bytes.Buffer
-	if err := runCheck(context.Background(), o, env, &out, &errb); err != nil {
+	if err := cli.RunCheck(context.Background(), o, env, &out, &errb); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	if !strings.Contains(out.String(), "Check OK.") {
@@ -179,12 +180,12 @@ func TestCheckLogsTheRunAndItsOutcome(t *testing.T) {
 	}
 	// an ssh failure: logged as FAILED, exit status 1
 	probeOK = false
-	err := runCheck(context.Background(), o, env, &out, &errb)
+	err := cli.RunCheck(context.Background(), o, env, &out, &errb)
 	events, _ = os.ReadFile(filepath.Join(state, "events.log"))
-	if exitCode(err) != 1 || !strings.HasSuffix(string(events), "check     FAILED (exit 1; see logs/claude-web.log)\n") {
+	if cli.ExitCode(err) != 1 || !strings.HasSuffix(string(events), "check     FAILED (exit 1; see logs/claude-web.log)\n") {
 		t.Errorf("%v / events %q", err, events)
 	}
-	if commands()["check"].run == nil {
+	if !cli.IsNative("check") {
 		t.Error("check is native")
 	}
 }
@@ -213,7 +214,7 @@ func TestDownReadsItsAnswersFromAPipeAndLogsTheOutcome(t *testing.T) {
 	env, home, o := preflightSetup(t, true)
 	state := filepath.Join(home, ".local", "state", "hetzner-claude")
 	var deleted []string
-	o.host().services.Down = func(c *model.Machine, do driving.DownOptions) driving.Down {
+	o.Host.Services.Down = func(c *model.Machine, do driving.DownOptions) driving.Down {
 		return stop.Service{Deps: stop.Deps{
 			Ask:   do.Ask,
 			Cloud: downHetzner{srv: &model.Server{ID: "42", Name: "claude-web", IPv4: "203.0.113.7"}, deleted: &deleted},
@@ -229,7 +230,7 @@ func TestDownReadsItsAnswersFromAPipeAndLogsTheOutcome(t *testing.T) {
 	}
 	// both answers follow each other in one pipe
 	var out, errb bytes.Buffer
-	err := runDown(context.Background(), o, env, strings.NewReader("DISCARD\nDELETE\n"), &out, &errb)
+	err := cli.RunDown(context.Background(), o, env, strings.NewReader("DISCARD\nDELETE\n"), &out, &errb)
 	if err != nil || len(deleted) != 1 || deleted[0] != "42" {
 		t.Fatalf("%v deleted %v\n%s%s", err, deleted, out.String(), errb.String())
 	}
@@ -244,15 +245,15 @@ func TestDownReadsItsAnswersFromAPipeAndLogsTheOutcome(t *testing.T) {
 	deleted = nil
 	out.Reset()
 	errb.Reset()
-	err = runDown(context.Background(), o, env, strings.NewReader("DISCARD\n"), &out, &errb)
-	if exitCode(err) != 1 || len(deleted) != 0 {
+	err = cli.RunDown(context.Background(), o, env, strings.NewReader("DISCARD\n"), &out, &errb)
+	if cli.ExitCode(err) != 1 || len(deleted) != 0 {
 		t.Errorf("%v deleted %v", err, deleted)
 	}
 	events, _ = os.ReadFile(filepath.Join(state, "events.log"))
 	if !strings.HasSuffix(string(events), "down      cancelled (no DELETE)\n") {
 		t.Errorf("events %q", events)
 	}
-	if commands()["down"].run == nil {
+	if !cli.IsNative("down") {
 		t.Error("down is native")
 	}
 }
@@ -260,17 +261,17 @@ func TestDownReadsItsAnswersFromAPipeAndLogsTheOutcome(t *testing.T) {
 func TestUpStopsAtPreflightProblemsAndLogsThem(t *testing.T) {
 	env, home, o := preflightSetup(t, false) // the DNS check fails: one problem
 	created := false
-	o.host().services.Up = func(c *model.Machine, _ driving.UpOptions) driving.Up {
+	o.Host.Services.Up = func(c *model.Machine, _ driving.UpOptions) driving.Up {
 		return start.Service{Deps: start.Deps{
 			Preflight: func(ctx context.Context, repoArg string, out, errOut io.Writer) int {
-				return o.host().services.Preflight(c).Preflight(ctx, c, repoArg, out, errOut)
+				return o.Host.Services.Preflight(c).Preflight(ctx, c, repoArg, out, errOut)
 			},
 			Cloud: failIfCreated{created: &created},
 		}}
 	}
 	var out, errb bytes.Buffer
-	err := runUp(context.Background(), o, env, &out, &errb)
-	if exitCode(err) != 1 || created {
+	err := cli.RunUp(context.Background(), o, env, &out, &errb)
+	if cli.ExitCode(err) != 1 || created {
 		t.Fatalf("%v created=%v\n%s%s", err, created, out.String(), errb.String())
 	}
 	if !strings.Contains(errb.String(), "Preflight: 1 problem(s); nothing was created.") {
@@ -307,7 +308,7 @@ func TestInterruptionAtAPromptIsLoggedNotAFailure(t *testing.T) {
 	env, home, o := preflightSetup(t, true)
 	state := filepath.Join(home, ".local", "state", "hetzner-claude")
 	var deleted []string
-	o.host().services.Down = func(c *model.Machine, do driving.DownOptions) driving.Down {
+	o.Host.Services.Down = func(c *model.Machine, do driving.DownOptions) driving.Down {
 		return stop.Service{Deps: stop.Deps{
 			Ask:   do.Ask,
 			Cloud: downHetzner{srv: &model.Server{ID: "42", Name: "claude-web", IPv4: "203.0.113.7"}, deleted: &deleted},
@@ -326,7 +327,7 @@ func TestInterruptionAtAPromptIsLoggedNotAFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	var out, errb syncBuffer
-	go func() { done <- runDown(ctx, o, env, pr, &out, &errb) }()
+	go func() { done <- cli.RunDown(ctx, o, env, pr, &out, &errb) }()
 	deadline := time.Now().Add(5 * time.Second)
 	for !strings.Contains(errb.String(), "Type DELETE to continue: ") && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
@@ -334,8 +335,8 @@ func TestInterruptionAtAPromptIsLoggedNotAFailure(t *testing.T) {
 	cancel()
 	select {
 	case err := <-done:
-		if exitCode(err) != 130 {
-			t.Errorf("exit code %d (%v)", exitCode(err), err)
+		if cli.ExitCode(err) != 130 {
+			t.Errorf("exit code %d (%v)", cli.ExitCode(err), err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the prompt did not end with the interruption")
@@ -376,24 +377,24 @@ func (fakeUp) Up(context.Context, *model.Machine, string, runlog.Log, io.Writer,
 func TestNoCodeIsPassedToTheUseCase(t *testing.T) {
 	env, _, o := preflightSetup(t, false)
 	var got driving.UpOptions
-	o.host().services.Up = func(_ *model.Machine, uo driving.UpOptions) driving.Up {
+	o.Host.Services.Up = func(_ *model.Machine, uo driving.UpOptions) driving.Up {
 		got = uo
 		return fakeUp{}
 	}
 	var out, errb bytes.Buffer
-	if err := runUp(context.Background(), o, env, &out, &errb); err != nil || got.NoCode || got.Sleep == nil {
+	if err := cli.RunUp(context.Background(), o, env, &out, &errb); err != nil || got.NoCode || got.Sleep == nil {
 		t.Fatalf("by default: %v %+v", err, got)
 	}
-	_, po, err := parse([]string{"up", "web", "--no-code"})
-	if err != nil || !po.noCode {
+	_, po, err := cli.Parse([]string{"up", "web", "--no-code"})
+	if err != nil || !po.NoCode {
 		t.Fatalf("--no-code: %v %+v", err, po)
 	}
-	o.noCode = po.noCode
-	if err := runUp(context.Background(), o, env, &out, &errb); err != nil || !got.NoCode {
+	o.NoCode = po.NoCode
+	if err := cli.RunUp(context.Background(), o, env, &out, &errb); err != nil || !got.NoCode {
 		t.Errorf("--no-code is not passed: %v %+v", err, got)
 	}
 	for _, args := range [][]string{{"check", "web", "--no-code"}, {"up", "web", "--no-code=1"}} {
-		if _, _, err := parse(args); err == nil {
+		if _, _, err := cli.Parse(args); err == nil {
 			t.Errorf("%v: want an error", args)
 		}
 	}

@@ -2,13 +2,14 @@ package cli
 
 import (
 	"fmt"
+	"github.com/pt9912/hetzner-viper/internal/model"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	hetznerviper "github.com/pt9912/hetzner-viper"
-	"github.com/pt9912/hetzner-viper/internal/config"
 )
 
 // The commands run on this computer: they need the files of the settings directory (--dir, default
@@ -16,19 +17,11 @@ import (
 
 // need checks that a program the command runs on this computer exists, before anything is
 // changed, and says what to do if not.
-func (h *host) need(program string) error {
-	if _, err := h.lookPath(program); err != nil {
+func (h *Host) need(program string) error {
+	if _, err := h.LookPath(program); err != nil {
 		return fmt.Errorf("%s not found: install the OpenSSH client", program)
 	}
 	return nil
-}
-
-func hostEnv() (config.Env, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return config.Env{}, err
-	}
-	return config.Env{Lookup: os.LookupEnv, Home: home}, nil
 }
 
 func settingsDir(o *options) string {
@@ -74,7 +67,7 @@ func writeTemplate(file string, data []byte, mode os.FileMode, message string, o
 }
 
 // ensureKeys creates the login key and the host CA key if they are missing.
-func ensureKeys(h *host, key, ca, home string) error {
+func ensureKeys(h *Host, key, ca, home string) error {
 	// before anything is created: without OpenSSH a key cannot be made
 	if !exists(key) || !exists(ca) {
 		if err := h.need("ssh-keygen"); err != nil {
@@ -87,12 +80,12 @@ func ensureKeys(h *host, key, ca, home string) error {
 		}
 	}
 	if !exists(key) {
-		if err := h.runTool("ssh-keygen", "-t", "ed25519", "-f", key, "-N", ""); err != nil {
+		if err := h.RunTool("ssh-keygen", "-t", "ed25519", "-f", key, "-N", ""); err != nil {
 			return err
 		}
 	}
 	if !exists(ca) {
-		if err := h.runTool("ssh-keygen", "-t", "ed25519", "-f", ca, "-N", "", "-C", "Hetzner Claude Host CA"); err != nil {
+		if err := h.RunTool("ssh-keygen", "-t", "ed25519", "-f", ca, "-N", "", "-C", "Hetzner Claude Host CA"); err != nil {
 			return err
 		}
 	}
@@ -100,7 +93,7 @@ func ensureKeys(h *host, key, ca, home string) error {
 }
 
 // setup creates the login key and the host CA and trusts the CA for the domain .
-func setup(o *options, env config.Env, out io.Writer) error {
+func setup(o *options, env settings.Env, out io.Writer) error {
 	dir := settingsDir(o)
 	file := filepath.Join(dir, ".env.local")
 	if err := createEnvFile(file, out); err != nil {
@@ -109,7 +102,7 @@ func setup(o *options, env config.Env, out io.Writer) error {
 	if err := createMachineExample(dir, out); err != nil {
 		return err
 	}
-	vars, err := config.LoadFile(dir, env)
+	vars, err := o.host().Services.Settings.LoadFile(dir, env)
 	if err != nil {
 		return err
 	}
@@ -123,10 +116,10 @@ func setup(o *options, env config.Env, out io.Writer) error {
 	if domain == "" {
 		return fmt.Errorf("Set DNS_DOMAIN in .env.local")
 	}
-	if err := config.CheckDomain(domain); err != nil {
+	if err := model.CheckDomain(domain); err != nil {
 		return err
 	}
-	key := config.KeyPath(get("SSH_KEY"), dir, env.Home)
+	key := model.KeyPath(get("SSH_KEY"), dir, env.Home)
 	ca := filepath.Join(env.Home, ".ssh", "hetzner_claude_host_ca")
 	if err := ensureKeys(o.host(), key, ca, env.Home); err != nil {
 		return err
@@ -147,7 +140,7 @@ func setup(o *options, env config.Env, out io.Writer) error {
 %sThen run viper up <machine> [--repo URL]
 Host CA public key for iPad SSH clients (only if they support OpenSSH host CAs):
 %s
-`, exportLines(config.ProviderOf(vars)), pubKey)
+`, exportLines(o.host().Services.Settings.ProviderOf(vars)), pubKey)
 	return nil
 }
 
@@ -159,8 +152,8 @@ const tmuxCommand = `cd "$(cat ~/.config/viper/workdir 2>/dev/null)" 2>/dev/null
 
 // connect opens a shell or runs one command on a machine, with the machine's own ssh config
 // (pinned host key). With a command ssh gets a terminal only if we have one.
-func connect(o *options, env config.Env, interactive bool) error {
-	c, err := config.Load(settingsDir(o), o.machine, env, false)
+func connect(o *options, env settings.Env, interactive bool) error {
+	c, err := o.host().Services.Settings.Load(settingsDir(o), o.machine, env, false)
 	if err != nil {
 		return err
 	}
@@ -189,12 +182,12 @@ func connect(o *options, env config.Env, interactive bool) error {
 		return err
 	}
 	// ssh takes our place (like exec): signals and the exit code are its own
-	return o.host().execTool("ssh", args...)
+	return o.host().ExecTool("ssh", args...)
 }
 
 // dnsName prints the DNS name of a machine: <SERVER_PREFIX>-<machine>.<DNS_DOMAIN>.
-func dnsName(o *options, env config.Env, out io.Writer) error {
-	c, err := config.Load(settingsDir(o), o.machine, env, false)
+func dnsName(o *options, env settings.Env, out io.Writer) error {
+	c, err := o.host().Services.Settings.Load(settingsDir(o), o.machine, env, false)
 	if err != nil {
 		return err
 	}
@@ -203,51 +196,51 @@ func dnsName(o *options, env config.Env, out io.Writer) error {
 }
 
 // showLog shows the events of all machines or one machine, or its complete output.
-func showLog(o *options, env config.Env, out io.Writer) error {
+func showLog(o *options, env settings.Env, out io.Writer) error {
 	home := env.Home
 	state := filepath.Join(home, ".local", "state", "hetzner-claude")
 	server := ""
 	if o.machine != "" {
-		server = config.Prefix(settingsDir(o), o.machine, env) + "-" + o.machine
+		server = o.host().Services.Settings.Prefix(settingsDir(o), o.machine, env) + "-" + o.machine
 	}
-	return o.host().services.ShowLog(state, server, o.full, out)
+	return o.host().Services.ShowLog(state, server, o.full, out)
 }
 
 func nativeLog(o *options) error {
-	env, err := hostEnv()
+	env, err := o.host().Env()
 	if err != nil {
 		return err
 	}
-	return showLog(o, env, os.Stdout)
+	return showLog(o, env, o.host().Stdout)
 }
 
 func nativeSetup(o *options) error {
-	env, err := hostEnv()
+	env, err := o.host().Env()
 	if err != nil {
 		return err
 	}
-	return setup(o, env, os.Stdout)
+	return setup(o, env, o.host().Stdout)
 }
 
 func nativeSSH(o *options) error {
-	env, err := hostEnv()
+	env, err := o.host().Env()
 	if err != nil {
 		return err
 	}
-	return connect(o, env, isTerminal(os.Stdin) && isTerminal(os.Stdout))
+	return connect(o, env, o.host().IsTerminal())
 }
 
 func nativeDNS(o *options) error {
-	env, err := hostEnv()
+	env, err := o.host().Env()
 	if err != nil {
 		return err
 	}
-	return dnsName(o, env, os.Stdout)
+	return dnsName(o, env, o.host().Stdout)
 }
 
 // exportLines are the credentials of the provider and of Cloudflare, as lines to paste.
 func exportLines(provider string) string {
-	prov, _ := config.Provider(provider)
+	prov, _ := model.LookupProvider(provider)
 	var b strings.Builder
 	for _, name := range append(append([]string{}, prov.Credentials...), "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ZONE_ID") {
 		fmt.Fprintf(&b, "  export %s='...'\n", name)

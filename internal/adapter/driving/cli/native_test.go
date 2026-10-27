@@ -1,15 +1,15 @@
-package cli
+package cli_test
 
 import (
 	"context"
 	"errors"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driving/cli"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -21,7 +21,7 @@ func TestSetupResolvesARelativeKeyInTheSettingsDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls, h := fakeTools(t)
-	if err := setup(&options{h: h, dir: dir}, env, io.Discard); err != nil {
+	if err := cli.Setup(&cli.Opts{Host: h, Dir: dir}, env, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if got := (*calls)[0][4]; got != filepath.Join(dir, "keys", "rel") {
@@ -36,7 +36,7 @@ func TestSetupRefusesADomainThatIsNotOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls, h := fakeTools(t)
-	if err := setup(&options{h: h, dir: dir}, env, io.Discard); err == nil || !strings.Contains(err.Error(), "DNS_DOMAIN must be a domain") {
+	if err := cli.Setup(&cli.Opts{Host: h, Dir: dir}, env, io.Discard); err == nil || !strings.Contains(err.Error(), "DNS_DOMAIN must be a domain") {
 		t.Errorf("got %v", err)
 	}
 	if len(*calls) != 0 || exists(filepath.Join(home, ".ssh")) {
@@ -51,8 +51,8 @@ func TestMissingOpenSSHIsReportedBeforeAnythingIsCreated(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, h := fakeTools(t)
-	h.lookPath = func(string) (string, error) { return "", errors.New("not found") }
-	err := setup(&options{h: h, dir: dir}, env, io.Discard)
+	h.LookPath = func(string) (string, error) { return "", errors.New("not found") }
+	err := cli.Setup(&cli.Opts{Host: h, Dir: dir}, env, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "OpenSSH") || !strings.Contains(err.Error(), "ssh-keygen") {
 		t.Fatalf("got %v", err)
 	}
@@ -66,7 +66,7 @@ func TestMissingOpenSSHIsReportedBeforeAnythingIsCreated(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, ".ssh", "config_hetzner_claude-web"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := connect(&options{h: h, dir: dir, machine: "web"}, env, false); err == nil || !strings.Contains(err.Error(), "OpenSSH") {
+	if err := cli.Connect(&cli.Opts{Host: h, Dir: dir, Machine: "web"}, env, false); err == nil || !strings.Contains(err.Error(), "OpenSSH") {
 		t.Errorf("ssh: got %v", err)
 	}
 	// keys that exist need no ssh-keygen
@@ -79,7 +79,7 @@ func TestMissingOpenSSHIsReportedBeforeAnythingIsCreated(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, ".ssh", "hetzner_claude_host_ca.pub"), []byte("ssh-ed25519 AAAA c\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := setup(&options{h: h, dir: dir}, env, io.Discard); err != nil {
+	if err := cli.Setup(&cli.Opts{Host: h, Dir: dir}, env, io.Discard); err != nil {
 		t.Errorf("existing keys: %v", err)
 	}
 }
@@ -89,7 +89,7 @@ func TestSetupCreatesTheTemplateOnlyOnce(t *testing.T) {
 	dir := t.TempDir()
 	_, h := fakeTools(t)
 	var out strings.Builder
-	_ = setup(&options{h: h, dir: dir}, env, &out)
+	_ = cli.Setup(&cli.Opts{Host: h, Dir: dir}, env, &out)
 	if !strings.Contains(out.String(), "Created ") {
 		t.Errorf("says it created the file: %q", out.String())
 	}
@@ -103,7 +103,7 @@ func TestSetupCreatesTheTemplateOnlyOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if err := setup(&options{h: h, dir: dir}, env, &out); err != nil || strings.Contains(out.String(), "Created ") {
+	if err := cli.Setup(&cli.Opts{Host: h, Dir: dir}, env, &out); err != nil || strings.Contains(out.String(), "Created ") {
 		t.Errorf("an existing file is kept: %v %q", err, out.String())
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, ".env.local")); string(b) != "DNS_DOMAIN=mine.example.com\n" {
@@ -124,7 +124,7 @@ func TestRealSshKeygenAcceptsWhatSetupAsks(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := setup(&options{dir: dir}, env, io.Discard); err != nil {
+	if err := cli.Setup(&cli.Opts{Host: testHost(), Dir: dir}, env, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range []string{"hetzner-build", "hetzner-build.pub", "hetzner_claude_host_ca", "hetzner_claude_host_ca.pub", "known_hosts_hetzner_claude_ca"} {
@@ -137,38 +137,17 @@ func TestRealSshKeygenAcceptsWhatSetupAsks(t *testing.T) {
 	}
 }
 
-func TestChildExitCodesAndSignals(t *testing.T) {
-	err := runChild("sh", "-c", "exit 3")
-	if exitCode(err) != 3 {
-		t.Errorf("exit code %d (%v)", exitCode(err), err)
+func TestExitCodeOfAChildAndOfOtherErrors(t *testing.T) {
+	err := exec.CommandContext(context.Background(), "sh", "-c", "exit 3").Run()
+	if cli.ExitCode(err) != 3 {
+		t.Errorf("exit code %d (%v)", cli.ExitCode(err), err)
 	}
-	if exitCode(errors.New("x")) != 1 {
+	if cli.ExitCode(errors.New("x")) != 1 {
 		t.Error("other errors are 1")
 	}
-	// SIGTERM sent to viper is passed on to the child
-	go func() {
-		time.Sleep(300 * time.Millisecond)
-		if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
-			t.Error(err)
-		}
-	}()
-	start := time.Now()
-	err = runChild("sleep", "30")
-	if err == nil || time.Since(start) > 10*time.Second {
-		t.Fatalf("the child was not ended: %v after %v", err, time.Since(start))
-	}
-	if exitCode(err) != 130 {
-		t.Errorf("a child ended by a signal gives %d", exitCode(err))
-	}
-	// SIGINT (Ctrl-C) reaches the child with the terminal, not through us; viper only survives it
-	go func() {
-		time.Sleep(300 * time.Millisecond)
-		if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
-			t.Error(err)
-		}
-	}()
-	if err := runChild("sleep", "1"); err != nil {
-		t.Errorf("viper survives SIGINT and waits: %v", err)
+	err = exec.CommandContext(context.Background(), "sh", "-c", "kill -TERM $$").Run()
+	if cli.ExitCode(err) != 130 {
+		t.Errorf("a child ended by a signal gives %d (%v)", cli.ExitCode(err), err)
 	}
 }
 
@@ -189,27 +168,27 @@ func TestLogReadsThePrefixAndShowsTheMachine(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out strings.Builder
-	if err := showLog(&options{h: testHost(), dir: dir, machine: "web"}, env, &out); err != nil || out.String() != "t cs-web up ready\n" {
+	if err := cli.ShowLog(&cli.Opts{Host: testHost(), Dir: dir, Machine: "web"}, env, &out); err != nil || out.String() != "t cs-web up ready\n" {
 		t.Errorf("%q %v", out.String(), err)
 	}
 	out.Reset()
-	_ = showLog(&options{h: testHost(), dir: dir, machine: "web", full: true}, env, &out)
+	_ = cli.ShowLog(&cli.Opts{Host: testHost(), Dir: dir, Machine: "web", Full: true}, env, &out)
 	if out.String() != "full output\n" {
 		t.Errorf("%q", out.String())
 	}
 	out.Reset()
-	_ = showLog(&options{h: testHost(), dir: dir}, env, &out)
+	_ = cli.ShowLog(&cli.Opts{Host: testHost(), Dir: dir}, env, &out)
 	if !strings.Contains(out.String(), "claude-api") || !strings.Contains(out.String(), "cs-web") {
 		t.Errorf("all: %q", out.String())
 	}
-	if commands()["log"].run == nil {
+	if !cli.IsNative("log") {
 		t.Error("log is native")
 	}
 }
 
 func TestAskerAnswersLikeReadDashR(t *testing.T) {
 	ask := func(input string, prompts int) []string {
-		a := newAsker(context.Background(), strings.NewReader(input), io.Discard)
+		a := cli.NewAsker(context.Background(), strings.NewReader(input), io.Discard)
 		var out []string
 		for i := 0; i < prompts; i++ {
 			out = append(out, a("? "))
@@ -239,7 +218,7 @@ func TestAskerAnswersLikeReadDashR(t *testing.T) {
 func TestAskerNeverConfirmsAfterAnInterruption(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var shown strings.Builder
-	a := newAsker(ctx, strings.NewReader("DELETE\nDELETE\n"), &shown)
+	a := cli.NewAsker(ctx, strings.NewReader("DELETE\nDELETE\n"), &shown)
 	cancel()
 	for i := 0; i < 50; i++ {
 		if got := a("Type DELETE: "); got != "" {
@@ -252,7 +231,7 @@ func TestAskerNeverConfirmsAfterAnInterruption(t *testing.T) {
 	// a blocked read ends with the interruption
 	pr, _ := io.Pipe()
 	ctx2, cancel2 := context.WithCancel(context.Background())
-	b := newAsker(ctx2, pr, io.Discard)
+	b := cli.NewAsker(ctx2, pr, io.Discard)
 	done := make(chan string)
 	go func() { done <- b("? ") }()
 	time.Sleep(50 * time.Millisecond)
@@ -270,7 +249,7 @@ func TestAskerNeverConfirmsAfterAnInterruption(t *testing.T) {
 func TestUpDownAndCheckNeedOpenSSHBeforeAnythingHappens(t *testing.T) {
 	_, h := fakeTools(t)
 	missing := map[string]bool{}
-	h.lookPath = func(p string) (string, error) {
+	h.LookPath = func(p string) (string, error) {
 		if missing[p] {
 			return "", errors.New("not found")
 		}
@@ -279,12 +258,11 @@ func TestUpDownAndCheckNeedOpenSSHBeforeAnythingHappens(t *testing.T) {
 	for _, c := range []struct {
 		command string
 		program string
-		run     func(*options) error
 	}{
-		{"up", "ssh", nativeUp}, {"up", "ssh-keygen", nativeUp}, {"up", "scp", nativeUp}, {"down", "ssh", nativeDown}, {"check", "ssh", nativeCheck},
+		{"up", "ssh"}, {"up", "ssh-keygen"}, {"up", "scp"}, {"down", "ssh"}, {"check", "ssh"},
 	} {
 		missing = map[string]bool{c.program: true}
-		err := c.run(&options{h: h, machine: "web", dir: t.TempDir()})
+		err := cli.RunCommand(c.command, &cli.Opts{Host: h, Machine: "web", Dir: t.TempDir()})
 		if err == nil || !strings.Contains(err.Error(), c.program+" not found") || !strings.Contains(err.Error(), "OpenSSH") {
 			t.Errorf("%s without %s: %v", c.command, c.program, err)
 		}

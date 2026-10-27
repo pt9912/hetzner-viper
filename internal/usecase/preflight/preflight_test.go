@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	portsettings "github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"github.com/pt9912/hetzner-viper/internal/servertest"
 	"io"
 	"net/http"
@@ -14,7 +15,7 @@ import (
 	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/hetzner"
-	"github.com/pt9912/hetzner-viper/internal/config"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/usecase/preflight"
 )
@@ -132,7 +133,7 @@ func (e *env) machine(name, settings string) {
 
 func (e *env) config(machine string) *model.Machine {
 	e.t.Helper()
-	c, err := config.Load(e.dir, machine, config.Env{Home: e.home, Lookup: func(k string) (string, bool) {
+	c, err := settingsfile.Load(e.dir, machine, portsettings.Env{Home: e.home, Lookup: func(k string) (string, bool) {
 		v, ok := map[string]string{"HCLOUD_TOKEN": "h", "CLOUDFLARE_API_TOKEN": "c", "CLOUDFLARE_ZONE_ID": "z"}[k]
 		return v, ok
 	}}, true)

@@ -2,6 +2,7 @@ package start_test
 
 import (
 	"context"
+	portsettings "github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -9,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pt9912/hetzner-viper/internal/config"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/servertest"
 	"github.com/pt9912/hetzner-viper/internal/usecase/start"
@@ -166,7 +167,7 @@ func reload(t *testing.T, w *srvWorld, settings string) *model.Machine {
 	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\n"+settings), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	c, err := config.Load(dir, "web", config.Env{Home: filepath.Dir(w.c.SSHDir), Lookup: func(string) (string, bool) { return "", false }}, false)
+	c, err := settingsfile.Load(dir, "web", portsettings.Env{Home: filepath.Dir(w.c.SSHDir), Lookup: func(string) (string, bool) { return "", false }}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

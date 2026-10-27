@@ -3,30 +3,41 @@ package app
 import (
 	"context"
 	"fmt"
+	"strconv"
 
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/aws"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/hetzner"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
 )
 
-// NewProvider is the adapter of the provider named by name (one of config.ProviderNames); nil
-// for another name. A provider reads its own settings (token, region, project, ...) through get.
-func NewProvider(name string, get func(string) string) cloud.Provider {
-	switch name {
+// Provider is the adapter chosen for a machine; its Provider is nil if the name has no adapter.
+type Provider struct{ cloud.Provider }
+
+// NewProvider is the adapter of the provider of the machine (one of model.ProviderNames). A
+// provider reads its own settings (token, region, project, ...) from the machine's settings.
+func NewProvider(m *model.Machine) Provider {
+	switch m.Provider {
 	case "hetzner":
-		return hetzner.New(get("HCLOUD_TOKEN"), "")
+		return Provider{hetzner.New(m.Get("HCLOUD_TOKEN"), "")}
+	case "aws":
+		root, _ := strconv.Atoi(m.Get("AWS_ROOT_GB"))
+		return Provider{aws.New(aws.Options{
+			Location: m.ServerLocation, Profile: m.Get("AWS_PROFILE"), SubnetID: m.Get("AWS_SUBNET_ID"),
+			VPCID: m.Get("AWS_VPC_ID"), RootGB: int32(root),
+		})}
 	}
-	return nil
+	return Provider{}
 }
 
-// providerOf is the adapter of the machine's provider. config.Load has checked the name; a name
+// providerOf is the adapter of the machine's provider. settingsfile.Load has checked the name; a name
 // without an adapter (the lists drifted apart) gives a provider that fails with that reason
 // instead of a nil that panics.
-func providerOf(c *model.Machine) cloud.Provider {
-	if p := NewProvider(c.Provider, c.Get); p != nil {
+func providerOf(c *model.Machine) Provider {
+	if p := NewProvider(c); p.Provider != nil {
 		return p
 	}
-	return noAdapter{name: c.Provider}
+	return Provider{noAdapter{name: c.Provider}}
 }
 
 // noAdapter is the provider of a name that has no adapter.

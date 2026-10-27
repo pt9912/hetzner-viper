@@ -5,29 +5,28 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"io"
-	"os"
 	"strings"
 
-	"github.com/pt9912/hetzner-viper/internal/config"
 	"github.com/pt9912/hetzner-viper/internal/port/driving"
 )
 
 // runDown is stop.sh: the checks, the confirmations and the deletion. Answers are read from in
 // (a terminal or a pipe); prompts and reports go to stderr, like the script's.
-func runDown(ctx context.Context, o *options, env config.Env, in io.Reader, stdout, stderr io.Writer) error {
-	c, err := config.Load(settingsDir(o), o.machine, env, true)
+func runDown(ctx context.Context, o *options, env settings.Env, in io.Reader, stdout, stderr io.Writer) error {
+	c, err := o.host().Services.Settings.Load(settingsDir(o), o.machine, env, true)
 	if err != nil {
 		return err
 	}
-	l, err := o.host().services.OpenLog(c, "down", stdout, stderr)
+	l, err := o.host().Services.OpenLog(c, "down", stdout, stderr)
 	if err != nil {
 		return err
 	}
 	ctx, cancel := notifyContext(ctx)
 	defer cancel()
 
-	down := o.host().services.Down(c, driving.DownOptions{Ask: newAsker(ctx, in, l.Err())})
+	down := o.host().Services.Down(c, driving.DownOptions{Ask: newAsker(ctx, in, l.Err())})
 	code, err := down.Down(ctx, c, o.force, l, l.Out(), l.Err())
 	switch {
 	case ctx.Err() != nil:
@@ -91,9 +90,9 @@ func nativeDown(o *options) error {
 	if err := o.host().need("ssh"); err != nil {
 		return err
 	}
-	env, err := hostEnv()
+	env, err := o.host().Env()
 	if err != nil {
 		return err
 	}
-	return runDown(context.Background(), o, env, os.Stdin, os.Stdout, os.Stderr)
+	return runDown(context.Background(), o, env, o.host().Stdin, o.host().Stdout, o.host().Stderr)
 }

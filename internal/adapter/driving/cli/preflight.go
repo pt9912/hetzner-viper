@@ -3,10 +3,8 @@ package cli
 import (
 	"context"
 	"fmt"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"io"
-	"os"
-
-	"github.com/pt9912/hetzner-viper/internal/config"
 )
 
 // exitStatus ends viper with that code; the reason was already shown.
@@ -16,18 +14,18 @@ func (e exitStatus) Error() string { return fmt.Sprintf("exit status %d", int(e)
 
 // runPreflight is preflight.sh: the checks, their output also in the machine's log, the outcome
 // in events.log.
-func runPreflight(ctx context.Context, o *options, env config.Env, stdout, stderr io.Writer) error {
-	c, err := config.Load(settingsDir(o), o.machine, env, true)
+func runPreflight(ctx context.Context, o *options, env settings.Env, stdout, stderr io.Writer) error {
+	c, err := o.host().Services.Settings.Load(settingsDir(o), o.machine, env, true)
 	if err != nil {
 		return err
 	}
-	l, err := o.host().services.OpenLog(c, "preflight", stdout, stderr)
+	l, err := o.host().Services.OpenLog(c, "preflight", stdout, stderr)
 	if err != nil {
 		return err
 	}
 	ctx, stop := notifyContext(ctx)
 	defer stop()
-	failures := o.host().services.Preflight(c).Preflight(ctx, c, o.repo, l.Out(), l.Err())
+	failures := o.host().Services.Preflight(c).Preflight(ctx, c, o.repo, l.Out(), l.Err())
 	switch {
 	case ctx.Err() != nil:
 		l.Interrupted()
@@ -44,9 +42,9 @@ func runPreflight(ctx context.Context, o *options, env config.Env, stdout, stder
 }
 
 func nativePreflight(o *options) error {
-	env, err := hostEnv()
+	env, err := o.host().Env()
 	if err != nil {
 		return err
 	}
-	return runPreflight(context.Background(), o, env, os.Stdout, os.Stderr)
+	return runPreflight(context.Background(), o, env, o.host().Stdout, o.host().Stderr)
 }

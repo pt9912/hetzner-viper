@@ -1,25 +1,17 @@
 package cli
 
 import (
-	"context"
 	"fmt"
-	"os/exec"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"strings"
 
-	"github.com/pt9912/hetzner-viper/internal/config"
 	"github.com/pt9912/hetzner-viper/internal/model"
 )
-
-// outputOf runs a program and returns what it wrote to its standard output.
-func outputOf(name string, args ...string) (string, error) {
-	out, err := exec.CommandContext(context.Background(), name, args...).Output()
-	return string(out), err
-}
 
 // remoteWorkdir asks the machine for its work directory (viper up wrote it there); empty if it
 // cannot be read, e.g. on a machine set up by an older viper.
 func remoteWorkdir(o *options, c *model.Machine) string {
-	out, err := o.host().outputTool("ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-F", c.SSHConfig, c.SSHAlias, "cat ~/.config/viper/workdir")
+	out, err := o.host().OutputTool("ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-F", c.SSHConfig, c.SSHAlias, "cat ~/.config/viper/workdir")
 	dir := strings.TrimSpace(out)
 	if err != nil || !strings.HasPrefix(dir, "/") {
 		return ""
@@ -29,8 +21,8 @@ func remoteWorkdir(o *options, c *model.Machine) string {
 
 // openVSCode opens VS Code on a running machine, in its work directory, like viper up does. The
 // terminals there attach to the tmux session of the machine.
-func openVSCode(o *options, env config.Env) error {
-	c, err := config.Load(settingsDir(o), o.machine, env, false)
+func openVSCode(o *options, env settings.Env) error {
+	c, err := o.host().Services.Settings.Load(settingsDir(o), o.machine, env, false)
 	if err != nil {
 		return err
 	}
@@ -40,11 +32,11 @@ func openVSCode(o *options, env config.Env) error {
 	if err := o.host().need("ssh"); err != nil {
 		return err
 	}
-	return o.host().services.LaunchVSCode(c.SSHAlias, remoteWorkdir(o, c))
+	return o.host().Services.LaunchVSCode(c.SSHAlias, remoteWorkdir(o, c))
 }
 
 func nativeVSCode(o *options) error {
-	env, err := hostEnv()
+	env, err := o.host().Env()
 	if err != nil {
 		return err
 	}

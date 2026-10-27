@@ -1,6 +1,8 @@
-package config_test
+package settingsfile_test
 
 import (
+	"github.com/pt9912/hetzner-viper/internal/model"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -8,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pt9912/hetzner-viper/internal/config"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
 )
 
 func envOf(m map[string]string) func(string) (string, bool) {
@@ -18,7 +20,7 @@ func envOf(m map[string]string) func(string) (string, bool) {
 func source(t *testing.T, src string, env map[string]string) (map[string]string, error) {
 	t.Helper()
 	vars := map[string]string{}
-	err := config.Source(vars, src, envOf(env))
+	err := settingsfile.Source(vars, src, envOf(env))
 	return vars, err
 }
 
@@ -48,7 +50,7 @@ VIPER_BREW_PACKAGES="ripgrep fd
 		t.Errorf("got %q\nwant %q", got, want)
 	}
 	// the template of the repository itself
-	b, err := os.ReadFile("../../.env.local.example")
+	b, err := os.ReadFile("../../../../.env.local.example")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,8 +140,8 @@ func setupDir(t *testing.T, env, machine string) string {
 
 func TestLoadDerivesNamesAndPaths(t *testing.T) {
 	dir := setupDir(t, "DNS_DOMAIN=example.com\nSSH_KEY=~/.ssh/k\nSERVER_PREFIX=lab\n", "SERVER_TYPE=cpx52\n")
-	env := config.Env{Lookup: envOf(map[string]string{"HCLOUD_TOKEN": "h", "CLOUDFLARE_API_TOKEN": "c", "CLOUDFLARE_ZONE_ID": "z"}), Home: "/home/me"}
-	c, err := config.Load(dir, "web", env, true)
+	env := settings.Env{Lookup: envOf(map[string]string{"HCLOUD_TOKEN": "h", "CLOUDFLARE_API_TOKEN": "c", "CLOUDFLARE_ZONE_ID": "z"}), Home: "/home/me"}
+	c, err := settingsfile.Load(dir, "web", env, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,19 +159,19 @@ func TestLoadDerivesNamesAndPaths(t *testing.T) {
 
 func TestLoadReportsEverySettingThatIsMissing(t *testing.T) {
 	dir := setupDir(t, "DNS_DOMAIN=\n", "")
-	env := config.Env{Lookup: envOf(map[string]string{"CLOUDFLARE_ZONE_ID": "z"}), Home: "/h"}
-	_, err := config.Load(dir, "web", env, true)
+	env := settings.Env{Lookup: envOf(map[string]string{"CLOUDFLARE_ZONE_ID": "z"}), Home: "/h"}
+	_, err := settingsfile.Load(dir, "web", env, true)
 	if err == nil || !strings.HasPrefix(err.Error(), "Missing settings: DNS_DOMAIN HCLOUD_TOKEN CLOUDFLARE_API_TOKEN (in .env.local or machines/web.env.local;") {
 		t.Errorf("got %v", err)
 	}
-	if _, err := config.Load(setupDir(t, "DNS_DOMAIN=example.com\n", ""), "web", env, false); err != nil {
+	if _, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\n", ""), "web", env, false); err != nil {
 		t.Errorf("tokens are not needed to reach a machine: %v", err)
 	}
 }
 
 func TestLoadTakesHetznerAsTheDefaultProvider(t *testing.T) {
-	env := config.Env{Lookup: envOf(nil), Home: "/h"}
-	c, err := config.Load(setupDir(t, "DNS_DOMAIN=example.com\n", ""), "web", env, false)
+	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
+	c, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\n", ""), "web", env, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,29 +181,29 @@ func TestLoadTakesHetznerAsTheDefaultProvider(t *testing.T) {
 }
 
 func TestLoadIgnoresPROVIDERFromTheShellAndTakesItInLowerCase(t *testing.T) {
-	env := config.Env{Lookup: envOf(map[string]string{"PROVIDER": "aws"}), Home: "/h"}
-	c, err := config.Load(setupDir(t, "DNS_DOMAIN=example.com\n", ""), "web", env, false)
+	env := settings.Env{Lookup: envOf(map[string]string{"PROVIDER": "aws"}), Home: "/h"}
+	c, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\n", ""), "web", env, false)
 	if err != nil || c.Provider != "hetzner" {
 		t.Fatalf("the shell must not choose the provider: %v %v", c, err)
 	}
-	c, err = config.Load(setupDir(t, "DNS_DOMAIN=example.com\nPROVIDER=\" Hetzner \"\n", ""), "web", env, false)
+	c, err = settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nPROVIDER=\" Hetzner \"\n", ""), "web", env, false)
 	if err != nil || c.Provider != "hetzner" {
 		t.Errorf("PROVIDER in the files: %v %v", c, err)
 	}
 }
 
 func TestLoadRejectsAnUnknownProvider(t *testing.T) {
-	env := config.Env{Lookup: envOf(nil), Home: "/h"}
-	_, err := config.Load(setupDir(t, "DNS_DOMAIN=example.com\nPROVIDER=nope\n", ""), "web", env, false)
-	if err == nil || err.Error() != "PROVIDER: unknown provider nope (one of: hetzner)" {
+	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
+	_, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nPROVIDER=nope\n", ""), "web", env, false)
+	if err == nil || err.Error() != "PROVIDER: unknown provider nope (one of: aws, hetzner)" {
 		t.Errorf("got %v", err)
 	}
 }
 
 func TestLoadFilesTakePrecedenceOverTheEnvironment(t *testing.T) {
 	dir := setupDir(t, "DNS_DOMAIN=example.com\nHCLOUD_TOKEN=fromfile\n", "")
-	env := config.Env{Lookup: envOf(map[string]string{"HCLOUD_TOKEN": "fromshell", "SERVER_TYPE": "cpx11"}), Home: "/h"}
-	c, err := config.Load(dir, "web", env, false)
+	env := settings.Env{Lookup: envOf(map[string]string{"HCLOUD_TOKEN": "fromshell", "SERVER_TYPE": "cpx11"}), Home: "/h"}
+	c, err := settingsfile.Load(dir, "web", env, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +213,7 @@ func TestLoadFilesTakePrecedenceOverTheEnvironment(t *testing.T) {
 }
 
 func TestLoadChecksNamesAndDomain(t *testing.T) {
-	env := config.Env{Lookup: envOf(nil), Home: "/h"}
+	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
 	for _, c := range []struct{ file, machine, want string }{
 		{"DNS_DOMAIN=example.com\n", "Web", "Machine name: lowercase letters, digits, hyphens"},
 		{"DNS_DOMAIN=example.com\n", "-web", "Machine name: lowercase"},
@@ -221,11 +223,11 @@ func TestLoadChecksNamesAndDomain(t *testing.T) {
 		{"DNS_DOMAIN=example.com\nSERVER_PREFIX=" + strings.Repeat("a", 60) + "\n", "web", "is longer than 63 characters"},
 		{"DNS_DOMAIN=$(x)\n", "web", ".env.local"},
 	} {
-		if _, err := config.Load(setupDir(t, c.file, ""), c.machine, env, false); err == nil || !strings.Contains(err.Error(), c.want) {
+		if _, err := settingsfile.Load(setupDir(t, c.file, ""), c.machine, env, false); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%q %q: got %v, want %q", c.file, c.machine, err, c.want)
 		}
 	}
-	if _, err := config.Load(t.TempDir(), "web", env, false); err == nil || err.Error() != "No .env.local: run viper setup to create it" {
+	if _, err := settingsfile.Load(t.TempDir(), "web", env, false); err == nil || err.Error() != "No .env.local: run viper setup to create it" {
 		t.Errorf("no file: %v", err)
 	}
 }
@@ -237,7 +239,7 @@ func TestSourceAgreesWithBash(t *testing.T) {
 	if err != nil {
 		t.Skip("no bash")
 	}
-	example, err := os.ReadFile("../../.env.local.example")
+	example, err := os.ReadFile("../../../../.env.local.example")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +278,7 @@ func TestSourceAgreesWithBash(t *testing.T) {
 			continue
 		}
 		got := map[string]string{}
-		if err := config.Source(got, src, envOf(baseEnv)); err != nil {
+		if err := settingsfile.Source(got, src, envOf(baseEnv)); err != nil {
 			t.Errorf("%q: %v", src, err)
 			continue
 		}
@@ -296,7 +298,7 @@ func TestSourceAgreesWithBash(t *testing.T) {
 		if _, err := inBash(src); err == nil && !strings.HasPrefix(src, "echo") {
 			t.Errorf("%q: expected bash to fail", src)
 		}
-		if err := config.Source(map[string]string{}, src, envOf(baseEnv)); err == nil {
+		if err := settingsfile.Source(map[string]string{}, src, envOf(baseEnv)); err == nil {
 			t.Errorf("%q: bash fails, the reader accepted it", src)
 		}
 	}
@@ -304,30 +306,30 @@ func TestSourceAgreesWithBash(t *testing.T) {
 
 func TestPrefixIsReadLikeTheScriptsReadIt(t *testing.T) {
 	dir := setupDir(t, "SERVER_PREFIX=cs      # not claude\n", "SERVER_TYPE=cpx32\n")
-	env := config.Env{Home: "/h"}
-	if got := config.Prefix(dir, "web", env); got != "cs" {
+	env := settings.Env{Home: "/h"}
+	if got := settingsfile.Prefix(dir, "web", env); got != "cs" {
 		t.Errorf("comment after the value: %q", got)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "machines", "web.env.local"), []byte("SERVER_PREFIX=\"mach\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := config.Prefix(dir, "web", env); got != "mach" {
+	if got := settingsfile.Prefix(dir, "web", env); got != "mach" {
 		t.Errorf("machine file wins, quotes removed: %q", got)
 	}
-	if got := config.Prefix(t.TempDir(), "web", env); got != "claude" {
+	if got := settingsfile.Prefix(t.TempDir(), "web", env); got != "claude" {
 		t.Errorf("default: %q", got)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "machines", "web.env.local"), []byte("SERVER_PREFIX=$(x)\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := config.Prefix(dir, "web", env); got != "cs" {
+	if got := settingsfile.Prefix(dir, "web", env); got != "cs" {
 		t.Errorf("an unreadable machine file is ignored: %q", got)
 	}
 }
 
 func TestEnvWithoutLookupIsSafe(t *testing.T) {
 	dir := setupDir(t, "DNS_DOMAIN=example.com\n", "")
-	c, err := config.Load(dir, "web", config.Env{Home: "/h"}, false)
+	c, err := settingsfile.Load(dir, "web", settings.Env{Home: "/h"}, false)
 	if err != nil || c.SSHKey != "/h/.ssh/hetzner-build" {
 		t.Errorf("%v %v", c, err)
 	}
@@ -337,7 +339,7 @@ func TestKeyPath(t *testing.T) {
 	for _, c := range []struct{ setting, want string }{
 		{"", "/h/.ssh/hetzner-build"}, {"~/.ssh/k", "/h/.ssh/k"}, {"/abs/k", "/abs/k"}, {"keys/k", "/work/keys/k"}, {"./k", "/work/k"},
 	} {
-		if got := config.KeyPath(c.setting, "/work", "/h"); got != c.want {
+		if got := model.KeyPath(c.setting, "/work", "/h"); got != c.want {
 			t.Errorf("%q: got %q, want %q", c.setting, got, c.want)
 		}
 	}

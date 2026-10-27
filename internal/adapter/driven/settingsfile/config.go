@@ -1,4 +1,4 @@
-package config
+package settingsfile
 
 import (
 	"errors"
@@ -9,65 +9,26 @@ import (
 	"strings"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 )
 
 var (
-	nameRe   = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
-	domainRe = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$`)
+	nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 )
-
-// Env is what the settings depend on besides the files.
-type Env struct {
-	Lookup func(string) (string, bool) // os.LookupEnv
-	Home   string
-}
-
-// Getenv is the value of an environment variable, "" if it is not set.
-func (e Env) Getenv(name string) string {
-	if e.Lookup == nil {
-		return ""
-	}
-	v, _ := e.Lookup(name)
-	return v
-}
-
-// ProviderInfo is what the settings know of a cloud provider.
-type ProviderInfo struct {
-	// Credentials are the settings the provider's API needs (empty if it finds them itself, like
-	// a credentials chain does).
-	Credentials []string
-	// Size, Region and Image are the defaults of SERVER_TYPE, SERVER_LOCATION and SERVER_IMAGE.
-	Size, Region, Image string
-}
-
-// DefaultProvider is the provider when PROVIDER is not set.
-const DefaultProvider = "hetzner"
 
 // ProviderOf is the provider the settings files name: PROVIDER, in lower case, else the default.
 // It is not read from the shell: the name is too common to take from the environment.
 func ProviderOf(vars map[string]string) string {
-	return or(strings.ToLower(strings.TrimSpace(vars["PROVIDER"])), DefaultProvider)
-}
-
-// ProviderNames are the names PROVIDER takes.
-func ProviderNames() []string { return []string{"hetzner"} }
-
-// Provider is what the settings know of the provider of that name; ok is false for an unknown one.
-func Provider(name string) (info ProviderInfo, ok bool) {
-	switch name {
-	case "hetzner":
-		return ProviderInfo{Credentials: []string{"HCLOUD_TOKEN"}, Size: "cpx32", Region: "fsn1", Image: "ubuntu-26.04"}, true
-	}
-	return ProviderInfo{}, false
+	return or(strings.ToLower(strings.TrimSpace(vars["PROVIDER"])), model.DefaultProvider)
 }
 
 // tokens are the settings only the commands that talk to the cloud and Cloudflare need.
-func tokens(p ProviderInfo) []string {
+func tokens(p model.ProviderInfo) []string {
 	return append(append([]string{}, p.Credentials...), "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ZONE_ID")
 }
 
 // LoadFile reads .env.local of dir (without a machine).
-func LoadFile(dir string, env Env) (map[string]string, error) {
+func LoadFile(dir string, env settings.Env) (map[string]string, error) {
 	vars := map[string]string{}
 	if err := sourceFile(vars, filepath.Join(dir, ".env.local"), env); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -78,7 +39,7 @@ func LoadFile(dir string, env Env) (map[string]string, error) {
 	return vars, nil
 }
 
-func sourceFile(vars map[string]string, path string, env Env) error {
+func sourceFile(vars map[string]string, path string, env settings.Env) error {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -100,7 +61,7 @@ func sourceFile(vars map[string]string, path string, env Env) error {
 
 // Prefix is SERVER_PREFIX of a machine, read like the scripts read it (files only, the machine's
 // file wins); a file that cannot be read counts as not set, so the default "claude" applies.
-func Prefix(dir, machine string, env Env) string {
+func Prefix(dir, machine string, env settings.Env) string {
 	vars := map[string]string{}
 	for _, f := range []string{filepath.Join(dir, ".env.local"), filepath.Join(dir, "machines", machine+".env.local")} {
 		_ = sourceFile(vars, f, env)
@@ -110,7 +71,7 @@ func Prefix(dir, machine string, env Env) string {
 
 // Load reads .env.local and machines/<machine>.env.local of dir and checks the settings. With
 // needTokens it requires the three API credentials as well (all commands that call an API).
-func Load(dir, machine string, env Env, needTokens bool) (*model.Machine, error) {
+func Load(dir, machine string, env settings.Env, needTokens bool) (*model.Machine, error) {
 	if machine == "" {
 		return nil, errors.New("Machine name required")
 	}
@@ -133,9 +94,9 @@ func Load(dir, machine string, env Env, needTokens bool) (*model.Machine, error)
 	}
 
 	c.Provider = ProviderOf(vars)
-	prov, ok := Provider(c.Provider)
+	prov, ok := model.LookupProvider(c.Provider)
 	if !ok {
-		return nil, fmt.Errorf("PROVIDER: unknown provider %s (one of: %s)", c.Provider, strings.Join(ProviderNames(), ", "))
+		return nil, fmt.Errorf("PROVIDER: unknown provider %s (one of: %s)", c.Provider, strings.Join(model.ProviderNames(), ", "))
 	}
 	required := []string{"DNS_DOMAIN"}
 	if needTokens {
@@ -151,10 +112,10 @@ func Load(dir, machine string, env Env, needTokens bool) (*model.Machine, error)
 		return nil, fmt.Errorf("Missing settings: %s (in .env.local or machines/%s.env.local; the three tokens may also be exported in the shell)", strings.Join(missing, " "), machine)
 	}
 	c.DNSDomain = c.Get("DNS_DOMAIN")
-	if err := CheckDomain(c.DNSDomain); err != nil {
+	if err := model.CheckDomain(c.DNSDomain); err != nil {
 		return nil, err
 	}
-	c.SSHKey = KeyPath(c.Get("SSH_KEY"), dir, env.Home)
+	c.SSHKey = model.KeyPath(c.Get("SSH_KEY"), dir, env.Home)
 	c.ServerType = or(c.Get("SERVER_TYPE"), prov.Size)
 	c.ServerLocation = or(c.Get("SERVER_LOCATION"), prov.Region)
 	c.ServerImage = or(c.Get("SERVER_IMAGE"), prov.Image)
@@ -187,40 +148,29 @@ func Load(dir, machine string, env Env, needTokens bool) (*model.Machine, error)
 	return c, nil
 }
 
-// CheckDomain reports a DNS_DOMAIN that is not a plain lowercase domain.
-func CheckDomain(d string) error {
-	if !domainRe.MatchString(d) {
-		return fmt.Errorf("DNS_DOMAIN must be a domain like example.com (lowercase, no scheme, no trailing dot): %s", d)
-	}
-	return nil
-}
-
-// KeyPath is the login key: SSH_KEY (default ~/.ssh/hetzner-build) with ~ expanded. A relative
-// path is relative to the settings directory, where the scripts ran (they changed into it).
-func KeyPath(setting, dir, home string) string {
-	if setting == "" {
-		return filepath.Join(home, ".ssh", "hetzner-build")
-	}
-	p := ExpandHome(setting, home)
-	if !filepath.IsAbs(p) {
-		if abs, err := filepath.Abs(filepath.Join(dir, p)); err == nil {
-			p = abs
-		}
-	}
-	return p
-}
-
-// ExpandHome turns a leading ~ into the home directory (${SSH_KEY/#\~/$HOME}).
-func ExpandHome(p, home string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		return home + p[1:]
-	}
-	return p
-}
-
 func or(v, def string) string {
 	if v == "" {
 		return def
 	}
 	return v
 }
+
+// Files reads the settings from the files in the settings directory; it is the adapter of the port
+// internal/port/driven/settings.
+type Files struct{}
+
+// Load reads the settings of a machine; see Load.
+func (Files) Load(dir, machine string, env settings.Env, needTokens bool) (*model.Machine, error) {
+	return Load(dir, machine, env, needTokens)
+}
+
+// LoadFile reads .env.local of dir; see LoadFile.
+func (Files) LoadFile(dir string, env settings.Env) (map[string]string, error) {
+	return LoadFile(dir, env)
+}
+
+// Prefix is SERVER_PREFIX of a machine; see Prefix.
+func (Files) Prefix(dir, machine string, env settings.Env) string { return Prefix(dir, machine, env) }
+
+// ProviderOf is the provider the settings in vars name; see ProviderOf.
+func (Files) ProviderOf(vars map[string]string) string { return ProviderOf(vars) }

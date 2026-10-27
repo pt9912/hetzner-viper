@@ -14,7 +14,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/pt9912/hetzner-viper/internal/config"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/dns"
 )
@@ -143,7 +142,7 @@ func localSetup(r *report, c *model.Machine) {
 // keyFileChecks checks that the deploy key and iPad public key files can be read.
 func keyFileChecks(r *report, c *model.Machine) {
 	for _, name := range []string{"GIT_DEPLOY_KEY_FILE", "IPAD_SSH_PUBLIC_KEY_FILE"} {
-		f := config.ExpandHome(c.Get(name), userHome(c))
+		f := model.ExpandHome(c.Get(name), userHome(c))
 		if f == "" {
 			continue
 		}

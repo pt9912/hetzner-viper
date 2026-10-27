@@ -65,7 +65,7 @@ linters:
         - pattern: ^print(ln)?$
           msg: write to an io.Writer that is passed in
         - pattern: ^os\.Std(out|err)$
-          msg: only the command line (internal/adapter/driving/cli) and cmd/viper use os.Stdout and os.Stderr
+          msg: only cmd/viper uses os.Stdout and os.Stderr
 
     funlen:
       lines: 100
@@ -211,17 +211,7 @@ linters:
   exclusions:
     warn-unused: true
     rules:
-      # Why: app is the composition root; the functions that pick or open an adapter return the
-      # port it fulfils (cloud.Provider, runlog.Run) by design.
-      - linters:
-          - ireturn
-        path: ^internal/app/
 
-      # Why: the tests of the command line drive its unexported commands (options, host, runUp), as
-      # they did when the commands were package main; an external test package cannot reach them.
-      - linters:
-          - testpackage
-        path: ^internal/adapter/driving/cli/.+_test\.go$
 
       # Why: table-driven tests have higher complexity without a design flaw.
       - linters:
@@ -250,8 +240,8 @@ linters:
           - staticcheck
         text: ^ST1005
 
-      # Why: the command line is the driving adapter; it connects the process to its standard streams.
+      # Why: cmd/viper is the entry point; it connects the process to its standard streams.
       - linters:
           - forbidigo
-        path: ^(cmd/viper|internal/adapter/driving/cli)/
+        path: ^cmd/viper/
         text: os\.Std(out|err)

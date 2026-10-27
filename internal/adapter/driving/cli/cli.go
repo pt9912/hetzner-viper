@@ -11,16 +11,11 @@ import (
 type options struct {
 	machine, repo, cmd, dir   string
 	force, full, noCode, tmux bool
-	h                         *host // the outside world; nil means the real one
+	h                         *Host // the outside world
 }
 
-// host returns the outside world of the command, the real one unless a test set another.
-func (o *options) host() *host {
-	if o.h == nil {
-		o.h = defaultHost()
-	}
-	return o.h
-}
+// host returns the outside world of the command.
+func (o *options) host() *Host { return o.h }
 
 type machineMode int
 

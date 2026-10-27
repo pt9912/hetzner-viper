@@ -2,25 +2,23 @@ package cli
 
 import (
 	"context"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"io"
-	"os"
-
-	"github.com/pt9912/hetzner-viper/internal/config"
 )
 
 // runCheck is check.sh: read-only checks of a running machine, logged like the script's.
-func runCheck(ctx context.Context, o *options, env config.Env, stdout, stderr io.Writer) error {
-	c, err := config.Load(settingsDir(o), o.machine, env, true)
+func runCheck(ctx context.Context, o *options, env settings.Env, stdout, stderr io.Writer) error {
+	c, err := o.host().Services.Settings.Load(settingsDir(o), o.machine, env, true)
 	if err != nil {
 		return err
 	}
-	l, err := o.host().services.OpenLog(c, "check", stdout, stderr)
+	l, err := o.host().Services.OpenLog(c, "check", stdout, stderr)
 	if err != nil {
 		return err
 	}
 	ctx, stop := notifyContext(ctx)
 	defer stop()
-	failures, err := o.host().services.Check(c).Check(ctx, c, l.Out(), l.Err())
+	failures, err := o.host().Services.Check(c).Check(ctx, c, l.Out(), l.Err())
 	switch {
 	case ctx.Err() != nil:
 		l.Interrupted()
@@ -44,9 +42,9 @@ func nativeCheck(o *options) error {
 	if err := o.host().need("ssh"); err != nil {
 		return err
 	}
-	env, err := hostEnv()
+	env, err := o.host().Env()
 	if err != nil {
 		return err
 	}
-	return runCheck(context.Background(), o, env, os.Stdout, os.Stderr)
+	return runCheck(context.Background(), o, env, o.host().Stdout, o.host().Stderr)
 }

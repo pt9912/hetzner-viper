@@ -12,6 +12,7 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/git"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/resolver"
 	runlogfile "github.com/pt9912/hetzner-viper/internal/adapter/driven/runlog"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/sshconfig"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/system"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driving/cli"
@@ -27,15 +28,37 @@ import (
 
 // Run is viper: it runs the command in args with the real adapters and returns the exit code.
 // version is the release the program was built from.
-func Run(version string, args []string, stdout, stderr io.Writer) int {
-	return cli.Main(version, args, stdout, stderr, cli.Services{
-		Up:           func(c *model.Machine, o driving.UpOptions) driving.Up { return Up(c, o) },
-		Down:         func(c *model.Machine, o driving.DownOptions) driving.Down { return Down(c, o) },
-		Check:        func(c *model.Machine) driving.Check { return Check(c) },
-		Preflight:    func(c *model.Machine) driving.Preflight { return Preflight(c) },
-		OpenLog:      openLog,
-		ShowLog:      runlogfile.Show,
-		LaunchVSCode: editor.LaunchVSCode,
+func Run(version string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	return cli.Main(version, args, &cli.Host{
+		RunTool: func(name string, args ...string) error {
+			return system.RunAttached(stdin, stdout, stderr, name, args...)
+		},
+		ExecTool: func(name string, args ...string) error {
+			return system.Exec(stdin, stdout, stderr, name, args...)
+		},
+		OutputTool: system.Output,
+		LookPath:   system.LookPath,
+		Env:        system.HostEnvironment,
+		IsTerminal: func() bool { return system.IsTerminal(stdin) && system.IsTerminal(stdout) },
+		Stdin:      stdin,
+		Stdout:     stdout,
+		Stderr:     stderr,
+		Services: cli.Services{
+			Settings:  settingsfile.Files{},
+			Up:        func(c *model.Machine, o driving.UpOptions) driving.Up { return Up(c, o) },
+			Down:      func(c *model.Machine, o driving.DownOptions) driving.Down { return Down(c, o) },
+			Check:     func(c *model.Machine) driving.Check { return Check(c) },
+			Preflight: func(c *model.Machine) driving.Preflight { return Preflight(c) },
+			OpenLog: func(m *model.Machine, action string, stdout, stderr io.Writer) (runlog.Run, error) {
+				l, err := runlogfile.Open(m.StateDir, m.ServerName, action, stdout, stderr)
+				if err != nil {
+					return nil, err
+				}
+				return l, nil
+			},
+			ShowLog:      runlogfile.Show,
+			LaunchVSCode: vscode().Launch,
+		},
 	})
 }
 
@@ -77,7 +100,7 @@ func Up(c *model.Machine, o driving.UpOptions) start.Service {
 		Now:    time.Now,
 	}
 	if !o.NoCode {
-		d.OpenVSCode = func(alias, workdir string) { _ = editor.LaunchVSCode(alias, workdir) }
+		d.OpenVSCode = func(alias, workdir string) { _ = vscode().Launch(alias, workdir) }
 	}
 	return start.Service{Deps: d}
 }
@@ -104,11 +127,12 @@ func Check(c *model.Machine) check.Service {
 	}}
 }
 
-// openLog starts the log of a run in the state directory of the machine.
-func openLog(m *model.Machine, action string, stdout, stderr io.Writer) (runlog.Run, error) {
-	l, err := runlogfile.Open(m.StateDir, m.ServerName, action, stdout, stderr)
-	if err != nil {
-		return nil, err
+// vscode starts VS Code without the credentials of any provider in its environment.
+func vscode() editor.VSCode {
+	var secrets []string
+	for _, name := range model.ProviderNames() {
+		info, _ := model.LookupProvider(name)
+		secrets = append(secrets, info.Secrets...)
 	}
-	return l, nil
+	return editor.VSCode{Secrets: secrets}
 }

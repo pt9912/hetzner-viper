@@ -1,6 +1,6 @@
-// Package config reads the settings the Bash scripts read (.env.local, machines/<name>.env.local)
+// Package settingsfile reads the settings the Bash scripts read (.env.local, machines/<name>.env.local)
 // and derives names and paths the way common.sh does.
-package config
+package settingsfile
 
 import (
 	"fmt"

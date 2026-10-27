@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	portsettings "github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"io"
 	"net/http"
 	"os"
@@ -15,8 +16,8 @@ import (
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/hetzner"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/runlog"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/sshconfig"
-	"github.com/pt9912/hetzner-viper/internal/config"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/servertest"
 	"github.com/pt9912/hetzner-viper/internal/usecase/check"
@@ -148,7 +149,7 @@ func (e *Env) client() *http.Client {
 // Config is the machine's configuration as the commands read it.
 func (e *Env) Config(name string) *model.Machine {
 	e.t.Helper()
-	c, err := config.Load(e.Dir, name, config.Env{Home: e.Home, Lookup: func(k string) (string, bool) { v, ok := e.Tokens[k]; return v, ok }}, true)
+	c, err := settingsfile.Load(e.Dir, name, portsettings.Env{Home: e.Home, Lookup: func(k string) (string, bool) { v, ok := e.Tokens[k]; return v, ok }}, true)
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -448,7 +449,7 @@ func hetznerKey(name, pub string) hetzner.SSHKey {
 var errBoom = errors.New("hcloud: server responded with status code 500")
 
 func configLoad(e *Env, name string) (*model.Machine, error) {
-	return config.Load(e.Dir, name, config.Env{Home: e.Home, Lookup: func(k string) (string, bool) { v, ok := e.Tokens[k]; return v, ok }}, true)
+	return settingsfile.Load(e.Dir, name, portsettings.Env{Home: e.Home, Lookup: func(k string) (string, bool) { v, ok := e.Tokens[k]; return v, ok }}, true)
 }
 
 func berlin(t *testing.T) *time.Location {

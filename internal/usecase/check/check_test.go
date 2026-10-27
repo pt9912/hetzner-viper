@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	portsettings "github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"io"
 	"net/http"
 	"os"
@@ -11,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/hetzner"
-	"github.com/pt9912/hetzner-viper/internal/config"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/servertest"
 	"github.com/pt9912/hetzner-viper/internal/usecase/check"
@@ -55,7 +56,7 @@ func newFixture(t *testing.T, settings string) (*fixture, *model.Machine) {
 	if err := os.WriteFile(dir+"/.env.local", []byte("DNS_DOMAIN=example.com\n"+settings), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	c, err := config.Load(dir, "web", config.Env{Home: f.home, Lookup: func(string) (string, bool) { return "", false }}, false)
+	c, err := settingsfile.Load(dir, "web", portsettings.Env{Home: f.home, Lookup: func(string) (string, bool) { return "", false }}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

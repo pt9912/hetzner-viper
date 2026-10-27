@@ -5,13 +5,13 @@ package cli
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os/exec"
 )
 
 // Main runs the command in args and returns the exit code. version is the release the program was
-// built from; services are the use cases the commands call.
-func Main(version string, args []string, stdout, stderr io.Writer, services Services) int {
+// built from; h is the outside world the commands use.
+func Main(version string, args []string, h *Host) int {
+	stdout, stderr := h.Stdout, h.Stderr
 	name, o, err := parse(args)
 	switch {
 	case errors.Is(err, errHelp):
@@ -25,8 +25,7 @@ func Main(version string, args []string, stdout, stderr io.Writer, services Serv
 		fmt.Fprintln(stdout, "viper", version)
 		return 0
 	}
-	o.h = defaultHost()
-	o.h.services = services
+	o.h = h
 	err = dispatch(commands()[name], &o)
 	if err == nil {
 		return 0

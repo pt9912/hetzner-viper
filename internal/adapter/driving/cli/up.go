@@ -2,27 +2,26 @@ package cli
 
 import (
 	"context"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"io"
-	"os"
 	"time"
 
-	"github.com/pt9912/hetzner-viper/internal/config"
 	"github.com/pt9912/hetzner-viper/internal/port/driving"
 )
 
 // runUp creates or reuses the machine and sets it up.
-func runUp(ctx context.Context, o *options, env config.Env, stdout, stderr io.Writer) error {
-	c, err := config.Load(settingsDir(o), o.machine, env, true)
+func runUp(ctx context.Context, o *options, env settings.Env, stdout, stderr io.Writer) error {
+	c, err := o.host().Services.Settings.Load(settingsDir(o), o.machine, env, true)
 	if err != nil {
 		return err
 	}
-	l, err := o.host().services.OpenLog(c, "up", stdout, stderr)
+	l, err := o.host().Services.OpenLog(c, "up", stdout, stderr)
 	if err != nil {
 		return err
 	}
 	ctx, stop := notifyContext(ctx)
 	defer stop()
-	up := o.host().services.Up(c, driving.UpOptions{
+	up := o.host().Services.Up(c, driving.UpOptions{
 		NoCode: o.noCode,
 		// the pauses end with an interruption
 		Sleep: func(d time.Duration) {
@@ -59,9 +58,9 @@ func nativeUp(o *options) error {
 			return err
 		}
 	}
-	env, err := hostEnv()
+	env, err := o.host().Env()
 	if err != nil {
 		return err
 	}
-	return runUp(context.Background(), o, env, os.Stdout, os.Stderr)
+	return runUp(context.Background(), o, env, o.host().Stdout, o.host().Stderr)
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	portsettings "github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,8 +13,8 @@ import (
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/hetzner"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/runlog"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/sshconfig"
-	"github.com/pt9912/hetzner-viper/internal/config"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driving"
 	"github.com/pt9912/hetzner-viper/internal/servertest"
@@ -57,7 +58,7 @@ func newWorld(t *testing.T) *world {
 	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\nWORKSPACE_DIR=/Development\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	c, err := config.Load(dir, "web", config.Env{Home: home, Lookup: func(string) (string, bool) { return "", false }}, false)
+	c, err := settingsfile.Load(dir, "web", portsettings.Env{Home: home, Lookup: func(string) (string, bool) { return "", false }}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

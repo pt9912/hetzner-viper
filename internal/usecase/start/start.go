@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pt9912/hetzner-viper/internal/config"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/dns"
@@ -151,8 +150,8 @@ func (r *runner) localFiles(ca string) (deployKey, ipadKey string, code int, err
 		return "", "", code, err
 	}
 	home := filepath.Dir(c.SSHDir)
-	deployKey = config.ExpandHome(c.Get("GIT_DEPLOY_KEY_FILE"), home)
-	ipadKey = config.ExpandHome(c.Get("IPAD_SSH_PUBLIC_KEY_FILE"), home)
+	deployKey = model.ExpandHome(c.Get("GIT_DEPLOY_KEY_FILE"), home)
+	ipadKey = model.ExpandHome(c.Get("IPAD_SSH_PUBLIC_KEY_FILE"), home)
 	for _, f := range []string{deployKey, ipadKey} {
 		if f == "" {
 			continue
