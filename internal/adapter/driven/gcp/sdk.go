@@ -113,6 +113,7 @@ func (s *sdk) CreateInstance(ctx context.Context, l Launch) error {
 		}},
 		NetworkInterfaces: []*compute.NetworkInterface{{
 			Network:       "global/networks/" + l.Network,
+			Subnetwork:    s.subnetwork(l.Subnet),
 			AccessConfigs: []*compute.AccessConfig{{Name: "External NAT", Type: "ONE_TO_ONE_NAT"}},
 		}},
 		Metadata: &compute.Metadata{Items: []*compute.MetadataItems{{Key: "user-data", Value: &l.UserData}}},
@@ -122,6 +123,18 @@ func (s *sdk) CreateInstance(ctx context.Context, l Launch) error {
 		return err
 	}
 	return s.waitZone(ctx, op)
+}
+
+// subnetwork is the subnet in the region of the zone ("" for none: an auto-mode network picks its own).
+func (s *sdk) subnetwork(name string) string {
+	if name == "" {
+		return ""
+	}
+	region := s.zone
+	if i := strings.LastIndex(region, "-"); i > 0 {
+		region = region[:i]
+	}
+	return fmt.Sprintf("regions/%s/subnetworks/%s", region, name)
 }
 
 func (s *sdk) DeleteInstance(ctx context.Context, name string) error {

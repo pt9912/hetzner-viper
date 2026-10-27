@@ -208,8 +208,12 @@ func TestEnsureFirewall(t *testing.T) {
 	if *ssh.IpProtocol != "tcp" || *ssh.FromPort != 22 || *ssh.ToPort != 22 || *ssh.IpRanges[0].CidrIp != "10.0.0.0/8" || *ssh.Ipv6Ranges[0].CidrIpv6 != "::/0" {
 		t.Errorf("ssh rule %+v", ssh)
 	}
-	if *icmp.IpProtocol != "icmp" || *icmp.FromPort != -1 || *icmp.ToPort != -1 {
-		t.Errorf("icmp rule %+v: all ICMP types are -1/-1", icmp)
+	if *icmp.IpProtocol != "icmp" || *icmp.FromPort != -1 || *icmp.ToPort != -1 || len(icmp.Ipv6Ranges) != 0 {
+		t.Errorf("icmp rule %+v: all ICMP types are -1/-1, and IPv6 networks are not part of it", icmp)
+	}
+	icmp6 := f.authorized[1].IpPermissions[1]
+	if *icmp6.IpProtocol != "icmpv6" || *icmp6.FromPort != -1 || *icmp6.Ipv6Ranges[0].CidrIpv6 != "::/0" || len(icmp6.IpRanges) != 0 {
+		t.Errorf("icmpv6 rule %+v: EC2 takes ICMP from IPv6 networks only as icmpv6", icmp6)
 	}
 
 	// everything is there: nothing is added, and it says so
@@ -225,6 +229,31 @@ func TestEnsureFirewall(t *testing.T) {
 	res, err = c.EnsureFirewall(ctx, "claude-ssh", []string{"10.0.0.0/8"})
 	if err != nil || res.Complete || len(f.authorized) != 3 || *f.authorized[2].IpPermissions[0].IpProtocol != "icmp" {
 		t.Errorf("third: %+v %v, authorized %d", res, err, len(f.authorized))
+	}
+}
+
+func TestEnsureFirewallWithoutANetworkIsAnError(t *testing.T) {
+	f := newFakeAWS()
+	if _, err := client(f, "eu-central-1").EnsureFirewall(context.Background(), "claude-ssh", []string{" ", ""}); err == nil || len(f.created) != 0 {
+		t.Errorf("got %v, created %d", err, len(f.created))
+	}
+}
+
+func TestAPublicSubnetIsPreferred(t *testing.T) {
+	f := newFakeAWS()
+	f.subnets = []types.Subnet{
+		{SubnetId: ptr("subnet-private"), VpcId: ptr("vpc-1"), AvailabilityZone: ptr("eu-central-1a"), MapPublicIpOnLaunch: ptr(false)},
+		{SubnetId: ptr("subnet-public"), VpcId: ptr("vpc-1"), AvailabilityZone: ptr("eu-central-1b"), MapPublicIpOnLaunch: ptr(true)},
+	}
+	c := aws.NewWith(aws.Options{Location: "eu-central-1", VPCID: "vpc-1", Poll: 1}, f, f)
+	if _, err := c.EnsureFirewall(context.Background(), "claude-ssh", []string{"10.0.0.0/8"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.CreateServer(context.Background(), model.ServerSpec{Name: "x", Size: "t3.large", Image: "ubuntu-24.04", SSHKey: "k", Firewall: "claude-ssh"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := *f.runs[0].NetworkInterfaces[0].SubnetId; got != "subnet-public" {
+		t.Errorf("subnet %s: a server in a private subnet has no public address", got)
 	}
 }
 

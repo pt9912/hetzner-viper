@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
@@ -98,18 +99,11 @@ func Load(dir, machine string, env settings.Env, needTokens bool) (*model.Machin
 	if !ok {
 		return nil, fmt.Errorf("PROVIDER: unknown provider %s (one of: %s)", c.Provider, strings.Join(model.ProviderNames(), ", "))
 	}
-	required := []string{"DNS_DOMAIN"}
-	if needTokens {
-		required = append(required, tokens(prov)...)
+	if err := checkDiskSizes(c); err != nil {
+		return nil, err
 	}
-	var missing []string
-	for _, v := range required {
-		if c.Get(v) == "" {
-			missing = append(missing, v)
-		}
-	}
-	if len(missing) > 0 {
-		return nil, fmt.Errorf("Missing settings: %s (in .env.local or machines/%s.env.local; the three tokens may also be exported in the shell)", strings.Join(missing, " "), machine)
+	if err := checkRequired(c, prov, needTokens); err != nil {
+		return nil, err
 	}
 	c.DNSDomain = c.Get("DNS_DOMAIN")
 	if err := model.CheckDomain(c.DNSDomain); err != nil {
@@ -128,23 +122,7 @@ func Load(dir, machine string, env settings.Env, needTokens bool) (*model.Machin
 	if len(c.ServerName) > 63 {
 		return nil, fmt.Errorf("Server name %s is longer than 63 characters", c.ServerName)
 	}
-	// Everything per machine is keyed by the server name (prefix + machine), so equal machine
-	// names under different prefixes never share a DNS record or local files.
-	c.SSHAlias = "hetzner-" + c.ServerName
-	c.DNSHost = c.ServerName + "." + c.DNSDomain
-	c.KeyName = c.ServerPrefix + "-login"
-	c.FirewallName = c.ServerPrefix + "-ssh"
-	c.SSHDir = filepath.Join(env.Home, ".ssh")
-	c.StateDir = filepath.Join(env.Home, ".local", "state", "hetzner-claude")
-	c.SSHConfig = filepath.Join(c.SSHDir, "config_hetzner_"+c.ServerName)
-	c.KnownPin = filepath.Join(c.SSHDir, "known_hosts_hetzner_"+c.ServerName)
-	c.IPState = filepath.Join(c.StateDir, "ip-"+c.ServerName)
-	c.IDState = filepath.Join(c.StateDir, "id-"+c.ServerName)
-	c.WorkspaceState = filepath.Join(c.StateDir, "workspace-"+c.ServerName)
-	c.ReadyState = filepath.Join(c.StateDir, "ready-"+c.ServerName)
-	c.RepoState = filepath.Join(c.StateDir, "repo-"+c.ServerName)
-	c.EventsLog = filepath.Join(c.StateDir, "events.log")
-	c.LogDir = filepath.Join(c.StateDir, "logs")
+	derivePaths(c, env.Home)
 	return c, nil
 }
 
@@ -174,3 +152,55 @@ func (Files) Prefix(dir, machine string, env settings.Env) string { return Prefi
 
 // ProviderOf is the provider the settings in vars name; see ProviderOf.
 func (Files) ProviderOf(vars map[string]string) string { return ProviderOf(vars) }
+
+// checkDiskSizes reports a disk size setting that is no whole number of GB (it would silently fall
+// back to the default of the provider).
+func checkDiskSizes(c *model.Machine) error {
+	for _, name := range []string{"AWS_ROOT_GB", "GCP_ROOT_GB", "AZURE_ROOT_GB"} {
+		if v := c.Get(name); v != "" {
+			if n, err := strconv.Atoi(v); err != nil || n < 8 || n > 16384 {
+				return fmt.Errorf("%s must be a whole number of GB between 8 and 16384: %s", name, v)
+			}
+		}
+	}
+	return nil
+}
+
+// checkRequired reports the settings that are missing, all at once.
+func checkRequired(c *model.Machine, prov model.ProviderInfo, needTokens bool) error {
+	required := []string{"DNS_DOMAIN"}
+	if needTokens {
+		required = append(required, tokens(prov)...)
+	}
+	var missing []string
+	for _, v := range required {
+		if c.Get(v) == "" {
+			missing = append(missing, v)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("Missing settings: %s (in .env.local or machines/%s.env.local; the three tokens may also be exported in the shell)", strings.Join(missing, " "), c.Name)
+	}
+	return nil
+}
+
+// derivePaths sets the names and paths that follow from the server name.
+func derivePaths(c *model.Machine, home string) {
+	// Everything per machine is keyed by the server name (prefix + machine), so equal machine
+	// names under different prefixes never share a DNS record or local files.
+	c.SSHAlias = "hetzner-" + c.ServerName
+	c.DNSHost = c.ServerName + "." + c.DNSDomain
+	c.KeyName = c.ServerPrefix + "-login"
+	c.FirewallName = c.ServerPrefix + "-ssh"
+	c.SSHDir = filepath.Join(home, ".ssh")
+	c.StateDir = filepath.Join(home, ".local", "state", "hetzner-claude")
+	c.SSHConfig = filepath.Join(c.SSHDir, "config_hetzner_"+c.ServerName)
+	c.KnownPin = filepath.Join(c.SSHDir, "known_hosts_hetzner_"+c.ServerName)
+	c.IPState = filepath.Join(c.StateDir, "ip-"+c.ServerName)
+	c.IDState = filepath.Join(c.StateDir, "id-"+c.ServerName)
+	c.WorkspaceState = filepath.Join(c.StateDir, "workspace-"+c.ServerName)
+	c.ReadyState = filepath.Join(c.StateDir, "ready-"+c.ServerName)
+	c.RepoState = filepath.Join(c.StateDir, "repo-"+c.ServerName)
+	c.EventsLog = filepath.Join(c.StateDir, "events.log")
+	c.LogDir = filepath.Join(c.StateDir, "logs")
+}

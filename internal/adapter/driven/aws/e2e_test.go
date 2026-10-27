@@ -84,11 +84,11 @@ func TestE2E(t *testing.T) {
 		t.Fatalf("the second EnsureLoginKey must find the key by its fingerprint: %+v %v", key, err)
 	}
 
-	fw, err := c.EnsureFirewall(ctx, name, []string{"203.0.113.0/24"})
+	fw, err := c.EnsureFirewall(ctx, name, []string{"203.0.113.0/24", "2001:db8::/32"})
 	if err != nil || !fw.Created || fw.Complete {
 		t.Fatalf("EnsureFirewall: %+v %v", fw, err)
 	}
-	fw, err = c.EnsureFirewall(ctx, name, []string{"203.0.113.0/24"})
+	fw, err = c.EnsureFirewall(ctx, name, []string{"203.0.113.0/24", "2001:db8::/32"})
 	if err != nil || fw.Created || !fw.Complete {
 		t.Fatalf("the second EnsureFirewall must find both rules: %+v %v", fw, err)
 	}

@@ -325,9 +325,11 @@ func (s *sdk) NSG(ctx context.Context, name string) (*NSG, error) {
 }
 
 func rule(name string, priority int32, proto armnetwork.SecurityRuleProtocol, port string, sources []string) *armnetwork.SecurityRule {
-	prefixes := make([]*string, len(sources))
-	for i, s := range sources {
-		prefixes[i] = to.Ptr(strings.TrimSpace(s))
+	var prefixes []*string
+	for _, s := range sources {
+		if s = strings.TrimSpace(s); s != "" {
+			prefixes = append(prefixes, to.Ptr(s))
+		}
 	}
 	return &armnetwork.SecurityRule{
 		Name: to.Ptr(name),
@@ -354,7 +356,43 @@ func (s *sdk) CreateNSG(ctx context.Context, name string, sources []string) erro
 	return err
 }
 
+// freePriorities returns n priorities (100, 110, ...) no rule of the group has.
+func (s *sdk) freePriorities(ctx context.Context, name string, n int) ([]int32, error) {
+	r, err := s.nsgs.Get(ctx, s.o.group(), name, nil)
+	if err != nil {
+		return nil, err
+	}
+	used := map[int32]bool{}
+	if r.Properties != nil {
+		for _, rule := range r.Properties.SecurityRules {
+			if rule.Properties != nil && rule.Properties.Priority != nil {
+				used[*rule.Properties.Priority] = true
+			}
+		}
+	}
+	var out []int32
+	for p := int32(100); len(out) < n && p <= 4096; p += 10 {
+		if !used[p] {
+			out = append(out, p)
+		}
+	}
+	if len(out) < n {
+		return nil, errors.New("the network security group has no free rule priority")
+	}
+	return out, nil
+}
+
 func (s *sdk) AddNSGRules(ctx context.Context, name string, ssh, icmp bool, sources []string) error {
+	n := 0
+	for _, b := range []bool{ssh, icmp} {
+		if b {
+			n++
+		}
+	}
+	prios, err := s.freePriorities(ctx, name, n)
+	if err != nil {
+		return err
+	}
 	add := func(r *armnetwork.SecurityRule) error {
 		poller, err := s.rules.BeginCreateOrUpdate(ctx, s.o.group(), name, str(r.Name), *r, nil)
 		if err != nil {
@@ -364,12 +402,13 @@ func (s *sdk) AddNSGRules(ctx context.Context, name string, ssh, icmp bool, sour
 		return err
 	}
 	if ssh {
-		if err := add(rule(sshRule, 100, armnetwork.SecurityRuleProtocolTCP, "22", sources)); err != nil {
+		if err := add(rule(sshRule, prios[0], armnetwork.SecurityRuleProtocolTCP, "22", sources)); err != nil {
 			return err
 		}
+		prios = prios[1:]
 	}
 	if icmp {
-		return add(rule(icmpRule, 110, armnetwork.SecurityRuleProtocolIcmp, "*", sources))
+		return add(rule(icmpRule, prios[0], armnetwork.SecurityRuleProtocolIcmp, "*", sources))
 	}
 	return nil
 }

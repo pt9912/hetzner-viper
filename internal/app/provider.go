@@ -30,7 +30,7 @@ func NewProvider(m *model.Machine) Provider {
 		})}
 	case "gcp":
 		root, _ := strconv.Atoi(m.Get("GCP_ROOT_GB"))
-		return Provider{gcp.New(gcp.Options{Project: m.Get("GCP_PROJECT"), Zone: m.ServerLocation, Network: m.Get("GCP_NETWORK"), RootGB: int64(root)})}
+		return Provider{gcp.New(gcp.Options{Project: m.Get("GCP_PROJECT"), Zone: m.ServerLocation, Network: m.Get("GCP_NETWORK"), Subnet: m.Get("GCP_SUBNET"), RootGB: int64(root)})}
 	case "aws":
 		root, _ := strconv.Atoi(m.Get("AWS_ROOT_GB"))
 		return Provider{aws.New(aws.Options{

@@ -46,8 +46,8 @@ type Instance struct {
 
 // Launch is what a new VM is made from.
 type Launch struct {
-	Name, MachineType, Image, Network, Tag, UserData string
-	DiskGB                                           int64
+	Name, MachineType, Image, Network, Subnet, Tag, UserData string
+	DiskGB                                                   int64
 }
 
 // Rule is an ingress firewall rule for SSH and ICMP.
@@ -67,6 +67,7 @@ type Options struct {
 	Project string // GCP_PROJECT
 	Zone    string // SERVER_LOCATION, e.g. europe-west3-b
 	Network string // GCP_NETWORK, "" for default
+	Subnet  string // GCP_SUBNET: the subnet of a custom-mode network, "" for an auto-mode one
 	RootGB  int64  // size of the boot disk
 	// Poll is how long to wait between two looks at a VM (default 3 s).
 	Poll time.Duration

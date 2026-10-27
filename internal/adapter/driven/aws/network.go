@@ -49,7 +49,13 @@ func (c *Client) network(ctx context.Context) (*network, error) {
 	if len(out.Subnets) == 0 {
 		return nil, nil
 	}
+	// a subnet that gives its instances a public address first (a server in a private one cannot be
+	// reached), then by zone
 	sort.Slice(out.Subnets, func(i, j int) bool {
+		pi, pj := out.Subnets[i].MapPublicIpOnLaunch != nil && *out.Subnets[i].MapPublicIpOnLaunch, out.Subnets[j].MapPublicIpOnLaunch != nil && *out.Subnets[j].MapPublicIpOnLaunch
+		if pi != pj {
+			return pi
+		}
 		return str(out.Subnets[i].AvailabilityZone) < str(out.Subnets[j].AvailabilityZone)
 	})
 	s := out.Subnets[0]
@@ -88,6 +94,9 @@ func (c *Client) securityGroup(ctx context.Context, name, vpc string) (string, [
 // networks. A missing rule is added (also to an existing group); other rules are left alone.
 func (c *Client) EnsureFirewall(ctx context.Context, name string, sources []string) (model.FirewallResult, error) {
 	var res model.FirewallResult
+	if !hasNetwork(sources) {
+		return res, &cloud.OpError{Op: "reading the networks", Err: fmt.Errorf("SSH_ALLOWED_CIDRS names no network")}
+	}
 	a, err := c.api(ctx)
 	if err != nil {
 		return res, &cloud.OpError{Op: "reaching AWS", Err: err}
@@ -138,28 +147,57 @@ func (c *Client) ensureGroup(ctx context.Context, a *apis, name, vpc string) (id
 	return str(out.GroupId), nil, true, nil
 }
 
+// hasNetwork reports whether any of the sources is a network (not blank).
+func hasNetwork(sources []string) bool {
+	for _, s := range sources {
+		if strings.TrimSpace(s) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // hasRules reports whether the permissions let SSH and ping in (from anywhere).
 func hasRules(perms []types.IpPermission) (ssh, icmp bool) {
 	for _, p := range perms {
 		proto := str(p.IpProtocol)
 		ssh = ssh || (proto == "tcp" && p.FromPort != nil && *p.FromPort == 22 && p.ToPort != nil && *p.ToPort == 22)
-		icmp = icmp || proto == "icmp"
+		icmp = icmp || proto == "icmp" || proto == "icmpv6" || proto == "58"
 	}
 	return ssh, icmp
 }
 
-// allow lets the protocol in from the networks; a rule that is there already is no error.
+// allow lets the protocol in from the networks; a rule that is there already is no error. EC2 takes
+// ICMP from IPv6 networks only as icmpv6, so those go into a permission of their own.
 func allow(ctx context.Context, a *apis, id, name, proto string, port int32, what string, sources []string) error {
-	perm := types.IpPermission{IpProtocol: ptr(proto), FromPort: ptr(port), ToPort: ptr(port)}
+	v4 := types.IpPermission{IpProtocol: ptr(proto), FromPort: ptr(port), ToPort: ptr(port)}
+	v6 := types.IpPermission{IpProtocol: ptr(proto), FromPort: ptr(port), ToPort: ptr(port)}
+	if proto == "icmp" {
+		v6.IpProtocol = ptr("icmpv6")
+	}
 	for _, cidr := range sources {
 		cidr = strings.TrimSpace(cidr)
-		if strings.Contains(cidr, ":") {
-			perm.Ipv6Ranges = append(perm.Ipv6Ranges, types.Ipv6Range{CidrIpv6: ptr(cidr)})
-		} else {
-			perm.IpRanges = append(perm.IpRanges, types.IpRange{CidrIp: ptr(cidr)})
+		switch {
+		case cidr == "":
+		case strings.Contains(cidr, ":"):
+			v6.Ipv6Ranges = append(v6.Ipv6Ranges, types.Ipv6Range{CidrIpv6: ptr(cidr)})
+		default:
+			v4.IpRanges = append(v4.IpRanges, types.IpRange{CidrIp: ptr(cidr)})
 		}
 	}
-	_, err := a.ec2.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{GroupId: ptr(id), IpPermissions: []types.IpPermission{perm}})
+	var perms []types.IpPermission
+	if proto == "icmp" {
+		if len(v4.IpRanges) > 0 {
+			perms = append(perms, v4)
+		}
+		if len(v6.Ipv6Ranges) > 0 {
+			perms = append(perms, v6)
+		}
+	} else {
+		v4.Ipv6Ranges = v6.Ipv6Ranges
+		perms = append(perms, v4)
+	}
+	_, err := a.ec2.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{GroupId: ptr(id), IpPermissions: perms})
 	if err != nil && apiCode(err) != "InvalidPermission.Duplicate" {
 		return &cloud.OpError{Op: fmt.Sprintf("adding the %s rule to security group %s", what, name), Write: true, Err: err}
 	}

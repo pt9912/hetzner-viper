@@ -49,8 +49,8 @@ func (c *Client) ServerByName(ctx context.Context, name string) (*model.Server, 
 		return nil, err
 	}
 	for _, r := range out.Reservations {
-		for _, i := range r.Instances {
-			return serverFrom(i, name), nil
+		if len(r.Instances) > 0 {
+			return serverFrom(r.Instances[0], name), nil
 		}
 	}
 	return nil, nil
@@ -164,8 +164,8 @@ func instance(ctx context.Context, a *apis, id string) (*types.Instance, error) 
 		return nil, err
 	}
 	for _, r := range out.Reservations {
-		for _, i := range r.Instances {
-			return &i, nil
+		if len(r.Instances) > 0 {
+			return &r.Instances[0], nil
 		}
 	}
 	return nil, nil
@@ -189,6 +189,9 @@ func (c *Client) DeleteServer(ctx context.Context, id string) error {
 	}
 	return c.wait(ctx, "the instance to end", func() (bool, error) {
 		i, err := instance(ctx, a, id)
+		if apiCode(err) == "InvalidInstanceID.NotFound" {
+			return true, nil // EC2 has dropped the terminated instance from its list
+		}
 		if err != nil {
 			return false, err
 		}

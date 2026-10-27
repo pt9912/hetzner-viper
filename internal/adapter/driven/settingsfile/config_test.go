@@ -192,6 +192,19 @@ func TestLoadIgnoresPROVIDERFromTheShellAndTakesItInLowerCase(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsADiskSizeThatIsNoNumber(t *testing.T) {
+	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
+	for _, bad := range []string{"100GB", "0", "-5", "99999", "abc"} {
+		_, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nPROVIDER=aws\nAWS_ROOT_GB="+bad+"\n", ""), "web", env, false)
+		if err == nil || !strings.Contains(err.Error(), "AWS_ROOT_GB must be a whole number of GB") {
+			t.Errorf("%q: got %v", bad, err)
+		}
+	}
+	if _, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nPROVIDER=aws\nAWS_ROOT_GB=100\n", ""), "web", env, false); err != nil {
+		t.Errorf("100 is fine: %v", err)
+	}
+}
+
 func TestLoadRejectsAnUnknownProvider(t *testing.T) {
 	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
 	_, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nPROVIDER=nope\n", ""), "web", env, false)

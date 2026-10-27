@@ -89,7 +89,7 @@ func (c *Client) CreateServer(ctx context.Context, s model.ServerSpec) (*model.S
 		return nil, fmt.Errorf("network %s not found in project %s: set GCP_NETWORK", c.opts.network(), c.opts.Project)
 	}
 	err = api.CreateInstance(ctx, Launch{
-		Name: s.Name, MachineType: s.Size, Image: img, Network: c.opts.network(), Tag: s.Firewall,
+		Name: s.Name, MachineType: s.Size, Image: img, Network: c.opts.network(), Subnet: c.opts.Subnet, Tag: s.Firewall,
 		UserData: s.UserData, DiskGB: c.opts.diskGB(),
 	})
 	if err != nil {
