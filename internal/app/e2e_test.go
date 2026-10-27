@@ -85,6 +85,8 @@ func publicIP(t *testing.T) string {
 // the address of this computer only. It takes about ten minutes and costs a few cents. Run it with
 //
 //	VIPER_E2E_AWS=<profile> go test -tags e2e -run TestE2EUpAndDown -v -timeout 40m ./internal/app/
+//
+// VIPER_E2E_TYPE picks the instance type (default t3.medium; t4g.small tests an ARM machine).
 func TestE2EUpAndDown(t *testing.T) {
 	profile := os.Getenv("VIPER_E2E_AWS")
 	if profile == "" {
@@ -111,12 +113,16 @@ func TestE2EUpAndDown(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	size := os.Getenv("VIPER_E2E_TYPE")
+	if size == "" {
+		size = "t3.medium"
+	}
 	prefix := fmt.Sprintf("viper-e2e-%d", time.Now().Unix())
 	cidr := publicIP(t) + "/32"
-	t.Logf("machine %s-web, ssh open to %s only", prefix, cidr)
+	t.Logf("machine %s-web (%s), ssh open to %s only", prefix, size, cidr)
 	envFile := strings.Join([]string{
 		"DNS_DOMAIN=example.test", "PROVIDER=aws", "SERVER_PREFIX=" + prefix, "AWS_PROFILE=" + profile,
-		"SERVER_TYPE=t3.medium", "SSH_ALLOWED_CIDRS=" + cidr, "VIPER_HOMEBREW=0",
+		"SERVER_TYPE=" + size, "SSH_ALLOWED_CIDRS=" + cidr, "VIPER_HOMEBREW=0",
 		"SSH_KEY=" + filepath.Join(sshDir, "hetzner-build"),
 		"CLOUDFLARE_API_TOKEN=unused", "CLOUDFLARE_ZONE_ID=unused", "",
 	}, "\n")
