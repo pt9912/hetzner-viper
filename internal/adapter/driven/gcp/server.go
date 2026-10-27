@@ -102,6 +102,10 @@ func (c *Client) CreateServer(ctx context.Context, s model.ServerSpec) (*model.S
 			return false, err
 		}
 		up = i
+		switch i.Status {
+		case "STOPPING", "STOPPED", "TERMINATED", "SUSPENDING", "SUSPENDED":
+			return false, fmt.Errorf("the VM %s is %s instead of RUNNING", s.Name, i.Status)
+		}
 		return i.Status == "RUNNING" && i.IP != "", nil
 	})
 	if err != nil {

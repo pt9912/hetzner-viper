@@ -128,6 +128,13 @@ func (c *Client) CreateServer(ctx context.Context, s model.ServerSpec) (*model.S
 			return false, err
 		}
 		up = *i
+		if i.State != nil && (i.State.Name == types.InstanceStateNameTerminated || i.State.Name == types.InstanceStateNameShuttingDown) {
+			reason := ""
+			if i.StateReason != nil {
+				reason = ": " + str(i.StateReason.Message)
+			}
+			return false, fmt.Errorf("the instance %s ended instead of running%s", id, reason)
+		}
 		return i.State != nil && i.State.Name == types.InstanceStateNameRunning && i.PublicIpAddress != nil, nil
 	})
 	if err != nil {

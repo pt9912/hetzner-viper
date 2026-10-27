@@ -153,14 +153,30 @@ func (Files) Prefix(dir, machine string, env settings.Env) string { return Prefi
 // ProviderOf is the provider the settings in vars name; see ProviderOf.
 func (Files) ProviderOf(vars map[string]string) string { return ProviderOf(vars) }
 
-// checkDiskSizes reports a disk size setting that is no whole number of GB (it would silently fall
-// back to the default of the provider).
+// diskSize is the setting for the size of the system disk of a provider that has one, and the
+// smallest size the provider's Ubuntu image fits on; ok is false for a provider without one.
+func diskSize(provider string) (name string, smallest int, ok bool) {
+	switch provider {
+	case "aws":
+		return "AWS_ROOT_GB", 8, true
+	case "gcp":
+		return "GCP_ROOT_GB", 10, true
+	case "azure":
+		return "AZURE_ROOT_GB", 30, true
+	}
+	return "", 0, false
+}
+
+// checkDiskSizes reports the disk size setting of the machine's provider if it is no whole number
+// of GB (it would silently fall back to the default of the provider) or too small for the image.
 func checkDiskSizes(c *model.Machine) error {
-	for _, name := range []string{"AWS_ROOT_GB", "GCP_ROOT_GB", "AZURE_ROOT_GB"} {
-		if v := c.Get(name); v != "" {
-			if n, err := strconv.Atoi(v); err != nil || n < 8 || n > 16384 {
-				return fmt.Errorf("%s must be a whole number of GB between 8 and 16384: %s", name, v)
-			}
+	name, lowest, ok := diskSize(c.Provider)
+	if !ok {
+		return nil
+	}
+	if v := c.Get(name); v != "" {
+		if n, err := strconv.Atoi(v); err != nil || n < lowest || n > 16384 {
+			return fmt.Errorf("%s must be a whole number of GB between %d and 16384: %s", name, lowest, v)
 		}
 	}
 	return nil

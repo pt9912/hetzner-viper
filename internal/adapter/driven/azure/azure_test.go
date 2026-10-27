@@ -237,7 +237,7 @@ func TestEnsureFirewall(t *testing.T) {
 	f := newFake()
 	c := client(f)
 	res, err := c.EnsureFirewall(ctx, "claude-ssh", []string{"10.0.0.0/8", "::/0"})
-	if err != nil || !res.Created || res.Complete || f.networks != 1 || len(f.created) != 1 || f.created[0] != "claude-ssh 10.0.0.0/8,::/0" {
+	if err != nil || !res.Created || res.Complete || f.networks != 1 || len(f.created) != 1 || f.created[0] != "claude-ssh 10.0.0.0/8" {
 		t.Fatalf("first: %+v %v, networks %d, created %v", res, err, f.networks, f.created)
 	}
 	res, err = c.EnsureFirewall(ctx, "claude-ssh", []string{"10.0.0.0/8"})
@@ -250,6 +250,9 @@ func TestEnsureFirewall(t *testing.T) {
 		t.Errorf("third: %+v %v, rules %v", res, err, f.rules)
 	}
 	var op *cloud.OpError
+	if _, err := c.EnsureFirewall(ctx, "claude-ssh", []string{"::/0", " "}); !errors.As(err, &op) {
+		t.Errorf("IPv6 networks only: %v", err)
+	}
 	if _, err := azure.NewWith(azure.Options{}, nil).EnsureFirewall(ctx, "x", nil); !errors.As(err, &op) {
 		t.Errorf("without a subscription: %v", err)
 	}
