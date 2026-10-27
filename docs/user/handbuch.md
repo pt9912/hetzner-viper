@@ -1,14 +1,14 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.50  
+Version: 1.51  
 Software-Version: v0.7.0  
-Stand: 26.10.2026  
+Stand: 27.10.2026  
 
 ## 1. Einleitung
 
 ### Zweck der Software
 
-Das Programm `viper` richtet mit einem Befehl einen entfernten Arbeitsrechner bei Hetzner Cloud ein. Auf diesem Rechner arbeitet der Code-Agent Claude Code als „virtuelle Person“ (VIPER: VIrtual PERson) in Ihrem Repository. Sie arbeiten darauf über VS Code (Remote-SSH) oder über ein SSH-Terminal, zum Beispiel vom iPad.
+Das Programm `viper` richtet mit einem Befehl einen entfernten Arbeitsrechner bei einem Cloud-Anbieter ein: Hetzner Cloud, AWS (Amazon EC2), Google Cloud oder Azure. Hetzner und AWS sind erprobt, Google Cloud und Azure noch nicht (Kapitel 4). Auf diesem Rechner arbeitet der Code-Agent Claude Code als „virtuelle Person“ (VIPER: VIrtual PERson) in Ihrem Repository. Sie arbeiten darauf über VS Code (Remote-SSH) oder über ein SSH-Terminal, zum Beispiel vom iPad.
 
 Pro Git-Repository richten Sie einen eigenen Rechner ein. Beim Einrichten wird das Repository automatisch geklont. Wenn Sie fertig sind, löschen Sie den Rechner wieder. Alle Dateien auf dem Rechner werden dabei gelöscht. Sichern Sie Ihre Arbeit deshalb vorher mit `git push`.
 
@@ -26,10 +26,10 @@ Auf Ihrem lokalen Rechner (Linux oder macOS):
 
 Bei den Anbietern:
 
-* Ein Hetzner-Cloud-Projekt mit einem **API-Token mit Lese- und Schreibrechten**.
-* Eine Domain bei Cloudflare. Dafür brauchen Sie einen **API-Token** mit den Rechten **Zone DNS Edit** und **Zone DNS Read** und die **Zone-ID** der Domain.
+* Ein Konto bei einem Cloud-Anbieter. Bei **Hetzner Cloud** ein Projekt mit einem **API-Token mit Lese- und Schreibrechten**, bei **AWS** eine Anmeldung (`aws login` oder SSO) mit Rechten für EC2; Google Cloud und Azure siehe Kapitel 4.
+* Eine Domain bei Cloudflare, wenn `viper` den DNS-Namen der Rechner anlegen soll (Standard). Dafür brauchen Sie einen **API-Token** mit den Rechten **Zone DNS Edit** und **Zone DNS Read** und die **Zone-ID** der Domain. Ohne Domain und Cloudflare arbeiten Sie mit `DNS_PROVIDER=none` (Kapitel 4): Dann erreichen Sie die Rechner über ihre Adresse.
 
-> **Kosten:** `viper` legt kostenpflichtige Ressourcen an. Hetzner kann zusätzlich die öffentliche IPv4-Adresse berechnen. Ein gelöschter Server verursacht keine weiteren Kosten.
+> **Kosten:** `viper` legt kostenpflichtige Ressourcen an. Der Anbieter kann zusätzlich die öffentliche IPv4-Adresse berechnen (Hetzner, AWS). Ein gelöschter Server verursacht keine weiteren Kosten.
 
 > **Datenverlust:** Es gibt keinen separaten Datenträger. Die Arbeitsdateien liegen auf der Platte des Servers und gehen beim Löschen verloren. Was nicht gepusht ist, ist weg.
 
@@ -42,13 +42,13 @@ Bei den Anbietern:
 | Befehl | Aufgabe |
 |---|---|
 | `viper setup` | Legt Ihre `.env.local` (aus einer vorbereiteten Vorlage), Ihren Login-Schlüssel und die lokale Host-CA an (einmalig). |
-| `viper preflight <rechner>` | Prüft vorab nur lesend Einstellungen, Setup, Hetzner, Cloudflare und GitHub. Legt nichts an. `viper up` führt es zuerst aus. |
+| `viper preflight <rechner>` | Prüft vorab nur lesend Einstellungen, Setup, Ihren Cloud-Anbieter, Cloudflare (falls verwendet) und GitHub. Legt nichts an. `viper up` führt es zuerst aus. |
 | `viper up <rechner>` | Richtet einen Rechner ein, setzt den DNS-Eintrag, legt das Arbeitsverzeichnis an und klont das Repository. |
 | `viper check <rechner>` | Prüft einen laufenden Rechner nur lesend: DNS, Zugriff über den Namen wie ein anderes Gerät, Zustand des Servers. |
 | `viper ssh <rechner>` | Öffnet eine Shell auf dem Rechner oder führt mit `--cmd` einen Befehl aus, mit der SSH-Konfiguration des Rechners. Mit `--tmux` hängt sich die Verbindung an die tmux-Sitzung `claude` an (oder legt sie im Arbeitsverzeichnis an), dieselbe wie in den VS-Code-Terminals; `--tmux` braucht ein Terminal und lässt sich nicht mit `--cmd` kombinieren. |
 | `viper vscode <rechner>` | Öffnet VS Code (Remote-SSH) auf dem laufenden Rechner im Arbeitsverzeichnis, so wie `viper up` es nach dem Einrichten tut. Braucht den Befehl `code`. Die Terminals dort hängen sich an die tmux-Sitzung `claude`. |
 | `viper down <rechner>` | Prüft den Git-Stand, warnt vor ungesicherter Arbeit und löscht Server und DNS-Eintrag. |
-| `viper dns <rechner>` | Gibt den DNS-Namen des Rechners aus (`<SERVER_PREFIX>-<rechner>.<DNS_DOMAIN>`), ohne Zugriff auf Hetzner oder Cloudflare. |
+| `viper dns <rechner>` | Gibt den DNS-Namen des Rechners aus (`<SERVER_PREFIX>-<rechner>.<DNS_DOMAIN>`), ohne Zugriff auf den Anbieter oder Cloudflare. Mit `DNS_PROVIDER=none` gibt es keinen Namen; der Befehl nennt die zuletzt gespeicherte Adresse. |
 | `viper log [<rechner>]` | Zeigt die lokalen Protokolle: Ereignisse aller Rechner, eines Rechners oder mit `--full` dessen vollständige Ausgabe. |
 | `viper help`, `viper version` | Zeigt alle Befehle bzw. die Version. |
 
@@ -98,7 +98,7 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 * **Einstellungen:** `viper` versteht die Schreibweise der Datei (`NAME=wert`, Anführungszeichen, `$HOME`, `${NAME}`, mehrzeilige Werte, Kommentare) und lehnt anderes mit Zeilennummer ab, ohne die Zeile selbst zu zeigen (sie kann ein Token enthalten): Befehle und Ersetzungen wie `$(befehl)`, nicht gesetzte Variablen, `~benutzer`, `$'…'` und Windows-Zeilenenden (CRLF). Setzen Sie solche Werte als festen Text in Anführungszeichen und speichern Sie die Datei mit Unix-Zeilenenden.
 * **Fragen beim Löschen:** `viper down` fragt `DISCARD` bei ungesicherter Arbeit, `DELETE` zum Löschen und `CLEANUP` bei einem Rechner, den es beim Anbieter nicht mehr gibt. Die Antworten dürfen auch per Pipe kommen; eine leere Antwort, das Ende der Eingabe und eine letzte Zeile ohne Zeilenende bestätigen nichts.
 * **Verbindung:** `viper ssh` ersetzt sich selbst durch `ssh`: Signale und Exit-Code sind die von `ssh`.
-* **Prüfungen:** `viper preflight` und `viper check` sprechen die APIs von Hetzner, Cloudflare und (falls gesetzt) GitHub und Ihrem Claude-Gateway direkt an. `viper check` sendet ein Prüfskript per SSH auf den Server und ändert dort nichts. `viper dns` prüft zusätzlich Rechnername, `DNS_DOMAIN`, `SERVER_PREFIX` und die Länge des Servernamens.
+* **Prüfungen:** `viper preflight` und `viper check` sprechen die APIs Ihres Cloud-Anbieters, von Cloudflare (falls verwendet) und (falls gesetzt) GitHub und Ihrem Claude-Gateway direkt an. `viper check` sendet ein Prüfskript per SSH auf den Server und ändert dort nichts. `viper dns` prüft zusätzlich Rechnername, `DNS_DOMAIN`, `SERVER_PREFIX` und die Länge des Servernamens.
 * **Server-Skripte:** Die Programme, die auf dem Server laufen (Einrichtung, Prüfung, Sicherheitsprüfung vor dem Löschen), sind in `viper` eingebaut.
 * **VS Code:** `viper up` öffnet VS Code, wenn `code` vorhanden ist, ohne dass VS Code Ihre Tokens erbt. Mit `--no-code` öffnet es VS Code nicht.
 * **Abbruch:** Ein erstes Ctrl-C beendet den laufenden Befehl und wird protokolliert (`interrupted`); ein zweites beendet `viper` sofort. Ein abgebrochenes `viper up` lässt den Server stehen; ein erneutes `viper up` setzt die Einrichtung fort.
@@ -116,15 +116,15 @@ Sie haben die Voraussetzungen aus Kapitel 1 erfüllt.
 
 1. Legen Sie ein Verzeichnis für Ihre Einstellungen an und wechseln Sie hinein, zum Beispiel `mkdir ~/viper && cd ~/viper`.
 2. Führen Sie `viper setup` aus. Es legt die Datei `.env.local` aus der Vorlage an (Rechte `600`) und weist darauf hin, dass `DNS_DOMAIN` fehlt.
-3. Öffnen Sie `.env.local` und tragen Sie bei `DNS_DOMAIN` Ihre Domain ein.
+3. Öffnen Sie `.env.local` und tragen Sie bei `DNS_DOMAIN` Ihre Domain ein. Ohne Cloudflare tragen Sie stattdessen `DNS_PROVIDER=none` ein; dann entfällt `DNS_DOMAIN`.
 4. Führen Sie `viper setup` erneut aus. Es legt Login-Schlüssel und Host-CA an und gibt den öffentlichen Host-CA-Schlüssel aus.
-5. Setzen Sie die Zugangsdaten in Ihrer Shell:
+5. Setzen Sie die Zugangsdaten in Ihrer Shell (`viper setup` zeigt die Zeilen für Ihren Anbieter; das Beispiel gilt für Hetzner mit Cloudflare):
    ```bash
    export HCLOUD_TOKEN='...'
    export CLOUDFLARE_API_TOKEN='...'
    export CLOUDFLARE_ZONE_ID='...'
    ```
-   Alternativ tragen Sie die drei Werte in `.env.local` ein (Zeilen mit `#` am Anfang freischalten).
+   Alternativ tragen Sie die Werte in `.env.local` ein (Zeilen mit `#` am Anfang freischalten). Bei AWS, Google Cloud und Azure melden Sie sich stattdessen mit `aws login`, `gcloud auth application-default login` bzw. `az login` an. Die Cloudflare-Werte entfallen mit `DNS_PROVIDER=none`.
 
 #### Ergebnis
 
@@ -148,10 +148,10 @@ Die erstmalige Einrichtung ist abgeschlossen.
 
 Geprüft werden:
 
-* **Einstellungen:** Alle Pflichtwerte sind gesetzt, `DNS_DOMAIN` und `SSH_ALLOWED_CIDRS` haben ein gültiges Format.
-* **Lokales Setup:** Login-Schlüssel und Host-CA sind vorhanden, die CA gilt für `*.<DNS_DOMAIN>`, die Dateien aus `GIT_DEPLOY_KEY_FILE` und `IPAD_SSH_PUBLIC_KEY_FILE` sind lesbar.
-* **Hetzner:** Das Token kann das Projekt lesen. Servertyp, Standort und Image (für die Architektur des Typs) existieren. Der Servertyp ist am Standort derzeit bestellbar. Der Login-Schlüssel kollidiert nicht mit einem anderen Schlüssel gleichen Namens.
-* **Cloudflare:** Die Zone ist lesbar, `DNS_DOMAIN` liegt darin, und es gibt keinen fremden DNS-Eintrag für den Rechner.
+* **Einstellungen:** Alle Pflichtwerte sind gesetzt, `DNS_DOMAIN` (mit Cloudflare) und `SSH_ALLOWED_CIDRS` haben ein gültiges Format.
+* **Lokales Setup:** Login-Schlüssel und Host-CA sind vorhanden, die CA gilt für `*.<DNS_DOMAIN>` (mit `DNS_PROVIDER=none` entfällt das), die Dateien aus `GIT_DEPLOY_KEY_FILE` und `IPAD_SSH_PUBLIC_KEY_FILE` sind lesbar.
+* **Cloud-Anbieter:** Die Anmeldung gilt (bei Hetzner: das Token kann das Projekt lesen). Servertyp bzw. Instanztyp, Standort bzw. Region und Image (für die Architektur des Typs) existieren. Bei Hetzner ist der Servertyp am Standort derzeit bestellbar. Der Login-Schlüssel kollidiert nicht mit einem anderen Schlüssel gleichen Namens (Hetzner, AWS).
+* **Cloudflare (entfällt mit `DNS_PROVIDER=none`):** Die Zone ist lesbar, `DNS_DOMAIN` liegt darin, und es gibt keinen fremden DNS-Eintrag für den Rechner.
 * **GitHub (wenn `VIPER_GH_TOKEN` gesetzt ist):** Das Token ist gültig, ein klassisches Token hat die Scopes `repo` und `read:org`, und es hat Zugriff auf ein GitHub-Repository aus `REPO_URL` und darf dorthin pushen.
 * **Repository:** Ein HTTPS- oder lokales Repository ist erreichbar. Eine SSH-Adresse braucht `GIT_DEPLOY_KEY_FILE` (dann prüft erst der Clone auf dem Server den Zugriff) oder, für GitHub, `VIPER_GH_TOKEN` (dann wird über HTTPS geklont); sonst lehnt der Preflight sie ab.
 
@@ -161,7 +161,7 @@ Geprüft werden:
 
 #### Hinweise
 
-* Schreibrechte der Tokens (Hetzner: Server anlegen, Cloudflare: DNS bearbeiten) lassen sich nur lesend nicht prüfen. Fehlen sie, scheitert erst `viper up`.
+* Schreibrechte (beim Anbieter Server anlegen, bei Cloudflare DNS bearbeiten) lassen sich nur lesend nicht prüfen. Fehlen sie, scheitert erst `viper up`.
 * Fehlen in `.env.local` die Werte `SERVER_TYPE`, `SERVER_LOCATION`, `SERVER_IMAGE` oder `SSH_KEY`, gelten die Standardwerte aus Kapitel 4.
 * Zeilen mit `WARN` blockieren nicht. Der Preflight warnt etwa, wenn ein Servertyp an einem Standort abgekündigt ist oder `.env.local` für andere Benutzer lesbar ist (dann empfiehlt er `chmod 600 .env.local`, weil die Datei Tokens enthalten kann).
 
@@ -171,7 +171,7 @@ Bevor Sie mit einem großen Server arbeiten, prüfen Sie die Einrichtung einmal 
 
 #### Voraussetzung
 
-Die erstmalige Einrichtung ist abgeschlossen. Am besten nutzen Sie ein eigenes Hetzner-Projekt nur für diese Rechner. Ein API-Token gilt immer für das ganze Projekt.
+Die erstmalige Einrichtung ist abgeschlossen. Am besten nutzen Sie ein eigenes Projekt oder Konto beim Anbieter nur für diese Rechner. Bei Hetzner gilt ein API-Token immer für das ganze Projekt.
 
 #### Vorgehen
 
@@ -183,7 +183,7 @@ Die erstmalige Einrichtung ist abgeschlossen. Am besten nutzen Sie ein eigenes H
 
 #### Ergebnis
 
-Sie wissen, dass Tokens, DNS, SSH-Vertrauen, Einrichtung, Clone und Löschen in Ihrem Konto funktionieren. In der Hetzner Console und bei Cloudflare ist danach nichts mehr vom Testrechner übrig. SSH-Schlüssel und Firewall bleiben für die nächsten Rechner bestehen.
+Sie wissen, dass Tokens, DNS, SSH-Vertrauen, Einrichtung, Clone und Löschen in Ihrem Konto funktionieren. In der Konsole Ihres Anbieters und bei Cloudflare ist danach nichts mehr vom Testrechner übrig. SSH-Schlüssel und Firewall bleiben für die nächsten Rechner bestehen.
 
 #### Hinweise
 
@@ -530,7 +530,7 @@ Der Rechner wird neu angelegt oder mit `viper up` erneut eingerichtet. Ein SSH-C
 
 * Installiert wird mit dem offiziellen Installationsskript von `code-server` (ein `.deb`, per `sudo`), als systemd-Dienst `code-server@builder`. Scheitert das, warnt `viper up` nur; ein erneutes `viper up` versucht es wieder. Das Protokoll liegt auf dem Server unter `~/.config/viper/code-server-install.log`.
 * Das Passwort geht über die Standardeingabe in `~/.config/code-server/config.yaml` (Rechte `600`). Es steht weder in den User-Data noch in einer Befehlszeile noch in den Protokollen. Ändern Sie es in der Datei und führen Sie `viper up` erneut aus, startet der Dienst mit dem neuen Passwort.
-* Die Adresse ist `http`, nicht `https`. Das ist ungefährlich, weil sie nur durch den SSH-Tunnel läuft. Öffnen Sie den Port nie in der Hetzner-Firewall.
+* Die Adresse ist `http`, nicht `https`. Das ist ungefährlich, weil sie nur durch den SSH-Tunnel läuft. Öffnen Sie den Port nie in der Firewall des Anbieters.
 * Wer Zugriff auf `code-server` hat, hat ein Terminal als Benutzer `builder`, also Root-Rechte auf dem Server. Behandeln Sie das Passwort wie einen SSH-Schlüssel.
 * Mit dem Rechner wird auch `code-server` gelöscht.
 
@@ -550,7 +550,7 @@ Auf dem Server ändern Sie nichts: `code-server` bleibt auf `127.0.0.1`, und die
 
 Beim ersten Verbinden kennt der andere Rechner den Server noch nicht. Ist dort die Host-CA eingetragen (`viper setup` zeigt den öffentlichen Schlüssel; Eintrag `@cert-authority *.<DNS_DOMAIN> <Schlüssel>` in `known_hosts`), vertraut er ihm ohne Rückfrage; sonst bestätigen Sie den Fingerabdruck von Hand. Belegt der Rechner Port 8080 schon, nehmen Sie einen anderen lokalen Port, etwa `-L 9090:127.0.0.1:8080`, und öffnen `http://127.0.0.1:9090`.
 
-Öffnen Sie den Port 8080 nie in der Hetzner-Firewall und binden Sie `code-server` nicht an `0.0.0.0`: Sonst wäre ein Terminal mit Root-Rechten nur durch ein Passwort ohne Verschlüsselung geschützt.
+Öffnen Sie den Port 8080 nie in der Firewall des Anbieters und binden Sie `code-server` nicht an `0.0.0.0`: Sonst wäre ein Terminal mit Root-Rechten nur durch ein Passwort ohne Verschlüsselung geschützt.
 
 ### Vom iPad aus verbinden
 
@@ -588,7 +588,7 @@ Server, DNS-Eintrag und die lokale SSH-Konfiguration des Rechners sind gelöscht
 
 * Auch Ihre Claude-Anmeldung und alle nicht gepushten Änderungen gehen verloren.
 * `viper down` bricht ab, wenn Sie `DELETE` nicht eingeben.
-* Findet `viper down` den Server im Hetzner-Projekt nicht (etwa weil Sie ihn in der Hetzner Console gelöscht haben), räumt es SSH-Konfiguration, hinterlegten Schlüssel und DNS-Eintrag erst nach Eingabe von `CLEANUP` auf. So richtet ein Token für das falsche Projekt keinen Schaden an. Den DNS-Eintrag löscht es nur, wenn er noch auf die zuletzt bekannte IP-Adresse zeigt.
+* Findet `viper down` den Server beim Anbieter nicht (etwa weil Sie ihn in dessen Konsole gelöscht haben), räumt es SSH-Konfiguration, hinterlegten Schlüssel und DNS-Eintrag erst nach Eingabe von `CLEANUP` auf. So richtet ein Token für das falsche Projekt keinen Schaden an. Den DNS-Eintrag löscht es nur, wenn er noch auf die zuletzt bekannte IP-Adresse zeigt.
 
 ### Einen nicht erreichbaren Rechner löschen
 
@@ -618,7 +618,8 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `GCP_NETWORK`, `GCP_ROOT_GB` | VPC-Netz bzw. Größe der Bootplatte in GB (nur GCP) | `default` bzw. `50` |
 | `AZURE_SUBSCRIPTION_ID` | Azure-Abonnement (nur Azure, Pflichtangabe) | leer |
 | `AZURE_RESOURCE_GROUP`, `AZURE_SUBNET_ID`, `AZURE_ROOT_GB` | Ressourcengruppe, vorhandenes Subnetz bzw. Größe der Systemplatte in GB (nur Azure) | `viper`, eigenes Netz bzw. `64` |
-| `DNS_DOMAIN` | Ihre Domain, Pflichtangabe | leer |
+| `DNS_PROVIDER` | Wer den DNS-Namen anlegt: `cloudflare` oder `none` (kein Eintrag, keine Domain, kein Cloudflare); wird nur aus den Einstellungsdateien gelesen | `cloudflare` |
+| `DNS_DOMAIN` | Ihre Domain; Pflichtangabe mit Cloudflare | leer |
 | `SSH_KEY` | Pfad Ihres Login-Schlüssels | `~/.ssh/hetzner-build` |
 | `SSH_ALLOWED_CIDRS` | Netze, die Port 22 erreichen dürfen | `0.0.0.0/0,::/0` |
 | `IPAD_SSH_PUBLIC_KEY_FILE` | Öffentlicher Schlüssel des iPads | leer |
@@ -674,6 +675,8 @@ Mit `PROVIDER=gcp` bzw. `PROVIDER=azure` richtet `viper up` den Server bei Googl
 
 Der DNS-Eintrag ist ein A-Record ohne Cloudflare-Proxy, weil dieser SSH nicht weiterleitet. `viper` ändert oder löscht nur Einträge, die es selbst angelegt hat (Kommentar `managed by hetzner-claude`).
 
+**Ohne Cloudflare:** Mit `DNS_PROVIDER=none` legt `viper` keinen Eintrag an. Sie brauchen weder `DNS_DOMAIN` noch Cloudflare-Token und -Zone. Den Rechner erreichen Sie mit `viper ssh <rechner>` oder über seine Adresse; `viper dns <rechner>` nennt die gespeicherte Adresse. Bei AWS zeigt `viper up` zusätzlich den Namen, den EC2 vergibt (`ec2-<adresse>.<region>.compute.amazonaws.com`). Er wechselt mit der Adresse. Andere Geräte (iPad) verbinden Sie dann über die Adresse; die Host-CA für `*.<DNS_DOMAIN>` entfällt. `viper check` prüft keinen DNS-Namen.
+
 ## 5. Rollen und Rechte
 
 | Rolle | Wo | Rechte |
@@ -695,8 +698,8 @@ Der DNS-Eintrag ist ein A-Record ohne Cloudflare-Proxy, weil dieser SSH nicht we
 
 ### Meldung: "Missing settings: …"
 
-**Ursache:** Pflichtwerte fehlen: `DNS_DOMAIN`, `HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN` oder `CLOUDFLARE_ZONE_ID`. Die Meldung nennt alle fehlenden auf einmal. Es wurde nichts angelegt oder gelöscht.  
-**Lösung:** Tragen Sie die Werte in `.env.local` oder `machines/<rechner>.env.local` ein. Die drei Tokens (`HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`) und alle `VIPER_*`-Einstellungen können Sie auch in der Shell exportieren; andere Einstellungen (etwa `DNS_DOMAIN`, `SERVER_TYPE`) stehen in den Dateien. Steht eine Einstellung in einer Datei, hat sie Vorrang vor der Shell. Beachten Sie: Eine leere Zeile `HCLOUD_TOKEN=` in `.env.local` überschreibt den Wert aus der Shell.
+**Ursache:** Pflichtwerte fehlen, je nach Anbieter und DNS-Modus: `DNS_DOMAIN`, `CLOUDFLARE_API_TOKEN` und `CLOUDFLARE_ZONE_ID` (mit Cloudflare), `HCLOUD_TOKEN` (Hetzner), `GCP_PROJECT` (Google Cloud) oder `AZURE_SUBSCRIPTION_ID` (Azure). Die Meldung nennt alle fehlenden auf einmal. Es wurde nichts angelegt oder gelöscht.  
+**Lösung:** Tragen Sie die Werte in `.env.local` oder `machines/<rechner>.env.local` ein. Die Zugangsdaten (`HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`) und alle `VIPER_*`-Einstellungen können Sie auch in der Shell exportieren; andere Einstellungen (etwa `DNS_DOMAIN`, `SERVER_TYPE`) stehen in den Dateien. Steht eine Einstellung in einer Datei, hat sie Vorrang vor der Shell. Beachten Sie: Eine leere Zeile `HCLOUD_TOKEN=` in `.env.local` überschreibt den Wert aus der Shell.
 
 ### Meldung: "DNS_DOMAIN must be a domain like example.com"
 
@@ -707,7 +710,7 @@ Der DNS-Eintrag ist ein A-Record ohne Cloudflare-Proxy, weil dieser SSH nicht we
 
 **Ursache:** Die Vorabprüfung hat Probleme gefunden. Die Zeilen mit `FAIL` darüber nennen sie. Häufige Fälle:
 * `… cannot currently be ordered in …` oder `… is not offered in …`: Der Servertyp ist am Standort ausverkauft oder dort nicht erhältlich. Die Meldung nennt die Standorte, an denen er bestellbar ist. Setzen Sie `SERVER_LOCATION` (etwa `nbg1` oder `hel1`) oder einen anderen `SERVER_TYPE`, am besten in `machines/<rechner>.env.local`.
-* `server type … does not exist`, `location … does not exist`, `image … does not exist`: Tippfehler oder ein Wert, den Hetzner nicht anbietet. Die gültigen Werte zeigt die Hetzner Console (Servertypen, Standorte und Images).
+* `server type … does not exist`, `location … does not exist`, `image … does not exist`: Tippfehler oder ein Wert, den der Anbieter nicht anbietet. Die gültigen Werte zeigt die Konsole des Anbieters (Typen, Standorte bzw. Regionen und Images).
 * `DNS_DOMAIN … is not in Cloudflare zone …`: `CLOUDFLARE_ZONE_ID` gehört zu einer anderen Domain.
 * `repository … not reachable without credentials`: Das Repository ist privat. Setzen Sie `VIPER_GH_TOKEN` (GitHub) oder nutzen Sie eine SSH-URL mit `GIT_DEPLOY_KEY_FILE`.
 * `token cannot access …`: Das fein granulare Token gilt nicht für dieses Repository oder gehört zu einem anderen Resource owner. `token cannot push to …`: Das Token darf nur lesen; setzen Sie **Contents** auf „Read and write“ (Abschnitt „GitHub-CLI und Token auf dem Rechner nutzen“). Die Rechte eines vorhandenen Tokens können Sie bei GitHub nachträglich ändern (**Edit**); ein neues Token ist nicht nötig.
@@ -724,16 +727,16 @@ Der DNS-Eintrag ist ein A-Record ohne Cloudflare-Proxy, weil dieser SSH nicht we
 **Ursache:** Login-Schlüssel oder Host-CA fehlen.  
 **Lösung:** Führen Sie `viper setup` aus.
 
-### Meldung: "Hetzner: listing the … failed (check HCLOUD_TOKEN / project / network)"
+### Meldung: "Hetzner: listing the … failed (check HCLOUD_TOKEN / project / network)" (bei AWS "AWS: …", bei Google Cloud "Google Cloud: …", bei Azure "Azure: …")
 
-**Ursache:** Die Hetzner-API hat nicht geantwortet oder das Token abgelehnt: Es ist abgelaufen, gehört zu einem anderen Projekt oder hat keine Schreibrechte, oder das Netz ist gestört. `viper` bricht dann ab, ohne etwas anzulegen, zu löschen oder aufzuräumen.  
-**Lösung:** Prüfen Sie `HCLOUD_TOKEN` und das Hetzner-Projekt und führen Sie den Befehl erneut aus.
+**Ursache:** Die API des Anbieters hat nicht geantwortet oder die Anmeldung abgelehnt: Das Token ist abgelaufen, gehört zu einem anderen Projekt oder hat keine Schreibrechte, die Anmeldung (`aws login`, `az login`, `gcloud auth application-default login`) ist abgelaufen, oder das Netz ist gestört. `viper` bricht dann ab, ohne etwas anzulegen, zu löschen oder aufzuräumen.  
+**Lösung:** Prüfen Sie Token bzw. Anmeldung und Projekt, Konto oder Region (die Meldung nennt, was zu prüfen ist) und führen Sie den Befehl erneut aus.
 
 ### Meldung: "SSH not reachable; server retained."
 
 **Ursache:** Der Server ist nach etwa 20 Minuten nicht per SSH erreichbar. Mögliche Gründe: Die Firewall blockiert Ihr Netz, oder der Server startet nicht. (Ein nicht vertrauenswürdiger Host-Schlüssel oder ein abgelehnter Login-Schlüssel hat eigene Meldungen, siehe unten.)  
 **Lösung:**
-1. Prüfen Sie die Firewall-Regel für Port 22 in der Hetzner Console.
+1. Prüfen Sie die Firewall-Regel für Port 22 in der Konsole Ihres Anbieters (bei AWS die Security Group).
 2. Öffnen Sie die Web-Konsole des Servers und lesen Sie `/var/log/cloud-init-output.log`.
 3. Starten Sie `viper up <rechner>` erneut, wenn die Ursache behoben ist.
 4. Hilft das nicht, löschen Sie den Rechner mit `viper down <rechner> --force` und legen Sie ihn neu an.
@@ -760,8 +763,8 @@ Der DNS-Eintrag ist ein A-Record ohne Cloudflare-Proxy, weil dieser SSH nicht we
 
 ### Meldung: "SSH key … belongs to a different public key"
 
-**Ursache:** Im Hetzner-Projekt gibt es schon einen SSH-Schlüssel namens `<SERVER_PREFIX>-login`, aber mit einem anderen Inhalt als Ihr Login-Schlüssel. Liegt Ihr Login-Schlüssel dagegen schon unter einem anderen Namen im Projekt, verwendet `viper up` ihn einfach.  
-**Lösung:** Löschen oder benennen Sie den alten Schlüssel in der Hetzner Console um, oder setzen Sie ein anderes `SERVER_PREFIX`.
+**Ursache:** Beim Anbieter (Hetzner-Projekt, AWS-Region) gibt es schon einen SSH-Schlüssel namens `<SERVER_PREFIX>-login`, aber mit einem anderen Inhalt als Ihr Login-Schlüssel. Liegt Ihr Login-Schlüssel dagegen schon unter einem anderen Namen im Projekt, verwendet `viper up` ihn einfach.  
+**Lösung:** Löschen oder benennen Sie den alten Schlüssel in der Konsole des Anbieters um, oder setzen Sie ein anderes `SERVER_PREFIX`.
 
 ### Meldung: "File not readable: …"
 
@@ -833,7 +836,7 @@ Der DNS-Eintrag ist ein A-Record ohne Cloudflare-Proxy, weil dieser SSH nicht we
 Nein. `viper down` löscht den Server samt Platte. `viper up` richtet ihn neu ein und klont das Repository erneut.
 
 **Was kostet es, wenn nichts läuft?**  
-Nichts mehr. Ein gelöschter Server wird nicht berechnet. Prüfen Sie in der Hetzner Console, dass wirklich nichts übrig ist.
+Nichts mehr. Ein gelöschter Server wird nicht berechnet. Prüfen Sie in der Konsole Ihres Anbieters, dass wirklich nichts übrig ist. Bei AWS, Google Cloud und Azure bleiben Schlüsselpaar, Firewall bzw. Netz für weitere Rechner bestehen (sie kosten nichts).
 
 **Muss ich mich bei Claude nach jedem neuen Server neu anmelden?**  
 Nur ohne `VIPER_CLAUDE_TOKEN`: Die Anmeldung mit `/login` liegt im Home-Verzeichnis des Servers und wird mit ihm gelöscht. Mit dem Token ist jeder neue Server sofort angemeldet (siehe „Claude Code ohne erneute Anmeldung nutzen“).
@@ -867,7 +870,7 @@ Nein. Verwenden Sie die Shell oder `.env.local`, die nicht eingecheckt wird.
 
 ## 10. Support und Kontakt
 
-Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapitel 7. Für Hetzner und Cloudflare gelten deren Dokumentation und Support. Beachten Sie: Echt gelaufen sind Einrichtung, Wiederverwenden, Neuanlegen, Check und Löschen auf Hetzner Cloud mit Cloudflare-DNS sowie Claude über das Abo-Token und Ollamas Cloud, aber mit den früheren Bash-Skripten, auf denen `viper` aufbaut. Das Go-Programm `viper` selbst ist bisher nur gegen eine Fake-Cloud und einen Fake-Server getestet, nicht gegen die echten APIs. Noch nicht echt gelaufen sind außerdem `VIPER_GH_TOKEN`/gh, Deploy-Keys, das iPad und ein vLLM-Server. Probieren Sie Neues in einem Testprojekt und mit `viper preflight` aus.
+Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapitel 7. Für Ihren Cloud-Anbieter und Cloudflare gelten deren Dokumentation und Support. Beachten Sie: Echt gelaufen sind Einrichtung, Wiederverwenden, Neuanlegen, Check und Löschen auf Hetzner Cloud mit Cloudflare-DNS sowie Claude über das Abo-Token und Ollamas Cloud, aber mit den früheren Bash-Skripten, auf denen `viper` aufbaut. Das Go-Programm `viper` ist auf **AWS** in echten Läufen getestet: Vorabprüfung, Einrichtung mit `cloud-init` und SSH und Löschen, auf x86 und ARM, ohne Cloudflare (`DNS_PROVIDER=none`). Auf Hetzner, mit Cloudflare, bei Google Cloud und bei Azure ist es nur gegen nachgebildete Schnittstellen getestet, nicht gegen die echten APIs. Noch nicht echt gelaufen sind außerdem `VIPER_GH_TOKEN`/gh, Deploy-Keys, das iPad und ein vLLM-Server. Probieren Sie Neues in einem Testprojekt und mit `viper preflight` aus.
 
 ## 11. Änderungshistorie
 
@@ -921,3 +924,7 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.45 | v0.6.0 | Neue Server stellen für VS Code Remote-SSH ein tmux-Terminal-Profil ein: Die Shell überlebt das Schließen von VS Code. |
 | 1.46 | v0.7.0 | Neu: `viper vscode <rechner>` öffnet VS Code auf einem laufenden Rechner erneut. |
 | 1.47 | v0.7.0 | Neu: `viper ssh <rechner> --tmux` hängt sich an die tmux-Sitzung `claude` an. |
+| 1.48 | nach v0.7.0 | Neu: Einstellung `PROVIDER` (Cloud-Anbieter). Die Zugangsdaten und Standardwerte hängen vom Anbieter ab. |
+| 1.49 | nach v0.7.0 | Neu: AWS (Amazon EC2) als Anbieter, in einem echten Konto getestet (x86, ARM). Neue Einstellungen `AWS_PROFILE`, `AWS_SUBNET_ID`, `AWS_VPC_ID`, `AWS_ROOT_GB`. |
+| 1.50 | nach v0.7.0 | Neu: Google Cloud (`gcp`) und Azure (`azure`) als Anbieter, noch nicht in einem echten Konto getestet. |
+| 1.51 | nach v0.7.0 | Neu: `DNS_PROVIDER=none` für den Betrieb ohne Cloudflare und ohne Domain. Die Kapitel zu Voraussetzungen, Einrichtung, Preflight und Fehlerbehebung gelten nun für alle Anbieter; die Plattengröße (`*_ROOT_GB`) wird geprüft. |
