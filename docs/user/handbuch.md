@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.48  
+Version: 1.49  
 Software-Version: v0.7.0  
 Stand: 26.10.2026  
 
@@ -607,10 +607,13 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | Einstellung | Bedeutung | Standard |
 |---|---|---|
 | `SERVER_PREFIX` | Namensanfang aller Ressourcen | `claude` |
-| `PROVIDER` | Cloud-Anbieter (derzeit nur `hetzner`); wird nur aus den Einstellungsdateien gelesen, nicht aus der Shell | `hetzner` |
-| `SERVER_TYPE` | Servertyp des Anbieters (Hetzner: Servertyp) | `cpx32` |
-| `SERVER_LOCATION` | Standort | `fsn1` |
-| `SERVER_IMAGE` | Betriebssystem-Image | `ubuntu-26.04` |
+| `PROVIDER` | Cloud-Anbieter: `hetzner` oder `aws`; wird nur aus den Einstellungsdateien gelesen, nicht aus der Shell | `hetzner` |
+| `SERVER_TYPE` | Servertyp (Hetzner) bzw. Instanztyp (AWS) | `cpx32` bzw. `t3.large` |
+| `SERVER_LOCATION` | Standort (Hetzner) bzw. Region oder Zone (AWS, z. B. `eu-central-1` oder `eu-central-1b`) | `fsn1` bzw. `eu-central-1` |
+| `SERVER_IMAGE` | Betriebssystem-Image; bei AWS `ubuntu-<Version>` oder eine AMI-ID (`ami-…`) | `ubuntu-26.04` bzw. `ubuntu-24.04` |
+| `AWS_PROFILE` | AWS-Profil für die Anmeldung (nur AWS) | Standardkette |
+| `AWS_SUBNET_ID`, `AWS_VPC_ID` | Subnetz bzw. VPC für den Server (nur AWS) | Default-VPC |
+| `AWS_ROOT_GB` | Größe der Systemplatte in GB (nur AWS) | `50` |
 | `DNS_DOMAIN` | Ihre Domain, Pflichtangabe | leer |
 | `SSH_KEY` | Pfad Ihres Login-Schlüssels | `~/.ssh/hetzner-build` |
 | `SSH_ALLOWED_CIDRS` | Netze, die Port 22 erreichen dürfen | `0.0.0.0/0,::/0` |
@@ -635,11 +638,22 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `VIPER_ANTHROPIC_AUTH_TOKEN` | API-Schlüssel für diese Schnittstelle | leer |
 | `VIPER_CLAUDE_MODEL` | Modellname bei diesem Anbieter | leer |
 | `VIPER_CLAUDE_MAX_CONTEXT_TOKENS` | Kontextfenster, das Claude Code für das Modell annimmt | 200.000 |
-| `HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID` | Zugangsdaten (Shell oder `.env.local`), Pflichtangaben | leer |
+| `HCLOUD_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID` | Zugangsdaten (Shell oder `.env.local`), Pflichtangaben; `HCLOUD_TOKEN` nur bei Hetzner. Bei AWS kommen die Zugangsdaten aus der AWS-Anmeldung (siehe unten) | leer |
+
+### AWS als Anbieter nutzen
+
+Mit `PROVIDER=aws` in `.env.local` (oder in `machines/<rechner>.env.local`) legt `viper up` den Server als EC2-Instanz an. Die übrigen Befehle bleiben gleich.
+
+* **Anmeldung:** `viper` nutzt die Anmeldung der AWS-CLI, also `aws login`, SSO (`aws sso login --profile <name>`) oder Zugangsschlüssel in der Umgebung. Ein Profil geben Sie mit `AWS_PROFILE` an. `viper preflight <rechner>` zeigt, ob die Anmeldung gilt.
+* **Wo der Server liegt:** in der Default-VPC der Region, in einem Subnetz mit öffentlicher Adresse. Gibt es keine Default-VPC, setzen Sie `AWS_SUBNET_ID` oder `AWS_VPC_ID`. Mit einer Zone in `SERVER_LOCATION` (z. B. `eu-central-1b`) wählt `viper` ein Subnetz dieser Zone.
+* **Was angelegt wird:** eine Instanz, ein Schlüsselpaar mit Ihrem Login-Schlüssel und eine Security Group `<SERVER_PREFIX>-ssh` (SSH und `ping` aus `SSH_ALLOWED_CIDRS`). Alles trägt das Tag `viper=<server>`. Die Instanz erzwingt IMDSv2.
+* **Image:** `ubuntu-24.04` löst `viper` über den von Canonical veröffentlichten AMI-Parameter auf, passend zur Architektur des Instanztyps (`t3.*` x86, `t4g.*` ARM). Eine eigene AMI geben Sie als `ami-…` an.
+* **Berechtigungen:** Die Rolle muss Instanzen starten, beschreiben und beenden, Security Groups anlegen und ergänzen, Schlüsselpaare importieren und den SSM-Parameter von Canonical lesen dürfen.
+* **Kosten:** AWS rechnet die Instanz und die Platte ab, solange der Server existiert. `viper down <rechner>` beendet die Instanz; Schlüsselpaar und Security Group bleiben für weitere Rechner erhalten.
 
 ### Firewall und Anmeldung
 
-* Die Firewall erlaubt eingehend SSH (TCP-Port 22) und ICMP (`ping`), beides aus den Netzen in `SSH_ALLOWED_CIDRS`. Fehlt eine der beiden Regeln, ergänzt `viper up` sie, auch in einer schon vorhandenen Firewall. Andere Regeln lässt es unverändert. Eine bestehende Regel ändert es nicht: Wollen Sie die Netze nachträglich einschränken, ändern Sie die Regeln in der Hetzner Console.
+* Die Firewall erlaubt eingehend SSH (TCP-Port 22) und ICMP (`ping`), beides aus den Netzen in `SSH_ALLOWED_CIDRS`. Fehlt eine der beiden Regeln, ergänzt `viper up` sie, auch in einer schon vorhandenen Firewall. Andere Regeln lässt es unverändert. Eine bestehende Regel ändert es nicht: Wollen Sie die Netze nachträglich einschränken, ändern Sie die Regeln in der Hetzner Console (bei AWS: an der Security Group in der EC2-Konsole).
 * Die SSH-Konfiguration jedes Rechners verbietet Agent- und X11-Weiterleitung (`ForwardAgent no`, `ForwardX11 no`), auch wenn Ihre `~/.ssh/config` sie allgemein erlaubt. Der Agent auf dem Server hat Root-Rechte und soll Ihre lokalen SSH-Schlüssel nicht benutzen können.
 * Standardmäßig ist SSH aus dem ganzen Internet erreichbar. Anmeldung ist nur mit SSH-Schlüssel möglich. Passwörter und Root-Login sind abgeschaltet. Schränken Sie die Netze ein, wenn Sie nur von festen Adressen arbeiten. Eine Alternative ist ein VPN.
 * Ausgehende Verbindungen des Servers sind nicht eingeschränkt.

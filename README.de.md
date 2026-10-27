@@ -8,7 +8,7 @@
 
 Ein einzelnes Programm, `viper`, das mit einem Befehl einen entfernten Linux-Rechner bei Hetzner Cloud einrichtet. Auf diesem Rechner arbeitet der Code-Agent [Claude Code](https://github.com/anthropics/claude-code) remote in Ihrem Repository: Er liest und ändert Code, führt Builds und Tests aus und committet. Pro Git-Repository gibt es einen eigenen Rechner. Das Repository wird beim Einrichten automatisch geklont. Sie steuern den Agenten per SSH, VS Code Remote-SSH oder vom iPad, in einer tmux-Sitzung, die Verbindungsabbrüche übersteht. Wer fertig ist, löscht den Rechner wieder, und es entstehen keine laufenden Kosten.
 
-Zielgruppe sind Entwicklerinnen und Entwickler mit eigenem Hetzner- und Cloudflare-Konto.
+Zielgruppe sind Entwicklerinnen und Entwickler mit eigenem Hetzner-Cloud-Konto (oder AWS-Konto: `PROVIDER=aws` richtet den Rechner bei Amazon EC2 ein) und einem Cloudflare-Konto.
 
 ## Was kann ich heute tun?
 
@@ -65,7 +65,7 @@ Rechner sind Wegwerfware: Alles, was zählt, liegt im Git-Repository. Deshalb gi
 
 - SSH nur mit Public-Key (kein Passwort, kein Root-Login). Standardmäßig ist Port 22 aus dem ganzen Internet offen. Schränken Sie `SSH_ALLOWED_CIDRS` ein, wenn Sie nur von festen Netzen arbeiten.
 - Der Benutzer `builder` hat sudo ohne Passwort und Docker-Zugriff, das entspricht Root. Nutzen Sie nur vertrauenswürdige Repositories.
-- Serverseitig wird ein CA-signiertes SSH-Host-Zertifikat verwendet (sieben Tage gültig, keine automatische Erneuerung). Der private Host-Key wird dafür in den Hetzner-User-Data übertragen und ist dort für Administratoren des Projekts und für Prozesse auf dem Server lesbar. Der CA-Schlüssel bleibt lokal. Der einrichtende Rechner hinterlegt den Host-Schlüssel jedes Servers und vertraut nur diesem. Ein abgeflossener Schlüssel eines früheren Servers wird so abgelehnt, und die Verbindung funktioniert auch nach Ablauf des Zertifikats.
+- Serverseitig wird ein CA-signiertes SSH-Host-Zertifikat verwendet (sieben Tage gültig, keine automatische Erneuerung). Der private Host-Key wird dafür in den User-Data des Cloud-Anbieters (Hetzner, EC2) übertragen und ist dort für Administratoren des Projekts und für Prozesse auf dem Server lesbar. Der CA-Schlüssel bleibt lokal. Der einrichtende Rechner hinterlegt den Host-Schlüssel jedes Servers und vertraut nur diesem. Ein abgeflossener Schlüssel eines früheren Servers wird so abgelehnt, und die Verbindung funktioniert auch nach Ablauf des Zertifikats.
 - Der Login-Schlüssel hat keine Passphrase.
 - **Alles auf dem Server geht beim Löschen verloren**, auch eine Claude-Anmeldung per `/login` (mit `VIPER_CLAUDE_TOKEN` ist jeder neue Server automatisch wieder angemeldet).
 - Die SSH-Konfiguration jedes Rechners leitet Ihren ssh-agent und X11 nie an den Server weiter, auch wenn Ihre eigene `~/.ssh/config` das tut.
@@ -74,7 +74,7 @@ Rechner sind Wegwerfware: Alles, was zählt, liegt im Git-Repository. Deshalb gi
 
 ## Voraussetzungen
 
-Linux oder macOS, das Binary `viper` und ein OpenSSH-Client. VS Code Remote-SSH nutzt den lokalen OpenSSH-Client; ohne VS Code nutzen Sie `viper ssh`. Dazu ein Hetzner-Cloud-API-Token (Lesen und Schreiben) und ein Cloudflare-Token mit **Zone DNS Edit/Read** samt Zone-ID.
+Linux oder macOS, das Binary `viper` und ein OpenSSH-Client. VS Code Remote-SSH nutzt den lokalen OpenSSH-Client; ohne VS Code nutzen Sie `viper ssh`. Dazu ein Hetzner-Cloud-API-Token (Lesen und Schreiben) oder, mit `PROVIDER=aws`, eine AWS-Anmeldung (`aws login`) und ein Cloudflare-Token mit **Zone DNS Edit/Read** samt Zone-ID.
 
 ## Lizenz
 

@@ -8,7 +8,7 @@
 
 A single program, `viper`, that sets up a remote Linux machine on Hetzner Cloud with one command. On that machine the code agent [Claude Code](https://github.com/anthropics/claude-code) works remotely in your repository: it reads and changes code, runs builds and tests, and commits. There is one machine per Git repository, and the repository is cloned automatically during setup. You steer the agent via SSH, VS Code Remote-SSH or from an iPad, inside a tmux session that survives dropped connections. When you are done, you delete the machine again, and nothing keeps running or costing money.
 
-It is meant for developers with their own Hetzner and Cloudflare accounts.
+It is meant for developers with their own Hetzner Cloud account (or an AWS account: `PROVIDER=aws` sets the machine up on Amazon EC2) and a Cloudflare account.
 
 ## What can I do today?
 
@@ -65,7 +65,7 @@ Machines are disposable: everything that matters lives in the Git repository. Th
 
 - SSH with public key only (no password, no root login). By default port 22 is open to the whole internet. Restrict `SSH_ALLOWED_CIDRS` if you only work from fixed networks.
 - The user `builder` has passwordless sudo and Docker access, which equals root. Only use trusted repositories.
-- The server uses a CA-signed SSH host certificate (valid for seven days, no automatic renewal). For this, the private host key is transferred in the Hetzner user data, where project administrators and processes on the server can read it. The CA key stays local. The computer that ran `viper up` pins the host key of each server and trusts only that key, so a key leaked from an earlier server is rejected and connections keep working after the certificate expires.
+- The server uses a CA-signed SSH host certificate (valid for seven days, no automatic renewal). For this, the private host key is transferred in the cloud provider's user data (Hetzner user data, EC2 user data), where project administrators and processes on the server can read it. The CA key stays local. The computer that ran `viper up` pins the host key of each server and trusts only that key, so a key leaked from an earlier server is rejected and connections keep working after the certificate expires.
 - The login key has no passphrase.
 - **Everything on the server is lost when it is deleted**, including a Claude `/login` (with `VIPER_CLAUDE_TOKEN` every new server is logged in again automatically).
 - The per-machine SSH config never forwards your ssh-agent or X11 to the server, even if your own `~/.ssh/config` does.
@@ -74,7 +74,7 @@ Machines are disposable: everything that matters lives in the Git repository. Th
 
 ## Requirements
 
-Linux or macOS, the `viper` binary and an OpenSSH client. VS Code Remote-SSH uses the local OpenSSH client; without VS Code use `viper ssh`. Plus a Hetzner Cloud API token (read and write) and a Cloudflare token with **Zone DNS Edit/Read** and the zone ID.
+Linux or macOS, the `viper` binary and an OpenSSH client. VS Code Remote-SSH uses the local OpenSSH client; without VS Code use `viper ssh`. Plus a Hetzner Cloud API token (read and write), or an AWS login (`aws login`) with `PROVIDER=aws`, and a Cloudflare token with **Zone DNS Edit/Read** and the zone ID.
 
 ## License
 
