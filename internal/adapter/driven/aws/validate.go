@@ -69,10 +69,9 @@ func (c *Client) checkKey(ctx context.Context, f *findings, ch model.Check) {
 		f.add(model.Fail, "key pairs could not be listed: %s", c.Describe(err))
 		return
 	}
-	fp := fingerprint(ch.PublicKey)
 	existing, named := "", false
 	for _, k := range ks {
-		if existing == "" && sameFingerprint(str(k.KeyFingerprint), fp) {
+		if existing == "" && sameFingerprint(str(k.KeyFingerprint), ch.PublicKey) {
 			existing = str(k.KeyName)
 		}
 		if str(k.KeyName) == ch.KeyName {

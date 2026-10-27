@@ -9,7 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go"
-
 	"github.com/pt9912/hetzner-viper/internal/model"
 )
 
@@ -122,6 +121,9 @@ func (c *Client) CreateServer(ctx context.Context, s model.ServerSpec) (*model.S
 	var up types.Instance
 	err = c.wait(ctx, "the instance to run", func() (bool, error) {
 		i, err := instance(ctx, a, id)
+		if apiCode(err) == "InvalidInstanceID.NotFound" {
+			return false, nil // EC2 is eventually consistent: the new instance is not listed yet
+		}
 		if err != nil || i == nil {
 			return false, err
 		}

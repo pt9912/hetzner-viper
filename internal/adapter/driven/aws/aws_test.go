@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
-
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/aws"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
@@ -179,6 +178,19 @@ func TestEnsureLoginKey(t *testing.T) {
 		t.Errorf("conflict: %v", err)
 	}
 	_ = other
+}
+
+func TestAnImportedRSAKeyIsFoundByItsMD5Fingerprint(t *testing.T) {
+	f := newFakeAWS()
+	c := client(f, "eu-central-1")
+	blob := append(binary.BigEndian.AppendUint32(nil, 7), "ssh-rsa"...)
+	blob = append(blob, 1, 2, 3, 4, 5, 6, 7, 8)
+	line := "ssh-rsa " + base64.StdEncoding.EncodeToString(blob) + " me@laptop"
+	f.keys = []types.KeyPairInfo{{KeyName: ptr("my rsa"), KeyFingerprint: ptr(model.FingerprintMD5(line))}}
+	key, err := c.EnsureLoginKey(context.Background(), "claude-login", line)
+	if err != nil || key.Ref != "my rsa" || key.Created || len(f.imported) != 0 {
+		t.Errorf("%+v %v: EC2 gives RSA keys the MD5 fingerprint", key, err)
+	}
 }
 
 func TestEnsureFirewall(t *testing.T) {

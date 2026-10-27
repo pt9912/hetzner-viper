@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/pt9912/hetzner-viper/internal/app"
-
 	"github.com/pt9912/hetzner-viper/internal/model"
 )
 

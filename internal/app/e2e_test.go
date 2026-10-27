@@ -18,7 +18,6 @@ import (
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
-
 	runlogfile "github.com/pt9912/hetzner-viper/internal/adapter/driven/runlog"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
 	"github.com/pt9912/hetzner-viper/internal/app"

@@ -138,10 +138,11 @@ func (*Client) Describe(err error) string {
 	return strings.TrimSpace(err.Error())
 }
 
-// client makes the API when it is first needed.
-// session is the API of a client once it is made.
+// session is the API of a client once it is made. client returns it instead of the interface
+// itself, which the linter (ireturn) does not allow; the methods of API are its own.
 type session struct{ API }
 
+// client makes the API when it is first needed.
 func (c *Client) client(ctx context.Context) (*session, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

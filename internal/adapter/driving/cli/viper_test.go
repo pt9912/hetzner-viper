@@ -2,8 +2,6 @@ package cli_test
 
 import (
 	"errors"
-	"github.com/pt9912/hetzner-viper/internal/adapter/driving/cli"
-	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"io"
 	"os"
 	"path/filepath"
@@ -11,6 +9,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/pt9912/hetzner-viper/internal/adapter/driving/cli"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 )
 
 func TestAMissingMachineNameGivesTheUsage(t *testing.T) {

@@ -7,11 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/api/googleapi"
-
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/gcp"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
+	"google.golang.org/api/googleapi"
 )
 
 // fake is a project with state: what the adapter creates is there for the next call.
@@ -237,6 +236,18 @@ func TestEnsureFirewallMakesOneRulePerAddressFamily(t *testing.T) {
 	f = newFake()
 	if _, err := client(f).EnsureFirewall(ctx, "x-ssh", []string{"10.0.0.0/8"}); err != nil || len(f.created) != 1 {
 		t.Errorf("created %+v %v", f.created, err)
+	}
+}
+
+func TestEnsureFirewallRefusesWhatGCPWouldRejectOrIgnore(t *testing.T) {
+	f := newFake()
+	c := client(f)
+	if _, err := c.EnsureFirewall(context.Background(), "claude-ssh", []string{" ", ""}); err == nil || len(f.created) != 0 {
+		t.Errorf("no network at all must be an error, not a rule-less firewall: %v", err)
+	}
+	long := strings.Repeat("a", 60) + "-ssh"
+	if _, err := c.EnsureFirewall(context.Background(), long, []string{"::/0"}); err == nil || !strings.Contains(err.Error(), "63") || len(f.created) != 0 {
+		t.Errorf("a rule name over 63 characters: %v", err)
 	}
 }
 

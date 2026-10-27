@@ -2,8 +2,9 @@ package cli
 
 import (
 	"context"
-	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"io"
+
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 )
 
 // runCheck is check.sh: read-only checks of a running machine, logged like the script's.

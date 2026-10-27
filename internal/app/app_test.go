@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/app"
-
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driving"
 )

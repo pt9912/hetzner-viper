@@ -2,7 +2,6 @@ package sshconfig_test
 
 import (
 	"errors"
-	portsettings "github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/sshconfig"
 	"github.com/pt9912/hetzner-viper/internal/model"
+	portsettings "github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 )
 
 func files() sshconfig.Files { return sshconfig.Files{} }

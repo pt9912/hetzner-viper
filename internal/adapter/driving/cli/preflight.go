@@ -3,8 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
-	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"io"
+
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 )
 
 // exitStatus ends viper with that code; the reason was already shown.

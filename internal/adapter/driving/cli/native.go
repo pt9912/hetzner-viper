@@ -2,14 +2,14 @@ package cli
 
 import (
 	"fmt"
-	"github.com/pt9912/hetzner-viper/internal/model"
-	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	hetznerviper "github.com/pt9912/hetzner-viper"
+	"github.com/pt9912/hetzner-viper/internal/model"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 )
 
 // The commands run on this computer: they need the files of the settings directory (--dir, default

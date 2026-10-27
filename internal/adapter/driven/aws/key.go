@@ -9,7 +9,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
-
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
 )
@@ -29,12 +28,15 @@ func fingerprint(pub string) string {
 	return base64.RawStdEncoding.EncodeToString(sum[:])
 }
 
-// sameFingerprint compares a fingerprint EC2 gives ("SHA256:…", padded or not) with ours.
-func sameFingerprint(ec2fp, ours string) bool {
-	if ours == "" {
-		return false
+// sameFingerprint compares a fingerprint EC2 gives for an imported key with the key: the SHA-256
+// of an ED25519 key ("SHA256:…", padded or not), the MD5 of other keys (RFC 4716, colon-separated
+// hex, as ssh-keygen -E md5 shows it).
+func sameFingerprint(ec2fp, pub string) bool {
+	if ours := fingerprint(pub); ours != "" && strings.TrimRight(strings.TrimPrefix(ec2fp, "SHA256:"), "=") == ours {
+		return true
 	}
-	return strings.TrimRight(strings.TrimPrefix(ec2fp, "SHA256:"), "=") == ours
+	md5fp := model.FingerprintMD5(pub)
+	return md5fp != "" && strings.EqualFold(strings.TrimPrefix(ec2fp, "MD5:"), md5fp)
 }
 
 // keys lists the key pairs of the region.
@@ -57,9 +59,8 @@ func (c *Client) EnsureLoginKey(ctx context.Context, name, publicKey string) (mo
 	if err != nil {
 		return model.LoginKey{}, &cloud.OpError{Op: "listing the key pairs", Err: err}
 	}
-	fp := fingerprint(publicKey)
 	for _, k := range ks {
-		if sameFingerprint(str(k.KeyFingerprint), fp) {
+		if sameFingerprint(str(k.KeyFingerprint), publicKey) {
 			return model.LoginKey{Ref: str(k.KeyName)}, nil
 		}
 	}

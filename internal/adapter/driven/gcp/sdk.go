@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"google.golang.org/api/compute/v1"
@@ -87,6 +88,17 @@ func (s *sdk) Instance(ctx context.Context, name string) (*Instance, error) {
 	return out, nil
 }
 
+// diskType is the boot disk type the machine type takes: the newer series (C4, N4, C4A, N4A) have
+// Hyperdisk only, the others Persistent Disk.
+func diskType(machineType string) string {
+	for _, p := range []string{"c4-", "n4-", "c4a-", "n4a-"} {
+		if strings.HasPrefix(machineType, p) {
+			return "hyperdisk-balanced"
+		}
+	}
+	return "pd-balanced"
+}
+
 func (s *sdk) CreateInstance(ctx context.Context, l Launch) error {
 	inst := &compute.Instance{
 		Name:        l.Name,
@@ -96,7 +108,7 @@ func (s *sdk) CreateInstance(ctx context.Context, l Launch) error {
 		Disks: []*compute.AttachedDisk{{
 			Boot: true, AutoDelete: true,
 			InitializeParams: &compute.AttachedDiskInitializeParams{
-				SourceImage: l.Image, DiskSizeGb: l.DiskGB, DiskType: fmt.Sprintf("zones/%s/diskTypes/pd-balanced", s.zone),
+				SourceImage: l.Image, DiskSizeGb: l.DiskGB, DiskType: fmt.Sprintf("zones/%s/diskTypes/%s", s.zone, diskType(l.MachineType)),
 			},
 		}},
 		NetworkInterfaces: []*compute.NetworkInterface{{

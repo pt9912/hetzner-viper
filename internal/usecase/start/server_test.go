@@ -2,7 +2,6 @@ package start_test
 
 import (
 	"context"
-	portsettings "github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
 	"github.com/pt9912/hetzner-viper/internal/model"
+	portsettings "github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"github.com/pt9912/hetzner-viper/internal/servertest"
 	"github.com/pt9912/hetzner-viper/internal/usecase/start"
 )

@@ -2,10 +2,10 @@ package cli
 
 import (
 	"context"
-	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"io"
 	"time"
 
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"github.com/pt9912/hetzner-viper/internal/port/driving"
 )
 

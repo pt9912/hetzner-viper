@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	portsettings "github.com/pt9912/hetzner-viper/internal/port/driven/settings"
-	"github.com/pt9912/hetzner-viper/internal/servertest"
 	"io"
 	"net/http"
 	"os"
@@ -17,6 +15,8 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/hetzner"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
 	"github.com/pt9912/hetzner-viper/internal/model"
+	portsettings "github.com/pt9912/hetzner-viper/internal/port/driven/settings"
+	"github.com/pt9912/hetzner-viper/internal/servertest"
 	"github.com/pt9912/hetzner-viper/internal/usecase/preflight"
 )
 

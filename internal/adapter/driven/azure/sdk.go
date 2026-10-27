@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -121,7 +122,31 @@ func (s *sdk) VM(ctx context.Context, name string) (*VM, error) {
 	return out, nil
 }
 
+// CreateVM makes the public address, the network interface and the VM. If that fails, what was
+// made before is removed again (best effort): DeleteVM is keyed on the VM, so nothing else would.
 func (s *sdk) CreateVM(ctx context.Context, l Launch) error {
+	err := s.createVM(ctx, l)
+	if err != nil {
+		// the run may have been cancelled: the cleanup must not be, so it only keeps the values of ctx
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
+		defer cancel()
+		s.deleteNetworkParts(cctx, l.Name)
+	}
+	return err
+}
+
+// deleteNetworkParts deletes the network interface and the public address of a VM, ignoring errors
+// (a VM that exists still uses them).
+func (s *sdk) deleteNetworkParts(ctx context.Context, name string) {
+	if p, err := s.nics.BeginDelete(ctx, s.o.group(), name+"-nic", nil); err == nil {
+		_, _ = p.PollUntilDone(ctx, nil)
+	}
+	if p, err := s.pips.BeginDelete(ctx, s.o.group(), name+"-ip", nil); err == nil {
+		_, _ = p.PollUntilDone(ctx, nil)
+	}
+}
+
+func (s *sdk) createVM(ctx context.Context, l Launch) error {
 	rg, loc := s.o.group(), s.o.Location
 	pipPoller, err := s.pips.BeginCreateOrUpdate(ctx, rg, l.Name+"-ip", armnetwork.PublicIPAddress{
 		Location: to.Ptr(loc), Tags: tags(l.Name),
@@ -239,8 +264,15 @@ func (s *sdk) Subnet(ctx context.Context) (string, error) {
 }
 
 func (s *sdk) EnsureNetwork(ctx context.Context) (string, error) {
-	if _, err := s.groups.CreateOrUpdate(ctx, s.o.group(), armresources.ResourceGroup{Location: to.Ptr(s.o.Location), Tags: map[string]*string{"viper": to.Ptr("managed")}}, nil); err != nil {
-		return "", err
+	// an existing group is left as it is: it may be in another location, and a CreateOrUpdate
+	// would fail on that (or replace its tags)
+	if _, err := s.groups.Get(ctx, s.o.group(), nil); err != nil {
+		if !notFound(err) {
+			return "", err
+		}
+		if _, err := s.groups.CreateOrUpdate(ctx, s.o.group(), armresources.ResourceGroup{Location: to.Ptr(s.o.Location), Tags: map[string]*string{"viper": to.Ptr("managed")}}, nil); err != nil {
+			return "", err
+		}
 	}
 	if s.o.SubnetID != "" {
 		return s.o.SubnetID, nil

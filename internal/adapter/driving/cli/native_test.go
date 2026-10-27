@@ -3,7 +3,6 @@ package cli_test
 import (
 	"context"
 	"errors"
-	"github.com/pt9912/hetzner-viper/internal/adapter/driving/cli"
 	"io"
 	"os"
 	"os/exec"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/pt9912/hetzner-viper/internal/adapter/driving/cli"
 )
 
 func TestSetupResolvesARelativeKeyInTheSettingsDirectory(t *testing.T) {

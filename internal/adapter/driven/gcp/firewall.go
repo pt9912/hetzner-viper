@@ -38,6 +38,12 @@ func (c *Client) EnsureFirewall(ctx context.Context, name string, sources []stri
 		return res, &cloud.OpError{Op: "reaching Google Cloud", Err: err}
 	}
 	v4, v6 := split(sources)
+	if len(v4)+len(v6) == 0 {
+		return res, &cloud.OpError{Op: "reading the networks", Err: fmt.Errorf("SSH_ALLOWED_CIDRS names no network")}
+	}
+	if len(name)+len("-ipv6") > 63 {
+		return res, &cloud.OpError{Op: "naming the firewall rules", Err: fmt.Errorf("%s-ipv6 is longer than the 63 characters GCP allows: use a shorter SERVER_PREFIX", name)}
+	}
 	res.Complete = true
 	for _, r := range []Rule{
 		{Name: name, Ranges: v4},

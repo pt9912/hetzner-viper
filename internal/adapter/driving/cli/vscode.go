@@ -2,10 +2,10 @@ package cli
 
 import (
 	"fmt"
-	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"strings"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 )
 
 // remoteWorkdir asks the machine for its work directory (viper up wrote it there); empty if it

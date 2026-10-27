@@ -5,10 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"io"
 	"strings"
 
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"github.com/pt9912/hetzner-viper/internal/port/driving"
 )
 

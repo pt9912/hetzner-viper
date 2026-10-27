@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
-
 	"github.com/pt9912/hetzner-viper/internal/model"
 )
 

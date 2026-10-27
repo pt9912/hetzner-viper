@@ -2,12 +2,13 @@ package cli_test
 
 import (
 	"errors"
-	"github.com/pt9912/hetzner-viper/internal/adapter/driving/cli"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/pt9912/hetzner-viper/internal/adapter/driving/cli"
 )
 
 // vscodeFixture is a settings directory and a machine "web" with its ssh config.

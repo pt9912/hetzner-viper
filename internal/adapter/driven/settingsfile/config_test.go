@@ -1,8 +1,6 @@
 package settingsfile_test
 
 import (
-	"github.com/pt9912/hetzner-viper/internal/model"
-	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
+	"github.com/pt9912/hetzner-viper/internal/model"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 )
 
 func envOf(m map[string]string) func(string) (string, bool) {
