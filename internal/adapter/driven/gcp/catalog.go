@@ -42,7 +42,7 @@ type Catalog struct {
 // looks for the credentials when it first needs them. dir is the cache directory ("" for none),
 // notice where it says what it does.
 func NewCatalog(project, dir string, notice io.Writer) *Catalog {
-	c := &Catalog{web: &web{http: &http.Client{Timeout: 5 * time.Minute}, base: pagesBase, disks: disksPage, dir: dir, now: time.Now, notice: notice}, notice: notice}
+	c := &Catalog{web: &web{http: &http.Client{Timeout: 5 * time.Minute}, base: pagesBase, disks: disksPage, network: networkPage, dir: dir, now: time.Now, notice: notice}, notice: notice}
 	if project != "" {
 		c.types, c.skus = sdkMachineTypes(project), sdkSkus
 	}
@@ -54,7 +54,7 @@ func NewCatalogWith(t MachineTypes, s Skus) *Catalog { return &Catalog{types: t,
 
 // NewWebCatalogWith returns a catalog over given pricing pages (for tests); t and s may be nil.
 func NewWebCatalogWith(t MachineTypes, s Skus, h *http.Client, base, disks, dir string, now func() time.Time, notice io.Writer) *Catalog {
-	return &Catalog{types: t, skus: s, web: &web{http: h, base: base, disks: disks, dir: dir, now: now, notice: notice}, notice: notice}
+	return &Catalog{types: t, skus: s, web: &web{http: h, base: base, disks: disks, network: disks + "-network", dir: dir, now: now, notice: notice}, notice: notice}
 }
 
 func sdkMachineTypes(project string) MachineTypes {
@@ -127,38 +127,53 @@ func (c *Catalog) official(ctx context.Context, location, region string, diskGB 
 	if err != nil {
 		return nil, err
 	}
-	skus, err := c.skus(ctx, "EUR")
+	skus, err := c.skus(ctx, "USD")
 	if err != nil {
 		return nil, err
 	}
 	byFamily, currency := familyRates(skus, region)
+	// every machine gets an external IPv4 address; its fee is the same in every region
+	var ip float64
+	if c.web != nil {
+		ip, _ = c.web.ipv4(ctx) // without it the prices are for the machine without the address
+	}
 	disks := diskRates(skus, region)
 	if diskGB <= 0 {
 		diskGB = int(Options{}.diskGB())
 	}
 	var out []model.Offer
 	for _, t := range types {
-		family, _, _ := strings.Cut(t.Name, "-")
-		r, ok := byFamily[family]
-		if !ok || t.IsSharedCpu || t.Deprecated != nil || hasGPU(t) || strings.Contains(t.Name, "lssd") || strings.Contains(t.Name, "custom") || r.core == 0 || r.ram == 0 {
-			continue
+		if o, ok := offerOf(t, location, byFamily, disks, diskGB, ip); ok {
+			o.Currency = currency
+			out = append(out, o)
 		}
-		perGB, ok := disks[diskType(t.Name)]
-		if !ok {
-			continue
-		}
-		disk := float64(diskGB) * perGB // per month
-		hourly := float64(t.GuestCpus)*r.core + float64(t.MemoryMb)/1024*r.ram + disk/model.HoursPerMonth
-		arch := "x86"
-		if t.Architecture == "ARM64" {
-			arch = "arm"
-		}
-		out = append(out, model.Offer{
-			Provider: "gcp", Type: t.Name, Location: location, VCPU: int(t.GuestCpus), RAMGB: float64(t.MemoryMb) / 1024, Arch: arch, SysDiskGB: diskGB,
-			HourlyPrice: hourly, MonthlyPrice: hourly * model.HoursPerMonth, Currency: currency,
-		})
 	}
 	return out, nil
+}
+
+// offerOf prices a machine type: its cores and memory by their family's prices, the external IPv4
+// address and a boot disk. ok is false for a type that is not priced this way: shared cores, a
+// GPU, a local SSD, a family or a disk type without a price.
+func offerOf(t *compute.MachineType, location string, byFamily map[string]rates, disks map[string]float64, diskGB int, ip float64) (model.Offer, bool) {
+	family, _, _ := strings.Cut(t.Name, "-")
+	r, ok := byFamily[family]
+	if !ok || t.IsSharedCpu || t.Deprecated != nil || hasGPU(t) || strings.Contains(t.Name, "lssd") || strings.Contains(t.Name, "custom") || r.core == 0 || r.ram == 0 {
+		return model.Offer{}, false
+	}
+	perGB, ok := disks[diskType(t.Name)]
+	if !ok {
+		return model.Offer{}, false
+	}
+	disk := float64(diskGB) * perGB // per month
+	hourly := float64(t.GuestCpus)*r.core + float64(t.MemoryMb)/1024*r.ram + ip + disk/model.HoursPerMonth
+	arch := "x86"
+	if t.Architecture == "ARM64" {
+		arch = "arm"
+	}
+	return model.Offer{
+		Provider: "gcp", Type: t.Name, Location: location, VCPU: int(t.GuestCpus), RAMGB: float64(t.MemoryMb) / 1024, Arch: arch, SysDiskGB: diskGB,
+		HourlyPrice: hourly, MonthlyPrice: hourly * model.HoursPerMonth, IPv4: ip > 0,
+	}, true
 }
 
 // hasGPU tells the machine types that come with an accelerator, whose price is not that of the cores

@@ -153,28 +153,11 @@ func Find(get func(string) string, notice io.Writer) find.Service {
 	for _, name := range model.ProviderNames() {
 		info, _ := model.LookupProvider(name)
 		src := find.Source{Name: name}
-		for _, c := range findCredentials(name, info) {
-			if get(c) == "" && src.Skip == "" {
-				src.Skip = c + " is not set"
-			}
-		}
-		if src.Skip == "" {
-			setCatalog(&src, get, notice)
-			src.Location = defaultLocation(name, info, get)
-		}
+		setCatalog(&src, get, notice)
+		src.Location = defaultLocation(name, info, get)
 		sources = append(sources, src)
 	}
 	return find.Service{Deps: find.Deps{Sources: sources, Rates: ecb.New(cacheDir())}}
-}
-
-// findCredentials are the settings viper find needs of a provider. AWS (the public price list),
-// Azure and Google Cloud (the public pricing pages; the subscription or the project only gives
-// the sizes or the prices more exactly) need none.
-func findCredentials(name string, info model.ProviderInfo) []string {
-	if name == "hetzner" {
-		return info.Credentials
-	}
-	return nil
 }
 
 // defaultLocation is where the price list of a provider is read if --location says nothing; ""
@@ -202,7 +185,7 @@ func cacheDir() string {
 func setCatalog(src *find.Source, get func(string) string, notice io.Writer) {
 	switch src.Name {
 	case "hetzner":
-		src.Catalog, src.Describe = hetzner.New(get("HCLOUD_TOKEN"), ""), hetzner.Error
+		src.Catalog, src.Describe = hetzner.NewCatalog(get("HCLOUD_TOKEN"), cacheDir(), notice), hetzner.Error
 	case "aws":
 		c := aws.NewCatalog(cacheDir(), notice)
 		src.Catalog, src.Describe = c, c.Describe

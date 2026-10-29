@@ -253,7 +253,7 @@ func show(out io.Writer, rows []model.Offer, b basis, need model.Need) {
 	}
 	// the text to the left, the numbers to the right
 	writeTable(out, header, table, []bool{false, false, false, true, true, true, false, true, true})
-	fmt.Fprintln(out, "\n"+legend(b))
+	fmt.Fprintln(out, "\n"+legend(b, rows))
 	if sysDisk {
 		fmt.Fprintln(out, "* system disk, chosen apart from the type; its price is in the prices.")
 	}
@@ -298,7 +298,7 @@ func writeTable(out io.Writer, header []string, rows [][]string, right []bool) {
 }
 
 // legend says what the prices are: list prices on one basis, and where they were converted.
-func legend(b basis) string {
+func legend(b basis, rows []model.Offer) string {
 	vat := "without VAT"
 	if b.vat != 0 {
 		vat = fmt.Sprintf("incl. %g %% VAT", b.vat)
@@ -308,7 +308,7 @@ func legend(b basis) string {
 	if len(b.kept) > 0 {
 		unit = "in " + currency + " (except where another currency is shown)"
 	}
-	fmt.Fprintf(&sb, "Prices are list prices %s, %s; the fee for a public IPv4 address is not in them.", unit, vat)
+	fmt.Fprintf(&sb, "Prices are list prices %s, %s. %s", unit, vat, ipv4Legend(rows))
 	var from []string
 	for c := range b.converted {
 		from = append(from, c)
@@ -343,4 +343,29 @@ func settingsLine(o model.Offer, need model.Need) string {
 		line += fmt.Sprintf(" %s=%d", info.DiskSetting, need.DiskGB)
 	}
 	return line
+}
+
+// ipv4Legend says for which providers the price has the fee for the public IPv4 address that every
+// machine gets.
+func ipv4Legend(rows []model.Offer) string {
+	var with, without []string
+	seen := map[string]bool{}
+	for _, o := range rows {
+		if seen[o.Provider] {
+			continue
+		}
+		seen[o.Provider] = true
+		if o.IPv4 {
+			with = append(with, o.Provider)
+		} else {
+			without = append(without, o.Provider)
+		}
+	}
+	switch {
+	case len(without) == 0:
+		return "The fee for the public IPv4 address is included."
+	case len(with) == 0:
+		return "The fee for the public IPv4 address is not included."
+	}
+	return fmt.Sprintf("The fee for the public IPv4 address is included for %s, not for %s.", strings.Join(with, ", "), strings.Join(without, ", "))
 }

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -26,6 +27,7 @@ func item(sku, product, skuName string, price float64) map[string]any {
 
 // retail is the public price list: it counts the requests and keeps the first filter and currency.
 type retail struct {
+	mu               sync.Mutex // the requests of one run come at the same time
 	srv              *httptest.Server
 	requests         atomic.Int32
 	filter, currency string
@@ -43,12 +45,19 @@ func newRetail(t *testing.T) *retail {
 			return
 		}
 		switch {
+		case strings.Contains(q.Get("$filter"), "'Virtual Network'"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"Items": []any{
+				map[string]any{"currencyCode": "EUR", "retailPrice": 0.0035, "unitOfMeasure": "1 Hour", "meterName": "Basic IPv4 Dynamic Public IP", "type": "Consumption"},
+				map[string]any{"currencyCode": "EUR", "retailPrice": 0.0044, "unitOfMeasure": "1 Hour", "meterName": "Standard IPv4 Static Public IP", "type": "Consumption"},
+			}})
 		case strings.Contains(q.Get("$filter"), "'Storage'"):
 			_ = json.NewEncoder(w).Encode(map[string]any{"Items": []any{disk("E10", 9.0), disk("E6", 5.0), disk("E4", 2.5), disk("E15", 17.0)}})
 		case q.Get("page") == "2":
 			_ = json.NewEncoder(w).Encode(map[string]any{"Items": []any{item("Standard_D4ps_v5", "Virtual Machines Dpsv5 Series", "D4ps v5", 0.15)}})
 		default:
+			r.mu.Lock()
 			r.filter, r.currency = q.Get("$filter"), q.Get("currencyCode")
+			r.mu.Unlock()
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"Items": []any{
 					item("Standard_D4as_v5", "Virtual Machines Dasv5 Series", "D4as v5", 0.20),
@@ -102,10 +111,10 @@ func TestCatalogJoinsTheSizesWithTheLinuxPrices(t *testing.T) {
 	a, p := offers[0], offers[1]
 	// the disk of 80 GB costs what the tier of 128 GB costs
 	if a.Type != "Standard_D4as_v5" || a.Provider != "azure" || a.Arch != "x86" || a.VCPU != 4 || a.RAMGB != 16 || a.DiskGB != 0 || a.SysDiskGB != 80 ||
-		abs(a.HourlyPrice-(0.20+9.0/730)) > 1e-9 || abs(a.MonthlyPrice-(0.20*730+9.0)) > 1e-9 || a.Currency != "EUR" || a.VATPercent != 0 {
+		abs(a.HourlyPrice-(0.20+0.0044+9.0/730)) > 1e-9 || abs(a.MonthlyPrice-((0.20+0.0044)*730+9.0)) > 1e-9 || !a.IPv4 || a.Currency != "EUR" || a.VATPercent != 0 {
 		t.Errorf("%+v", a)
 	}
-	if p.Arch != "arm" || abs(p.HourlyPrice-(0.15+9.0/730)) > 1e-9 {
+	if p.Arch != "arm" || abs(p.HourlyPrice-(0.15+0.0044+9.0/730)) > 1e-9 {
 		t.Errorf("%+v", p)
 	}
 	if r.currency != "EUR" || !strings.Contains(r.filter, "armRegionName eq 'germanywestcentral'") {

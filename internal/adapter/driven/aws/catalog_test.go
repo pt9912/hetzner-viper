@@ -51,18 +51,29 @@ func priceList() string {
 		`},"terms":{"Reserved":{"A1":{"huge":{"priceDimensions":{}}}},"OnDemand":{` + strings.Join(terms, ",") + `}},"attributesList":{"x":[1,2,{"y":null}]}}`
 }
 
+// vpcList is the price list of the network service: the fee for a public IPv4 address, in use or idle.
+func vpcList() string {
+	return `{"products":{"V":{"attributes":{"usagetype":"EUC1-PublicIPv4:InUseAddress"}},"W":{"attributes":{"usagetype":"EUC1-PublicIPv4:IdleAddress"}}},` +
+		`"terms":{"OnDemand":{"V":{"o":{"priceDimensions":{"d":{"unit":"Hrs","pricePerUnit":{"USD":"0.0050000000"}}}}},` +
+		`"W":{"o":{"priceDimensions":{"d":{"unit":"Hrs","pricePerUnit":{"USD":"0.0090000000"}}}}}}}}`
+}
+
 // server serves the price list and counts the requests.
 func server(t *testing.T, body string, status int) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
 	var n atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n.Add(1)
-		if r.URL.Path != "/eu-central-1/index.json" {
+		if r.URL.Path != "/eu-central-1/index.json" && r.URL.Path != "/vpc/eu-central-1/index.json" {
 			w.WriteHeader(403)
 			return
 		}
 		if status != 200 {
 			w.WriteHeader(status)
+			return
+		}
+		if r.URL.Path == "/vpc/eu-central-1/index.json" {
+			_, _ = w.Write([]byte(vpcList()))
 			return
 		}
 		_, _ = w.Write([]byte(body))
@@ -95,13 +106,13 @@ func TestCatalogReadsTheSizesAndPricesOfAPriceList(t *testing.T) {
 	if g.Provider != "aws" || g.Location != "eu-central-1a" || g.VCPU != 4 || g.RAMGB != 16 || g.Arch != "arm" || g.DiskGB != 0 || g.SysDiskGB != 80 || g.Currency != "USD" || g.VATPercent != 0 {
 		t.Errorf("%+v", g)
 	}
-	if want := 0.1632 + 80*0.0952/730; abs(g.HourlyPrice-want) > 1e-9 {
+	if want := 0.1632 + 0.005 + 80*0.0952/730; abs(g.HourlyPrice-want) > 1e-9 || !g.IPv4 {
 		t.Errorf("hourly %v, want %v", g.HourlyPrice, want)
 	}
 	for _, o := range offers {
 		switch o.Type {
 		case "m7i.large": // not the Windows price, not the unused reservation
-			if o.Arch != "x86" || abs(o.MonthlyPrice-(0.1134*730+80*0.0952)) > 1e-9 {
+			if o.Arch != "x86" || abs(o.MonthlyPrice-((0.1134+0.005)*730+80*0.0952)) > 1e-9 {
 				t.Errorf("%+v", o)
 			}
 		case "x2.big":
@@ -127,19 +138,19 @@ func TestCatalogReadsThePriceListOnceADay(t *testing.T) {
 	clock := func() time.Time { return now }
 	c := aws.NewCatalogWith(dir, srv.Client(), srv.URL+"/", clock, nil)
 	ask := func() error { _, err := c.Offers(context.Background(), "eu-central-1", 0); return err }
-	if err := ask(); err != nil || requests.Load() != 1 {
+	if err := ask(); err != nil || requests.Load() != 2 { // the list of the instances and the one of the network
 		t.Fatalf("first: %v %d", err, requests.Load())
 	}
 	now = now.Add(23 * time.Hour)
-	if err := ask(); err != nil || requests.Load() != 1 {
+	if err := ask(); err != nil || requests.Load() != 2 {
 		t.Errorf("within a day: %v %d requests", err, requests.Load())
 	}
 	// another run (a new catalog) uses the file
-	if _, err := aws.NewCatalogWith(dir, srv.Client(), srv.URL+"/", clock, nil).Offers(context.Background(), "eu-central-1", 0); err != nil || requests.Load() != 1 {
+	if _, err := aws.NewCatalogWith(dir, srv.Client(), srv.URL+"/", clock, nil).Offers(context.Background(), "eu-central-1", 0); err != nil || requests.Load() != 2 {
 		t.Errorf("new catalog: %v %d requests", err, requests.Load())
 	}
 	now = now.Add(2 * time.Hour)
-	if err := ask(); err != nil || requests.Load() != 2 {
+	if err := ask(); err != nil || requests.Load() != 4 {
 		t.Errorf("after a day: %v %d requests", err, requests.Load())
 	}
 }
@@ -211,7 +222,11 @@ func flaky(t *testing.T, breaks int) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
 	var n atomic.Int32
 	body := priceList()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/vpc/") {
+			_, _ = w.Write([]byte(vpcList()))
+			return
+		}
 		if int(n.Add(1)) <= breaks {
 			w.Header().Set("Content-Length", fmt.Sprint(len(body)))
 			_, _ = w.Write([]byte(body[:len(body)/2])) // less than it promised: the client sees the body end early

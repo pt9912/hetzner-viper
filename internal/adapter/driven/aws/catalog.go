@@ -24,6 +24,10 @@ import (
 // they need no account and no login.
 const bulkBase = "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/"
 
+// vpcBase is where the price list of the network service is, which has the fee for a public IPv4
+// address; it is small.
+const vpcBase = "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonVPC/current/"
+
 // cacheMaxAge is how long the digest of a price list is used before the list is read again.
 const cacheMaxAge = 24 * time.Hour
 
@@ -35,6 +39,7 @@ type Catalog struct {
 	dir    string // the cache directory; "" for no cache
 	http   *http.Client
 	base   string
+	vpc    string // the price list of the network service
 	now    func() time.Time
 	notice io.Writer // where it says that it reads a large file; nil for nowhere
 	// retryWait is the pause before the second try of a download that broke off, and twice that
@@ -48,12 +53,13 @@ const tries = 3
 // NewCatalog returns a catalog that keeps its cache in dir ("" for none) and says on notice that it
 // is reading a price list.
 func NewCatalog(dir string, notice io.Writer) *Catalog {
-	return &Catalog{dir: dir, http: &http.Client{Timeout: 15 * time.Minute}, base: bulkBase, now: time.Now, notice: notice, retryWait: 2 * time.Second}
+	return &Catalog{dir: dir, http: &http.Client{Timeout: 15 * time.Minute}, base: bulkBase, vpc: vpcBase, now: time.Now, notice: notice, retryWait: 2 * time.Second}
 }
 
 // NewCatalogWith returns a catalog over a given price list server and clock (for tests).
 func NewCatalogWith(dir string, h *http.Client, base string, now func() time.Time, notice io.Writer) *Catalog {
-	return &Catalog{dir: dir, http: h, base: base, now: now, notice: notice, retryWait: time.Millisecond}
+	// the fee of the IPv4 address is read from <base>vpc/ in the tests
+	return &Catalog{dir: dir, http: h, base: base, vpc: base + "vpc/", now: now, notice: notice, retryWait: time.Millisecond}
 }
 
 // Describe is an error without the request details, safe to show.
@@ -68,8 +74,10 @@ func (*Catalog) Describe(err error) string {
 // digest is what the catalog keeps of the price list of a region.
 type digest struct {
 	Fetched time.Time `json:"fetched"`
-	// GP3 is the price of a GB of gp3 volume for a month, in US dollars.
+	// GP3 is the price of a GB of gp3 volume for a month, in US dollars; IPv4 the fee for a public
+	// IPv4 address per hour.
 	GP3   float64 `json:"gp3"`
+	IPv4  float64 `json:"ipv4"`
 	Types []entry `json:"types"`
 }
 
@@ -108,7 +116,7 @@ func (c *Catalog) Offers(ctx context.Context, location string, diskGB int) ([]mo
 		}
 		out = append(out, model.Offer{
 			Provider: "aws", Type: t.Name, Location: location, VCPU: t.VCPU, RAMGB: t.RAMGB, Arch: arch, SysDiskGB: diskGB,
-			HourlyPrice: t.Hourly + disk/model.HoursPerMonth, MonthlyPrice: t.Hourly*model.HoursPerMonth + disk, Currency: "USD",
+			HourlyPrice: t.Hourly + d.IPv4 + disk/model.HoursPerMonth, MonthlyPrice: (t.Hourly+d.IPv4)*model.HoursPerMonth + disk, Currency: "USD", IPv4: true,
 		})
 	}
 	return out, nil
@@ -136,7 +144,7 @@ func cacheName(region string) string { return "aws-ec2-" + region + ".json" }
 
 func (c *Catalog) load(region string) *digest {
 	var d digest
-	if !pricecache.Read(c.dir, cacheName(region), &d) || len(d.Types) == 0 || d.GP3 <= 0 {
+	if !pricecache.Read(c.dir, cacheName(region), &d) || len(d.Types) == 0 || d.GP3 <= 0 || d.IPv4 <= 0 {
 		return nil
 	}
 	return &d
@@ -154,6 +162,9 @@ func (c *Catalog) fetch(ctx context.Context, region string) (*digest, error) {
 	for try := 1; try <= tries; try++ {
 		var d *digest
 		if d, err = c.download(ctx, region); err == nil {
+			if d.IPv4, err = c.ipv4(ctx, region); err != nil {
+				return nil, err
+			}
 			d.Fetched = c.now()
 			return d, nil
 		}
@@ -422,4 +433,53 @@ func skip(dec *json.Decoder) error {
 			return nil
 		}
 	}
+}
+
+// ipv4 is the fee per hour in US dollars for a public IPv4 address in use, from the price list of the
+// network service of the region.
+func (c *Catalog) ipv4(ctx context.Context, region string) (float64, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.vpc+region+"/index.json", nil)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("price list of the network: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }() // read only
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("price list of the network: HTTP %d", resp.StatusCode)
+	}
+	var list struct {
+		Products map[string]struct {
+			Attributes struct {
+				Usagetype string `json:"usagetype"`
+			} `json:"attributes"`
+		} `json:"products"`
+		Terms struct {
+			OnDemand map[string]map[string]struct {
+				PriceDimensions map[string]struct {
+					Unit         string            `json:"unit"`
+					PricePerUnit map[string]string `json:"pricePerUnit"`
+				} `json:"priceDimensions"`
+			} `json:"OnDemand"`
+		} `json:"terms"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<20)).Decode(&list); err != nil {
+		return 0, fmt.Errorf("price list of the network: %w", err)
+	}
+	for sku, p := range list.Products {
+		// "EUC1-PublicIPv4:InUseAddress": the usage of an address that is attached to something
+		if !strings.HasSuffix(p.Attributes.Usagetype, "PublicIPv4:InUseAddress") {
+			continue
+		}
+		for _, term := range list.Terms.OnDemand[sku] {
+			for _, d := range term.PriceDimensions {
+				if v, err := strconv.ParseFloat(d.PricePerUnit["USD"], 64); err == nil && d.Unit == "Hrs" && v > 0 {
+					return v, nil
+				}
+			}
+		}
+	}
+	return 0, fmt.Errorf("price list of the network: no fee for a public IPv4 address found (did it change?)")
 }

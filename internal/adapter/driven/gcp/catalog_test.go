@@ -15,7 +15,7 @@ import (
 func sku(desc, usage, region string, units, nanos int64) *cloudbilling.Sku {
 	return &cloudbilling.Sku{
 		Description: desc, Category: &cloudbilling.Category{UsageType: usage}, ServiceRegions: []string{region},
-		PricingInfo: []*cloudbilling.PricingInfo{{PricingExpression: &cloudbilling.PricingExpression{TieredRates: []*cloudbilling.TierRate{{UnitPrice: &cloudbilling.Money{CurrencyCode: "EUR", Units: units, Nanos: nanos}}}}}},
+		PricingInfo: []*cloudbilling.PricingInfo{{PricingExpression: &cloudbilling.PricingExpression{TieredRates: []*cloudbilling.TierRate{{UnitPrice: &cloudbilling.Money{CurrencyCode: "USD", Units: units, Nanos: nanos}}}}}},
 	}
 }
 
@@ -35,7 +35,7 @@ func TestCatalogPricesTheCoresAndTheMemory(t *testing.T) {
 		}, nil
 	}
 	skus := func(_ context.Context, currency string) ([]*cloudbilling.Sku, error) {
-		if currency != "EUR" {
+		if currency != "USD" {
 			t.Errorf("currency %q", currency)
 		}
 		return []*cloudbilling.Sku{
@@ -60,7 +60,7 @@ func TestCatalogPricesTheCoresAndTheMemory(t *testing.T) {
 	sort.Slice(offers, func(i, j int) bool { return offers[i].Type < offers[j].Type })
 	e2, t2a := offers[0], offers[1]
 	// 4 cores x 0.025 + 16 GiB x 0.010 + 100 GB x 0.10 a month
-	if e2.Type != "e2-standard-4" || e2.Provider != "gcp" || e2.Location != "europe-west3-b" || e2.VCPU != 4 || e2.RAMGB != 16 || e2.Arch != "x86" || e2.DiskGB != 0 || e2.Currency != "EUR" || e2.VATPercent != 0 || e2.SysDiskGB != 100 || abs(e2.HourlyPrice-(0.26+100*0.10/730)) > 1e-9 {
+	if e2.Type != "e2-standard-4" || e2.Provider != "gcp" || e2.Location != "europe-west3-b" || e2.VCPU != 4 || e2.RAMGB != 16 || e2.Arch != "x86" || e2.DiskGB != 0 || e2.Currency != "USD" || e2.VATPercent != 0 || e2.SysDiskGB != 100 || abs(e2.HourlyPrice-(0.26+100*0.10/730)) > 1e-9 {
 		t.Errorf("%+v", e2)
 	}
 	if t2a.Arch != "arm" || abs(t2a.HourlyPrice-(4*0.03+16*0.005+100*0.10/730)) > 1e-9 {

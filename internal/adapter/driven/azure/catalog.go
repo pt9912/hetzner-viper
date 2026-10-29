@@ -108,7 +108,9 @@ func (*Catalog) Describe(err error) string { return (*Client)(nil).Describe(err)
 type digest struct {
 	Fetched  time.Time `json:"fetched"`
 	Currency string    `json:"currency"`
-	Types    []entry   `json:"types"`
+	// IPv4 is the fee for a standard public IPv4 address per hour.
+	IPv4  float64 `json:"ipv4"`
+	Types []entry `json:"types"`
 	// SSD are the Standard SSD tiers with their price per month.
 	SSD []tier `json:"ssd"`
 }
@@ -154,7 +156,7 @@ func (c *Catalog) Offers(ctx context.Context, location string, diskGB int) ([]mo
 		}
 		out = append(out, model.Offer{
 			Provider: "azure", Type: t.Name, Location: location, VCPU: t.VCPUs, RAMGB: t.RAMGB, Arch: arch, SysDiskGB: diskGB,
-			HourlyPrice: t.Hourly + disk/model.HoursPerMonth, MonthlyPrice: t.Hourly*model.HoursPerMonth + disk, Currency: d.Currency,
+			HourlyPrice: t.Hourly + d.IPv4 + disk/model.HoursPerMonth, MonthlyPrice: (t.Hourly+d.IPv4)*model.HoursPerMonth + disk, Currency: d.Currency, IPv4: true,
 		})
 	}
 	return out, nil
@@ -177,7 +179,7 @@ func (c *Catalog) digestOf(ctx context.Context, location string) (*digest, error
 	name := "azure-" + location + ".json"
 	var cached *digest
 	var d digest
-	if pricecache.Read(c.dir, name, &d) && len(d.Types) > 0 && len(d.SSD) > 0 {
+	if pricecache.Read(c.dir, name, &d) && len(d.Types) > 0 && len(d.SSD) > 0 && d.IPv4 > 0 {
 		cached = &d
 		if c.now().Sub(d.Fetched) < cacheMaxAge {
 			return cached, nil
@@ -197,9 +199,9 @@ func (c *Catalog) digestOf(ctx context.Context, location string) (*digest, error
 // fetch reads the sizes and the two price lists, at the same time as they do not depend on each other.
 func (c *Catalog) fetch(ctx context.Context, location string) (*digest, error) {
 	var (
-		specs            map[string]Spec
-		vmItems, ssdItem []priceItem
-		g, gc            = errgroup.WithContext(ctx)
+		specs                     map[string]Spec
+		vmItems, ssdItem, ipItems []priceItem
+		g, gc                     = errgroup.WithContext(ctx)
 	)
 	g.Go(func() (err error) { specs, err = c.specs(gc, location); return err })
 	g.Go(func() (err error) { vmItems, err = c.items(gc, filterOf("Virtual Machines", "", location)); return err })
@@ -207,10 +209,14 @@ func (c *Catalog) fetch(ctx context.Context, location string) (*digest, error) {
 		ssdItem, err = c.items(gc, filterOf("Storage", "Standard SSD Managed Disks", location))
 		return err
 	})
+	g.Go(func() (err error) {
+		ipItems, err = c.items(gc, filterOf("Virtual Network", "IP Addresses", location))
+		return err
+	})
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
-	d := &digest{Fetched: c.now(), SSD: ssdTiers(ssdItem)}
+	d := &digest{Fetched: c.now(), SSD: ssdTiers(ssdItem), IPv4: ipv4Price(ipItems)}
 	prices, currency := hourlyPrices(vmItems)
 	d.Currency = currency
 	for name, p := range prices {
@@ -223,6 +229,8 @@ func (c *Catalog) fetch(ctx context.Context, location string) (*digest, error) {
 		return nil, fmt.Errorf("no VM sizes with a price in %s", location)
 	case len(d.SSD) == 0:
 		return nil, fmt.Errorf("no price of Standard SSD disks in %s", location)
+	case d.IPv4 <= 0:
+		return nil, fmt.Errorf("no price of public IPv4 addresses in %s", location)
 	}
 	return d, nil
 }
@@ -389,6 +397,16 @@ func ssdTiers(items []priceItem) []tier {
 		}
 	}
 	return out
+}
+
+// ipv4Price is the fee per hour for a standard static public IPv4 address, the kind viper creates.
+func ipv4Price(items []priceItem) float64 {
+	for _, it := range items {
+		if it.MeterName == "Standard IPv4 Static Public IP" && it.UnitOfMeasure == "1 Hour" && it.RetailPrice > 0 {
+			return it.RetailPrice
+		}
+	}
+	return 0
 }
 
 // payAsYouGoLinux tells the plain Linux price of a size from the Windows, spot and low-priority ones.

@@ -54,7 +54,16 @@ func api(t *testing.T) *httptest.Server {
 				},
 			}}
 		case "/pricing":
-			_ = json.NewEncoder(w).Encode(map[string]any{"pricing": map[string]any{"currency": "EUR", "vat_rate": "19.000000"}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"pricing": map[string]any{"currency": "EUR", "vat_rate": "19.000000",
+				// the client library needs a floating IP for each primary one
+				"floating_ips": []any{
+					map[string]any{"type": "ipv4", "prices": []any{price("fsn1", "0.001", "0.6")}},
+					map[string]any{"type": "ipv6", "prices": []any{price("fsn1", "0", "0")}},
+				},
+				"primary_ips": []any{
+					map[string]any{"type": "ipv6", "prices": []any{price("fsn1", "0", "0")}},
+					map[string]any{"type": "ipv4", "prices": []any{price("fsn1", "0.001", "0.6")}},
+				}}})
 			return
 		case "/locations":
 			if r.URL.Query().Get("name") == "fsn1" {
@@ -95,7 +104,7 @@ func TestOffersAreTheOrderablePricedTypes(t *testing.T) {
 		t.Fatalf("%+v %v", offers, err)
 	}
 	o := offers[0]
-	if o.Provider != "hetzner" || o.Type != "cpx32" || o.Location != "fsn1" || o.VCPU != 4 || o.RAMGB != 8 || o.DiskGB != 160 || o.Arch != "x86" || o.HourlyPrice != 0.0136 || o.MonthlyPrice != 8.49 || o.Currency != "EUR" || o.VATPercent != 19 {
+	if o.Provider != "hetzner" || o.Type != "cpx32" || o.Location != "fsn1" || o.VCPU != 4 || o.RAMGB != 8 || o.DiskGB != 160 || o.Arch != "x86" || abs(o.HourlyPrice-(0.0136+0.001)) > 1e-9 || abs(o.MonthlyPrice-(8.49+0.6)) > 1e-9 || o.Currency != "EUR" || o.VATPercent != 19 || !o.IPv4 {
 		t.Errorf("%+v", o)
 	}
 }
@@ -146,5 +155,29 @@ func TestABadTokenIsAnErrorWithoutTheToken(t *testing.T) {
 	}
 	if _, err := hetzner.New("good", "http://127.0.0.1:1").ServerNames(context.Background()); err == nil {
 		t.Error("an unreachable API is an error")
+	}
+}
+
+func abs(x float64) float64 {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+func TestAPricingAnswerTheLibraryCannotReadIsAnErrorNotACrash(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/pricing": // more primary than floating IPs: the library indexes one list by the length of the other
+			_ = json.NewEncoder(w).Encode(map[string]any{"pricing": map[string]any{"currency": "EUR", "vat_rate": "19.0",
+				"primary_ips": []any{map[string]any{"type": "ipv4", "prices": []any{price("fsn1", "0.001", "0.6")}}}}})
+		default:
+			_ = json.NewEncoder(w).Encode(map[string]any{"server_types": []any{}, "meta": map[string]any{"pagination": map[string]any{"page": 1, "per_page": 50, "last_page": 1, "total_entries": 0}}})
+		}
+	}))
+	defer srv.Close()
+	if _, err := hetzner.New("good", srv.URL).Offers(context.Background(), "", 0); err == nil || !strings.Contains(err.Error(), "cannot be read") {
+		t.Errorf("%v", err)
 	}
 }

@@ -3,6 +3,7 @@ package gcp
 import (
 	"context"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -24,7 +25,10 @@ import (
 const (
 	pagesBase = "https://cloud.google.com/products/compute/pricing/"
 	disksPage = "https://cloud.google.com/compute/disks-image-pricing"
-	webCache  = "gcp-web.json"
+	// networkPage has the fee for an external IPv4 address, which is the same in every region.
+	networkPage = "https://cloud.google.com/vpc/network-pricing"
+	ipv4Cache   = "gcp-ipv4.json"
+	webCache    = "gcp-web.json"
 )
 
 // pricePages are the pages of the machine type families, by their name in the address.
@@ -38,6 +42,8 @@ type webDigest struct {
 	Fetched  time.Time                     `json:"fetched"`
 	Machines map[string][]webMachine       `json:"machines"`
 	Disks    map[string]map[string]float64 `json:"disks"`
+	// IPv4 is the fee for an external IPv4 address in use on a standard VM per hour, in US dollars.
+	IPv4 float64 `json:"ipv4"`
 }
 
 type webMachine struct {
@@ -49,13 +55,14 @@ type webMachine struct {
 
 // web reads the pages once a day.
 type web struct {
-	http   *http.Client
-	base   string   // where the pages of the families are, pagesBase unless a test says otherwise
-	disks  string   // the page of the disks
-	pages  []string // the pages of the families; pricePages() unless a test says otherwise
-	dir    string   // the cache directory; "" for none
-	now    func() time.Time
-	notice io.Writer
+	http    *http.Client
+	base    string   // where the pages of the families are, pagesBase unless a test says otherwise
+	disks   string   // the page of the disks
+	network string   // the page of the network prices
+	pages   []string // the pages of the families; pricePages() unless a test says otherwise
+	dir     string   // the cache directory; "" for none
+	now     func() time.Time
+	notice  io.Writer
 }
 
 // offers are the machine types of the zone's region with their price, a disk of diskGB added.
@@ -84,7 +91,7 @@ func (w *web) offers(ctx context.Context, zone, region string, diskGB int) ([]mo
 		}
 		out = append(out, model.Offer{
 			Provider: "gcp", Type: m.Name, Location: zone, VCPU: m.VCPU, RAMGB: m.RAMGB, Arch: arch, SysDiskGB: diskGB,
-			HourlyPrice: m.Hourly + disk/model.HoursPerMonth, MonthlyPrice: m.Hourly*model.HoursPerMonth + disk, Currency: "USD",
+			HourlyPrice: m.Hourly + d.IPv4 + disk/model.HoursPerMonth, MonthlyPrice: (m.Hourly+d.IPv4)*model.HoursPerMonth + disk, Currency: "USD", IPv4: true,
 		})
 	}
 	return out, nil
@@ -114,7 +121,7 @@ func armFamily(name string) bool {
 // pages cannot be read, an old digest is better than none.
 func (w *web) digest(ctx context.Context) (*webDigest, error) {
 	var cached webDigest
-	have := pricecache.Read(w.dir, webCache, &cached) && len(cached.Machines) > 0 && len(cached.Disks) > 0
+	have := pricecache.Read(w.dir, webCache, &cached) && len(cached.Machines) > 0 && len(cached.Disks) > 0 && cached.IPv4 > 0
 	if have && w.now().Sub(cached.Fetched) < 24*time.Hour {
 		return &cached, nil
 	}
@@ -139,7 +146,9 @@ func (w *web) fetch(ctx context.Context) (*webDigest, error) {
 		pages = pricePages()
 	}
 	bodies := make([]string, len(pages)+1)
+	var ip float64
 	g, gc := errgroup.WithContext(ctx)
+	g.Go(func() (err error) { ip, err = w.ipv4(gc); return err })
 	for i, p := range pages {
 		g.Go(func() (err error) { bodies[i], err = w.get(gc, w.base+p+"?hl=en"); return err })
 	}
@@ -147,7 +156,7 @@ func (w *web) fetch(ctx context.Context) (*webDigest, error) {
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
-	d := &webDigest{Fetched: w.now(), Machines: map[string][]webMachine{}, Disks: map[string]map[string]float64{}}
+	d := &webDigest{Fetched: w.now(), IPv4: ip, Machines: map[string][]webMachine{}, Disks: map[string]map[string]float64{}}
 	for i, body := range bodies[:len(pages)] {
 		found := 0
 		for _, t := range tablesOf(body) {
@@ -309,4 +318,53 @@ func disksOf(cells []cell) map[string]float64 {
 		}
 	}
 	return out
+}
+
+// ipv4Digest is the fee for an external IPv4 address, kept for a day.
+type ipv4Digest struct {
+	Fetched time.Time `json:"fetched"`
+	Hourly  float64   `json:"hourly"`
+}
+
+// ipv4Re finds, in the text of the network page, the row of the addresses in use on standard VMs.
+func ipv4Re() *regexp.Regexp {
+	return regexp.MustCompile(`in use on standard VM instances \$([0-9.]+) / 1 hour`)
+}
+
+// ipv4 is the fee per hour in US dollars for an external IPv4 address in use on a standard VM. It is
+// the same in every region.
+func (w *web) ipv4(ctx context.Context) (float64, error) {
+	var cached ipv4Digest
+	have := pricecache.Read(w.dir, ipv4Cache, &cached) && cached.Hourly > 0
+	if have && w.now().Sub(cached.Fetched) < 24*time.Hour {
+		return cached.Hourly, nil
+	}
+	price, err := w.readIPv4(ctx)
+	switch {
+	case err == nil:
+		pricecache.Write(w.dir, ipv4Cache, ipv4Digest{Fetched: w.now(), Hourly: price})
+		return price, nil
+	case have && ctx.Err() == nil:
+		return cached.Hourly, nil
+	}
+	return 0, err
+}
+
+func (w *web) readIPv4(ctx context.Context) (float64, error) {
+	body, err := w.get(ctx, w.network+"?hl=en")
+	if err != nil {
+		return 0, err
+	}
+	// the page has a no-break space in the row ("in use on&nbsp; standard VM"): Fields splits on all
+	// the spaces of Unicode, where \s in a pattern knows only those of ASCII
+	text := strings.Join(strings.Fields(html.UnescapeString(regexp.MustCompile(`<[^>]+>`).ReplaceAllString(body, " "))), " ")
+	m := ipv4Re().FindStringSubmatch(text)
+	if m == nil {
+		return 0, fmt.Errorf("no fee for an external IPv4 address found on the network pricing page (did it change?)")
+	}
+	v, err := strconv.ParseFloat(m[1], 64)
+	if err != nil || v <= 0 {
+		return 0, fmt.Errorf("no fee for an external IPv4 address found on the network pricing page (did it change?)")
+	}
+	return v, nil
 }

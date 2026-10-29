@@ -17,6 +17,8 @@ type Offer struct {
 	HourlyPrice  float64 // list price in Currency, with VAT if VATPercent is not 0
 	MonthlyPrice float64
 	Currency     string
+	// IPv4 says that the prices include the fee for the public IPv4 address every machine gets.
+	IPv4 bool
 	// SysDiskGB is the size of the system disk that is chosen apart from the type and whose price
 	// is in the prices; 0 if the disk comes with the type (DiskGB) or is not priced.
 	SysDiskGB int

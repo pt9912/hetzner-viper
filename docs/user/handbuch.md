@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.66  
+Version: 1.67  
 Software-Version: v0.12.0  
 Stand: 29.10.2026  
 
@@ -251,11 +251,11 @@ Geprüft werden:
 #### Voraussetzung
 
 * `.env.local` ist angelegt (`viper setup`).
-* Nur für Hetzner müssen Zugangsdaten gesetzt sein; AWS, Azure und Google Cloud brauchen keine. Fehlt etwas, überspringt `viper find` den Anbieter mit einem Hinweis, die anderen laufen weiter.
+* Kein Anbieter braucht für `viper find` ein Konto: Alle Preise stammen aus öffentlichen Quellen. Zugangsdaten, die Sie schon haben, machen die Angaben nur genauer (siehe die Tabelle). Kann eine Quelle nicht gelesen werden, überspringt `viper find` den Anbieter mit einem Hinweis, die anderen laufen weiter.
 
 | Anbieter | Für die Preisabfrage nötig |
 |---|---|
-| Hetzner | `HCLOUD_TOKEN` |
+| Hetzner | nichts: `viper find` liest die öffentlichen Seiten von hetzner.com (Preise ohne Mehrwertsteuer). Ist `HCLOUD_TOKEN` gesetzt, fragt es zuerst Ihr Projekt ab: Das gibt die Preise Ihres Projekts mit dessen Mehrwertsteuersatz und nur die Typen, die Sie dort bestellen können. Klappt das nicht, nimmt es die Seiten und sagt es. |
 | AWS | nichts: `viper find` liest die öffentliche Preisliste von AWS, ohne Konto und ohne Anmeldung |
 | Azure | nichts: Preise und VM-Größen sind öffentlich. Mit `AZURE_SUBSCRIPTION_ID` und `az login` fragt `viper find` die Größen genauer bei Ihrer Subscription ab. |
 | Google Cloud | nichts: `viper find` liest die öffentlichen Preisseiten von Google. Ist `GCP_PROJECT` gesetzt, fragt es zuerst Ihr Projekt ab (dafür `gcloud auth application-default login` und die aktivierte Cloud Billing API); klappt das nicht, nimmt es die Preisseiten und sagt es. |
@@ -268,7 +268,7 @@ Geprüft werden:
 * `--arch x86` oder `--arch arm`: nur diese Prozessor-Architektur (Standard: beide).
 * `--location ORT`: nur dieser Standort, etwa `fsn1` (Hetzner), `eu-central-1` (AWS), `germanywestcentral` (Azure) oder `europe-west3-b` (Google Cloud). Standortnamen unterscheiden sich je Anbieter: Zusammen mit `--provider` ist das eindeutig.
 * `--provider NAME`: nur dieser Anbieter (`hetzner`, `aws`, `azure`, `gcp`).
-* `--vat PROZENT`: Mehrwertsteuersatz für alle Preise; `--vat 0` zeigt Nettopreise. Ohne Angabe gilt der Satz Ihres Hetzner-Projekts (bei Ihnen 19 %), sonst keine Steuer.
+* `--vat PROZENT`: Mehrwertsteuersatz für alle Preise; `--vat 0` zeigt Nettopreise. Ohne Angabe gilt der Satz Ihres Hetzner-Projekts (nur mit `HCLOUD_TOKEN`, bei Ihnen 19 %), sonst keine Steuer: Die Legende der Tabelle sagt, was gilt. Wollen Sie ohne Token Preise mit Steuer sehen, geben Sie den Satz an, etwa `--vat 19`.
 
 Ohne `--location` sucht Hetzner an allen Standorten. AWS, Azure und Google Cloud preisen eine Region nach der anderen: Sie suchen im `SERVER_LOCATION` Ihrer `.env.local`, wenn `PROVIDER` dort der Anbieter ist, sonst in der Standardregion des Anbieters.
 
@@ -279,18 +279,20 @@ Eine Tabelle für alle Anbieter, **nach Monatspreis sortiert**. Je Anbieter steh
 Damit die Preise vergleichbar sind, rechnet `viper find` sie auf **eine Basis** um:
 
 * **Währung:** alles in Euro. AWS bietet nur US-Dollar; `viper find` rechnet sie mit dem Referenzkurs der Europäischen Zentralbank um (öffentlich, ohne Konto). Die Legende nennt Kurs und Tag. Ist kein Kurs zu bekommen, bleibt die Währung stehen, und die Legende sagt es: Diese Zeilen stehen dann nach allen Euro-Zeilen und sind nicht mit ihnen vergleichbar. Ein gemerkter Kurs gilt höchstens sieben Tage, wenn die Datei der EZB nicht zu lesen ist.
-* **Mehrwertsteuer:** für alle Anbieter dieselbe (`--vat`). Hetzner nennt seine Preise mit Steuer, die anderen ohne; `viper find` rechnet beides auf denselben Satz um.
+* **Mehrwertsteuer:** für alle Anbieter dieselbe (`--vat`). Hetzner nennt seine Preise über das Projekt mit Steuer, die anderen ohne; `viper find` rechnet beides auf denselben Satz um.
+* **IPv4-Adresse:** Jeder Rechner bekommt eine öffentliche IPv4-Adresse, und alle Anbieter berechnen sie. Ihre Gebühr steckt in den Preisen (Hetzner 0,50 € im Monat, AWS und Google Cloud 0,005 US-Dollar je Stunde, Azure rund 0,0044 € je Stunde für die Standard-Adresse). Die Legende nennt die Anbieter, bei denen sie fehlt, falls eine Quelle sie nicht liefert.
 
 Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt und berechnet. Ihre Größe steht mit `*` in der Spalte `DISK GB` (`--disk`, ohne Angabe die Standardgröße von `viper`), ihr Preis ist in den Preisen enthalten, und die Zeile für den Anbieter nennt die passende Einstellung, etwa `AWS_ROOT_GB=80`. Bei Hetzner gehört die Platte zum Typ: `--disk` ist dort eine Mindestgröße.
 
 #### Hinweise
 
-* Die Preise sind Listenpreise. Nicht enthalten sind Rabatte, Datenverkehr und die Gebühr für die öffentliche IPv4-Adresse; sie ist bei den Anbietern unterschiedlich hoch. Die Hetzner Console zeigt ihre Preise inklusive IPv4: `viper find` zeigt daher etwa 0,60 € im Monat weniger.
+* Die Preise sind Listenpreise mit der IPv4-Adresse. Nicht enthalten sind Rabatte und Datenverkehr. Die Hetzner Console zeigt ihre Preise mit IPv4 und Mehrwertsteuer; mit `--vat 19` (oder `HCLOUD_TOKEN`) stimmen die Zahlen mit ihr überein.
+* Hetzner ohne Token: Die Preise stammen aus einer Datei, die die Seiten von hetzner.com lesen, die Ausstattung aus dem Text der Seiten. Typen, die die Seiten als `not available` führen, fehlen (zurzeit die Familien `CX` und `CAX`). Falkenstein (`fsn1`) hat den Preis von Nürnberg, weil beide in Deutschland liegen und die Datei nur einen nennt. Ob ein Typ an einem Standort gerade bestellbar ist, prüft nur der Weg mit dem Token.
 * Der Monatspreis rechnet mit 730 Stunden.
-* **Cache:** Die Preislisten sind groß (AWS je Region mehrere hundert MB, Azure rund 60 MB). `viper find` liest sie höchstens einmal am Tag und merkt sich nur das Nötige (wenige KB je Region) im Cache-Verzeichnis, unter Linux `~/.cache/viper/`. Der erste Lauf einer Region dauert deshalb etwas länger (`aws: reading the price list …`), die folgenden sind sofort fertig. Lässt sich eine Liste später nicht lesen, gilt der alte Stand weiter. Zum Erneuern vor Ablauf löschen Sie die Dateien. Bricht ein Download ab (die AWS-Datei ist groß), versucht `viper find` es dreimal und nennt dann einen Netzwerkfehler (Proxy oder VPN kommen als Ursache in Frage).
+* **Cache:** Die Preislisten sind groß (AWS je Region mehrere hundert MB, Azure und Google Cloud rund 60 MB, Hetzner nur wenige MB). `viper find` liest sie höchstens einmal am Tag und merkt sich nur das Nötige (wenige KB je Region) im Cache-Verzeichnis, unter Linux `~/.cache/viper/`. Der erste Lauf einer Region dauert deshalb etwas länger (`aws: reading the price list …`), die folgenden sind sofort fertig. Lässt sich eine Liste später nicht lesen, gilt der alte Stand weiter. Zum Erneuern vor Ablauf löschen Sie die Dateien. Bricht ein Download ab (die AWS-Datei ist groß), versucht `viper find` es dreimal und nennt dann einen Netzwerkfehler (Proxy oder VPN kommen als Ursache in Frage).
 * AWS: Bare-Metal-Typen (`*.metal`) fehlen.
 * Azure: Ohne Subscription stammen Kerne und RAM aus den Daten des Preisrechners auf der Azure-Website. Das ist keine dokumentierte Schnittstelle; ändert Microsoft sie, fehlen nur diese Angaben, bis `viper` angepasst ist.
-* Google Cloud: Die Preisseiten (Allzweck, Compute-, Arbeitsspeicher- und Speicheroptimiert) und die Seite der Platten sind Webseiten, keine Schnittstelle; `viper find` liest die Tabellen daraus (zusammen rund 60 MB, einmal am Tag, Preise je Region in Dollar). Ändert Google eine der Seiten, bricht `viper find` für Google Cloud mit `no prices found …` ab, und es erscheinen keine falschen oder unvollständigen Preise. Bei Tabellen mit Rabattspalten gilt der höchste Preis der Zeile, der Preis ohne Rabatt. Geteilte Kerne (`e2-micro`), Typen mit lokaler SSD und Beschleuniger-Typen (GPU) fehlen. Ob ein Typ in Ihrer Zone angeboten wird, prüft `viper find` nicht. Bei den neuen Serien mit Hyperdisk kommen Leistungsaufschläge der Platte nicht dazu. Über das Projekt (Cloud Billing) setzt sich der Preis aus den Preisen für Kerne und Arbeitsspeicher der Typenfamilie zusammen; Typen mit GPU fehlen dort, weil die GPU getrennt berechnet wird. Google liefert diese Preise in Euro mit eigenem Umrechnungskurs: Sie liegen deshalb etwas anders (zuletzt rund 2 % niedriger) als die Preise aus den Seiten, die `viper find` in Dollar liest und mit dem Kurs der EZB umrechnet.
+* Google Cloud: Die Preisseiten (Allzweck, Compute-, Arbeitsspeicher- und Speicheroptimiert) und die Seite der Platten sind Webseiten, keine Schnittstelle; `viper find` liest die Tabellen daraus (zusammen rund 60 MB, einmal am Tag, Preise je Region in Dollar). Die Gebühr für die IPv4-Adresse steht auf der Netzwerk-Preisseite. Ändert Google eine der Seiten, bricht `viper find` für Google Cloud mit `no prices found …` ab, und es erscheinen keine falschen oder unvollständigen Preise. Bei Tabellen mit Rabattspalten gilt der höchste Preis der Zeile, der Preis ohne Rabatt. Geteilte Kerne (`e2-micro`), Typen mit lokaler SSD und Beschleuniger-Typen (GPU) fehlen. Ob ein Typ in Ihrer Zone angeboten wird, prüft `viper find` nicht. Bei den neuen Serien mit Hyperdisk kommen Leistungsaufschläge der Platte nicht dazu. Über das Projekt (Cloud Billing) setzt sich der Preis aus den Preisen für Kerne und Arbeitsspeicher der Typenfamilie zusammen; Typen mit GPU fehlen dort, weil die GPU getrennt berechnet wird.  Auch dort liest `viper find` die Preise in Dollar und rechnet sie mit dem Kurs der EZB um; die Zahlen sind mit und ohne Projekt dieselben.
 * Der Weg über das eigene Konto (Azure-Subscription, Google-Projekt) ist für `viper find` noch nicht in einem echten Konto getestet. Die öffentlichen Quellen (AWS, Azure, Google Cloud) sind gegen die echten Dateien und Seiten geprüft.
 
 ### Protokolle ansehen
@@ -998,3 +1000,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.64 | v0.12.0 | `viper find` über das Google-Projekt lässt Typen mit GPU aus (die GPU ist nicht im Preis). Hinweis zum anderen Umrechnungskurs der Google-Preise. |
 | 1.65 | v0.12.0 | `viper find`: Euro-Zeilen stehen immer vor Zeilen in einer nicht umgerechneten Währung; Kurse der EZB gelten ohne Netz höchstens sieben Tage; ein Standort muss ein gültiger Name sein; eine geänderte Google-Seite führt zu einem Fehler statt zu einem unvollständigen Cache. |
 | 1.66 | v0.12.0 | Release v0.12.0: die Änderungen 1.59 bis 1.65 (`viper find`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.12.0`. |
+| 1.67 | v0.13.0 | `viper find` braucht für Hetzner keinen Token mehr (öffentliche Seiten von hetzner.com; mit Token weiter die Preise des Projekts) und rechnet bei allen Anbietern die Gebühr für die öffentliche IPv4-Adresse in den Preis. Über das Google-Projekt kommen die Preise jetzt in Dollar, wie über die Seiten. |

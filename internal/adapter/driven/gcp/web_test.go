@@ -80,6 +80,10 @@ type pricing struct {
 	status   int
 }
 
+// networkPage is the page of the network prices: the row of the addresses in use on standard VMs.
+const networkPage = `<html><table><tr><td>Static and ephemeral IP addresses in use on&nbsp; standard VM instances</td><td>$0.005 / 1 hour</td></tr>` +
+	`<tr><td>Static and ephemeral IP addresses in use on preemptible and Spot VM instances</td><td>$0.0025 / 1 hour</td></tr></table></html>`
+
 func newPricing(t *testing.T) *pricing {
 	t.Helper()
 	p := &pricing{status: 200}
@@ -104,6 +108,8 @@ func newPricing(t *testing.T) *pricing {
 			return
 		}
 		switch {
+		case strings.HasPrefix(r.URL.Path, "/disks-network"):
+			_, _ = w.Write([]byte(networkPage))
 		case strings.HasPrefix(r.URL.Path, "/families/general-purpose"):
 			_, _ = w.Write([]byte(general))
 		case strings.HasPrefix(r.URL.Path, "/families/memory-optimized"):
@@ -155,19 +161,19 @@ func TestTheMachineTypesAndTheirPricesAreReadFromThePages(t *testing.T) {
 	e2 := byType["e2-standard-4"]
 	// 0.134 per hour and 100 GB of balanced disk at 0.12 a month
 	if e2.Provider != "gcp" || e2.Location != "europe-west3-b" || e2.VCPU != 4 || e2.RAMGB != 16 || e2.Arch != "x86" || e2.DiskGB != 0 || e2.SysDiskGB != 100 ||
-		e2.Currency != "USD" || e2.VATPercent != 0 || abs(e2.HourlyPrice-(0.134+100*0.12/730)) > 1e-9 || abs(e2.MonthlyPrice-(0.134*730+12)) > 1e-9 {
+		e2.Currency != "USD" || e2.VATPercent != 0 || abs(e2.HourlyPrice-(0.134+0.005+100*0.12/730)) > 1e-9 || abs(e2.MonthlyPrice-((0.134+0.005)*730+12)) > 1e-9 || !e2.IPv4 {
 		t.Errorf("%+v", e2)
 	}
 	if byType["t2a-standard-4"].Arch != "arm" || byType["m3-ultramem-32"].RAMGB != 1024 {
 		t.Errorf("%+v %+v", byType["t2a-standard-4"], byType["m3-ultramem-32"])
 	}
 	// a type of the newer series takes the Hyperdisk
-	if c4 := byType["c4-standard-4"]; abs(c4.HourlyPrice-(0.2+100*0.15/730)) > 1e-9 {
+	if c4 := byType["c4-standard-4"]; abs(c4.HourlyPrice-(0.2+0.005+100*0.15/730)) > 1e-9 {
 		t.Errorf("%+v", c4)
 	}
 	// another region has its own prices, and no Hyperdisk price: those types are left out
 	us, err := p.catalog("", time.Now, nil).Offers(context.Background(), "us-central1-a", 0)
-	if err != nil || len(us) != 1 || abs(us[0].HourlyPrice-(0.1+50*0.1/730)) > 1e-9 || us[0].SysDiskGB != 50 {
+	if err != nil || len(us) != 1 || abs(us[0].HourlyPrice-(0.1+0.005+50*0.1/730)) > 1e-9 || us[0].SysDiskGB != 50 {
 		t.Errorf("%+v %v", us, err)
 	}
 	if _, err := p.catalog("", time.Now, nil).Offers(context.Background(), "mars-north1-a", 0); err == nil || !strings.Contains(err.Error(), "no prices for region mars-north1") {
@@ -251,11 +257,14 @@ func TestTheOnDemandPriceIsTheHighestOfTheRow(t *testing.T) {
 	page := familyPage(`[[` + text("e2-standard-4") + `,` + text("4") + `,` + text("16 GiB") + `,` + hourly("0.05") + `,` + hourly("0.134") + `,` + hourly("0.08") + `,` +
 		text("e2-standard-8") + `,` + text("8") + `,` + text("32 GiB") + `,` + hourly("0.1") + `,` + hourly("0.268") + `],` + label("europe-west3") + `],`)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/disks") {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/disks-network"):
+			_, _ = w.Write([]byte(networkPage))
+		case strings.HasPrefix(r.URL.Path, "/disks"):
 			_, _ = w.Write([]byte(familyPage(diskTables("europe-west3", "0.12", "0.15"))))
-			return
+		default:
+			_, _ = w.Write([]byte(page))
 		}
-		_, _ = w.Write([]byte(page))
 	}))
 	defer srv.Close()
 	c := gcp.NewWebCatalogWith(nil, nil, srv.Client(), srv.URL+"/f/", srv.URL+"/disks", "", time.Now, nil)
@@ -265,7 +274,7 @@ func TestTheOnDemandPriceIsTheHighestOfTheRow(t *testing.T) {
 	}
 	for _, o := range offers {
 		want := map[string]float64{"e2-standard-4": 0.134, "e2-standard-8": 0.268}[o.Type]
-		if abs(o.HourlyPrice-(want+100*0.12/730)) > 1e-9 {
+		if abs(o.HourlyPrice-(want+0.005+100*0.12/730)) > 1e-9 {
 			t.Errorf("%s: %v, want on-demand %v", o.Type, o.HourlyPrice, want)
 		}
 	}
@@ -280,7 +289,8 @@ func TestAChangedPageIsNotKept(t *testing.T) {
 	if _, err := c.Offers(context.Background(), "europe-west3-b", 0); err == nil || !strings.Contains(err.Error(), "pricing page changed") {
 		t.Errorf("%v", err)
 	}
-	if files, _ := filepath.Glob(filepath.Join(dir, "*")); len(files) != 0 {
+	// the price of the address may be kept, the digest of the pages not
+	if files, _ := filepath.Glob(filepath.Join(dir, "gcp-web.json")); len(files) != 0 {
 		t.Errorf("cached: %v", files)
 	}
 }

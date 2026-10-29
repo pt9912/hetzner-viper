@@ -283,3 +283,29 @@ func TestTheNumbersAreAlignedToTheRight(t *testing.T) {
 		t.Errorf("the prices end under each other:\n%s", strings.Join(lines, "\n"))
 	}
 }
+
+func TestTheLegendSaysForWhichProvidersTheAddressIsIncluded(t *testing.T) {
+	with := offer("cpx42", "fsn1", 8, 16, 320, 70)
+	with.IPv4 = true
+	without := offer("m7i.2xlarge", "eu-central-1", 8, 32, 0, 90)
+	without.Provider = "aws"
+	build := func(offers ...model.Offer) find.Service {
+		var src []find.Source
+		for _, o := range offers {
+			src = append(src, find.Source{Name: o.Provider, Catalog: fakeCatalog{offers: []model.Offer{o}}})
+		}
+		return find.Service{Deps: find.Deps{Sources: src}}
+	}
+	for name, c := range map[string]struct {
+		s    find.Service
+		want string
+	}{
+		"all":   {build(with), "The fee for the public IPv4 address is included."},
+		"none":  {build(without), "The fee for the public IPv4 address is not included."},
+		"mixed": {build(with, without), "The fee for the public IPv4 address is included for hetzner, not for aws."},
+	} {
+		if _, out, _ := run(c.s, model.Need{VCPU: 1}); !strings.Contains(out, c.want) {
+			t.Errorf("%s: missing %q:\n%s", name, c.want, out)
+		}
+	}
+}
