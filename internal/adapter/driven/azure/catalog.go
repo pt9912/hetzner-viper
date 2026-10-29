@@ -12,6 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/pt9912/hetzner-viper/internal/model"
+	"golang.org/x/sync/errgroup"
 )
 
 // retailPrices is the public price list of Azure; it needs no login.
@@ -73,31 +74,32 @@ func sdkSizes(subscriptionID string) Sizes {
 // Describe is an API error without the request details, safe to show.
 func (*Catalog) Describe(err error) string { return (*Client)(nil).Describe(err) }
 
-const hoursPerMonth = 730
-
 // Offers lists the VM sizes of the location that have a price, with the price of a Standard SSD
 // system disk of diskGB (64 GB for 0) added. The prices are in euro without VAT.
 func (c *Catalog) Offers(ctx context.Context, location string, diskGB int) ([]model.Offer, error) {
 	if location == "" {
 		return nil, fmt.Errorf("no location: give --location or SERVER_LOCATION")
 	}
-	sizes, err := c.sizes(ctx, location)
-	if err != nil {
-		return nil, err
-	}
-	items, err := c.items(ctx, filterOf("Virtual Machines", "", location))
-	if err != nil {
-		return nil, err
-	}
-	prices, currency := hourlyPrices(items)
 	if diskGB <= 0 {
 		diskGB = int(Options{}.diskGB())
 	}
-	items, err = c.items(ctx, filterOf("Storage", "Standard SSD Managed Disks", location))
-	if err != nil {
+	// the sizes and the two price lists do not depend on each other
+	var (
+		sizes            []SizeInfo
+		vmItems, ssdItem []priceItem
+		g, gc            = errgroup.WithContext(ctx)
+	)
+	g.Go(func() (err error) { sizes, err = c.sizes(gc, location); return err })
+	g.Go(func() (err error) { vmItems, err = c.items(gc, filterOf("Virtual Machines", "", location)); return err })
+	g.Go(func() (err error) {
+		ssdItem, err = c.items(gc, filterOf("Storage", "Standard SSD Managed Disks", location))
+		return err
+	})
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
-	disk, err := diskPrice(items, diskGB)
+	prices, currency := hourlyPrices(vmItems)
+	disk, err := diskPrice(ssdItem, diskGB)
 	if err != nil {
 		return nil, fmt.Errorf("%w in %s", err, location)
 	}
@@ -113,7 +115,7 @@ func (c *Catalog) Offers(ctx context.Context, location string, diskGB int) ([]mo
 		}
 		out = append(out, model.Offer{
 			Provider: "azure", Type: s.Name, Location: location, VCPU: s.VCPUs, RAMGB: float64(s.MemoryMB) / 1024, Arch: arch, SysDiskGB: diskGB,
-			HourlyPrice: p + disk/hoursPerMonth, MonthlyPrice: p*hoursPerMonth + disk, Currency: currency,
+			HourlyPrice: p + disk/model.HoursPerMonth, MonthlyPrice: p*model.HoursPerMonth + disk, Currency: currency,
 		})
 	}
 	return out, nil

@@ -1,5 +1,8 @@
 package model
 
+// HoursPerMonth is the length of a month for a monthly price (365 days / 12).
+const HoursPerMonth = 730
+
 // Offer is one server type of a provider in one location, as the provider's price list gives it.
 type Offer struct {
 	Provider string // "hetzner", ...

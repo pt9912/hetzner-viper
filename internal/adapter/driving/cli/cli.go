@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
 	"strconv"
@@ -200,7 +201,7 @@ func parseFlag(o *options, name string, args []string, i *int, allowed map[strin
 // setNumber reads the value of --cpu, --ram or --disk: a positive number.
 func setNumber(o *options, name, flag, v string) error {
 	x, err := strconv.ParseFloat(v, 64)
-	if err != nil || x <= 0 {
+	if err != nil || x <= 0 || math.IsNaN(x) || math.IsInf(x, 0) {
 		return fmt.Errorf("viper %s: --%s needs a positive number: %s", name, flag, v)
 	}
 	switch flag {

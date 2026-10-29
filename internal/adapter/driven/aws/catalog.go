@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/pricing"
 	pricingtypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
 	"github.com/pt9912/hetzner-viper/internal/model"
+	"golang.org/x/sync/errgroup"
 )
 
 // Pricing is the part of the Price List API the catalog uses. The API is only served from a few
@@ -80,19 +81,21 @@ func (c *Catalog) Offers(ctx context.Context, location string, diskGB int) ([]mo
 	if err != nil {
 		return nil, err
 	}
-	sizes, err := instanceTypes(ctx, api.types)
-	if err != nil {
-		return nil, err
-	}
-	prices, err := hourlyPrices(ctx, api.pricing, region)
-	if err != nil {
-		return nil, err
-	}
 	if diskGB <= 0 {
 		diskGB = int(Options{}.rootGB())
 	}
-	perGB, err := gp3Price(ctx, api.pricing, region)
-	if err != nil {
+	// the three reads do not depend on each other, and the price list of the instances takes
+	// many round trips
+	var (
+		sizes  map[string]size
+		prices map[string]float64
+		perGB  float64
+		g, gc  = errgroup.WithContext(ctx)
+	)
+	g.Go(func() (err error) { sizes, err = instanceTypes(gc, api.types); return err })
+	g.Go(func() (err error) { prices, err = hourlyPrices(gc, api.pricing, region); return err })
+	g.Go(func() (err error) { perGB, err = gp3Price(gc, api.pricing, region); return err })
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 	disk := float64(diskGB) * perGB // per month
@@ -101,15 +104,12 @@ func (c *Catalog) Offers(ctx context.Context, location string, diskGB int) ([]mo
 		if p, ok := prices[name]; ok {
 			out = append(out, model.Offer{
 				Provider: "aws", Type: name, Location: location, VCPU: s.vcpu, RAMGB: s.ramGB, Arch: s.arch, SysDiskGB: diskGB,
-				HourlyPrice: p + disk/hoursPerMonth, MonthlyPrice: p*hoursPerMonth + disk, Currency: "USD",
+				HourlyPrice: p + disk/model.HoursPerMonth, MonthlyPrice: p*model.HoursPerMonth + disk, Currency: "USD",
 			})
 		}
 	}
 	return out, nil
 }
-
-// hoursPerMonth is the length of a month for the monthly price (365 days / 12).
-const hoursPerMonth = 730
 
 type size struct {
 	vcpu  int

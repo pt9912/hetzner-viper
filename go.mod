@@ -11,9 +11,11 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.47.5
 	github.com/aws/aws-sdk-go-v2/config v1.33.11
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.341.0
+	github.com/aws/aws-sdk-go-v2/service/pricing v1.51.1
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.81.0
 	github.com/aws/smithy-go v1.28.7
 	github.com/hetznercloud/hcloud-go/v2 v2.53.0
+	golang.org/x/sync v0.24.0
 	golang.org/x/sys v0.49.0
 	google.golang.org/api v0.309.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -32,7 +34,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.22 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.7 // indirect
-	github.com/aws/aws-sdk-go-v2/service/pricing v1.51.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.11.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.38.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.5 // indirect
@@ -62,7 +63,6 @@ require (
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261019180522-ce908d29299b // indirect
 	google.golang.org/grpc v1.84.0 // indirect

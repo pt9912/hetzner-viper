@@ -76,8 +76,6 @@ var zoneRe = regexp.MustCompile(`^([a-z]+-[a-z]+[0-9]+)-[a-z]$`)
 // predefined family: "N2D AMD Instance Core running in Frankfurt" is n2d, core.
 var skuName = regexp.MustCompile(`^([A-Za-z0-9]+)(?: (?:AMD|Arm|Predefined))? Instance (Core|Ram) running in `)
 
-const hoursPerMonth = 730
-
 // rates are what a family's cores and memory cost per hour.
 type rates struct{ core, ram float64 }
 
@@ -114,14 +112,14 @@ func (c *Catalog) Offers(ctx context.Context, location string, diskGB int) ([]mo
 			continue
 		}
 		disk := float64(diskGB) * perGB // per month
-		hourly := float64(t.GuestCpus)*r.core + float64(t.MemoryMb)/1024*r.ram + disk/hoursPerMonth
+		hourly := float64(t.GuestCpus)*r.core + float64(t.MemoryMb)/1024*r.ram + disk/model.HoursPerMonth
 		arch := "x86"
 		if t.Architecture == "ARM64" {
 			arch = "arm"
 		}
 		out = append(out, model.Offer{
 			Provider: "gcp", Type: t.Name, Location: location, VCPU: int(t.GuestCpus), RAMGB: float64(t.MemoryMb) / 1024, Arch: arch, SysDiskGB: diskGB,
-			HourlyPrice: hourly, MonthlyPrice: hourly * hoursPerMonth, Currency: currency,
+			HourlyPrice: hourly, MonthlyPrice: hourly * model.HoursPerMonth, Currency: currency,
 		})
 	}
 	return out, nil

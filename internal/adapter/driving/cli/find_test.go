@@ -32,7 +32,7 @@ func TestFindReadsTheNeedFromTheOptions(t *testing.T) {
 	if err != nil || name != "find" || o.CPU != 4 || o.RAM != 16 || o.Disk != 80 || o.Arch != "arm" || o.Location != "fsn1" {
 		t.Fatalf("%s %+v %v", name, o, err)
 	}
-	for _, args := range [][]string{{"find", "--cpu", "0"}, {"find", "--cpu", "x"}, {"find", "--cpu", "2.5"}, {"find", "--ram", "-1"}, {"find", "web"}} {
+	for _, args := range [][]string{{"find", "--cpu", "0"}, {"find", "--cpu", "x"}, {"find", "--cpu", "2.5"}, {"find", "--ram", "-1"}, {"find", "--ram", "NaN"}, {"find", "--ram", "Inf"}, {"find", "web"}} {
 		if _, _, err := cli.Parse(args); err == nil {
 			t.Errorf("%v: want an error", args)
 		}
