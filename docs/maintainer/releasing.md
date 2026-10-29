@@ -1,6 +1,6 @@
 # Release erstellen
 
-Diese Anleitung richtet sich an Maintainer. Ein Release besteht aus dem Git-Tag mit der Release-Seite auf GitHub (das Quellarchiv erzeugt GitHub selbst) und den `viper`-Binaries für Linux und macOS (amd64 und arm64) mit `SHA256SUMS`. Die Binaries baut der Workflow `release binaries` (`.github/workflows/release-binaries.yml`), sobald ein Tag der Form `vX.Y.Z` gepusht wird. Er führt zuerst `make check` aus (schlägt es fehl, entsteht kein Binary) und baut dann alle Plattformen mit Go auf einem Runner. Die Version kommt per `-ldflags` aus dem Tag und erscheint in `viper version`.
+Diese Anleitung richtet sich an Maintainer. Ein Release besteht aus dem Git-Tag mit der Release-Seite auf GitHub (das Quellarchiv erzeugt GitHub selbst) und den `viper`-Binaries für Linux und macOS (amd64 und arm64) und Windows (nur amd64) mit `SHA256SUMS`. Die Binaries baut der Workflow `release binaries` (`.github/workflows/release-binaries.yml`), sobald ein Tag der Form `vX.Y.Z` gepusht wird. Er führt zuerst `make check` aus (schlägt es fehl, entsteht kein Binary) und baut dann alle Plattformen mit Go auf einem Runner. Das Windows-Binary heißt `viper_vX.Y.Z_windows_amd64.exe` (die übrigen haben keine Endung). Es gehört nicht zur Homebrew-Formel; der Job `homebrew` liest nur die vier Linux- und macOS-Zeilen aus `SHA256SUMS`. Die Version kommt per `-ldflags` aus dem Tag und erscheint in `viper version`.
 
 ## Homebrew
 
@@ -28,7 +28,7 @@ Die Handbuch-Version (`Version:` im Kopf von `docs/user/handbuch.md`) zählt una
 
 1. Wechseln Sie auf `main` und holen Sie den neuesten Stand: `git switch main && git pull`.
 2. Der Arbeitsbaum ist sauber (`git status`) und alles ist gepusht.
-3. Die Prüfungen laufen lokal mit `make check` (gofmt, `go vet`, golangci-lint, `go test -race`). Alles läuft in Containern aus dem `Dockerfile`; nötig sind nur Docker und `make`. Das Test-Image enthält `bash`, `git`, `jq`, `ssh-keygen`, `sshd` und `shellcheck`; fehlt eines, schlägt der Test fehl. `make help` zeigt alle Ziele. Mit `make build` bauen Sie `viper` vorab für Ihren Rechner (`dist/viper`; `make build VERSION=v0.5.0 GOOS=darwin GOARCH=arm64` für ein anderes Ziel) und prüfen mit `./dist/viper version`.
+3. Die Prüfungen laufen lokal mit `make check` (gofmt, `go vet`, golangci-lint, `go test -race`). Alles läuft in Containern aus dem `Dockerfile`; nötig sind nur Docker und `make`. Das Test-Image enthält `bash`, `git`, `jq`, `ssh-keygen`, `sshd` und `shellcheck`; fehlt eines, schlägt der Test fehl. `make help` zeigt alle Ziele. Mit `make build` bauen Sie `viper` vorab für Ihren Rechner (`dist/viper`; `make build VERSION=v0.5.0 GOOS=darwin GOARCH=arm64` für ein anderes Ziel) und prüfen mit `./dist/viper version`. Für Windows bauen Sie mit `make build GOOS=windows GOARCH=amd64`; die Datei heißt dann trotzdem `dist/viper` (ohne `.exe`) und lässt sich nur unter Windows starten.
 4. Der letzte Lauf des Workflows `tests` auf `main` ist grün: `gh run list --branch main --limit 3`.
 5. **Probelauf gegen echte Dienste** (die Tests laufen nur gegen Fakes): Mit einem kleinen Server (`SERVER_TYPE=cpx02` in `machines/test.env.local`) nacheinander `viper preflight test`, `viper up test`, `viper check test`, `viper ssh test --cmd "echo ok"` und `viper down test`. Das kostet wenige Cent.
 6. Das Handbuch ist aktuell (`docs/user/handbuch.md`):
@@ -51,9 +51,9 @@ Das Erstellen ist öffentlich sichtbar. Prüfen Sie Version und Ziel vorher.
 
 ## Danach prüfen
 
-* Der Workflow `release binaries` ist grün (`gh run list --workflow "release binaries" --limit 1`, bei Bedarf `gh run watch`). Das Release zeigt dann die vier Binaries und `SHA256SUMS` als Dateien.
+* Der Workflow `release binaries` ist grün (`gh run list --workflow "release binaries" --limit 1`, bei Bedarf `gh run watch`). Das Release zeigt dann die fünf Binaries und `SHA256SUMS` als Dateien.
 * `gh release view v0.5.0` zeigt Tag, Notes, Quellarchiv und die Binaries.
-* Ein heruntergeladenes Binary passt zur Prüfsumme und meldet die Version: `grep viper_v0.5.0_linux_amd64 SHA256SUMS | sha256sum --check`, dann `./viper_v0.5.0_linux_amd64 version`.
+* Ein heruntergeladenes Binary passt zur Prüfsumme und meldet die Version: `grep viper_v0.5.0_linux_amd64 SHA256SUMS | sha256sum --check`, dann `./viper_v0.5.0_linux_amd64 version`. Das Windows-Binary prüfen Sie ebenso mit `grep viper_v0.5.0_windows_amd64.exe SHA256SUMS | sha256sum --check`; starten lässt es sich nur unter Windows (`.\viper_v0.5.0_windows_amd64.exe version`).
 
 ## Ein Release korrigieren
 

@@ -1,7 +1,7 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.54  
-Software-Version: v0.9.0  
+Version: 1.56  
+Software-Version: v0.10.0  
 Stand: 29.10.2026  
 
 ## 1. Einleitung
@@ -79,12 +79,12 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 
 **Mit Homebrew** (Linux und macOS): `brew install pt9912/viper/viper`, dann `viper version` (Update: `brew upgrade viper`). Sonst von Hand:
 
-1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.9.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`), und `SHA256SUMS`.
+1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.10.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.10.0_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
 2. Prüfen Sie die Datei und machen Sie sie ausführbar:
    ```bash
-   grep viper_v0.9.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
-   chmod +x viper_v0.9.0_linux_amd64
-   mv viper_v0.9.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
+   grep viper_v0.10.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
+   chmod +x viper_v0.10.0_linux_amd64
+   mv viper_v0.10.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
    ```
 3. Prüfen Sie die Installation: `viper version`.
 
@@ -103,7 +103,7 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 * **VS Code:** `viper up` öffnet VS Code, wenn `code` vorhanden ist, ohne dass VS Code Ihre Tokens erbt. Mit `--no-code` öffnet es VS Code nicht.
 * **Abbruch:** Ein erstes Ctrl-C beendet den laufenden Befehl und wird protokolliert (`interrupted`); ein zweites beendet `viper` sofort. Ein abgebrochenes `viper up` lässt den Server stehen; ein erneutes `viper up` setzt die Einrichtung fort.
 * **macOS:** Ein Binary aus dem Browser versieht macOS mit einer Quarantäne-Markierung, die das Starten verhindert. Entfernen Sie sie mit `xattr -d com.apple.quarantine ~/bin/viper`. Auf macOS ist `viper` bisher nicht getestet.
-* **Windows** wird nicht unterstützt. Nutzen Sie `viper` dort innerhalb von WSL.
+* **Windows:** Es gibt ein Binary für Windows (`windows_amd64.exe`), es ist aber nicht getestet und nicht alle Funktionen sind dort geprüft. Voraussetzung ist ein OpenSSH-Client (`ssh`, `ssh-keygen`) im `PATH`. Zuverlässiger ist `viper` innerhalb von WSL mit dem Linux-Binary.
 * **Quellcode:** Das Release enthält auch den Quellcode. Mit Docker und `make` bauen Sie `viper` selbst, ohne Go zu installieren: `make build` legt `dist/viper` ab (`make build GOOS=darwin GOARCH=arm64` für ein anderes System, `make help` zeigt alle Ziele). Mit installiertem Go geht auch `go build ./cmd/viper`. Für die Benutzung ist das nicht nötig.
 
 ### Erstmalige Einrichtung
@@ -934,3 +934,5 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.52 | v0.8.0 | Release v0.8.0: die Änderungen 1.48 bis 1.51 (Anbieter AWS, Google Cloud und Azure, Betrieb ohne Cloudflare). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.8.0`. |
 | 1.53 | v0.9.0 | Neu: Einstellungen `AWS_TAGS` und `AWS_TAGS_SHARED` (nur AWS): zusätzliche Tags für Instanz und Systemplatte bzw. für Schlüsselpaar und Security Group beim Anlegen; `viper preflight` prüft Syntax und AWS-Grenzen. |
 | 1.54 | v0.9.0 | Release v0.9.0: die Änderung 1.53 (`AWS_TAGS`, `AWS_TAGS_SHARED`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.9.0`. |
+| 1.55 | v0.10.0 | Neu: Binary für Windows (`windows_amd64.exe`), noch nicht getestet; empfohlen bleibt WSL mit dem Linux-Binary. |
+| 1.56 | v0.10.0 | Release v0.10.0: die Änderung 1.55 (Windows-Binary). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.10.0`. |
