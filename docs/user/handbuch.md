@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.69  
+Version: 1.70  
 Software-Version: v0.13.0  
 Stand: 29.10.2026  
 
@@ -18,7 +18,7 @@ Dieses Handbuch richtet sich an Entwicklerinnen und Entwickler, die auf einem Li
 
 ### Voraussetzungen
 
-Auf Ihrem lokalen Rechner (Linux oder macOS):
+Auf Ihrem lokalen Rechner (Linux, macOS oder Windows; Windows ist nur teilweise getestet, siehe „`viper` installieren“):
 
 * Das Programm `viper` (eine einzelne Datei aus dem Release, siehe „`viper` installieren“).
 * Der OpenSSH-Client mit `ssh`, `ssh-keygen`, `ssh-keyscan` und `scp`. Mehr brauchen Sie nicht: `hcloud`, `jq`, `curl`, Docker und `make` sind nicht nötig.
@@ -73,7 +73,7 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 
 #### Voraussetzung
 
-* Linux oder macOS.
+* Linux, macOS oder Windows (dort nur teilweise getestet; zuverlässiger ist `viper` in WSL mit dem Linux-Binary).
 * Der OpenSSH-Client mit `ssh`, `ssh-keygen`, `ssh-keyscan` und `scp`. `viper` meldet es, bevor es etwas anlegt, wenn ein Programm fehlt.
 
 #### Vorgehen
@@ -1004,3 +1004,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.67 | v0.13.0 | `viper find` braucht für Hetzner keinen Token mehr (öffentliche Seiten von hetzner.com; mit Token weiter die Preise des Projekts) und rechnet bei allen Anbietern die Gebühr für die öffentliche IPv4-Adresse in den Preis. Über das Google-Projekt kommen die Preise jetzt in Dollar, wie über die Seiten. |
 | 1.68 | v0.13.0 | `viper find`: `--location` braucht `--provider`; gemerkte Preise gelten ohne Netz höchstens sieben Tage (bisher nur der Kurs der EZB); Google: geteilte Kerne auch ohne Projekt nicht mehr in der Liste. |
 | 1.69 | v0.13.0 | Release v0.13.0: die Änderungen 1.67 und 1.68 (`viper find` ohne Token bei Hetzner, IPv4-Gebühr im Preis, `--location` mit `--provider`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.13.0`. |
+| 1.70 | v0.14.0 | Die Voraussetzungen nennen auch Windows (`windows_amd64.exe`, nur teilweise getestet), wie der Abschnitt „`viper` installieren“. |
