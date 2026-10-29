@@ -12,7 +12,7 @@ It is meant for developers with their own cloud account: **Hetzner Cloud** (the 
 
 ## What can I do today?
 
-`viper` is one file (Linux, macOS) from the [Releases page](https://github.com/pt9912/hetzner-viper/releases), or with Homebrew: `brew install pt9912/viper/viper`. It needs the OpenSSH client (`ssh`, `ssh-keygen`, `ssh-keyscan`, `scp`) and nothing else: no Docker, `make`, `hcloud` or `jq` (`git` is used for the repository check and `code` to open VS Code, both optional).
+`viper` is one file (Linux, macOS, and Windows as `windows_amd64.exe`, which is only partly tested: `viper` inside WSL with the Linux binary is more reliable) from the [Releases page](https://github.com/pt9912/hetzner-viper/releases), or with Homebrew: `brew install pt9912/viper/viper`. It needs the OpenSSH client (`ssh`, `ssh-keygen`, `ssh-keyscan`, `scp`) and nothing else: no Docker, `make`, `hcloud` or `jq` (`git` is used for the repository check and `code` to open VS Code, both optional).
 
 ```bash
 mkdir ~/viper && cd ~/viper        # where your .env.local lives
@@ -81,7 +81,7 @@ Machines are disposable: everything that matters lives in the Git repository. Th
 
 ## Requirements
 
-Linux or macOS, the `viper` binary and an OpenSSH client. VS Code Remote-SSH uses the local OpenSSH client; without VS Code use `viper ssh`. Plus an account at a cloud provider (a Hetzner Cloud API token with read and write, or an AWS login with `aws login` and `PROVIDER=aws`; Google Cloud and Azure are described in the manual) and, for the DNS name, a Cloudflare token with **Zone DNS Edit/Read** and the zone ID (not needed with `DNS_PROVIDER=none`).
+Linux, macOS or Windows (partly tested; WSL is more reliable, see the manual), the `viper` binary and an OpenSSH client. VS Code Remote-SSH uses the local OpenSSH client; without VS Code use `viper ssh`. Plus an account at a cloud provider (a Hetzner Cloud API token with read and write, or an AWS login with `aws login` and `PROVIDER=aws`; Google Cloud and Azure are described in the manual) and, for the DNS name, a Cloudflare token with **Zone DNS Edit/Read** and the zone ID (not needed with `DNS_PROVIDER=none`).
 
 ## License
 
