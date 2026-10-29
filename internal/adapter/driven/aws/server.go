@@ -67,7 +67,7 @@ type launch struct {
 // plan looks up the instance type, the image, the subnet and the security group, and fails
 // before anything is created if one of them is missing.
 func (c *Client) plan(ctx context.Context, s model.ServerSpec) (*launch, error) {
-	extra, err := awsTags(c.opts.Tags)
+	extra, err := awsTags("AWS_TAGS", c.opts.Tags)
 	if err != nil {
 		return nil, err
 	}

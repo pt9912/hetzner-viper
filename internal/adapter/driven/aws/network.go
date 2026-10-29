@@ -70,9 +70,9 @@ func filter(name string, values ...string) types.Filter {
 	return types.Filter{Name: ptr(name), Values: values}
 }
 
-// awsTags are the tags of AWS_TAGS.
-func awsTags(s string) ([]types.Tag, error) {
-	parsed, err := model.ParseAWSTags(s)
+// awsTags are the tags of the setting of that name (AWS_TAGS or AWS_TAGS_SHARED).
+func awsTags(setting, s string) ([]types.Tag, error) {
+	parsed, err := model.ParseAWSTags(setting, s)
 	var out []types.Tag
 	for _, t := range parsed {
 		out = append(out, types.Tag{Key: ptr(t.Key), Value: ptr(t.Value)})
@@ -147,9 +147,13 @@ func (c *Client) ensureGroup(ctx context.Context, a *apis, name, vpc string) (id
 	if id != "" {
 		return id, perms, false, nil
 	}
+	shared, err := awsTags("AWS_TAGS_SHARED", c.opts.SharedTags)
+	if err != nil {
+		return "", nil, false, err
+	}
 	out, err := a.ec2.CreateSecurityGroup(ctx, &ec2.CreateSecurityGroupInput{
 		GroupName: ptr(name), Description: ptr("viper: SSH access"), VpcId: ptr(vpc),
-		TagSpecifications: []types.TagSpecification{{ResourceType: types.ResourceTypeSecurityGroup, Tags: tags(name)}},
+		TagSpecifications: []types.TagSpecification{{ResourceType: types.ResourceTypeSecurityGroup, Tags: append(tags(name), shared...)}},
 	})
 	if err != nil {
 		return "", nil, false, &cloud.OpError{Op: fmt.Sprintf("creating the security group %s", name), Write: true, Err: err}

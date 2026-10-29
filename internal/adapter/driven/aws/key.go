@@ -73,9 +73,13 @@ func (c *Client) EnsureLoginKey(ctx context.Context, name, publicKey string) (mo
 	if err != nil {
 		return model.LoginKey{}, &cloud.OpError{Op: "reaching AWS", Err: err}
 	}
+	shared, err := awsTags("AWS_TAGS_SHARED", c.opts.SharedTags)
+	if err != nil {
+		return model.LoginKey{}, err
+	}
 	_, err = a.ec2.ImportKeyPair(ctx, &ec2.ImportKeyPairInput{
 		KeyName: ptr(name), PublicKeyMaterial: []byte(strings.TrimSpace(publicKey)),
-		TagSpecifications: []types.TagSpecification{{ResourceType: types.ResourceTypeKeyPair, Tags: []types.Tag{{Key: ptr("viper"), Value: ptr(name)}}}},
+		TagSpecifications: []types.TagSpecification{{ResourceType: types.ResourceTypeKeyPair, Tags: append([]types.Tag{{Key: ptr("viper"), Value: ptr(name)}}, shared...)}},
 	})
 	if err != nil {
 		return model.LoginKey{}, &cloud.OpError{Op: fmt.Sprintf("uploading the key pair %s", name), Write: true, Err: err}

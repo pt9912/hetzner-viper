@@ -201,6 +201,9 @@ func TestLoadRejectsBadAWSTagsOnlyForAWS(t *testing.T) {
 	if _, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nPROVIDER=aws\nAWS_TAGS=owner=me,ttl=2026-11-01T12:00:00Z\n", ""), "web", env, false); err != nil {
 		t.Errorf("good tags: %v", err)
 	}
+	if _, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nPROVIDER=aws\nAWS_TAGS_SHARED=project=x,Name=y\n", ""), "web", env, false); err == nil || !strings.Contains(err.Error(), "AWS_TAGS_SHARED") {
+		t.Errorf("a bad AWS_TAGS_SHARED must stop the load: %v", err)
+	}
 	if _, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nAWS_TAGS=owner\n", ""), "web", env, false); err != nil {
 		t.Errorf("AWS_TAGS means nothing for Hetzner: %v", err)
 	}

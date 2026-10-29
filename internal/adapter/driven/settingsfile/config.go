@@ -239,8 +239,10 @@ func applyProviders(c *model.Machine, vars map[string]string, needTokens bool) (
 		return prov, err
 	}
 	if c.Provider == "aws" {
-		if _, err := model.ParseAWSTags(c.Get("AWS_TAGS")); err != nil {
-			return prov, err
+		for _, name := range []string{"AWS_TAGS", "AWS_TAGS_SHARED"} {
+			if _, err := model.ParseAWSTags(name, c.Get(name)); err != nil {
+				return prov, err
+			}
 		}
 	}
 	c.DNSProvider = DNSProviderOf(vars)

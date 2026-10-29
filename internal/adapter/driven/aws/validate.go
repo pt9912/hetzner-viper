@@ -23,8 +23,10 @@ func (c *Client) Validate(ctx context.Context, ch model.Check) []model.Finding {
 		return f
 	}
 	f.add(model.OK, "AWS credentials can read EC2 in %s (write access is only seen when viper up creates something)", c.opts.region())
-	if _, err := awsTags(c.opts.Tags); err != nil {
-		f.add(model.Fail, "%s", err)
+	for _, t := range []struct{ setting, value string }{{"AWS_TAGS", c.opts.Tags}, {"AWS_TAGS_SHARED", c.opts.SharedTags}} {
+		if _, err := awsTags(t.setting, t.value); err != nil {
+			f.add(model.Fail, "%s", err)
+		}
 	}
 	c.checkInstance(ctx, &f, ch)
 	if n, err := c.network(ctx); err != nil {

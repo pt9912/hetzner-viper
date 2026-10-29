@@ -59,6 +59,50 @@ func TestCreateServerAddsAWSTagsToInstanceAndVolume(t *testing.T) {
 	}
 }
 
+func tagMap(tags []types.Tag) map[string]string {
+	got := map[string]string{}
+	for _, tg := range tags {
+		got[*tg.Key] = *tg.Value
+	}
+	return got
+}
+
+func TestSharedTagsGoToTheKeyPairAndTheSecurityGroupOnly(t *testing.T) {
+	line, _ := edKey(1)
+	f := newFakeAWS()
+	c := aws.NewWith(aws.Options{Location: "eu-central-1", Tags: "ttl=x", SharedTags: "project=p,managed-by=viper"}, f, f)
+	prepare(t, f, c)
+	if _, err := c.EnsureLoginKey(context.Background(), "claude-login", line); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.CreateServer(context.Background(), model.ServerSpec{Name: "claude-web", Size: "t4g.small", Image: "ubuntu-24.04", SSHKey: "claude-login", Firewall: "claude-ssh"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := tagMap(f.imported[0].TagSpecifications[0].Tags); len(got) != 3 || got["viper"] != "claude-login" || got["project"] != "p" || got["managed-by"] != "viper" {
+		t.Errorf("key pair tags %v", got)
+	}
+	if got := tagMap(f.created[0].TagSpecifications[0].Tags); len(got) != 4 || got["Name"] != "claude-ssh" || got["project"] != "p" || got["ttl"] != "" {
+		t.Errorf("security group tags %v", got)
+	}
+	for _, ts := range f.runs[0].TagSpecifications {
+		if got := tagMap(ts.Tags); got["ttl"] != "x" || got["project"] != "" {
+			t.Errorf("%s tags %v: AWS_TAGS only", ts.ResourceType, got)
+		}
+	}
+}
+
+func TestBadSharedTagsStopTheKeyPairAndTheSecurityGroup(t *testing.T) {
+	line, _ := edKey(1)
+	f := newFakeAWS()
+	c := aws.NewWith(aws.Options{Location: "eu-central-1", SharedTags: "project"}, f, f)
+	if _, err := c.EnsureLoginKey(context.Background(), "claude-login", line); err == nil || !strings.Contains(err.Error(), "AWS_TAGS_SHARED") || len(f.imported) != 0 {
+		t.Errorf("key pair: %v", err)
+	}
+	if _, err := c.EnsureFirewall(context.Background(), "claude-ssh", []string{"0.0.0.0/0"}); err == nil || !strings.Contains(err.Error(), "AWS_TAGS_SHARED") || len(f.created) != 0 {
+		t.Errorf("security group: %v", err)
+	}
+}
+
 func TestCreateServerRefusesBadAWSTagsBeforeCreating(t *testing.T) {
 	for _, tags := range []string{"novalue", "Name=x", "viper=x", "aws:x=1", "a=1,a=2", "k=" + strings.Repeat("v", 257), strings.Repeat("k", 129) + "=v"} {
 		f := newFakeAWS()
@@ -311,6 +355,17 @@ func TestValidateFailsOnBadAWSTags(t *testing.T) {
 		Spec: model.ServerSpec{Name: "claude-web", Size: "t3.large", Region: "eu-central-1", Image: "ubuntu-24.04"}}
 	if got := texts(c.Validate(context.Background(), check)); !strings.Contains(got, `FAIL AWS_TAGS: "owner" is not KEY=VALUE`) {
 		t.Errorf("preflight must report the bad tags: %s", got)
+	}
+}
+
+func TestValidateFailsOnBadSharedTags(t *testing.T) {
+	line, _ := edKey(1)
+	f := newFakeAWS()
+	c := aws.NewWith(aws.Options{Location: "eu-central-1", SharedTags: "aws:x=1"}, f, f)
+	check := model.Check{Machine: "web", ServerName: "claude-web", KeyName: "claude-login", KeyFile: "/k", PublicKey: line,
+		Spec: model.ServerSpec{Name: "claude-web", Size: "t3.large", Region: "eu-central-1", Image: "ubuntu-24.04"}}
+	if got := texts(c.Validate(context.Background(), check)); !strings.Contains(got, "FAIL AWS_TAGS_SHARED: the key aws:x starts with aws:") {
+		t.Errorf("preflight must report the bad shared tags: %s", got)
 	}
 }
 
