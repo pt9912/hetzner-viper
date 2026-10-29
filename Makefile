@@ -19,7 +19,7 @@ build: ## viper binary for this computer into dist/
 
 dist: ## all release binaries and SHA256SUMS into dist/ (make dist VERSION=v0.10.0)
 	rm -f dist/viper_* dist/SHA256SUMS
-	DOCKER_BUILDKIT=1 docker build --target dist --build-arg VERSION=$(VERSION) --output type=local,dest=dist .
+	DOCKER_BUILDKIT=1 docker build --progress=plain --target dist --build-arg VERSION=$(VERSION) --output type=local,dest=dist .
 	@ls dist
 
 image: ## development image (Go and the test tools)
