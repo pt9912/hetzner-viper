@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/fx"
@@ -253,5 +254,32 @@ func TestWhatCouldNotBeConvertedIsNeverRankedAgainstEuro(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestTheNumbersAreAlignedToTheRight(t *testing.T) {
+	small := offer("a1", "fsn1", 4, 8, 80, 9.5)
+	big := offer("b-long-name", "fsn1", 16, 1488, 640, 1015.65)
+	s := find.Service{Deps: find.Deps{Sources: []find.Source{{Name: "hetzner", Catalog: fakeCatalog{offers: []model.Offer{small, big}}}}}}
+	_, out, _ := run(s, model.Need{VCPU: 1})
+	var lines []string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasPrefix(l, "PROVIDER") || strings.HasPrefix(l, "hetzner") {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) != 3 {
+		t.Fatalf("%q", out)
+	}
+	// the numbers end in the same character column in every line: the header, the cheaper, the dearer row
+	end := func(l, word string) int { return strings.Index(l, word) + len(word) }
+	if end(lines[0], "vCPU") != end(lines[1], " 4 ")-1 || end(lines[0], "vCPU") != end(lines[2], "16") {
+		t.Errorf("vCPU:\n%s", strings.Join(lines, "\n"))
+	}
+	if n := utf8.RuneCountInString(lines[0]); n != utf8.RuneCountInString(lines[1]) || n != utf8.RuneCountInString(lines[2]) {
+		t.Errorf("the last column ends at the same place:\n%s", strings.Join(lines, "\n"))
+	}
+	if !strings.Contains(lines[1], "    9.50 €") || !strings.Contains(lines[2], " 1015.65 €") {
+		t.Errorf("the prices end under each other:\n%s", strings.Join(lines, "\n"))
 	}
 }

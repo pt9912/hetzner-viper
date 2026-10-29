@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"text/tabwriter"
+	"unicode/utf8"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/catalog"
@@ -231,21 +231,28 @@ func show(out io.Writer, rows []model.Offer, b basis, need model.Need) {
 	if len(rows) == 0 {
 		return
 	}
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "PROVIDER\tTYPE\tLOCATION\tvCPU\tRAM GB\tDISK GB\tARCH\tPER HOUR\tPER MONTH")
+	header := []string{"PROVIDER", "TYPE", "LOCATION", "vCPU", "RAM GB", "DISK GB", "ARCH", "PER HOUR", "PER MONTH"}
 	sysDisk := false
+	for _, o := range rows {
+		sysDisk = sysDisk || (o.DiskGB == 0 && o.SysDiskGB != 0)
+	}
+	table := make([][]string, 0, len(rows))
 	for _, o := range rows {
 		disk := "-"
 		switch {
 		case o.DiskGB != 0:
 			disk = fmt.Sprint(o.DiskGB)
 		case o.SysDiskGB != 0:
-			disk, sysDisk = fmt.Sprintf("%d*", o.SysDiskGB), true
+			disk = fmt.Sprintf("%d*", o.SysDiskGB)
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%g\t%s\t%s\t%s\t%s\n", o.Provider, o.Type, o.Location, o.VCPU, o.RAMGB, disk, o.Arch,
-			money(o.HourlyPrice, 4, o.Currency), money(o.MonthlyPrice, 2, o.Currency))
+		if sysDisk && !strings.HasSuffix(disk, "*") {
+			disk += " " // the digits stay under each other next to a *
+		}
+		table = append(table, []string{o.Provider, o.Type, o.Location, fmt.Sprint(o.VCPU), fmt.Sprintf("%g", o.RAMGB), disk, o.Arch,
+			money(o.HourlyPrice, 4, o.Currency), money(o.MonthlyPrice, 2, o.Currency)})
 	}
-	_ = w.Flush()
+	// the text to the left, the numbers to the right
+	writeTable(out, header, table, []bool{false, false, false, true, true, true, false, true, true})
 	fmt.Fprintln(out, "\n"+legend(b))
 	if sysDisk {
 		fmt.Fprintln(out, "* system disk, chosen apart from the type; its price is in the prices.")
@@ -257,6 +264,36 @@ func show(out io.Writer, rows []model.Offer, b basis, need model.Need) {
 			seen[o.Provider] = true
 			fmt.Fprintf(out, "  %s\n", settingsLine(o, need))
 		}
+	}
+}
+
+// writeTable prints the rows in columns of equal width, two spaces apart; right says which columns
+// are aligned to the right (the numbers). The width is counted in characters.
+func writeTable(out io.Writer, header []string, rows [][]string, right []bool) {
+	all := append([][]string{header}, rows...)
+	widths := make([]int, len(header))
+	for _, r := range all {
+		for i, c := range r {
+			widths[i] = max(widths[i], utf8.RuneCountInString(c))
+		}
+	}
+	for _, r := range all {
+		var line strings.Builder
+		for i, c := range r {
+			pad := strings.Repeat(" ", widths[i]-utf8.RuneCountInString(c))
+			switch {
+			case right[i]:
+				line.WriteString(pad + c)
+			case i < len(r)-1:
+				line.WriteString(c + pad)
+			default:
+				line.WriteString(c)
+			}
+			if i < len(r)-1 {
+				line.WriteString("  ")
+			}
+		}
+		fmt.Fprintln(out, line.String())
 	}
 }
 
@@ -287,7 +324,7 @@ func legend(b basis) string {
 	return sb.String()
 }
 
-// money is a price with its currency, aligned to the right.
+// money is a price with its currency.
 func money(v float64, decimals int, currency string) string {
 	symbol := currency
 	switch currency {
@@ -296,7 +333,7 @@ func money(v float64, decimals int, currency string) string {
 	case "USD":
 		symbol = "$"
 	}
-	return fmt.Sprintf("%*.*f %s", 9, decimals, v, symbol)
+	return fmt.Sprintf("%.*f %s", decimals, v, symbol)
 }
 
 // settingsLine is the settings that make a machine of the offer.
