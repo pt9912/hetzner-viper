@@ -55,6 +55,10 @@ func (c *Client) keys(ctx context.Context) ([]types.KeyPairInfo, error) {
 // EnsureLoginKey makes sure the public key is a key pair of the region and returns the name it
 // has there: a key that is imported already is reused under whatever name it has.
 func (c *Client) EnsureLoginKey(ctx context.Context, name, publicKey string) (model.LoginKey, error) {
+	shared, err := awsTags("AWS_TAGS_SHARED", c.opts.SharedTags)
+	if err != nil {
+		return model.LoginKey{}, err
+	}
 	ks, err := c.keys(ctx)
 	if err != nil {
 		return model.LoginKey{}, &cloud.OpError{Op: "listing the key pairs", Err: err}
@@ -72,10 +76,6 @@ func (c *Client) EnsureLoginKey(ctx context.Context, name, publicKey string) (mo
 	a, err := c.api(ctx)
 	if err != nil {
 		return model.LoginKey{}, &cloud.OpError{Op: "reaching AWS", Err: err}
-	}
-	shared, err := awsTags("AWS_TAGS_SHARED", c.opts.SharedTags)
-	if err != nil {
-		return model.LoginKey{}, err
 	}
 	_, err = a.ec2.ImportKeyPair(ctx, &ec2.ImportKeyPairInput{
 		KeyName: ptr(name), PublicKeyMaterial: []byte(strings.TrimSpace(publicKey)),
