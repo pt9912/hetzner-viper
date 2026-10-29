@@ -90,7 +90,7 @@ func newPricing(t *testing.T) *pricing {
 	general := familyPage(
 		regionTables("europe-west3", [][]string{
 			{"e2-standard-4", "4", "16 GiB", "0.134"},
-			{"e2-micro", "0.25", "1 GiB", "0.01"}, // a shared core: not a whole number of CPUs
+			{"e2-micro", "2", "1 GiB", "0.01"}, // a shared core: the page says 2 vCPUs, it runs on a fraction of them
 			{"c3-standard-8-lssd", "8", "32 GiB", "375 GiB", "0.9"},
 			{"t2a-standard-4", "4", "16 GiB", "0.15"},
 			{"c4-standard-4", "4", "15 GiB", "0.2"},

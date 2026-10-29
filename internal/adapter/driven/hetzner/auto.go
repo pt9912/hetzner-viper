@@ -40,7 +40,7 @@ func (c *Catalog) Offers(ctx context.Context, location string, diskGB int) ([]mo
 			return offers, err
 		}
 		if c.notice != nil {
-			fmt.Fprintf(c.notice, "hetzner: the project cannot be read (%s); using the public pricing pages\n", Error(err))
+			fmt.Fprintf(c.notice, "hetzner: the project cannot be read (%s); using the public pricing pages, whose prices are without VAT\n", Error(err))
 		}
 	}
 	return c.public.Offers(ctx, location, diskGB)

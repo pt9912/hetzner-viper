@@ -97,6 +97,16 @@ func (w *web) offers(ctx context.Context, zone, region string, diskGB int) ([]mo
 	return out, nil
 }
 
+// sharedCore tells the machine types with a shared core: they run on a fraction of the cores the pages
+// say and are left out, as with the project.
+func sharedCore(name string) bool {
+	switch name {
+	case "e2-micro", "e2-small", "e2-medium", "f1-micro", "g1-small":
+		return true
+	}
+	return false
+}
+
 // gpuFamily tells the families whose machine types come with a GPU, which is billed apart.
 func gpuFamily(name string) bool {
 	for _, f := range []string{"a2-", "a3-", "a4-", "a4x-", "g2-", "g4-"} {
@@ -120,20 +130,10 @@ func armFamily(name string) bool {
 // digest is the digest of the pages: the cached one if it is young enough, else a new one. If the
 // pages cannot be read, an old digest is better than none.
 func (w *web) digest(ctx context.Context) (*webDigest, error) {
-	var cached webDigest
-	have := pricecache.Read(w.dir, webCache, &cached) && len(cached.Machines) > 0 && len(cached.Disks) > 0 && cached.IPv4 > 0
-	if have && w.now().Sub(cached.Fetched) < 24*time.Hour {
-		return &cached, nil
-	}
-	fresh, err := w.fetch(ctx)
-	switch {
-	case err == nil:
-		pricecache.Write(w.dir, webCache, fresh)
-		return fresh, nil
-	case have && ctx.Err() == nil:
-		return &cached, nil
-	}
-	return nil, err
+	return pricecache.Get(ctx, w.dir, webCache, w.now,
+		func(d *webDigest) time.Time { return d.Fetched },
+		func(d *webDigest) bool { return len(d.Machines) > 0 && len(d.Disks) > 0 && d.IPv4 > 0 },
+		w.fetch)
 }
 
 // fetch reads all the pages, at the same time.
@@ -223,17 +223,15 @@ type cell struct {
 	unit  string // of a price: "hour", "month", "gibibyte month", ...; "" for a text
 }
 
-// tokens find, in this order of the alternatives, the labels of the regions, the text cells and
-// the prices, in the data of a page. The text cells are written with < for < in the data.
-func tokens() *regexp.Regexp {
-	return regexp.MustCompile(`"[^"\\]* \(([a-z]+-[a-z]+[0-9]+)\)"|"\\u003cp\\u003e([^"\\]*)\\u003c/p\\u003e"|"\$([0-9][0-9.,]*) / 1 ([a-z ]+)"`)
-}
+// tokenRe finds, in this order of the alternatives, the labels of the regions, the text cells and the
+// prices, in the data of a page. The text cells are written with a backslash and u003c for <.
+var tokenRe = regexp.MustCompile(`"[^"\\]* \(([a-z]+-[a-z]+[0-9]+)\)"|"\\u003cp\\u003e([^"\\]*)\\u003c/p\\u003e"|"\$([0-9][0-9.,]*) / 1 ([a-z ]+)"`)
 
 // tablesOf cuts the tables out of the data of a page.
 func tablesOf(page string) []table {
 	var out []table
 	var cells []cell
-	for _, m := range tokens().FindAllStringSubmatch(page, -1) {
+	for _, m := range tokenRe.FindAllStringSubmatch(page, -1) {
 		switch {
 		case m[1] != "": // the label of a region: the cells since the last one are its table
 			if len(cells) > 0 {
@@ -276,7 +274,7 @@ func machinesOf(cells []cell, known []webMachine) []webMachine {
 		vcpu, _ := strconv.Atoi(cells[i+1].text)
 		ram, _ := strconv.ParseFloat(strings.ReplaceAll(gib.FindStringSubmatch(cells[i+2].text)[1], ",", ""), 64)
 		price, unit := rowPrice(cells[i+3:])
-		if unit == "hour" && !have[c.text] && vcpu > 0 && ram > 0 && !gpuFamily(c.text) {
+		if unit == "hour" && !have[c.text] && vcpu > 0 && ram > 0 && !gpuFamily(c.text) && !sharedCore(c.text) {
 			out = append(out, webMachine{Name: c.text, VCPU: vcpu, RAMGB: ram, Hourly: price})
 			have[c.text] = true
 		}
@@ -327,27 +325,28 @@ type ipv4Digest struct {
 }
 
 // ipv4Re finds, in the text of the network page, the row of the addresses in use on standard VMs.
-func ipv4Re() *regexp.Regexp {
-	return regexp.MustCompile(`in use on standard VM instances \$([0-9.]+) / 1 hour`)
-}
+var ipv4Re = regexp.MustCompile(`in use on standard VM instances \$([0-9.]+) / 1 hour`)
+
+// tagRe finds the tags of a page.
+var tagRe = regexp.MustCompile(`<[^>]+>`)
 
 // ipv4 is the fee per hour in US dollars for an external IPv4 address in use on a standard VM. It is
 // the same in every region.
 func (w *web) ipv4(ctx context.Context) (float64, error) {
-	var cached ipv4Digest
-	have := pricecache.Read(w.dir, ipv4Cache, &cached) && cached.Hourly > 0
-	if have && w.now().Sub(cached.Fetched) < 24*time.Hour {
-		return cached.Hourly, nil
+	d, err := pricecache.Get(ctx, w.dir, ipv4Cache, w.now,
+		func(d *ipv4Digest) time.Time { return d.Fetched },
+		func(d *ipv4Digest) bool { return d.Hourly > 0 },
+		func(ctx context.Context) (*ipv4Digest, error) {
+			price, err := w.readIPv4(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return &ipv4Digest{Fetched: w.now(), Hourly: price}, nil
+		})
+	if err != nil {
+		return 0, err
 	}
-	price, err := w.readIPv4(ctx)
-	switch {
-	case err == nil:
-		pricecache.Write(w.dir, ipv4Cache, ipv4Digest{Fetched: w.now(), Hourly: price})
-		return price, nil
-	case have && ctx.Err() == nil:
-		return cached.Hourly, nil
-	}
-	return 0, err
+	return d.Hourly, nil
 }
 
 func (w *web) readIPv4(ctx context.Context) (float64, error) {
@@ -357,8 +356,8 @@ func (w *web) readIPv4(ctx context.Context) (float64, error) {
 	}
 	// the page has a no-break space in the row ("in use on&nbsp; standard VM"): Fields splits on all
 	// the spaces of Unicode, where \s in a pattern knows only those of ASCII
-	text := strings.Join(strings.Fields(html.UnescapeString(regexp.MustCompile(`<[^>]+>`).ReplaceAllString(body, " "))), " ")
-	m := ipv4Re().FindStringSubmatch(text)
+	text := strings.Join(strings.Fields(html.UnescapeString(tagRe.ReplaceAllString(body, " "))), " ")
+	m := ipv4Re.FindStringSubmatch(text)
 	if m == nil {
 		return 0, fmt.Errorf("no fee for an external IPv4 address found on the network pricing page (did it change?)")
 	}

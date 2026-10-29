@@ -15,6 +15,9 @@ func runFind(ctx context.Context, o *options, env settings.Env, stdout, stderr i
 	if o.cpu == 0 && o.ram == 0 && o.disk == 0 {
 		return fmt.Errorf("viper find: give at least one of --cpu, --ram, --disk\n%s", usageLine("find"))
 	}
+	if o.location != "" && o.provider == "" {
+		return fmt.Errorf("viper find: --location needs --provider: the names of the locations differ by provider (fsn1, eu-central-1, germanywestcentral, europe-west3-b)")
+	}
 	if o.arch != "" && o.arch != "x86" && o.arch != "arm" {
 		return fmt.Errorf("viper find: --arch is x86 or arm: %s", o.arch)
 	}

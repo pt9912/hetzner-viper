@@ -202,7 +202,7 @@ func TestTheProjectIsAskedFirstAndThePublicPagesAreTheFallback(t *testing.T) {
 	// with a token that does not: the pages, and the notice says why
 	bad := hetzner.NewCatalogWith(hetzner.New("bad", api(t).URL), s.public("", time.Now, &notice), &notice)
 	offers, err = bad.Offers(context.Background(), "", 0)
-	if err != nil || len(offers) == 0 || offers[0].VATPercent != 0 || !strings.Contains(notice.String(), "the project cannot be read (unauthorized (check HCLOUD_TOKEN)); using the public pricing pages") {
+	if err != nil || len(offers) == 0 || offers[0].VATPercent != 0 || !strings.Contains(notice.String(), "the project cannot be read (unauthorized (check HCLOUD_TOKEN)); using the public pricing pages, whose prices are without VAT") {
 		t.Errorf("%d offers, %v, %q", len(offers), err, notice.String())
 	}
 	// without a token: the pages, without a notice about the project

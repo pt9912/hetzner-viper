@@ -28,7 +28,7 @@ func (f fakeFind) Find(_ context.Context, n model.Need, out, _ io.Writer) int {
 }
 
 func TestFindReadsTheNeedFromTheOptions(t *testing.T) {
-	name, o, err := cli.Parse([]string{"find", "--cpu", "4", "--ram=16", "--disk", "80", "--arch", "arm", "--location", "fsn1", "--vat", "7.5"})
+	name, o, err := cli.Parse([]string{"find", "--cpu", "4", "--ram=16", "--disk", "80", "--arch", "arm", "--location", "fsn1", "--provider", "hetzner", "--vat", "7.5"})
 	if err != nil || name != "find" || o.CPU != 4 || o.RAM != 16 || o.Disk != 80 || o.Arch != "arm" || o.Location != "fsn1" || !o.HasVAT || o.VAT != 7.5 {
 		t.Fatalf("%s %+v %v", name, o, err)
 	}
@@ -36,6 +36,14 @@ func TestFindReadsTheNeedFromTheOptions(t *testing.T) {
 		if _, _, err := cli.Parse(args); err == nil {
 			t.Errorf("%v: want an error", args)
 		}
+	}
+}
+
+func TestALocationNeedsAProvider(t *testing.T) {
+	env, _ := nativeEnv(t)
+	err := cli.RunFind(context.Background(), &cli.Opts{Host: testHost(), Dir: t.TempDir(), CPU: 1, Location: "fsn1"}, env, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "--location needs --provider") {
+		t.Errorf("%v", err)
 	}
 }
 

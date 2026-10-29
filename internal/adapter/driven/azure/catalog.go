@@ -26,8 +26,8 @@ const (
 	// the sizes if the subscription cannot tell them.
 	calculatorData = "https://azure.microsoft.com/api/v3/pricing/virtual-machines/calculator/?culture=en-us&discount=mosp"
 
-	// cacheMaxAge is how long a digest is used before the price lists are read again.
-	cacheMaxAge = 24 * time.Hour
+	// officialTimeout is how long the subscription has to give the sizes before the website is asked.
+	officialTimeout = 30 * time.Second
 )
 
 // Spec is the size of a VM size.
@@ -176,24 +176,10 @@ func (d *digest) diskPrice(diskGB int) (float64, bool) {
 // digestOf is the digest of the location: the cached one if it is young enough, else a new one. If
 // the price lists cannot be read, an old digest is better than none.
 func (c *Catalog) digestOf(ctx context.Context, location string) (*digest, error) {
-	name := "azure-" + location + ".json"
-	var cached *digest
-	var d digest
-	if pricecache.Read(c.dir, name, &d) && len(d.Types) > 0 && len(d.SSD) > 0 && d.IPv4 > 0 {
-		cached = &d
-		if c.now().Sub(d.Fetched) < cacheMaxAge {
-			return cached, nil
-		}
-	}
-	fresh, err := c.fetch(ctx, location)
-	switch {
-	case err == nil:
-		pricecache.Write(c.dir, name, fresh)
-		return fresh, nil
-	case cached != nil && ctx.Err() == nil:
-		return cached, nil
-	}
-	return nil, err
+	return pricecache.Get(ctx, c.dir, "azure-"+location+".json", c.now,
+		func(d *digest) time.Time { return d.Fetched },
+		func(d *digest) bool { return len(d.Types) > 0 && len(d.SSD) > 0 && d.IPv4 > 0 },
+		func(ctx context.Context) (*digest, error) { return c.fetch(ctx, location) })
 }
 
 // fetch reads the sizes and the two price lists, at the same time as they do not depend on each other.
@@ -239,7 +225,11 @@ func (c *Catalog) fetch(ctx context.Context, location string) (*digest, error) {
 // from the website.
 func (c *Catalog) specs(ctx context.Context, location string) (map[string]Spec, error) {
 	if c.official != nil {
-		s, err := c.official(ctx, location)
+		// the chain of credentials asks the environment, the managed identity and the CLI one after
+		// the other: without a login that takes a while, and the website has the answer anyway
+		octx, cancel := context.WithTimeout(ctx, officialTimeout)
+		defer cancel()
+		s, err := c.official(octx, location)
 		if err == nil && len(s) == 0 {
 			err = fmt.Errorf("no VM sizes")
 		}
@@ -262,22 +252,23 @@ type specsCache struct {
 // calculatorSpecs reads the sizes from the data of the pricing calculator, once a day.
 func (c *Catalog) calculatorSpecs(addr string) Specs {
 	return func(ctx context.Context, _ string) (map[string]Spec, error) {
-		var cached specsCache
-		if pricecache.Read(c.dir, "azure-specs.json", &cached) && len(cached.Specs) > 0 && c.now().Sub(cached.Fetched) < cacheMaxAge {
-			return cached.Specs, nil
-		}
-		if c.notice != nil {
-			fmt.Fprintln(c.notice, "azure: reading the VM sizes from the Azure website (a large file, once a day) ...")
-		}
-		specs, err := c.readCalculator(ctx, addr)
+		cached, err := pricecache.Get(ctx, c.dir, "azure-specs.json", c.now,
+			func(s *specsCache) time.Time { return s.Fetched },
+			func(s *specsCache) bool { return len(s.Specs) > 0 },
+			func(ctx context.Context) (*specsCache, error) {
+				if c.notice != nil {
+					fmt.Fprintln(c.notice, "azure: reading the VM sizes from the Azure website (a large file, once a day) ...")
+				}
+				specs, err := c.readCalculator(ctx, addr)
+				if err != nil {
+					return nil, err
+				}
+				return &specsCache{Fetched: c.now(), Specs: specs}, nil
+			})
 		if err != nil {
-			if len(cached.Specs) > 0 && ctx.Err() == nil {
-				return cached.Specs, nil
-			}
 			return nil, err
 		}
-		pricecache.Write(c.dir, "azure-specs.json", specsCache{Fetched: c.now(), Specs: specs})
-		return specs, nil
+		return cached.Specs, nil
 	}
 }
 

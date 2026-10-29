@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.67  
+Version: 1.68  
 Software-Version: v0.12.0  
 Stand: 29.10.2026  
 
@@ -255,7 +255,7 @@ Geprüft werden:
 
 | Anbieter | Für die Preisabfrage nötig |
 |---|---|
-| Hetzner | nichts: `viper find` liest die öffentlichen Seiten von hetzner.com (Preise ohne Mehrwertsteuer). Ist `HCLOUD_TOKEN` gesetzt, fragt es zuerst Ihr Projekt ab: Das gibt die Preise Ihres Projekts mit dessen Mehrwertsteuersatz und nur die Typen, die Sie dort bestellen können. Klappt das nicht, nimmt es die Seiten und sagt es. |
+| Hetzner | nichts: `viper find` liest die öffentlichen Seiten von hetzner.com (Preise ohne Mehrwertsteuer). Ist `HCLOUD_TOKEN` gesetzt, fragt es zuerst Ihr Projekt ab: Das gibt die Preise Ihres Projekts mit dessen Mehrwertsteuersatz und nur die Typen, die Sie dort bestellen können. Klappt das nicht, nimmt es die Seiten und sagt es; deren Preise sind ohne Mehrwertsteuer. |
 | AWS | nichts: `viper find` liest die öffentliche Preisliste von AWS, ohne Konto und ohne Anmeldung |
 | Azure | nichts: Preise und VM-Größen sind öffentlich. Mit `AZURE_SUBSCRIPTION_ID` und `az login` fragt `viper find` die Größen genauer bei Ihrer Subscription ab. |
 | Google Cloud | nichts: `viper find` liest die öffentlichen Preisseiten von Google. Ist `GCP_PROJECT` gesetzt, fragt es zuerst Ihr Projekt ab (dafür `gcloud auth application-default login` und die aktivierte Cloud Billing API); klappt das nicht, nimmt es die Preisseiten und sagt es. |
@@ -266,7 +266,7 @@ Geprüft werden:
 
 * `--cpu N`, `--ram GB`, `--disk GB`: Mindestwerte; mindestens einer ist Pflicht.
 * `--arch x86` oder `--arch arm`: nur diese Prozessor-Architektur (Standard: beide).
-* `--location ORT`: nur dieser Standort, etwa `fsn1` (Hetzner), `eu-central-1` (AWS), `germanywestcentral` (Azure) oder `europe-west3-b` (Google Cloud). Standortnamen unterscheiden sich je Anbieter: Zusammen mit `--provider` ist das eindeutig.
+* `--location ORT`: nur dieser Standort, etwa `fsn1` (Hetzner), `eu-central-1` (AWS), `germanywestcentral` (Azure) oder `europe-west3-b` (Google Cloud). Standortnamen unterscheiden sich je Anbieter, deshalb braucht `--location` immer `--provider`.
 * `--provider NAME`: nur dieser Anbieter (`hetzner`, `aws`, `azure`, `gcp`).
 * `--vat PROZENT`: Mehrwertsteuersatz für alle Preise; `--vat 0` zeigt Nettopreise. Ohne Angabe gilt der Satz Ihres Hetzner-Projekts (nur mit `HCLOUD_TOKEN`, bei Ihnen 19 %), sonst keine Steuer: Die Legende der Tabelle sagt, was gilt. Wollen Sie ohne Token Preise mit Steuer sehen, geben Sie den Satz an, etwa `--vat 19`.
 
@@ -289,10 +289,11 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 * Die Preise sind Listenpreise mit der IPv4-Adresse. Nicht enthalten sind Rabatte und Datenverkehr. Die Hetzner Console zeigt ihre Preise mit IPv4 und Mehrwertsteuer; mit `--vat 19` (oder `HCLOUD_TOKEN`) stimmen die Zahlen mit ihr überein.
 * Hetzner ohne Token: Die Preise stammen aus einer Datei, die die Seiten von hetzner.com lesen, die Ausstattung aus dem Text der Seiten. Typen, die die Seiten als `not available` führen, fehlen (zurzeit die Familien `CX` und `CAX`). Falkenstein (`fsn1`) hat den Preis von Nürnberg, weil beide in Deutschland liegen und die Datei nur einen nennt. Ob ein Typ an einem Standort gerade bestellbar ist, prüft nur der Weg mit dem Token.
 * Der Monatspreis rechnet mit 730 Stunden.
+* Hat `viper find` einen Preis nicht frisch lesen können, nimmt es den gemerkten Stand, aber höchstens sieben Tage alt; ist er älter, meldet es den Anbieter als nicht lesbar.
 * **Cache:** Die Preislisten sind groß (AWS je Region mehrere hundert MB, Azure und Google Cloud rund 60 MB, Hetzner nur wenige MB). `viper find` liest sie höchstens einmal am Tag und merkt sich nur das Nötige (wenige KB je Region) im Cache-Verzeichnis, unter Linux `~/.cache/viper/`. Der erste Lauf einer Region dauert deshalb etwas länger (`aws: reading the price list …`), die folgenden sind sofort fertig. Lässt sich eine Liste später nicht lesen, gilt der alte Stand weiter. Zum Erneuern vor Ablauf löschen Sie die Dateien. Bricht ein Download ab (die AWS-Datei ist groß), versucht `viper find` es dreimal und nennt dann einen Netzwerkfehler (Proxy oder VPN kommen als Ursache in Frage).
 * AWS: Bare-Metal-Typen (`*.metal`) fehlen.
 * Azure: Ohne Subscription stammen Kerne und RAM aus den Daten des Preisrechners auf der Azure-Website. Das ist keine dokumentierte Schnittstelle; ändert Microsoft sie, fehlen nur diese Angaben, bis `viper` angepasst ist.
-* Google Cloud: Die Preisseiten (Allzweck, Compute-, Arbeitsspeicher- und Speicheroptimiert) und die Seite der Platten sind Webseiten, keine Schnittstelle; `viper find` liest die Tabellen daraus (zusammen rund 60 MB, einmal am Tag, Preise je Region in Dollar). Die Gebühr für die IPv4-Adresse steht auf der Netzwerk-Preisseite. Ändert Google eine der Seiten, bricht `viper find` für Google Cloud mit `no prices found …` ab, und es erscheinen keine falschen oder unvollständigen Preise. Bei Tabellen mit Rabattspalten gilt der höchste Preis der Zeile, der Preis ohne Rabatt. Geteilte Kerne (`e2-micro`), Typen mit lokaler SSD und Beschleuniger-Typen (GPU) fehlen. Ob ein Typ in Ihrer Zone angeboten wird, prüft `viper find` nicht. Bei den neuen Serien mit Hyperdisk kommen Leistungsaufschläge der Platte nicht dazu. Über das Projekt (Cloud Billing) setzt sich der Preis aus den Preisen für Kerne und Arbeitsspeicher der Typenfamilie zusammen; Typen mit GPU fehlen dort, weil die GPU getrennt berechnet wird.  Auch dort liest `viper find` die Preise in Dollar und rechnet sie mit dem Kurs der EZB um; die Zahlen sind mit und ohne Projekt dieselben.
+* Google Cloud: Die Preisseiten (Allzweck, Compute-, Arbeitsspeicher- und Speicheroptimiert) und die Seite der Platten sind Webseiten, keine Schnittstelle; `viper find` liest die Tabellen daraus (zusammen rund 60 MB, einmal am Tag, Preise je Region in Dollar). Die Gebühr für die IPv4-Adresse steht auf der Netzwerk-Preisseite. Ändert Google eine der Seiten, bricht `viper find` für Google Cloud mit `no prices found …` ab, und es erscheinen keine falschen oder unvollständigen Preise. Bei Tabellen mit Rabattspalten gilt der höchste Preis der Zeile, der Preis ohne Rabatt. Geteilte Kerne (`e2-micro`, `e2-small`, `e2-medium`), Typen mit lokaler SSD und Beschleuniger-Typen (GPU) fehlen. Ob ein Typ in Ihrer Zone angeboten wird, prüft `viper find` nicht. Bei den neuen Serien mit Hyperdisk kommen Leistungsaufschläge der Platte nicht dazu. Über das Projekt (Cloud Billing) setzt sich der Preis aus den Preisen für Kerne und Arbeitsspeicher der Typenfamilie zusammen; Typen mit GPU fehlen dort, weil die GPU getrennt berechnet wird.  Auch dort liest `viper find` die Preise in Dollar und rechnet sie mit dem Kurs der EZB um; die Zahlen sind mit und ohne Projekt dieselben.
 * Der Weg über das eigene Konto (Azure-Subscription, Google-Projekt) ist für `viper find` noch nicht in einem echten Konto getestet. Die öffentlichen Quellen (AWS, Azure, Google Cloud) sind gegen die echten Dateien und Seiten geprüft.
 
 ### Protokolle ansehen
@@ -1001,3 +1002,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.65 | v0.12.0 | `viper find`: Euro-Zeilen stehen immer vor Zeilen in einer nicht umgerechneten Währung; Kurse der EZB gelten ohne Netz höchstens sieben Tage; ein Standort muss ein gültiger Name sein; eine geänderte Google-Seite führt zu einem Fehler statt zu einem unvollständigen Cache. |
 | 1.66 | v0.12.0 | Release v0.12.0: die Änderungen 1.59 bis 1.65 (`viper find`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.12.0`. |
 | 1.67 | v0.13.0 | `viper find` braucht für Hetzner keinen Token mehr (öffentliche Seiten von hetzner.com; mit Token weiter die Preise des Projekts) und rechnet bei allen Anbietern die Gebühr für die öffentliche IPv4-Adresse in den Preis. Über das Google-Projekt kommen die Preise jetzt in Dollar, wie über die Seiten. |
+| 1.68 | v0.13.0 | `viper find`: `--location` braucht `--provider`; gemerkte Preise gelten ohne Netz höchstens sieben Tage (bisher nur der Kurs der EZB); Google: geteilte Kerne auch ohne Projekt nicht mehr in der Liste. |

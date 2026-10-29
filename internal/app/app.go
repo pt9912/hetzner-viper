@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/aws"
@@ -149,6 +150,7 @@ func Check(c *model.Machine) check.Service {
 // get does not give is named and left out. A provider that prices a region at a time looks in the
 // location of SERVER_LOCATION if PROVIDER names it, else in its default region.
 func Find(get func(string) string, notice io.Writer) find.Service {
+	notice = &lockedWriter{w: notice}
 	var sources []find.Source
 	for _, name := range model.ProviderNames() {
 		info, _ := model.LookupProvider(name)
@@ -208,4 +210,17 @@ func vscode() editor.VSCode {
 		secrets = append(secrets, info.Secrets...)
 	}
 	return editor.VSCode{Secrets: secrets}
+}
+
+// lockedWriter lets the providers, which are asked at the same time, write their notes without one
+// breaking into another's line.
+type lockedWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (l *lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
 }

@@ -109,20 +109,10 @@ func (p *Public) Offers(ctx context.Context, location string, _ int) ([]model.Of
 // digest is the cached digest if it is young enough, else a new one. If the pages cannot be read, an
 // old digest is better than none.
 func (p *Public) digest(ctx context.Context) (*publicDigest, error) {
-	var cached publicDigest
-	have := pricecache.Read(p.dir, publicCache, &cached) && len(cached.Types) > 0 && cached.IPv4.Monthly > 0
-	if have && p.now().Sub(cached.Fetched) < 24*time.Hour {
-		return &cached, nil
-	}
-	fresh, err := p.fetch(ctx)
-	switch {
-	case err == nil:
-		pricecache.Write(p.dir, publicCache, fresh)
-		return fresh, nil
-	case have && ctx.Err() == nil:
-		return &cached, nil
-	}
-	return nil, err
+	return pricecache.Get(ctx, p.dir, publicCache, p.now,
+		func(d *publicDigest) time.Time { return d.Fetched },
+		func(d *publicDigest) bool { return len(d.Types) > 0 && d.IPv4.Monthly > 0 },
+		p.fetch)
 }
 
 // fetch reads the pages and the data file at the same time.

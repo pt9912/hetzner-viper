@@ -28,9 +28,6 @@ const bulkBase = "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/Amazon
 // address; it is small.
 const vpcBase = "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonVPC/current/"
 
-// cacheMaxAge is how long the digest of a price list is used before the list is read again.
-const cacheMaxAge = 24 * time.Hour
-
 // Catalog is the price list of the on-demand Linux instances of EC2. The list of a region is a
 // file of several hundred MB; the catalog reads it once a day and keeps what it needs of it (the
 // types with their size and price, the price of a gp3 volume) in a small file in the cache
@@ -122,35 +119,16 @@ func (c *Catalog) Offers(ctx context.Context, location string, diskGB int) ([]mo
 	return out, nil
 }
 
-// digestOf is the digest of the region: the cached one if it is young enough, else a new one from
-// the price list. If the list cannot be read, an old digest is better than none.
-func (c *Catalog) digestOf(ctx context.Context, region string) (*digest, error) {
-	cached := c.load(region)
-	if cached != nil && c.now().Sub(cached.Fetched) < cacheMaxAge {
-		return cached, nil
-	}
-	d, err := c.fetch(ctx, region)
-	switch {
-	case err == nil:
-		c.save(region, d)
-		return d, nil
-	case cached != nil && ctx.Err() == nil:
-		return cached, nil
-	}
-	return nil, err
-}
-
 func cacheName(region string) string { return "aws-ec2-" + region + ".json" }
 
-func (c *Catalog) load(region string) *digest {
-	var d digest
-	if !pricecache.Read(c.dir, cacheName(region), &d) || len(d.Types) == 0 || d.GP3 <= 0 || d.IPv4 <= 0 {
-		return nil
-	}
-	return &d
+// digestOf is the digest of the region: the kept one if it is young enough, else a new one from the
+// price list. If the list cannot be read, an old digest is better than none.
+func (c *Catalog) digestOf(ctx context.Context, region string) (*digest, error) {
+	return pricecache.Get(ctx, c.dir, cacheName(region), c.now,
+		func(d *digest) time.Time { return d.Fetched },
+		func(d *digest) bool { return len(d.Types) > 0 && d.GP3 > 0 && d.IPv4 > 0 },
+		func(ctx context.Context) (*digest, error) { return c.fetch(ctx, region) })
 }
-
-func (c *Catalog) save(region string, d *digest) { pricecache.Write(c.dir, cacheName(region), d) }
 
 // fetch reads the price list of the region and digests it. A download that breaks off (the file is
 // large, a connection can fail on the way) is started again, up to tries times.
@@ -158,14 +136,15 @@ func (c *Catalog) fetch(ctx context.Context, region string) (*digest, error) {
 	if c.notice != nil {
 		fmt.Fprintf(c.notice, "aws: reading the price list of %s (a large file, once a day) ...\n", region)
 	}
-	var err error
+	// the small list first: if it fails, the large download has not been made for nothing
+	ip, err := c.ipv4(ctx, region)
+	if err != nil {
+		return nil, err
+	}
 	for try := 1; try <= tries; try++ {
 		var d *digest
 		if d, err = c.download(ctx, region); err == nil {
-			if d.IPv4, err = c.ipv4(ctx, region); err != nil {
-				return nil, err
-			}
-			d.Fetched = c.now()
+			d.IPv4, d.Fetched = ip, c.now()
 			return d, nil
 		}
 		if !brokeOff(err) || try == tries {
@@ -447,7 +426,10 @@ func (c *Catalog) ipv4(ctx context.Context, region string) (float64, error) {
 		return 0, fmt.Errorf("price list of the network: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }() // read only
-	if resp.StatusCode != http.StatusOK {
+	switch {
+	case resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusNotFound:
+		return 0, fmt.Errorf("no price list for region %s", region)
+	case resp.StatusCode != http.StatusOK:
 		return 0, fmt.Errorf("price list of the network: HTTP %d", resp.StatusCode)
 	}
 	var list struct {

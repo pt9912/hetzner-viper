@@ -17,13 +17,9 @@ import (
 )
 
 const (
-	daily       = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
-	cacheName   = "ecb-rates.json"
-	cacheMaxAge = 24 * time.Hour
-	// staleMaxAge is how old rates may be if the file cannot be read: the ECB publishes on working
-	// days, so a week is a long break; older rates would give a ranking on a wrong basis.
-	staleMaxAge = 7 * 24 * time.Hour
-	maxBody     = 1 << 20
+	daily     = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
+	cacheName = "ecb-rates.json"
+	maxBody   = 1 << 20
 )
 
 // Client reads the rates, at most once a day.
@@ -76,20 +72,10 @@ func perEUR(t *table, currency string) (float64, bool) {
 // table is the cached rates if they are of the last day, else new ones; if the file cannot be read,
 // old ones are better than none.
 func (c *Client) table(ctx context.Context) (*table, error) {
-	var cached table
-	have := pricecache.Read(c.dir, cacheName, &cached) && len(cached.PerEUR) > 0
-	if have && c.now().Sub(cached.Fetched) < cacheMaxAge {
-		return &cached, nil
-	}
-	fresh, err := c.fetch(ctx)
-	switch {
-	case err == nil:
-		pricecache.Write(c.dir, cacheName, fresh)
-		return fresh, nil
-	case have && ctx.Err() == nil && c.now().Sub(cached.Fetched) < staleMaxAge:
-		return &cached, nil
-	}
-	return nil, err
+	return pricecache.Get(ctx, c.dir, cacheName, c.now,
+		func(t *table) time.Time { return t.Fetched },
+		func(t *table) bool { return len(t.PerEUR) > 0 },
+		c.fetch)
 }
 
 // envelope is the part of the file that is read: the day and the rate of each currency.

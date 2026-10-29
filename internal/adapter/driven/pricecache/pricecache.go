@@ -4,9 +4,19 @@
 package pricecache
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"time"
+)
+
+const (
+	// MaxAge is how long a digest is used before the price lists are read again.
+	MaxAge = 24 * time.Hour
+	// MaxStale is how old a digest may be when the price lists cannot be read: an old digest is better
+	// than none, but prices of a month ago are not a basis for a comparison.
+	MaxStale = 7 * 24 * time.Hour
 )
 
 // Read fills v from the file name in dir; ok is false if there is none or it cannot be read. An
@@ -35,4 +45,25 @@ func Write(dir, name string, v any) {
 	if cerr := tmp.Close(); werr != nil || cerr != nil || os.Rename(tmp.Name(), filepath.Join(dir, name)) != nil {
 		_ = os.Remove(tmp.Name())
 	}
+}
+
+// Get is the digest kept in the file name in dir if it is usable and no older than MaxAge, else the
+// one fetch makes (and keeps). If fetch fails, a kept digest of up to MaxStale is used. stamp says when
+// a digest was made and usable whether one is complete (a digest from an older version of viper may
+// lack what the current one needs).
+func Get[T any](ctx context.Context, dir, name string, now func() time.Time, stamp func(*T) time.Time, usable func(*T) bool, fetch func(context.Context) (*T, error)) (*T, error) {
+	var cached T
+	have := Read(dir, name, &cached) && usable(&cached)
+	if have && now().Sub(stamp(&cached)) < MaxAge {
+		return &cached, nil
+	}
+	fresh, err := fetch(ctx)
+	switch {
+	case err == nil:
+		Write(dir, name, fresh)
+		return fresh, nil
+	case have && ctx.Err() == nil && now().Sub(stamp(&cached)) < MaxStale:
+		return &cached, nil
+	}
+	return nil, err
 }
