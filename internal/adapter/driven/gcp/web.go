@@ -50,9 +50,10 @@ type webMachine struct {
 // web reads the pages once a day.
 type web struct {
 	http   *http.Client
-	base   string // where the pages of the families are, pagesBase unless a test says otherwise
-	disks  string // the page of the disks
-	dir    string // the cache directory; "" for none
+	base   string   // where the pages of the families are, pagesBase unless a test says otherwise
+	disks  string   // the page of the disks
+	pages  []string // the pages of the families; pricePages() unless a test says otherwise
+	dir    string   // the cache directory; "" for none
 	now    func() time.Time
 	notice io.Writer
 }
@@ -89,6 +90,16 @@ func (w *web) offers(ctx context.Context, zone, region string, diskGB int) ([]mo
 	return out, nil
 }
 
+// gpuFamily tells the families whose machine types come with a GPU, which is billed apart.
+func gpuFamily(name string) bool {
+	for _, f := range []string{"a2-", "a3-", "a4-", "a4x-", "g2-", "g4-"} {
+		if strings.HasPrefix(name, f) {
+			return true
+		}
+	}
+	return false
+}
+
 // armFamily tells the families with an Arm processor.
 func armFamily(name string) bool {
 	for _, f := range []string{"t2a-", "c4a-", "n4a-"} {
@@ -123,7 +134,10 @@ func (w *web) fetch(ctx context.Context) (*webDigest, error) {
 	if w.notice != nil {
 		fmt.Fprintln(w.notice, "gcp: reading the public pricing pages (large files, once a day) ...")
 	}
-	pages := pricePages()
+	pages := w.pages
+	if pages == nil {
+		pages = pricePages()
+	}
 	bodies := make([]string, len(pages)+1)
 	g, gc := errgroup.WithContext(ctx)
 	for i, p := range pages {
@@ -134,9 +148,16 @@ func (w *web) fetch(ctx context.Context) (*webDigest, error) {
 		return nil, err
 	}
 	d := &webDigest{Fetched: w.now(), Machines: map[string][]webMachine{}, Disks: map[string]map[string]float64{}}
-	for _, body := range bodies[:len(pages)] {
+	for i, body := range bodies[:len(pages)] {
+		found := 0
 		for _, t := range tablesOf(body) {
-			d.Machines[t.region] = append(d.Machines[t.region], machinesOf(t.cells, d.Machines[t.region])...)
+			ms := machinesOf(t.cells, d.Machines[t.region])
+			d.Machines[t.region] = append(d.Machines[t.region], ms...)
+			found += len(ms)
+		}
+		// a page that gives nothing has changed: a digest without a family would be kept for a day
+		if found == 0 {
+			return nil, fmt.Errorf("no prices found on the pricing page %s (did it change?)", pages[i])
 		}
 	}
 	for _, t := range tablesOf(bodies[len(pages)]) {
@@ -228,8 +249,10 @@ var (
 )
 
 // machinesOf reads the rows of a table of machine types: the name, the virtual CPUs, the memory,
-// maybe a local SSD, then the price per hour. A table with prices per month, and the machine types
-// that are already known (the tables with discounts repeat them), are left out.
+// maybe a local SSD, then the prices per hour. The tables with discounts have more prices in a row
+// (committed use, spot) and all of them are lower than the on-demand price, so that is the highest.
+// A table with prices per month, and the machine types that are already known (the same table
+// comes again with discounts), are left out.
 func machinesOf(cells []cell, known []webMachine) []webMachine {
 	have := map[string]bool{}
 	for _, k := range known {
@@ -243,19 +266,32 @@ func machinesOf(cells []cell, known []webMachine) []webMachine {
 		}
 		vcpu, _ := strconv.Atoi(cells[i+1].text)
 		ram, _ := strconv.ParseFloat(strings.ReplaceAll(gib.FindStringSubmatch(cells[i+2].text)[1], ",", ""), 64)
-		// the price is the first price of the row: after the memory, or after the local SSD
-		for j := i + 3; j < len(cells) && j <= i+4; j++ {
-			if cells[j].unit == "" {
-				continue
-			}
-			if cells[j].unit == "hour" && !have[c.text] && vcpu > 0 && ram > 0 {
-				out = append(out, webMachine{Name: c.text, VCPU: vcpu, RAMGB: ram, Hourly: cells[j].price})
-				have[c.text] = true
-			}
-			break
+		price, unit := rowPrice(cells[i+3:])
+		if unit == "hour" && !have[c.text] && vcpu > 0 && ram > 0 && !gpuFamily(c.text) {
+			out = append(out, webMachine{Name: c.text, VCPU: vcpu, RAMGB: ram, Hourly: price})
+			have[c.text] = true
 		}
 	}
 	return out
+}
+
+// rowPrice is the highest price of the cells up to the next row (a text cell that is not the local
+// SSD) and the unit of the prices.
+func rowPrice(cells []cell) (price float64, unit string) {
+	for k, c := range cells {
+		switch {
+		case c.unit != "":
+			if unit == "" {
+				unit = c.unit
+			}
+			if c.unit == unit && c.price > price {
+				price = c.price
+			}
+		case k > 0 && machineName.MatchString(c.text):
+			return price, unit
+		}
+	}
+	return price, unit
 }
 
 // disksOf reads the price per GiB and month of the boot disk types from a table of disks.

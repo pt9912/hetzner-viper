@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -19,6 +20,10 @@ const (
 	daily       = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
 	cacheName   = "ecb-rates.json"
 	cacheMaxAge = 24 * time.Hour
+	// staleMaxAge is how old rates may be if the file cannot be read: the ECB publishes on working
+	// days, so a week is a long break; older rates would give a ranking on a wrong basis.
+	staleMaxAge = 7 * 24 * time.Hour
+	maxBody     = 1 << 20
 )
 
 // Client reads the rates, at most once a day.
@@ -81,7 +86,7 @@ func (c *Client) table(ctx context.Context) (*table, error) {
 	case err == nil:
 		pricecache.Write(c.dir, cacheName, fresh)
 		return fresh, nil
-	case have && ctx.Err() == nil:
+	case have && ctx.Err() == nil && c.now().Sub(cached.Fetched) < staleMaxAge:
 		return &cached, nil
 	}
 	return nil, err
@@ -117,7 +122,7 @@ func (c *Client) fetch(ctx context.Context) (*table, error) {
 		return nil, fmt.Errorf("exchange rates: HTTP %d", resp.StatusCode)
 	}
 	var e envelope
-	if err := xml.NewDecoder(resp.Body).Decode(&e); err != nil {
+	if err := xml.NewDecoder(io.LimitReader(resp.Body, maxBody)).Decode(&e); err != nil {
 		return nil, fmt.Errorf("exchange rates: %w", err)
 	}
 	t := &table{Fetched: c.now(), Date: e.Cube.Day.Time, PerEUR: map[string]float64{}}

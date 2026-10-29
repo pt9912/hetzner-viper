@@ -163,17 +163,7 @@ func (c *Catalog) official(ctx context.Context, location, region string, diskGB 
 
 // hasGPU tells the machine types that come with an accelerator, whose price is not that of the cores
 // and the memory: the GPU is billed apart.
-func hasGPU(t *compute.MachineType) bool {
-	if len(t.Accelerators) > 0 {
-		return true
-	}
-	for _, f := range []string{"a2-", "a3-", "a4-", "a4x-", "g2-", "g4-"} {
-		if strings.HasPrefix(t.Name, f) {
-			return true
-		}
-	}
-	return false
-}
+func hasGPU(t *compute.MachineType) bool { return len(t.Accelerators) > 0 || gpuFamily(t.Name) }
 
 // familyRates are the on-demand prices of the cores and the memory of each family in a region.
 func familyRates(skus []*cloudbilling.Sku, region string) (map[string]rates, string) {

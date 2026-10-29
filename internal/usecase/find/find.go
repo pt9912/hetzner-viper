@@ -205,8 +205,15 @@ func cheapest(offers []model.Offer, need model.Need, top int) []model.Offer {
 	return fit
 }
 
-// less orders by price, then by name, so that the result does not depend on the order of the API.
+// less orders by currency (euro first: what could not be converted comes after, in its own
+// currency), then by price, then by name, so that the result does not depend on the order of the API.
 func less(a, b model.Offer) bool {
+	if a.Currency != b.Currency {
+		if a.Currency == currency || b.Currency == currency {
+			return a.Currency == currency
+		}
+		return a.Currency < b.Currency
+	}
 	if a.MonthlyPrice != b.MonthlyPrice {
 		return a.MonthlyPrice < b.MonthlyPrice
 	}
@@ -260,7 +267,11 @@ func legend(b basis) string {
 		vat = fmt.Sprintf("incl. %g %% VAT", b.vat)
 	}
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Prices are list prices in %s, %s; the fee for a public IPv4 address is not in them.", currency, vat)
+	unit := "in " + currency
+	if len(b.kept) > 0 {
+		unit = "in " + currency + " (except where another currency is shown)"
+	}
+	fmt.Fprintf(&sb, "Prices are list prices %s, %s; the fee for a public IPv4 address is not in them.", unit, vat)
 	var from []string
 	for c := range b.converted {
 		from = append(from, c)
@@ -271,7 +282,7 @@ func legend(b basis) string {
 		fmt.Fprintf(&sb, "\n%s converted at the rate of the European Central Bank of %s (1 %s = %.4f %s).", c, r.Date, c, r.Value, currency)
 	}
 	if len(b.kept) > 0 {
-		fmt.Fprintf(&sb, "\nNOT converted (no exchange rate): %s; those prices cannot be compared with the others.", strings.Join(b.kept, ", "))
+		fmt.Fprintf(&sb, "\nNOT converted (no exchange rate): %s; those prices are listed after the others and cannot be compared with them.", strings.Join(b.kept, ", "))
 	}
 	return sb.String()
 }

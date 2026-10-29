@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -47,7 +48,7 @@ const tries = 3
 // NewCatalog returns a catalog that keeps its cache in dir ("" for none) and says on notice that it
 // is reading a price list.
 func NewCatalog(dir string, notice io.Writer) *Catalog {
-	return &Catalog{dir: dir, http: &http.Client{}, base: bulkBase, now: time.Now, notice: notice, retryWait: 2 * time.Second}
+	return &Catalog{dir: dir, http: &http.Client{Timeout: 15 * time.Minute}, base: bulkBase, now: time.Now, notice: notice, retryWait: 2 * time.Second}
 }
 
 // NewCatalogWith returns a catalog over a given price list server and clock (for tests).
@@ -81,12 +82,15 @@ type entry struct {
 	Hourly float64 `json:"hourly"`
 }
 
+// validRegion is what a region looks like; it is also a part of the name of the cache file.
+var validRegion = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+
 // Offers lists the instance types of the region of the location that have a list price, with the
 // price of a gp3 system disk of diskGB (50 GB for 0) added. The prices are in US dollars without VAT.
 func (c *Catalog) Offers(ctx context.Context, location string, diskGB int) ([]model.Offer, error) {
 	region := Options{Location: location}.region()
-	if region == "" {
-		return nil, fmt.Errorf("no region: give --location or SERVER_LOCATION")
+	if !validRegion.MatchString(region) {
+		return nil, fmt.Errorf("no region: give --location or SERVER_LOCATION (eu-central-1)")
 	}
 	d, err := c.digestOf(ctx, region)
 	if err != nil {
@@ -171,11 +175,15 @@ func (c *Catalog) fetch(ctx context.Context, region string) (*digest, error) {
 	return nil, err
 }
 
-// brokeOff reports whether an error is a connection that failed or a body that ended too early,
-// which another try may get past; a wrong answer or a wrong list is not.
+// brokeOff reports whether an error is a connection that was reset, timed out or ended too early,
+// which another try may get past. A wrong answer, a wrong list, a name that does not resolve (the
+// network is down) or a cancelled run is not.
 func brokeOff(err error) bool {
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
 	var ne net.Error
-	return errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) || errors.Is(err, syscall.ECONNRESET) || errors.As(err, &ne)
+	return errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) || errors.Is(err, syscall.ECONNRESET) || (errors.As(err, &ne) && ne.Timeout())
 }
 
 // download makes one try.

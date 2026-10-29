@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -109,8 +110,12 @@ func newPricing(t *testing.T) *pricing {
 			_, _ = w.Write([]byte(memory))
 		case strings.HasPrefix(r.URL.Path, "/disks"):
 			_, _ = w.Write([]byte(disks))
-		default: // a family without prices of its own
+		case strings.HasPrefix(r.URL.Path, "/families/compute-optimized"):
+			_, _ = w.Write([]byte(familyPage(regionTables("europe-west3", [][]string{{"c2-standard-4", "4", "16 GiB", "0.3"}}))))
+		case strings.HasPrefix(r.URL.Path, "/families/changed"):
 			_, _ = w.Write([]byte(familyPage("")))
+		default: // storage-optimized
+			_, _ = w.Write([]byte(familyPage(regionTables("europe-west3", [][]string{{"z3-highmem-8", "8", "64 GiB", "1.0"}}))))
 		}
 	}))
 	t.Cleanup(p.srv.Close)
@@ -144,7 +149,7 @@ func TestTheMachineTypesAndTheirPricesAreReadFromThePages(t *testing.T) {
 	}
 	sort.Strings(names)
 	// the shared core and the type with a local SSD are left out, the other regions are not mixed in
-	if got := strings.Join(names, " "); got != "c4-standard-4 e2-standard-4 m3-ultramem-32 t2a-standard-4" {
+	if got := strings.Join(names, " "); got != "c2-standard-4 c4-standard-4 e2-standard-4 m3-ultramem-32 t2a-standard-4 z3-highmem-8" {
 		t.Fatalf("%s", got)
 	}
 	e2 := byType["e2-standard-4"]
@@ -210,7 +215,7 @@ func TestPagesWithoutPricesAreAnError(t *testing.T) {
 	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("<html>changed</html>")) }))
 	defer empty.Close()
 	c := gcp.NewWebCatalogWith(nil, nil, empty.Client(), empty.URL+"/f/", empty.URL+"/d", "", time.Now, nil)
-	if _, err := c.Offers(context.Background(), "europe-west3-b", 0); err == nil || !strings.Contains(err.Error(), "did they change") {
+	if _, err := c.Offers(context.Background(), "europe-west3-b", 0); err == nil || !strings.Contains(err.Error(), "did it change") {
 		t.Errorf("%v", err)
 	}
 }
@@ -226,7 +231,7 @@ func TestTheProjectIsAskedFirstAndThePagesAreTheFallback(t *testing.T) {
 	}
 	c := gcp.NewWebCatalogWith(types, skus, p.srv.Client(), p.srv.URL+"/families/", p.srv.URL+"/disks", "", time.Now, &notice)
 	offers, err := c.Offers(context.Background(), "europe-west3-b", 0)
-	if err != nil || len(offers) != 4 || !strings.Contains(notice.String(), "using the public pricing pages") {
+	if err != nil || len(offers) != 6 || !strings.Contains(notice.String(), "using the public pricing pages") {
 		t.Errorf("%d offers, %v, %q", len(offers), err, notice.String())
 	}
 }
@@ -238,5 +243,44 @@ func TestWithoutPagesTheProjectErrorIsTheAnswer(t *testing.T) {
 	types := func(context.Context, string) ([]*compute.MachineType, error) { return nil, nil }
 	if _, err := gcp.NewCatalogWith(types, skus).Offers(context.Background(), "europe-west3-b", 0); err == nil || err.Error() != "billing api disabled" {
 		t.Errorf("%v", err)
+	}
+}
+
+func TestTheOnDemandPriceIsTheHighestOfTheRow(t *testing.T) {
+	// a table with discounts that comes first and has the on-demand price in the last column
+	page := familyPage(`[[` + text("e2-standard-4") + `,` + text("4") + `,` + text("16 GiB") + `,` + hourly("0.05") + `,` + hourly("0.134") + `,` + hourly("0.08") + `,` +
+		text("e2-standard-8") + `,` + text("8") + `,` + text("32 GiB") + `,` + hourly("0.1") + `,` + hourly("0.268") + `],` + label("europe-west3") + `],`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/disks") {
+			_, _ = w.Write([]byte(familyPage(diskTables("europe-west3", "0.12", "0.15"))))
+			return
+		}
+		_, _ = w.Write([]byte(page))
+	}))
+	defer srv.Close()
+	c := gcp.NewWebCatalogWith(nil, nil, srv.Client(), srv.URL+"/f/", srv.URL+"/disks", "", time.Now, nil)
+	offers, err := gcp.WithPages(c, []string{"general-purpose"}).Offers(context.Background(), "europe-west3-b", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range offers {
+		want := map[string]float64{"e2-standard-4": 0.134, "e2-standard-8": 0.268}[o.Type]
+		if abs(o.HourlyPrice-(want+100*0.12/730)) > 1e-9 {
+			t.Errorf("%s: %v, want on-demand %v", o.Type, o.HourlyPrice, want)
+		}
+	}
+}
+
+func TestAChangedPageIsNotKept(t *testing.T) {
+	p := newPricing(t)
+	dir := t.TempDir()
+	// one of the family pages gives nothing: no digest, and so none in the cache
+	c := gcp.NewWebCatalogWith(nil, nil, p.srv.Client(), p.srv.URL+"/families/", p.srv.URL+"/disks", dir, time.Now, nil)
+	c = gcp.WithPages(c, []string{"general-purpose", "changed"})
+	if _, err := c.Offers(context.Background(), "europe-west3-b", 0); err == nil || !strings.Contains(err.Error(), "pricing page changed") {
+		t.Errorf("%v", err)
+	}
+	if files, _ := filepath.Glob(filepath.Join(dir, "*")); len(files) != 0 {
+		t.Errorf("cached: %v", files)
 	}
 }

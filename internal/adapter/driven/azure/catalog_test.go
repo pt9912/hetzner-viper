@@ -212,3 +212,23 @@ func TestTheSizesAreReadFromTheCalculatorOnceADay(t *testing.T) {
 		t.Errorf("after a day: %v %d requests", err, requests.Load())
 	}
 }
+
+func TestAnEmptyAnswerOfTheSubscriptionIsTheFallbackToo(t *testing.T) {
+	r := newRetail(t)
+	var notice bytes.Buffer
+	empty := specs(map[string]azure.Spec{})
+	c := azure.NewCatalogWith(empty, specs(sizes()), r.srv.Client(), r.srv.URL, "", time.Now, &notice)
+	if offers, err := c.Offers(context.Background(), "x", 0); err != nil || len(offers) != 2 || !strings.Contains(notice.String(), "using the data of the Azure website") {
+		t.Errorf("%d %v %q", len(offers), err, notice.String())
+	}
+}
+
+func TestTheLocationIsAFileNameOfTheCache(t *testing.T) {
+	r := newRetail(t)
+	c := azure.NewCatalogWith(nil, specs(sizes()), r.srv.Client(), r.srv.URL, t.TempDir(), time.Now, nil)
+	for _, loc := range []string{"", "../x", "a/b", "Germany West", "."} {
+		if _, err := c.Offers(context.Background(), loc, 0); err == nil || r.requests.Load() != 0 {
+			t.Errorf("%q: %v, %d requests", loc, err, r.requests.Load())
+		}
+	}
+}

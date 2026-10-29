@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -125,11 +126,14 @@ type tier struct {
 	Monthly float64 `json:"monthly"`
 }
 
+// validLocation is what a location looks like; it is also a part of the name of the cache file.
+var validLocation = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+
 // Offers lists the VM sizes of the location that have a price, with the price of a Standard SSD
 // system disk of diskGB (64 GB for 0) added. The prices are in euro without VAT.
 func (c *Catalog) Offers(ctx context.Context, location string, diskGB int) ([]model.Offer, error) {
-	if location == "" {
-		return nil, fmt.Errorf("no location: give --location or SERVER_LOCATION")
+	if !validLocation.MatchString(location) {
+		return nil, fmt.Errorf("no location: give --location or SERVER_LOCATION (germanywestcentral)")
 	}
 	d, err := c.digestOf(ctx, location)
 	if err != nil {
@@ -228,6 +232,9 @@ func (c *Catalog) fetch(ctx context.Context, location string) (*digest, error) {
 func (c *Catalog) specs(ctx context.Context, location string) (map[string]Spec, error) {
 	if c.official != nil {
 		s, err := c.official(ctx, location)
+		if err == nil && len(s) == 0 {
+			err = fmt.Errorf("no VM sizes")
+		}
 		if err == nil {
 			return s, nil
 		}

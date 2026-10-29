@@ -80,3 +80,22 @@ func TestAFailureWithoutOldRatesIsAnError(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 }
+
+func TestRatesOlderThanAWeekAreNotUsedWhenTheFileCannotBeRead(t *testing.T) {
+	srv, _ := server(t, 200)
+	dir := t.TempDir()
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	c := ecb.NewWith(srv.URL, srv.Client(), dir, func() time.Time { return now })
+	if _, err := c.Rate(context.Background(), "USD", "EUR"); err != nil {
+		t.Fatal(err)
+	}
+	srv.Close()
+	now = now.Add(5 * 24 * time.Hour)
+	if _, err := c.Rate(context.Background(), "USD", "EUR"); err != nil {
+		t.Errorf("five days old: %v", err)
+	}
+	now = now.Add(5 * 24 * time.Hour)
+	if _, err := c.Rate(context.Background(), "USD", "EUR"); err == nil {
+		t.Error("ten days old: want an error")
+	}
+}

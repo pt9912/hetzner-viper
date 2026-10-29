@@ -184,8 +184,10 @@ func TestCatalogReportsWhatIsWrongWithThePriceList(t *testing.T) {
 		}
 	}
 	c := aws.NewCatalogWith("", nil, "", time.Now, nil)
-	if _, err := c.Offers(context.Background(), "", 0); err == nil {
-		t.Error("no location: want an error")
+	for _, loc := range []string{"", "../x", "a/b", "eu central"} {
+		if _, err := c.Offers(context.Background(), loc, 0); err == nil {
+			t.Errorf("%q: want an error", loc)
+		}
 	}
 }
 

@@ -236,3 +236,22 @@ func TestWithoutARateTheCurrencyStaysAndIsSaid(t *testing.T) {
 		}
 	}
 }
+
+func TestWhatCouldNotBeConvertedIsNeverRankedAgainstEuro(t *testing.T) {
+	h := offer("cpx42", "fsn1", 8, 16, 320, 100) // 100 euro a month
+	a := offer("m7i.2xlarge", "eu-central-1", 8, 32, 0, 10)
+	a.Provider, a.Currency = "aws", "USD" // 10 dollars: a lower number, but no rate to compare
+	s := find.Service{Deps: find.Deps{Sources: []find.Source{
+		{Name: "aws", Catalog: fakeCatalog{offers: []model.Offer{a}}},
+		{Name: "hetzner", Catalog: fakeCatalog{offers: []model.Offer{h}}},
+	}}}
+	_, out, _ := run(s, model.Need{VCPU: 8})
+	if h, a := strings.Index(out, "hetzner"), strings.Index(out, "aws "); h < 0 || a < h {
+		t.Errorf("the euro row comes first:\n%s", out)
+	}
+	for _, want := range []string{"in EUR (except where another currency is shown)", "NOT converted (no exchange rate): USD", "listed after the others"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+}
