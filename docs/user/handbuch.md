@@ -1,7 +1,7 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.68  
-Software-Version: v0.12.0  
+Version: 1.69  
+Software-Version: v0.13.0  
 Stand: 29.10.2026  
 
 ## 1. Einleitung
@@ -80,12 +80,12 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 
 **Mit Homebrew** (Linux und macOS): `brew install pt9912/viper/viper`, dann `viper version` (Update: `brew upgrade viper`). Sonst von Hand:
 
-1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.12.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.12.0_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
+1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.13.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.13.0_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
 2. Prüfen Sie die Datei und machen Sie sie ausführbar:
    ```bash
-   grep viper_v0.12.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
-   chmod +x viper_v0.12.0_linux_amd64
-   mv viper_v0.12.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
+   grep viper_v0.13.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
+   chmod +x viper_v0.13.0_linux_amd64
+   mv viper_v0.13.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
    ```
 3. Prüfen Sie die Installation: `viper version`.
 
@@ -1003,3 +1003,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.66 | v0.12.0 | Release v0.12.0: die Änderungen 1.59 bis 1.65 (`viper find`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.12.0`. |
 | 1.67 | v0.13.0 | `viper find` braucht für Hetzner keinen Token mehr (öffentliche Seiten von hetzner.com; mit Token weiter die Preise des Projekts) und rechnet bei allen Anbietern die Gebühr für die öffentliche IPv4-Adresse in den Preis. Über das Google-Projekt kommen die Preise jetzt in Dollar, wie über die Seiten. |
 | 1.68 | v0.13.0 | `viper find`: `--location` braucht `--provider`; gemerkte Preise gelten ohne Netz höchstens sieben Tage (bisher nur der Kurs der EZB); Google: geteilte Kerne auch ohne Projekt nicht mehr in der Liste. |
+| 1.69 | v0.13.0 | Release v0.13.0: die Änderungen 1.67 und 1.68 (`viper find` ohne Token bei Hetzner, IPv4-Gebühr im Preis, `--location` mit `--provider`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.13.0`. |
