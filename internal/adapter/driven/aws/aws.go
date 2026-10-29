@@ -1,6 +1,7 @@
 // Package aws is the adapter of the cloud port (internal/port/driven/cloud) for Amazon EC2: a
 // server is an instance in the default VPC (or the subnet of AWS_SUBNET_ID), the login key a key
-// pair, the firewall a security group. What viper creates is tagged viper=<server name>.
+// pair, the firewall a security group. What viper creates is tagged viper=<server name>;
+// the instance and its volume also get the tags of AWS_TAGS.
 package aws
 
 import (
@@ -63,6 +64,7 @@ type Options struct {
 	SubnetID string // AWS_SUBNET_ID, "" for the default subnet
 	VPCID    string // AWS_VPC_ID, "" for the default VPC
 	RootGB   int32  // size of the root volume
+	Tags     string // AWS_TAGS: KEY=VALUE pairs, comma-separated, for the instance and its volume
 	// Poll is how long to wait between two looks at an instance (default 3 s).
 	Poll time.Duration
 }

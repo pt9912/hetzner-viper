@@ -35,7 +35,7 @@ func NewProvider(m *model.Machine) Provider {
 		root, _ := strconv.Atoi(m.Get("AWS_ROOT_GB"))
 		return Provider{aws.New(aws.Options{
 			Location: m.ServerLocation, Profile: m.Get("AWS_PROFILE"), SubnetID: m.Get("AWS_SUBNET_ID"),
-			VPCID: m.Get("AWS_VPC_ID"), RootGB: int32(root),
+			VPCID: m.Get("AWS_VPC_ID"), RootGB: int32(root), Tags: m.Get("AWS_TAGS"),
 		})}
 	}
 	return Provider{}

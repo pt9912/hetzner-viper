@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -35,6 +36,48 @@ func prepare(t *testing.T, f *fakeAWS, c *aws.Client) {
 	t.Helper()
 	if _, err := c.EnsureFirewall(context.Background(), "claude-ssh", []string{"0.0.0.0/0", "::/0"}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCreateServerAddsAWSTagsToInstanceAndVolume(t *testing.T) {
+	f := newFakeAWS()
+	c := aws.NewWith(aws.Options{Location: "eu-central-1", Tags: "owner=me, ttl=2026-11-01T12:00:00Z"}, f, f)
+	prepare(t, f, c)
+	if _, err := c.CreateServer(context.Background(), model.ServerSpec{
+		Name: "claude-web", Size: "t4g.small", Region: "eu-central-1", Image: "ubuntu-24.04", SSHKey: "claude-login", Firewall: "claude-ssh",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, ts := range f.runs[0].TagSpecifications {
+		got := map[string]string{}
+		for _, tg := range ts.Tags {
+			got[*tg.Key] = *tg.Value
+		}
+		if len(got) != 4 || got["Name"] != "claude-web" || got["viper"] != "claude-web" || got["owner"] != "me" || got["ttl"] != "2026-11-01T12:00:00Z" {
+			t.Errorf("%s tags %v", ts.ResourceType, got)
+		}
+	}
+}
+
+func TestCreateServerRefusesBadAWSTagsBeforeCreating(t *testing.T) {
+	for _, tags := range []string{"novalue", "Name=x", "viper=x", "aws:x=1", "a=1,a=2", "k=" + strings.Repeat("v", 257), strings.Repeat("k", 129) + "=v"} {
+		f := newFakeAWS()
+		c := aws.NewWith(aws.Options{Location: "eu-central-1", Tags: tags}, f, f)
+		prepare(t, f, c)
+		_, err := c.CreateServer(context.Background(), model.ServerSpec{Name: "claude-web", Size: "t4g.small", Image: "ubuntu-24.04", SSHKey: "k", Firewall: "claude-ssh"})
+		if err == nil || !strings.Contains(err.Error(), "AWS_TAGS") || len(f.runs) != 0 {
+			t.Errorf("AWS_TAGS=%q: err %v, runs %d", tags, err, len(f.runs))
+		}
+	}
+	var many []string
+	for i := 0; i < 49; i++ {
+		many = append(many, fmt.Sprintf("k%d=v", i))
+	}
+	f := newFakeAWS()
+	c := aws.NewWith(aws.Options{Location: "eu-central-1", Tags: strings.Join(many, ",")}, f, f)
+	prepare(t, f, c)
+	if _, err := c.CreateServer(context.Background(), model.ServerSpec{Name: "claude-web", Size: "t4g.small", Image: "ubuntu-24.04", SSHKey: "k", Firewall: "claude-ssh"}); err == nil || len(f.runs) != 0 {
+		t.Errorf("49 tags and viper's two are over 50: err %v", err)
 	}
 }
 
@@ -257,6 +300,17 @@ func TestAPublicSubnetIsPreferred(t *testing.T) {
 	}
 	if got := *f.runs[0].NetworkInterfaces[0].SubnetId; got != "subnet-public" {
 		t.Errorf("subnet %s: a server in a private subnet has no public address", got)
+	}
+}
+
+func TestValidateFailsOnBadAWSTags(t *testing.T) {
+	line, _ := edKey(1)
+	f := newFakeAWS()
+	c := aws.NewWith(aws.Options{Location: "eu-central-1", Tags: "owner"}, f, f)
+	check := model.Check{Machine: "web", ServerName: "claude-web", KeyName: "claude-login", KeyFile: "/k", PublicKey: line,
+		Spec: model.ServerSpec{Name: "claude-web", Size: "t3.large", Region: "eu-central-1", Image: "ubuntu-24.04"}}
+	if got := texts(c.Validate(context.Background(), check)); !strings.Contains(got, `FAIL AWS_TAGS: "owner" is not KEY=VALUE`) {
+		t.Errorf("preflight must report the bad tags: %s", got)
 	}
 }
 

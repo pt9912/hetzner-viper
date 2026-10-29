@@ -238,6 +238,11 @@ func applyProviders(c *model.Machine, vars map[string]string, needTokens bool) (
 	if err := checkDiskSizes(c); err != nil {
 		return prov, err
 	}
+	if c.Provider == "aws" {
+		if _, err := model.ParseAWSTags(c.Get("AWS_TAGS")); err != nil {
+			return prov, err
+		}
+	}
 	c.DNSProvider = DNSProviderOf(vars)
 	if c.DNSProvider != model.DNSCloudflare && c.DNSProvider != model.DNSNone {
 		return prov, fmt.Errorf("DNS_PROVIDER: %s or %s: %s", model.DNSCloudflare, model.DNSNone, c.DNSProvider)

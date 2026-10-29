@@ -23,6 +23,9 @@ func (c *Client) Validate(ctx context.Context, ch model.Check) []model.Finding {
 		return f
 	}
 	f.add(model.OK, "AWS credentials can read EC2 in %s (write access is only seen when viper up creates something)", c.opts.region())
+	if _, err := awsTags(c.opts.Tags); err != nil {
+		f.add(model.Fail, "%s", err)
+	}
 	c.checkInstance(ctx, &f, ch)
 	if n, err := c.network(ctx); err != nil {
 		f.add(model.Fail, "subnets could not be read: %s", c.Describe(err))

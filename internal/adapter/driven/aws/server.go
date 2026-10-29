@@ -61,11 +61,16 @@ type launch struct {
 	image  *image
 	subnet string
 	group  string
+	tags   []types.Tag // the tags of AWS_TAGS
 }
 
 // plan looks up the instance type, the image, the subnet and the security group, and fails
 // before anything is created if one of them is missing.
 func (c *Client) plan(ctx context.Context, s model.ServerSpec) (*launch, error) {
+	extra, err := awsTags(c.opts.Tags)
+	if err != nil {
+		return nil, err
+	}
 	it, err := c.instanceType(ctx, s.Size)
 	if err != nil {
 		return nil, err
@@ -97,7 +102,7 @@ func (c *Client) plan(ctx context.Context, s model.ServerSpec) (*launch, error) 
 	if len(s.UserData) > userDataLimit {
 		return nil, fmt.Errorf("the cloud-init user data is %d bytes; EC2 takes %d", len(s.UserData), userDataLimit)
 	}
-	return &launch{image: img, subnet: n.subnet, group: sg}, nil
+	return &launch{image: img, subnet: n.subnet, group: sg, tags: extra}, nil
 }
 
 // CreateServer starts the instance and waits until it runs and has a public address.
@@ -158,8 +163,8 @@ func (c *Client) runInput(s model.ServerSpec, l *launch) *ec2.RunInstancesInput 
 		// the instance metadata only with a session token: a server-side request forgery cannot read it
 		MetadataOptions: &types.InstanceMetadataOptionsRequest{HttpTokens: types.HttpTokensStateRequired, HttpEndpoint: types.InstanceMetadataEndpointStateEnabled},
 		TagSpecifications: []types.TagSpecification{
-			{ResourceType: types.ResourceTypeInstance, Tags: tags(s.Name)},
-			{ResourceType: types.ResourceTypeVolume, Tags: tags(s.Name)},
+			{ResourceType: types.ResourceTypeInstance, Tags: append(tags(s.Name), l.tags...)},
+			{ResourceType: types.ResourceTypeVolume, Tags: append(tags(s.Name), l.tags...)},
 		},
 	}
 }

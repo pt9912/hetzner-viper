@@ -70,6 +70,16 @@ func filter(name string, values ...string) types.Filter {
 	return types.Filter{Name: ptr(name), Values: values}
 }
 
+// awsTags are the tags of AWS_TAGS.
+func awsTags(s string) ([]types.Tag, error) {
+	parsed, err := model.ParseAWSTags(s)
+	var out []types.Tag
+	for _, t := range parsed {
+		out = append(out, types.Tag{Key: ptr(t.Key), Value: ptr(t.Value)})
+	}
+	return out, err
+}
+
 func tags(name string) []types.Tag {
 	return []types.Tag{{Key: ptr("Name"), Value: ptr(name)}, {Key: ptr("viper"), Value: ptr(name)}}
 }

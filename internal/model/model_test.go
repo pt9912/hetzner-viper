@@ -2,6 +2,7 @@ package model_test
 
 import (
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
@@ -42,6 +43,21 @@ func TestSSHFailureKind(t *testing.T) {
 	} {
 		if got := model.SSHFailureKind(stderr); got != want {
 			t.Errorf("%q: got %s, want %s", stderr, got, want)
+		}
+	}
+}
+
+func TestParseAWSTags(t *testing.T) {
+	got, err := model.ParseAWSTags(" owner = me, ttl=2026-11-01T12:00:00Z,,team=a b/c@d ")
+	if err != nil || len(got) != 3 || got[0] != (model.AWSTag{Key: "owner", Value: "me"}) || got[2].Value != "a b/c@d" {
+		t.Errorf("good tags: %v %v", got, err)
+	}
+	if got, err := model.ParseAWSTags(""); err != nil || len(got) != 0 {
+		t.Errorf("no tags: %v %v", got, err)
+	}
+	for _, bad := range []string{"novalue", "=v", "Name=x", "viper=x", "AWS:x=1", "a=1,a=2", "team=a,b", "k=v;w", "k#=v", "k=" + strings.Repeat("v", 257), strings.Repeat("k", 129) + "=v"} {
+		if _, err := model.ParseAWSTags(bad); err == nil {
+			t.Errorf("%q must be refused", bad)
 		}
 	}
 }

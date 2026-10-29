@@ -1,8 +1,8 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.52  
+Version: 1.53  
 Software-Version: v0.8.0  
-Stand: 27.10.2026  
+Stand: 29.10.2026  
 
 ## 1. Einleitung
 
@@ -614,6 +614,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `AWS_PROFILE` | AWS-Profil für die Anmeldung (nur AWS) | Standardkette |
 | `AWS_SUBNET_ID`, `AWS_VPC_ID` | Subnetz bzw. VPC für den Server (nur AWS) | Default-VPC |
 | `AWS_ROOT_GB` | Größe der Systemplatte in GB (nur AWS) | `50` |
+| `AWS_TAGS` | Zusätzliche Tags für Instanz und Systemplatte als kommagetrennte `SCHLÜSSEL=WERT`-Paare, z. B. `owner=me,ttl=2026-11-01T12:00:00Z` (nur AWS) | leer |
 | `GCP_PROJECT` | Google-Cloud-Projekt (nur GCP, Pflichtangabe) | leer |
 | `GCP_NETWORK`, `GCP_ROOT_GB` | VPC-Netz bzw. Größe der Bootplatte in GB (nur GCP) | `default` bzw. `50` |
 | `AZURE_SUBSCRIPTION_ID` | Azure-Abonnement (nur Azure, Pflichtangabe) | leer |
@@ -651,7 +652,8 @@ Mit `PROVIDER=aws` in `.env.local` (oder in `machines/<rechner>.env.local`) legt
 
 * **Anmeldung:** `viper` nutzt die Anmeldung der AWS-CLI, also `aws login`, SSO (`aws sso login --profile <name>`) oder Zugangsschlüssel in der Umgebung. Ein Profil geben Sie mit `AWS_PROFILE` an. `viper preflight <rechner>` zeigt, ob die Anmeldung gilt.
 * **Wo der Server liegt:** in der Default-VPC der Region, in einem Subnetz mit öffentlicher Adresse. Gibt es keine Default-VPC, setzen Sie `AWS_SUBNET_ID` oder `AWS_VPC_ID`. Mit einer Zone in `SERVER_LOCATION` (z. B. `eu-central-1b`) wählt `viper` ein Subnetz dieser Zone.
-* **Was angelegt wird:** eine Instanz, ein Schlüsselpaar mit Ihrem Login-Schlüssel und eine Security Group `<SERVER_PREFIX>-ssh` (SSH und `ping` aus `SSH_ALLOWED_CIDRS`). Alles trägt das Tag `viper=<server>`. Die Instanz erzwingt IMDSv2.
+* **Was angelegt wird:** eine Instanz, ein Schlüsselpaar mit Ihrem Login-Schlüssel und eine Security Group `<SERVER_PREFIX>-ssh` (SSH und `ping` aus `SSH_ALLOWED_CIDRS`). Alles trägt das Tag `viper=<server>` (und `Name`). Die Instanz erzwingt IMDSv2.
+* **Eigene Tags:** `AWS_TAGS=owner=me,project=x,ttl=2026-11-01T12:00:00Z` gibt Instanz und Systemplatte schon beim Anlegen (`RunInstances`) diese Tags mit, sodass auch Richtlinien mit `aws:RequestTag/...` den Start zulassen. `Name` und `viper` sind reserviert. Schlüsselpaar und Security Group sind gemeinsam genutzt und bekommen die Tags nicht. Grenzen von AWS: Schlüssel höchstens 128, Wert höchstens 256 Zeichen, nur Buchstaben, Ziffern, Leerzeichen und `_ . : / = + - @`, kein Präfix `aws:`, höchstens 50 Tags je Ressource (mit `Name` und `viper`); ein Wert kann kein Komma enthalten. `viper` prüft das beim Laden der Einstellungen, also auch vor `viper up`. Die Tags gelten nur beim Anlegen: Einen schon vorhandenen Server ändert `viper up` nicht. Tag-Werte stehen in der AWS-Konsole und in Kostenberichten: keine Geheimnisse eintragen.
 * **Image:** `ubuntu-24.04` löst `viper` über den von Canonical veröffentlichten AMI-Parameter auf, passend zur Architektur des Instanztyps (`t3.*` x86, `t4g.*` ARM). Eine eigene AMI geben Sie als `ami-…` an.
 * **Berechtigungen:** Die Rolle muss Instanzen starten, beschreiben und beenden, Security Groups anlegen und ergänzen, Schlüsselpaare importieren und den SSM-Parameter von Canonical lesen dürfen.
 * **Kosten:** AWS rechnet die Instanz und die Platte ab, solange der Server existiert. `viper down <rechner>` beendet die Instanz; Schlüsselpaar und Security Group bleiben für weitere Rechner erhalten.
@@ -929,3 +931,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.50 | v0.8.0 | Neu: Google Cloud (`gcp`) und Azure (`azure`) als Anbieter, noch nicht in einem echten Konto getestet. |
 | 1.51 | v0.8.0 | Neu: `DNS_PROVIDER=none` für den Betrieb ohne Cloudflare und ohne Domain. Die Kapitel zu Voraussetzungen, Einrichtung, Preflight und Fehlerbehebung gelten nun für alle Anbieter; die Plattengröße (`*_ROOT_GB`) wird geprüft. |
 | 1.52 | v0.8.0 | Release v0.8.0: die Änderungen 1.48 bis 1.51 (Anbieter AWS, Google Cloud und Azure, Betrieb ohne Cloudflare). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.8.0`. |
+| 1.53 | | Neu: Einstellung `AWS_TAGS` (nur AWS): zusätzliche Tags für Instanz und Systemplatte beim Anlegen; `viper preflight` prüft Syntax und AWS-Grenzen. |

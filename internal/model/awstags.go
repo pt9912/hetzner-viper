@@ -1,0 +1,57 @@
+package model
+
+import (
+	"fmt"
+	"regexp"
+	"strings"
+)
+
+// The limits of AWS for tags (the Name and viper tags viper sets count).
+const (
+	maxAWSTags     = 50
+	maxAWSTagKey   = 128
+	maxAWSTagValue = 256
+)
+
+// AWSTag is one KEY=VALUE pair of AWS_TAGS.
+type AWSTag struct{ Key, Value string }
+
+// awsTagChars is what AWS allows in a tag key and value: letters, digits, spaces and _ . : / = + - @.
+var awsTagChars = regexp.MustCompile(`^[\p{L}\p{Z}\p{N}_.:/=+\-@]*$`)
+
+// ParseAWSTags reads AWS_TAGS, comma-separated KEY=VALUE pairs (a value cannot contain a comma),
+// and returns them in order. The keys Name and viper are viper's own and cannot be set.
+func ParseAWSTags(s string) ([]AWSTag, error) {
+	var out []AWSTag
+	seen := map[string]bool{}
+	for _, pair := range strings.Split(s, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(pair, "=")
+		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+		switch {
+		case !ok || k == "":
+			return nil, fmt.Errorf("AWS_TAGS: %q is not KEY=VALUE (a value cannot contain a comma)", pair)
+		case k == "Name" || k == "viper":
+			return nil, fmt.Errorf("AWS_TAGS: the key %s is reserved for viper", k)
+		case strings.HasPrefix(strings.ToLower(k), "aws:"):
+			return nil, fmt.Errorf("AWS_TAGS: the key %s starts with aws:, which AWS keeps for itself", k)
+		case len([]rune(k)) > maxAWSTagKey:
+			return nil, fmt.Errorf("AWS_TAGS: the key %.20s... is longer than %d characters", k, maxAWSTagKey)
+		case len([]rune(v)) > maxAWSTagValue:
+			return nil, fmt.Errorf("AWS_TAGS: the value of %s is longer than %d characters", k, maxAWSTagValue)
+		case !awsTagChars.MatchString(k) || !awsTagChars.MatchString(v):
+			return nil, fmt.Errorf("AWS_TAGS: %s=%s has a character AWS does not allow (letters, digits, spaces and _ . : / = + - @ only)", k, v)
+		case seen[k]:
+			return nil, fmt.Errorf("AWS_TAGS: the key %s is set twice", k)
+		}
+		seen[k] = true
+		out = append(out, AWSTag{k, v})
+	}
+	if n := len(out) + 2; n > maxAWSTags {
+		return nil, fmt.Errorf("AWS_TAGS: %d tags and viper's own two are more than the %d AWS allows", len(out), maxAWSTags)
+	}
+	return out, nil
+}

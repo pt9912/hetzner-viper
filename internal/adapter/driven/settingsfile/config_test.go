@@ -192,6 +192,20 @@ func TestLoadIgnoresPROVIDERFromTheShellAndTakesItInLowerCase(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsBadAWSTagsOnlyForAWS(t *testing.T) {
+	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
+	_, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nPROVIDER=aws\nAWS_TAGS=owner\n", ""), "web", env, false)
+	if err == nil || !strings.Contains(err.Error(), "AWS_TAGS") {
+		t.Errorf("a bad AWS_TAGS must stop the load: %v", err)
+	}
+	if _, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nPROVIDER=aws\nAWS_TAGS=owner=me,ttl=2026-11-01T12:00:00Z\n", ""), "web", env, false); err != nil {
+		t.Errorf("good tags: %v", err)
+	}
+	if _, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nAWS_TAGS=owner\n", ""), "web", env, false); err != nil {
+		t.Errorf("AWS_TAGS means nothing for Hetzner: %v", err)
+	}
+}
+
 func TestLoadRejectsADiskSizeThatIsNoNumber(t *testing.T) {
 	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
 	for _, bad := range []string{"100GB", "0", "-5", "99999", "abc"} {
