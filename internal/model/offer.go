@@ -14,6 +14,9 @@ type Offer struct {
 	HourlyPrice  float64 // list price in Currency, with VAT if VATPercent is not 0
 	MonthlyPrice float64
 	Currency     string
+	// SysDiskGB is the size of the system disk that is chosen apart from the type and whose price
+	// is in the prices; 0 if the disk comes with the type (DiskGB) or is not priced.
+	SysDiskGB int
 	// VATPercent is the VAT in the prices (19 for 19 %); 0 if they are without VAT.
 	VATPercent float64
 }
@@ -26,6 +29,8 @@ type Need struct {
 	Arch   string // "" for any
 	// Location limits the offers to one location; "" for any.
 	Location string
+	// Provider limits the search to one provider; "" for all.
+	Provider string
 }
 
 // Fits reports whether the offer has what the need asks for.

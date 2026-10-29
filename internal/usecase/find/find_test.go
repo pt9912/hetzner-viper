@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/usecase/find"
@@ -16,7 +18,9 @@ type fakeCatalog struct {
 	err    error
 }
 
-func (f fakeCatalog) Offers(context.Context) ([]model.Offer, error) { return f.offers, f.err }
+func (f fakeCatalog) Offers(context.Context, string, int) ([]model.Offer, error) {
+	return f.offers, f.err
+}
 
 func offer(typ, loc string, cpu int, ram float64, disk int, monthly float64) model.Offer {
 	return model.Offer{Provider: "hetzner", Type: typ, Location: loc, VCPU: cpu, RAMGB: ram, DiskGB: disk, Arch: "x86", HourlyPrice: monthly / 700, MonthlyPrice: monthly, Currency: "EUR"}
@@ -83,5 +87,52 @@ func TestNothingFits(t *testing.T) {
 	cat := fakeCatalog{offers: []model.Offer{offer("a", "fsn1", 2, 4, 40, 5)}}
 	if n, out, _ := run(find.Service{Deps: find.Deps{Sources: []find.Source{{Name: "hetzner", Catalog: cat}}}}, model.Need{VCPU: 64}); n != 0 || out != "" {
 		t.Errorf("%d %q", n, out)
+	}
+}
+
+// slowCatalog answers only when all the others are asking too: one at a time it would never.
+type slowCatalog struct {
+	asking *sync.WaitGroup
+	offers []model.Offer
+}
+
+func (s slowCatalog) Offers(context.Context, string, int) ([]model.Offer, error) {
+	s.asking.Done()
+	s.asking.Wait()
+	return s.offers, nil
+}
+
+func TestTheProvidersAreAskedAtTheSameTimeAndShownInOrder(t *testing.T) {
+	var asking sync.WaitGroup
+	asking.Add(3)
+	mk := func(name, typ string) find.Source {
+		o := offer(typ, "x", 2, 4, 40, 5)
+		o.Provider = name
+		return find.Source{Name: name, Catalog: slowCatalog{&asking, []model.Offer{o}}}
+	}
+	done := make(chan string)
+	go func() {
+		_, out, _ := run(find.Service{Deps: find.Deps{Sources: []find.Source{mk("aws", "a1"), mk("azure", "b1"), mk("hetzner", "c1")}}}, model.Need{VCPU: 1})
+		done <- out
+	}()
+	select {
+	case out := <-done:
+		a, b, c := strings.Index(out, "== aws"), strings.Index(out, "== azure"), strings.Index(out, "== hetzner")
+		if a < 0 || b < a || c < b {
+			t.Errorf("order:\n%s", out)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the providers are asked one after the other")
+	}
+}
+
+func TestOnlyTheNamedProviderIsAsked(t *testing.T) {
+	s := find.Service{Deps: find.Deps{Sources: []find.Source{
+		{Name: "aws", Skip: "no credentials"},
+		{Name: "hetzner", Catalog: fakeCatalog{offers: []model.Offer{offer("a", "fsn1", 2, 4, 40, 5)}}},
+	}}}
+	n, _, errOut := run(s, model.Need{VCPU: 1, Provider: "hetzner"})
+	if n != 1 || errOut != "" {
+		t.Errorf("%d %q", n, errOut)
 	}
 }

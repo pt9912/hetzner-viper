@@ -13,10 +13,10 @@ type options struct {
 	machine, repo, cmd, dir   string
 	force, full, noCode, tmux bool
 	// the need of viper find
-	cpu, disk      int
-	ram            float64
-	arch, location string
-	h              *Host // the outside world
+	cpu, disk                int
+	ram                      float64
+	arch, location, provider string
+	h                        *Host // the outside world
 }
 
 // host returns the outside world of the command.
@@ -42,7 +42,7 @@ var errHelp = errors.New("help")
 // isValueFlag reports whether the option takes a value.
 func isValueFlag(n string) bool {
 	switch n {
-	case "repo", "cmd", "dir", "cpu", "ram", "disk", "arch", "location":
+	case "repo", "cmd", "dir", "cpu", "ram", "disk", "arch", "location", "provider":
 		return true
 	}
 	return false
@@ -59,7 +59,7 @@ func commands() map[string]command {
 		"down":      {usage: "<machine> [--force]", machine: needMachine, flags: []string{"force"}, run: nativeDown},
 		"vscode":    {usage: "<machine>", machine: needMachine, run: nativeVSCode},
 		"dns":       {usage: "<machine>", machine: needMachine, run: nativeDNS},
-		"find":      {usage: "[--cpu N] [--ram GB] [--disk GB] [--arch x86|arm] [--location L]", machine: noMachine, flags: []string{"cpu", "ram", "disk", "arch", "location"}, run: nativeFind},
+		"find":      {usage: "[--cpu N] [--ram GB] [--disk GB] [--arch x86|arm] [--location L] [--provider P]", machine: noMachine, flags: []string{"cpu", "ram", "disk", "arch", "location", "provider"}, run: nativeFind},
 		"log":       {usage: "[<machine>] [--full]", machine: maybeMachine, flags: []string{"full"}, run: nativeLog},
 		"version":   {usage: "", machine: noMachine},
 	}
@@ -231,6 +231,8 @@ func setValue(o *options, name, flag, v string) error {
 		o.arch = v
 	case "location":
 		o.location = v
+	case "provider":
+		o.provider = v
 	default:
 		return setNumber(o, name, flag, v)
 	}

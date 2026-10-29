@@ -11,7 +11,7 @@ import (
 // Offers lists the server types of every location they can be ordered in. The prices are the
 // list prices of the project with VAT, in the currency of the project (without the fee for the
 // public IPv4 address).
-func (h *Client) Offers(ctx context.Context) ([]model.Offer, error) {
+func (h *Client) Offers(ctx context.Context, _ string, _ int) ([]model.Offer, error) {
 	pricing, _, err := h.c.Pricing.Get(ctx)
 	if err != nil {
 		return nil, err

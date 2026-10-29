@@ -90,7 +90,7 @@ func price(loc, hourly, monthly string) map[string]any {
 }
 
 func TestOffersAreTheOrderablePricedTypes(t *testing.T) {
-	offers, err := hetzner.New("good", api(t).URL).Offers(context.Background())
+	offers, err := hetzner.New("good", api(t).URL).Offers(context.Background(), "", 0)
 	if err != nil || len(offers) != 1 {
 		t.Fatalf("%+v %v", offers, err)
 	}

@@ -5,10 +5,14 @@ package app
 import (
 	"context"
 	"io"
+	"strings"
 	"time"
 
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/aws"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/azure"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/cloudflare"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/editor"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/gcp"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/git"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/hetzner"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/nodns"
@@ -139,28 +143,56 @@ func Check(c *model.Machine) check.Service {
 }
 
 // Find is the use case Find over the price lists of the providers; a provider whose credentials
-// get does not give, or that has no price list yet, is named and left out.
+// get does not give is named and left out. A provider that prices a region at a time looks in the
+// location of SERVER_LOCATION if PROVIDER names it, else in its default region.
 func Find(get func(string) string) find.Service {
 	var sources []find.Source
 	for _, name := range model.ProviderNames() {
-		src := find.Source{Name: name}
 		info, _ := model.LookupProvider(name)
+		src := find.Source{Name: name}
 		for _, c := range info.Credentials {
 			if get(c) == "" && src.Skip == "" {
 				src.Skip = c + " is not set"
 			}
 		}
 		if src.Skip == "" {
-			switch name {
-			case "hetzner":
-				src.Catalog, src.Describe = hetzner.New(get("HCLOUD_TOKEN"), ""), hetzner.Error
-			default:
-				src.Skip = "no price list yet"
-			}
+			setCatalog(&src, get)
+			src.Location = defaultLocation(name, info, get)
 		}
 		sources = append(sources, src)
 	}
 	return find.Service{Deps: find.Deps{Sources: sources}}
+}
+
+// defaultLocation is where the price list of a provider is read if --location says nothing; ""
+// for a provider that lists all its locations at once.
+func defaultLocation(name string, info model.ProviderInfo, get func(string) string) string {
+	if name == "hetzner" {
+		return ""
+	}
+	if loc := get("SERVER_LOCATION"); loc != "" && strings.ToLower(get("PROVIDER")) == name {
+		return loc
+	}
+	return info.Region
+}
+
+// setCatalog makes the price list of the provider and what words its errors.
+func setCatalog(src *find.Source, get func(string) string) {
+	switch src.Name {
+	case "hetzner":
+		src.Catalog, src.Describe = hetzner.New(get("HCLOUD_TOKEN"), ""), hetzner.Error
+	case "aws":
+		c := aws.NewCatalog(get("AWS_PROFILE"))
+		src.Catalog, src.Describe = c, c.Describe
+	case "azure":
+		c := azure.NewCatalog(get("AZURE_SUBSCRIPTION_ID"))
+		src.Catalog, src.Describe = c, c.Describe
+	case "gcp":
+		c := gcp.NewCatalog(get("GCP_PROJECT"))
+		src.Catalog, src.Describe = c, c.Describe
+	default:
+		src.Skip = "no price list"
+	}
 }
 
 // vscode starts VS Code without the credentials of any provider in its environment.
