@@ -19,9 +19,7 @@ jobs:
       # tool fails the tests instead of skipping them)
       - run: make check
 
-  # Windows is not fully supported yet: some tests assume Unix (file modes, symlinks, /paths, sh) and
-  # some tools of the Linux job (sshd, jq, shellcheck) may be missing on the runner. This job only runs
-  # the tests; the step may fail until that is sorted out (look at its log for what breaks).
+  # Only the tests: those that need Unix (file modes, symlinks, the bash fake server) skip themselves on Windows.
   windows:
     runs-on: windows-latest
     timeout-minutes: 15
@@ -30,6 +28,4 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - name: Tests (informational)
-        continue-on-error: true
-        run: go test ./...
+      - run: go test ./...
