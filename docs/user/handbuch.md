@@ -1,7 +1,7 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.56  
-Software-Version: v0.10.0  
+Version: 1.58  
+Software-Version: v0.11.0  
 Stand: 29.10.2026  
 
 ## 1. Einleitung
@@ -79,12 +79,12 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 
 **Mit Homebrew** (Linux und macOS): `brew install pt9912/viper/viper`, dann `viper version` (Update: `brew upgrade viper`). Sonst von Hand:
 
-1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.10.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.10.0_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
+1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.11.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.11.0_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
 2. Prüfen Sie die Datei und machen Sie sie ausführbar:
    ```bash
-   grep viper_v0.10.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
-   chmod +x viper_v0.10.0_linux_amd64
-   mv viper_v0.10.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
+   grep viper_v0.11.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
+   chmod +x viper_v0.11.0_linux_amd64
+   mv viper_v0.11.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
    ```
 3. Prüfen Sie die Installation: `viper version`.
 
@@ -938,3 +938,5 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.54 | v0.9.0 | Release v0.9.0: die Änderung 1.53 (`AWS_TAGS`, `AWS_TAGS_SHARED`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.9.0`. |
 | 1.55 | v0.10.0 | Neu: Binary für Windows (`windows_amd64.exe`), nur teilweise getestet; empfohlen bleibt WSL mit dem Linux-Binary. Pfade in `.env.local` stehen dort mit `/`. |
 | 1.56 | v0.10.0 | Release v0.10.0: die Änderung 1.55 (Windows-Binary). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.10.0`. |
+| 1.57 | v0.11.0 | Neu: `VIPER_POST_CLONE` führt Shell-Befehle einmalig direkt nach dem Clone im Repository auf dem Server aus (nach Homebrew); `VIPER_POST_CLONE_ON_ERROR=retry`, `ignore` oder `abort` bestimmt das Verhalten bei einem Fehler, der Ausgang steht im Protokoll. |
+| 1.58 | v0.11.0 | Release v0.11.0: die Änderung 1.57 (`VIPER_POST_CLONE`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.11.0`. |
