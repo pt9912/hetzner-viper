@@ -698,7 +698,7 @@ func TestADeployKeyIsNotBypassedByTheGithubToken(t *testing.T) {
 	if err := os.WriteFile(key, []byte("DEPLOY"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	w := newWorld(t, "VIPER_GH_TOKEN=x\nGIT_DEPLOY_KEY_FILE="+key+"\n")
+	w := newWorld(t, "VIPER_GH_TOKEN=x\nGIT_DEPLOY_KEY_FILE="+filepath.ToSlash(key)+"\n") // a \ in .env.local is an escape
 	if code, err := w.run("git@github.com:o/r.git"); code != 0 || err != nil {
 		t.Fatalf("%d %v\n%s", code, err, w.all())
 	}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +28,9 @@ type srvWorld struct {
 
 func newSrvWorld(t *testing.T, settings string) *srvWorld {
 	t.Helper()
+	if runtime.GOOS == "windows" { // before newWorld: its open log file would block the cleanup
+		t.Skip("the fake server runs the server scripts in bash on Unix paths")
+	}
 	brew := filepath.Join(t.TempDir(), "linuxbrew", "bin", "brew")
 	// the work directory is a temporary one, as /Development cannot be made here
 	w := newWorld(t, "VIPER_BREW="+brew+"\nWORKSPACE_DIR="+filepath.Join(t.TempDir(), "ws")+"\n"+settings)
