@@ -55,6 +55,18 @@ func homebrewChecks(r *report, c *model.Machine, repoURL string) {
 		}
 		brewListChecks(r, taps, trust, pkgs)
 	}
+	switch v := c.Setting("VIPER_POST_CLONE_ON_ERROR", "retry"); v {
+	case "retry", "ignore", "abort":
+	default:
+		r.bad("VIPER_POST_CLONE_ON_ERROR must be retry, ignore or abort: %s", v)
+	}
+	if strings.TrimSpace(c.Get("VIPER_POST_CLONE")) != "" {
+		if repoURL == "" {
+			r.info("VIPER_POST_CLONE without a repository: nothing to run")
+		} else {
+			r.info("VIPER_POST_CLONE: the commands run on the server, as builder, once after a fresh clone (not for a repository that is already there)")
+		}
+	}
 	if c.Setting("VIPER_BREWFILE", "0") == "1" {
 		if brew != "1" {
 			r.bad("VIPER_BREWFILE=1 needs VIPER_HOMEBREW=1")

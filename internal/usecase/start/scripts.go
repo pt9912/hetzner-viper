@@ -10,6 +10,8 @@ var (
 	gitIDScript string
 	//go:embed scripts/clone.sh
 	cloneScript string
+	//go:embed scripts/postclone.sh
+	postCloneScript string
 	//go:embed scripts/brewpkg.sh
 	brewPkgScript string
 	//go:embed scripts/cdline.sh

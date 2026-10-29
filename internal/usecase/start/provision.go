@@ -44,6 +44,12 @@ func (r *runner) provision(ctx context.Context, status, id, repoURL string, reme
 		return 1, driving.ErrShown
 	}
 	r.homebrew(ctx, repoURL, workdir)
+	if interrupted(ctx) {
+		return 1, driving.ErrShown
+	}
+	if code, err := r.postClone(ctx, repoURL, workdir); code != 0 || err != nil {
+		return code, err
+	}
 	r.codeServer(ctx)
 	if interrupted(ctx) {
 		return 1, driving.ErrShown
@@ -263,7 +269,12 @@ func (r *runner) repository(ctx context.Context, repoURL string, remembered bool
 			return "", code, err
 		}
 	}
-	if err := r.script(ctx, cloneScript, repoURL, workdir, c.Get("REPO_BRANCH"), useKey); err != nil {
+	// the marker for VIPER_POST_CLONE is only set by a clone made while the commands are configured
+	postClone := ""
+	if strings.TrimSpace(c.Get("VIPER_POST_CLONE")) != "" {
+		postClone = "1"
+	}
+	if err := r.script(ctx, cloneScript, repoURL, workdir, c.Get("REPO_BRANCH"), useKey, postClone); err != nil {
 		code, err := r.fail("cloning the repository failed")
 		return "", code, err
 	}
@@ -303,6 +314,38 @@ func (r *runner) homebrew(ctx context.Context, repoURL, workdir string) {
 	if err := r.script(ctx, brewPkgScript, args...); err != nil {
 		r.warnf(ctx, "WARNING: some Homebrew taps, trust entries or formulae failed (log on the server: ~/.config/viper/brew-packages.log); rerun %s\n", rerun)
 	}
+}
+
+// postClone runs the shell commands of VIPER_POST_CLONE in the cloned repository (as builder, in
+// a login shell, after Homebrew so its tools are there), only right after the clone. When they
+// fail, VIPER_POST_CLONE_ON_ERROR decides: retry (default: a warning, tried again with the next
+// viper up), ignore (a warning, never tried again) or abort (the start fails, server retained,
+// tried again with the next viper up). The outcome goes to the log.
+func (r *runner) postClone(ctx context.Context, repoURL, workdir string) (int, error) {
+	c := r.c
+	cmds := strings.TrimSpace(c.Get("VIPER_POST_CLONE"))
+	if cmds == "" || repoURL == "" {
+		return 0, nil
+	}
+	onError := c.Setting("VIPER_POST_CLONE_ON_ERROR", "retry")
+	err := r.script(ctx, postCloneScript, workdir, cmds, onError)
+	if err == nil {
+		r.lg.Event("post-clone commands done (or not pending)")
+		return 0, nil
+	}
+	if interrupted(ctx) {
+		return 1, driving.ErrShown
+	}
+	r.lg.Event("post-clone commands FAILED (on error: %s): %v", onError, err)
+	if onError == "abort" {
+		return r.fail("the VIPER_POST_CLONE commands failed (log on the server: ~/.config/viper/post-clone.log). Server retained; rerun viper up %s", c.Name)
+	}
+	again := "rerun viper up " + c.Name + " to try again"
+	if onError == "ignore" {
+		again = "not tried again (VIPER_POST_CLONE_ON_ERROR=ignore)"
+	}
+	r.warnf(ctx, "WARNING: the VIPER_POST_CLONE commands failed (log on the server: ~/.config/viper/post-clone.log); %s\n", again)
+	return 0, nil
 }
 
 // codeServer installs code-server (VS Code in the browser), opt-in with VIPER_CODE_SERVER=1 (not

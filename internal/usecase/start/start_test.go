@@ -721,7 +721,7 @@ func TestADeployKeyIsNotBypassedByTheGithubToken(t *testing.T) {
 	if strings.Join(scp.args, " ") != "scp -F "+w.c.SSHConfig+" -q "+filepath.ToSlash(key)+" hetzner-claude-web:.ssh/deploy_key" || chmod.args == nil {
 		t.Errorf("scp %q chmod %q", scp.args, chmod.args)
 	}
-	if clone.command() != "bash -s -- 'git@github.com:o/r.git' '/Development/r' '' '1'" {
+	if clone.command() != "bash -s -- 'git@github.com:o/r.git' '/Development/r' '' '1' ''" {
 		t.Errorf("clone command %q", clone.command())
 	}
 }
@@ -746,7 +746,7 @@ func TestCloneArgumentsAreQuotedAndTheRepositoryIsRemembered(t *testing.T) {
 			clone = call
 		}
 	}
-	want := "bash -s -- 'https://git.example.com/o/odd path; rm -rf $HOME.git' '/Development/odd path; rm -rf $HOME' 'feature/x y' ''"
+	want := "bash -s -- 'https://git.example.com/o/odd path; rm -rf $HOME.git' '/Development/odd path; rm -rf $HOME' 'feature/x y' '' ''"
 	if clone.command() != want {
 		t.Errorf("command\n%s\nwant\n%s", clone.command(), want)
 	}
