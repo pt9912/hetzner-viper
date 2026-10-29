@@ -8,9 +8,9 @@ if [[ -d "$dir/.git" ]]; then
   echo "Repository already present: $dir"
 else
   git clone ${branch:+--branch "$branch"} -- "$url" "$dir"
-  # tags that came with the clone: viper down only counts tags created later as unsaved work
-  git -C "$dir" for-each-ref --format='%(refname)' refs/tags > "$dir/.git/viper-clone-tags"
   # VIPER_POST_CLONE runs once for this clone (postclone.sh removes the marker when it succeeded)
   [[ -z "$post_clone" ]] || : > "$dir/.git/viper-post-clone-pending"
+  # tags that came with the clone: viper down only counts tags created later as unsaved work
+  git -C "$dir" for-each-ref --format='%(refname)' refs/tags > "$dir/.git/viper-clone-tags"
 fi
 [[ -z "$use_key" ]] || git -C "$dir" config core.sshCommand "$GIT_SSH_COMMAND"

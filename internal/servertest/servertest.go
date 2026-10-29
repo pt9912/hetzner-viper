@@ -322,6 +322,10 @@ func (s *Server) dispatch(ctx context.Context, remote, stdin string, stdout, std
 			return fail(stderr, 1, "error validating token")
 		}
 		s.Write("gh-token", stdin)
+	// VIPER_POST_CLONE: the check for the marker of a fresh clone, and the commands (stdin) into a file
+	case strings.HasPrefix(remote, "test -e ") && strings.Contains(remote, "viper-post-clone-pending"),
+		strings.Contains(remote, "viper/post-clone.sh"):
+		return s.bash(ctx, remote, stdin, stdout, stderr)
 	// host key read over a CA-verified connection
 	case remote == "cat /etc/ssh/ssh_host_ed25519_key.pub":
 		fmt.Fprint(stdout, s.File("remote-hostkey.pub"))

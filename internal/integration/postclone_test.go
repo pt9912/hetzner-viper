@@ -1,6 +1,7 @@
 package integration_test
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -27,12 +28,34 @@ func TestPostCloneRunsOnceInTheClonedRepositoryAfterHomebrew(t *testing.T) {
 	if b, p := lineNo(r.Out, "brew: installed"), lineNo(r.Out, "post-clone: done"); b < 0 || b >= p {
 		t.Errorf("Homebrew (line %d) must come before the post-clone commands (line %d):\n%s", b, p, r.Out)
 	}
-	if !strings.Contains(e.Events(), "post-clone commands done") {
+	if !strings.Contains(e.Events(), "post-clone commands ran") {
 		t.Errorf("not logged:\n%s", e.Events())
 	}
 	e.MustUp("web", origin)
 	if n := ran(e); n != 1 {
 		t.Errorf("ran %d times, want once (not again for an existing clone)", n)
+	}
+	if !strings.Contains(e.Events(), "post-clone commands not run (not a fresh clone, or they already ran)") {
+		t.Errorf("the skipped run is not told apart in the log:\n%s", e.Events())
+	}
+}
+
+func TestPostCloneCommandsStayOutOfArgvAndKeepTheNormalUmask(t *testing.T) {
+	tool(t, "git")
+	e := New(t, "")
+	e.Machine("web", "VIPER_POST_CLONE='umask > \"$MOCK_STATE/umask\" # token_in_a_command'\n")
+	e.MustUp("web", originRepo(t))
+	for _, c := range e.Srv.Calls() {
+		if strings.Contains(c, "token_in_a_command") {
+			t.Errorf("the commands are in an argument list: %s", c)
+		}
+	}
+	if u := strings.TrimSpace(e.Srv.File("umask")); u == "0077" {
+		t.Errorf("the commands run with the umask of the log (%s)", u)
+	}
+	fi, err := os.Stat(filepath.Join(e.Srv.Home, ".config", "viper", "post-clone.log"))
+	if err != nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("log: %v %v", fi, err)
 	}
 }
 

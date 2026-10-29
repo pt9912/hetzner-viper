@@ -328,9 +328,22 @@ func (r *runner) postClone(ctx context.Context, repoURL, workdir string) (int, e
 		return 0, nil
 	}
 	onError := c.Setting("VIPER_POST_CLONE_ON_ERROR", "retry")
-	err := r.script(ctx, postCloneScript, workdir, cmds, onError)
+	// only right after the clone: the marker that clone.sh set
+	marker := workdir + "/.git/viper-post-clone-pending"
+	out, _, err := r.d.Run(ctx, "", "ssh", "-n", "-F", c.SSHConfig, c.SSHAlias, "test -e "+model.QuoteAll(marker)+" && echo pending; true")
+	if err == nil && !strings.Contains(out, "pending") {
+		r.lg.Event("post-clone commands not run (not a fresh clone, or they already ran)")
+		return 0, nil
+	}
 	if err == nil {
-		r.lg.Event("post-clone commands done (or not pending)")
+		// through stdin into a 600 file: the commands (they may hold tokens) stay out of argv
+		err = r.ssh(ctx, cmds+"\n", "umask 077 && mkdir -p ~/.config/viper && cat > ~/.config/viper/post-clone.sh")
+	}
+	if err == nil {
+		err = r.script(ctx, postCloneScript, workdir, onError)
+	}
+	if err == nil {
+		r.lg.Event("post-clone commands ran")
 		return 0, nil
 	}
 	if interrupted(ctx) {
