@@ -34,7 +34,7 @@ func runFind(ctx context.Context, o *options, env settings.Env, stdout, stderr i
 	ctx, stop := notifyContext(ctx)
 	defer stop()
 	need := model.Need{VCPU: o.cpu, RAMGB: o.ram, DiskGB: o.disk, Arch: o.arch, Location: o.location, Provider: o.provider}
-	if o.host().Services.Find(get).Find(ctx, need, stdout, stderr) == 0 {
+	if o.host().Services.Find(get, stderr).Find(ctx, need, stdout, stderr) == 0 {
 		if ctx.Err() != nil {
 			return exitStatus(130)
 		}

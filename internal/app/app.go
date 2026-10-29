@@ -5,6 +5,8 @@ package app
 import (
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -57,7 +59,7 @@ func Run(version string, args []string, stdin io.Reader, stdout, stderr io.Write
 			Down:      func(c *model.Machine, o driving.DownOptions) driving.Down { return Down(c, o) },
 			Check:     func(c *model.Machine) driving.Check { return Check(c) },
 			Preflight: func(c *model.Machine) driving.Preflight { return Preflight(c) },
-			Find:      func(get func(string) string) driving.Find { return Find(get) },
+			Find:      func(get func(string) string, notice io.Writer) driving.Find { return Find(get, notice) },
 			OpenLog: func(m *model.Machine, action string, stdout, stderr io.Writer) (runlog.Run, error) {
 				l, err := runlogfile.Open(m.StateDir, m.ServerName, action, stdout, stderr)
 				if err != nil {
@@ -145,7 +147,7 @@ func Check(c *model.Machine) check.Service {
 // Find is the use case Find over the price lists of the providers; a provider whose credentials
 // get does not give is named and left out. A provider that prices a region at a time looks in the
 // location of SERVER_LOCATION if PROVIDER names it, else in its default region.
-func Find(get func(string) string) find.Service {
+func Find(get func(string) string, notice io.Writer) find.Service {
 	var sources []find.Source
 	for _, name := range model.ProviderNames() {
 		info, _ := model.LookupProvider(name)
@@ -156,7 +158,7 @@ func Find(get func(string) string) find.Service {
 			}
 		}
 		if src.Skip == "" {
-			setCatalog(&src, get)
+			setCatalog(&src, get, notice)
 			src.Location = defaultLocation(name, info, get)
 		}
 		sources = append(sources, src)
@@ -176,13 +178,22 @@ func defaultLocation(name string, info model.ProviderInfo, get func(string) stri
 	return info.Region
 }
 
+// cacheDir is where viper keeps what it can read again, "" if the system has no such place.
+func cacheDir() string {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "viper")
+}
+
 // setCatalog makes the price list of the provider and what words its errors.
-func setCatalog(src *find.Source, get func(string) string) {
+func setCatalog(src *find.Source, get func(string) string, notice io.Writer) {
 	switch src.Name {
 	case "hetzner":
 		src.Catalog, src.Describe = hetzner.New(get("HCLOUD_TOKEN"), ""), hetzner.Error
 	case "aws":
-		c := aws.NewCatalog(get("AWS_PROFILE"))
+		c := aws.NewCatalog(cacheDir(), notice)
 		src.Catalog, src.Describe = c, c.Describe
 	case "azure":
 		c := azure.NewCatalog(get("AZURE_SUBSCRIPTION_ID"))

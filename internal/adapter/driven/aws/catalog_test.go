@@ -1,96 +1,74 @@
 package aws_test
 
 import (
+	"bytes"
 	"context"
-	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"sort"
-	"strconv"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/aws"
+	"github.com/pt9912/hetzner-viper/internal/model"
 )
 
-type fakeTypes struct{ pages [][]types.InstanceTypeInfo }
-
-func (f *fakeTypes) DescribeInstanceTypes(_ context.Context, in *ec2.DescribeInstanceTypesInput, _ ...func(*ec2.Options)) (*ec2.DescribeInstanceTypesOutput, error) {
-	i := 0
-	if in.NextToken != nil {
-		i, _ = strconv.Atoi(*in.NextToken)
-	}
-	out := &ec2.DescribeInstanceTypesOutput{InstanceTypes: f.pages[i]}
-	if i+1 < len(f.pages) {
-		out.NextToken = ptr(fmt.Sprint(i + 1))
-	}
-	return out, nil
+// product and term are the entries of a price list.
+func product(id, family, typ, os, vcpu, mem, cpu, capacity string) string {
+	return fmt.Sprintf(`%q:{"sku":%q,"productFamily":%q,"attributes":{"instanceType":%q,"vcpu":%q,"memory":%q,"physicalProcessor":%q,"tenancy":"Shared","operatingSystem":%q,"licenseModel":"No License required","operation":"RunInstances","preInstalledSw":"NA","capacitystatus":%q,"locationType":"AWS Region"}}`,
+		id, id, family, typ, vcpu, mem, cpu, os, capacity)
 }
 
-type fakePricing struct {
-	items   []string
-	storage []string // the answer to the question for volumes
-	err     error
-	asked   *pricing.GetProductsInput
+func volume(id, api string) string {
+	return fmt.Sprintf(`%q:{"sku":%q,"productFamily":"Storage","attributes":{"volumeApiName":%q}}`, id, id, api)
 }
 
-func (f *fakePricing) GetProducts(_ context.Context, in *pricing.GetProductsInput, _ ...func(*pricing.Options)) (*pricing.GetProductsOutput, error) {
-	for _, flt := range in.Filters {
-		if *flt.Field == "productFamily" && *flt.Value == "Storage" {
-			return &pricing.GetProductsOutput{PriceList: f.storage}, f.err
+func term(id, unit, usd string) string {
+	return fmt.Sprintf(`%q:{"JRTCKXETXF":{"priceDimensions":{"JRTCKXETXF.6YS6EN2CT7":{"unit":%q,"pricePerUnit":{"USD":%q}}}}}`, id, unit, usd)
+}
+
+// priceList is a price list as AWS publishes it: the products first, then the terms.
+func priceList() string {
+	products := []string{
+		product("A1", "Compute Instance", "m7i.large", "Linux", "2", "8 GiB", "Intel Xeon", "Used"),
+		product("A2", "Compute Instance", "m7g.xlarge", "Linux", "4", "16 GiB", "AWS Graviton3 Processor", "Used"),
+		product("A3", "Compute Instance", "x2.big", "Linux", "64", "1,024 GiB", "Intel Xeon", "Used"),
+		product("W1", "Compute Instance", "m7i.large", "Windows", "2", "8 GiB", "Intel Xeon", "Used"),
+		product("R1", "Compute Instance", "m7i.large", "Linux", "2", "8 GiB", "Intel Xeon", "UnusedCapacityReservation"),
+		product("M1", "Compute Instance (bare metal)", "m7i.metal", "Linux", "96", "384 GiB", "Intel Xeon", "Used"),
+		product("U1", "Compute Instance", "unpriced.large", "Linux", "2", "4 GiB", "Intel Xeon", "Used"),
+		volume("V1", "gp3"), volume("V2", "gp2"),
+	}
+	terms := []string{
+		term("A1", "Hrs", "0.1134"), term("A2", "Hrs", "0.1632"), term("A3", "Hrs", "9.5"),
+		term("W1", "Hrs", "0.2"), term("R1", "Hrs", "0.0001"), term("M1", "Hrs", "5"),
+		term("V1", "GB-Mo", "0.0952"), term("V2", "GB-Mo", "0.119"),
+	}
+	return `{"formatVersion":"v1.0","disclaimer":"x","offerCode":"AmazonEC2","products":{` + strings.Join(products, ",") +
+		`},"terms":{"Reserved":{"A1":{"huge":{"priceDimensions":{}}}},"OnDemand":{` + strings.Join(terms, ",") + `}},"attributesList":{"x":[1,2,{"y":null}]}}`
+}
+
+// server serves the price list and counts the requests.
+func server(t *testing.T, body string, status int) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+	var n atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n.Add(1)
+		if r.URL.Path != "/eu-central-1/index.json" {
+			w.WriteHeader(403)
+			return
 		}
-	}
-	f.asked = in
-	return &pricing.GetProductsOutput{PriceList: f.items}, f.err
-}
-
-func itype(name string, vcpu int32, mib int64, arch types.ArchitectureType) types.InstanceTypeInfo {
-	return types.InstanceTypeInfo{
-		InstanceType:  types.InstanceType(name),
-		VCpuInfo:      &types.VCpuInfo{DefaultVCpus: ptr(vcpu)},
-		MemoryInfo:    &types.MemoryInfo{SizeInMiB: ptr(mib)},
-		ProcessorInfo: &types.ProcessorInfo{SupportedArchitectures: []types.ArchitectureType{arch}},
-	}
-}
-
-func volume(usd string) string {
-	return fmt.Sprintf(`{"product":{"attributes":{}},"terms":{"OnDemand":{"A":{"priceDimensions":{"A.B":{"unit":"GB-Mo","pricePerUnit":{"USD":%q}}}}}}}`, usd)
-}
-
-func listing(name, usd string) string {
-	return fmt.Sprintf(`{"product":{"attributes":{"instanceType":%q}},"terms":{"OnDemand":{"A":{"priceDimensions":{"A.B":{"unit":"Hrs","pricePerUnit":{"USD":%q}}}}}}}`, name, usd)
-}
-
-func TestCatalogJoinsTheSizesWithThePrices(t *testing.T) {
-	tc := &fakeTypes{pages: [][]types.InstanceTypeInfo{
-		{itype("m7i.large", 2, 8192, types.ArchitectureTypeX8664)},
-		{itype("m7g.xlarge", 4, 16384, types.ArchitectureTypeArm64), itype("nopriced.large", 2, 4096, types.ArchitectureTypeX8664)},
-	}}
-	pc := &fakePricing{items: []string{listing("m7i.large", "0.1134"), listing("m7g.xlarge", "0.1632"), "not json", listing("unknown.type", "1")}, storage: []string{volume("0.0952")}}
-	offers, err := aws.NewCatalogWith(tc, pc).Offers(context.Background(), "eu-central-1a", 80)
-	if err != nil || len(offers) != 2 {
-		t.Fatalf("%+v %v", offers, err)
-	}
-	sort.Slice(offers, func(i, j int) bool { return offers[i].Type < offers[j].Type })
-	g := offers[0] // m7g.xlarge
-	if g.Provider != "aws" || g.Type != "m7g.xlarge" || g.Location != "eu-central-1a" || g.VCPU != 4 || g.RAMGB != 16 || g.Arch != "arm" || g.DiskGB != 0 || g.SysDiskGB != 80 || abs(g.HourlyPrice-(0.1632+80*0.0952/730)) > 1e-9 || g.Currency != "USD" || g.VATPercent != 0 {
-		t.Errorf("%+v", g)
-	}
-	// 0.1134 * 730 + 80 GB * 0.0952
-	if m := offers[1].MonthlyPrice; abs(m-(0.1134*730+80*0.0952)) > 1e-9 {
-		t.Errorf("monthly price %v", m)
-	}
-	// the price list is asked for the region, not the zone
-	var region string
-	for _, f := range pc.asked.Filters {
-		if *f.Field == "regionCode" {
-			region = *f.Value
+		if status != 200 {
+			w.WriteHeader(status)
+			return
 		}
-	}
-	if region != "eu-central-1" {
-		t.Errorf("regionCode %q", region)
-	}
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &n
 }
 
 func abs(x float64) float64 {
@@ -100,12 +78,128 @@ func abs(x float64) float64 {
 	return x
 }
 
-func TestCatalogNeedsALocationAndPassesErrors(t *testing.T) {
-	c := aws.NewCatalogWith(&fakeTypes{pages: [][]types.InstanceTypeInfo{{}}}, &fakePricing{err: errors.New("denied")})
+func TestCatalogReadsTheSizesAndPricesOfAPriceList(t *testing.T) {
+	srv, _ := server(t, priceList(), 200)
+	c := aws.NewCatalogWith(t.TempDir(), srv.Client(), srv.URL+"/", time.Now, nil)
+	offers, err := c.Offers(context.Background(), "eu-central-1a", 80)
+	if err != nil || len(offers) != 3 {
+		t.Fatalf("%+v %v", offers, err)
+	}
+	sort.Slice(offers, func(i, j int) bool { return offers[i].Type < offers[j].Type })
+	var g model.Offer
+	for _, o := range offers {
+		if o.Type == "m7g.xlarge" {
+			g = o
+		}
+	}
+	if g.Provider != "aws" || g.Location != "eu-central-1a" || g.VCPU != 4 || g.RAMGB != 16 || g.Arch != "arm" || g.DiskGB != 0 || g.SysDiskGB != 80 || g.Currency != "USD" || g.VATPercent != 0 {
+		t.Errorf("%+v", g)
+	}
+	if want := 0.1632 + 80*0.0952/730; abs(g.HourlyPrice-want) > 1e-9 {
+		t.Errorf("hourly %v, want %v", g.HourlyPrice, want)
+	}
+	for _, o := range offers {
+		switch o.Type {
+		case "m7i.large": // not the Windows price, not the unused reservation
+			if o.Arch != "x86" || abs(o.MonthlyPrice-(0.1134*730+80*0.0952)) > 1e-9 {
+				t.Errorf("%+v", o)
+			}
+		case "x2.big":
+			if o.RAMGB != 1024 {
+				t.Errorf("1,024 GiB: %+v", o)
+			}
+		case "m7g.xlarge":
+		default:
+			t.Errorf("unexpected %s", o.Type)
+		}
+	}
+	// 50 GB without a given size
+	offers, err = c.Offers(context.Background(), "eu-central-1", 0)
+	if err != nil || offers[0].SysDiskGB != 50 {
+		t.Errorf("%+v %v", offers, err)
+	}
+}
+
+func TestCatalogReadsThePriceListOnceADay(t *testing.T) {
+	srv, requests := server(t, priceList(), 200)
+	dir := t.TempDir()
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return now }
+	c := aws.NewCatalogWith(dir, srv.Client(), srv.URL+"/", clock, nil)
+	ask := func() error { _, err := c.Offers(context.Background(), "eu-central-1", 0); return err }
+	if err := ask(); err != nil || requests.Load() != 1 {
+		t.Fatalf("first: %v %d", err, requests.Load())
+	}
+	now = now.Add(23 * time.Hour)
+	if err := ask(); err != nil || requests.Load() != 1 {
+		t.Errorf("within a day: %v %d requests", err, requests.Load())
+	}
+	// another run (a new catalog) uses the file
+	if _, err := aws.NewCatalogWith(dir, srv.Client(), srv.URL+"/", clock, nil).Offers(context.Background(), "eu-central-1", 0); err != nil || requests.Load() != 1 {
+		t.Errorf("new catalog: %v %d requests", err, requests.Load())
+	}
+	now = now.Add(2 * time.Hour)
+	if err := ask(); err != nil || requests.Load() != 2 {
+		t.Errorf("after a day: %v %d requests", err, requests.Load())
+	}
+}
+
+func TestAnOldDigestIsBetterThanNone(t *testing.T) {
+	srv, _ := server(t, priceList(), 200)
+	dir := t.TempDir()
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	c := aws.NewCatalogWith(dir, srv.Client(), srv.URL+"/", func() time.Time { return now }, nil)
+	if _, err := c.Offers(context.Background(), "eu-central-1", 0); err != nil {
+		t.Fatal(err)
+	}
+	srv.Close()
+	now = now.Add(72 * time.Hour)
+	if offers, err := c.Offers(context.Background(), "eu-central-1", 0); err != nil || len(offers) != 3 {
+		t.Errorf("the list cannot be read: %d %v", len(offers), err)
+	}
+	// without a digest the failure is the answer
+	other := aws.NewCatalogWith(t.TempDir(), srv.Client(), srv.URL+"/", time.Now, nil)
+	if _, err := other.Offers(context.Background(), "eu-central-1", 0); err == nil {
+		t.Error("no digest, no list: want an error")
+	}
+}
+
+func TestCatalogReportsWhatIsWrongWithThePriceList(t *testing.T) {
+	for name, c := range map[string]struct {
+		body   string
+		status int
+		want   string
+	}{
+		"unknown region": {"", 403, "no price list for region eu-central-1"},
+		"server error":   {"", 503, "HTTP 503"},
+		"not json":       {"<html>", 200, "price list"},
+		"no types":       {`{"products":{},"terms":{"OnDemand":{}}}`, 200, "no instance types"},
+		"no volume price": {`{"products":{` + product("A1", "Compute Instance", "m7i.large", "Linux", "2", "8 GiB", "Intel Xeon", "Used") +
+			`},"terms":{"OnDemand":{` + term("A1", "Hrs", "0.1") + `}}}`, 200, "gp3"},
+	} {
+		srv, _ := server(t, c.body, c.status)
+		_, err := aws.NewCatalogWith("", srv.Client(), srv.URL+"/", time.Now, nil).Offers(context.Background(), "eu-central-1", 0)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	c := aws.NewCatalogWith("", nil, "", time.Now, nil)
 	if _, err := c.Offers(context.Background(), "", 0); err == nil {
 		t.Error("no location: want an error")
 	}
-	if _, err := c.Offers(context.Background(), "eu-central-1", 0); err == nil || err.Error() != "denied" {
-		t.Errorf("%v", err)
+}
+
+func TestCatalogSaysThatItReadsALargeFile(t *testing.T) {
+	srv, _ := server(t, priceList(), 200)
+	var notice bytes.Buffer
+	c := aws.NewCatalogWith(t.TempDir(), srv.Client(), srv.URL+"/", time.Now, &notice)
+	for range 2 {
+		if _, err := c.Offers(context.Background(), "eu-central-1", 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// once: the second look is served from the cache
+	if got := notice.String(); strings.Count(got, "reading the price list of eu-central-1") != 1 {
+		t.Errorf("%q", got)
 	}
 }

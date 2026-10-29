@@ -18,8 +18,9 @@ type Services struct {
 	Down      func(c *model.Machine, o driving.DownOptions) driving.Down
 	Check     func(c *model.Machine) driving.Check
 	Preflight func(c *model.Machine) driving.Preflight
-	// Find searches the price lists of the providers; get reads a setting (the credentials).
-	Find func(get func(string) string) driving.Find
+	// Find searches the price lists of the providers; get reads a setting (the credentials), notice
+	// is where it says what takes long.
+	Find func(get func(string) string, notice io.Writer) driving.Find
 	// OpenLog starts the log of a run, ShowLog shows the log of a server (viper log).
 	OpenLog runlog.Opener
 	ShowLog runlog.Viewer

@@ -60,7 +60,7 @@ func TestFindPassesTheNeedAndTheCredentials(t *testing.T) {
 	var got model.Need
 	var token string
 	h := testHost()
-	h.Services.Find = func(get func(string) string) driving.Find {
+	h.Services.Find = func(get func(string) string, _ io.Writer) driving.Find {
 		token = get("HCLOUD_TOKEN")
 		return fakeFind{need: &got, shown: 1}
 	}
@@ -78,7 +78,7 @@ func TestFindFailsIfNothingIsShown(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := testHost()
-	h.Services.Find = func(func(string) string) driving.Find { return fakeFind{need: new(model.Need)} }
+	h.Services.Find = func(func(string) string, io.Writer) driving.Find { return fakeFind{need: new(model.Need)} }
 	err := cli.RunFind(context.Background(), &cli.Opts{Host: h, Dir: dir, CPU: 4}, env, io.Discard, io.Discard)
 	if cli.ExitCode(err) != 1 {
 		t.Errorf("%v", err)

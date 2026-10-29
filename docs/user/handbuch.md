@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.60  
+Version: 1.61  
 Software-Version: v0.11.0  
 Stand: 29.10.2026  
 
@@ -256,7 +256,7 @@ Geprüft werden:
 | Anbieter | Für die Preisabfrage nötig |
 |---|---|
 | Hetzner | `HCLOUD_TOKEN` |
-| AWS | Anmeldung (`aws login` oder `AWS_PROFILE`); die Rolle braucht `pricing:GetProducts` und `ec2:DescribeInstanceTypes` |
+| AWS | nichts: `viper find` liest die öffentliche Preisliste von AWS, ohne Konto und ohne Anmeldung |
 | Azure | `az login` und `AZURE_SUBSCRIPTION_ID` (die Preise selbst sind öffentlich, die VM-Größen kommen aus Ihrer Subscription) |
 | Google Cloud | `gcloud auth application-default login`, `GCP_PROJECT` und die aktivierte Cloud Billing API im Projekt |
 
@@ -283,7 +283,8 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 * Nicht enthalten sind Rabatte, Datenverkehr und die Gebühr für die öffentliche IPv4-Adresse. Die Hetzner Console zeigt ihre Preise inklusive IPv4: `viper find` zeigt daher etwa 0,60 € im Monat weniger.
 * Der Monatspreis rechnet mit 730 Stunden.
 * Bei Google Cloud setzt sich der Preis aus den Preisen für Kerne und Arbeitsspeicher der Typenfamilie zusammen. Geteilte Kerne (`e2-micro`) und Typen mit lokaler SSD fehlen. Bei den neuen Serien mit Hyperdisk kommen Leistungsaufschläge der Platte nicht dazu.
-* AWS, Azure und Google Cloud sind für `viper find` noch nicht in einem echten Konto getestet.
+* Die Preisliste von AWS ist je Region eine Datei von mehreren hundert MB (`eu-central-1`: rund 430 MB). `viper find` liest sie höchstens einmal am Tag und merkt sich nur das Nötige (rund 20 KB je Region) im Cache-Verzeichnis, unter Linux `~/.cache/viper/aws-ec2-<region>.json`. Der erste Lauf einer Region dauert deshalb etwas länger (`aws: reading the price list …`), die folgenden sind sofort fertig. Lässt sich die Liste später nicht lesen, gilt der alte Stand weiter. Zum Erneuern vor Ablauf löschen Sie die Datei. Bare-Metal-Typen (`*.metal`) fehlen.
+* Azure und Google Cloud sind für `viper find` noch nicht in einem echten Konto getestet.
 
 ### Protokolle ansehen
 
@@ -983,4 +984,5 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.57 | v0.11.0 | Neu: `VIPER_POST_CLONE` führt Shell-Befehle einmalig direkt nach dem Clone im Repository auf dem Server aus (nach Homebrew); `VIPER_POST_CLONE_ON_ERROR=retry`, `ignore` oder `abort` bestimmt das Verhalten bei einem Fehler, der Ausgang steht im Protokoll. |
 | 1.58 | v0.11.0 | Release v0.11.0: die Änderung 1.57 (`VIPER_POST_CLONE`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.11.0`. |
 | 1.59 | v0.12.0 | Neu: `viper find` sucht Server-Typen nach CPUs, RAM und Platte und zeigt die günstigsten mit Preis (Hetzner: Euro inklusive Mehrwertsteuer, ohne IPv4); zunächst nur für Hetzner. |
-| 1.60 | v0.12.0 | `viper find` fragt jetzt auch AWS, Azure und Google Cloud ab (gleichzeitig), rechnet die getrennt gewählte Systemplatte in den Preis ein und kennt `--provider`. Neue Abhängigkeit: AWS Price List API (`pricing:GetProducts`). |
+| 1.60 | v0.12.0 | `viper find` fragt jetzt auch AWS, Azure und Google Cloud ab (gleichzeitig), rechnet die getrennt gewählte Systemplatte in den Preis ein und kennt `--provider`. AWS braucht dafür keine Anmeldung: `viper find` liest die öffentliche Preisliste und hält sie einen Tag im Cache (`~/.cache/viper`). |
+| 1.61 | v0.12.0 | Korrektur zu 1.60: Die Preisliste von AWS kommt aus der öffentlichen Preisdatei mit Tages-Cache statt aus der API; kein AWS-Konto nötig. |
