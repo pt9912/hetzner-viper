@@ -167,13 +167,14 @@ func Find(get func(string) string, notice io.Writer) find.Service {
 	return find.Service{Deps: find.Deps{Sources: sources, Rates: ecb.New(cacheDir())}}
 }
 
-// findCredentials are the settings viper find needs of a provider. AWS (the public price list) and
-// Azure (the subscription only gives the VM sizes more exactly) need none.
+// findCredentials are the settings viper find needs of a provider. AWS (the public price list),
+// Azure and Google Cloud (the public pricing pages; the subscription or the project only gives
+// the sizes or the prices more exactly) need none.
 func findCredentials(name string, info model.ProviderInfo) []string {
-	if name == "aws" || name == "azure" {
-		return nil
+	if name == "hetzner" {
+		return info.Credentials
 	}
-	return info.Credentials
+	return nil
 }
 
 // defaultLocation is where the price list of a provider is read if --location says nothing; ""
@@ -209,7 +210,7 @@ func setCatalog(src *find.Source, get func(string) string, notice io.Writer) {
 		c := azure.NewCatalog(get("AZURE_SUBSCRIPTION_ID"), cacheDir(), notice)
 		src.Catalog, src.Describe = c, c.Describe
 	case "gcp":
-		c := gcp.NewCatalog(get("GCP_PROJECT"))
+		c := gcp.NewCatalog(get("GCP_PROJECT"), cacheDir(), notice)
 		src.Catalog, src.Describe = c, c.Describe
 	default:
 		src.Skip = "no price list"

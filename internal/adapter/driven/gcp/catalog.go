@@ -3,9 +3,12 @@ package gcp
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"google.golang.org/api/cloudbilling/v1"
@@ -25,18 +28,34 @@ type Skus func(ctx context.Context, currency string) ([]*cloudbilling.Sku, error
 // their price from the Cloud Billing catalog. Compute Engine prices the cores and the memory of a
 // family apart, not the machine type, so the price of a type is cores x core price plus GiB x
 // memory price (what the pricing page does).
+//
+// Without a project, or if the project cannot be read, the public pricing pages of Google Cloud are
+// the source (see web.go); they need no login.
 type Catalog struct {
-	types MachineTypes
-	skus  Skus
+	types  MachineTypes
+	skus   Skus
+	web    *web
+	notice io.Writer // where it says that it falls back to the pages; nil for nowhere
 }
 
-// NewCatalog returns a catalog of the project; it looks for the credentials when it is first used.
-func NewCatalog(project string) *Catalog {
-	return &Catalog{types: sdkMachineTypes(project), skus: sdkSkus}
+// NewCatalog returns a catalog; project may be "" (then the pricing pages are the only source). It
+// looks for the credentials when it first needs them. dir is the cache directory ("" for none),
+// notice where it says what it does.
+func NewCatalog(project, dir string, notice io.Writer) *Catalog {
+	c := &Catalog{web: &web{http: &http.Client{Timeout: 5 * time.Minute}, base: pagesBase, disks: disksPage, dir: dir, now: time.Now, notice: notice}, notice: notice}
+	if project != "" {
+		c.types, c.skus = sdkMachineTypes(project), sdkSkus
+	}
+	return c
 }
 
 // NewCatalogWith returns a catalog over given lists (for tests).
 func NewCatalogWith(t MachineTypes, s Skus) *Catalog { return &Catalog{types: t, skus: s} }
+
+// NewWebCatalogWith returns a catalog over given pricing pages (for tests); t and s may be nil.
+func NewWebCatalogWith(t MachineTypes, s Skus, h *http.Client, base, disks, dir string, now func() time.Time, notice io.Writer) *Catalog {
+	return &Catalog{types: t, skus: s, web: &web{http: h, base: base, disks: disks, dir: dir, now: now, notice: notice}, notice: notice}
+}
 
 func sdkMachineTypes(project string) MachineTypes {
 	return func(ctx context.Context, zone string) ([]*compute.MachineType, error) {
@@ -87,6 +106,23 @@ func (c *Catalog) Offers(ctx context.Context, location string, diskGB int) ([]mo
 	if m == nil {
 		return nil, fmt.Errorf("no zone: give --location or SERVER_LOCATION as a zone (europe-west3-b)")
 	}
+	if c.types != nil {
+		offers, err := c.official(ctx, location, m[1], diskGB)
+		if err == nil || c.web == nil || ctx.Err() != nil {
+			return offers, err
+		}
+		if c.notice != nil {
+			fmt.Fprintf(c.notice, "gcp: the project cannot be read (%s); using the public pricing pages\n", c.Describe(err))
+		}
+	}
+	if c.web == nil {
+		return nil, fmt.Errorf("no source of prices")
+	}
+	return c.web.offers(ctx, location, m[1], diskGB)
+}
+
+// official lists the machine types of the zone from the project, priced by the Cloud Billing catalog.
+func (c *Catalog) official(ctx context.Context, location, region string, diskGB int) ([]model.Offer, error) {
 	types, err := c.types(ctx, location)
 	if err != nil {
 		return nil, err
@@ -95,8 +131,8 @@ func (c *Catalog) Offers(ctx context.Context, location string, diskGB int) ([]mo
 	if err != nil {
 		return nil, err
 	}
-	byFamily, currency := familyRates(skus, m[1])
-	disks := diskRates(skus, m[1])
+	byFamily, currency := familyRates(skus, region)
+	disks := diskRates(skus, region)
 	if diskGB <= 0 {
 		diskGB = int(Options{}.diskGB())
 	}

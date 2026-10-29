@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.62  
+Version: 1.63  
 Software-Version: v0.11.0  
 Stand: 29.10.2026  
 
@@ -251,14 +251,14 @@ Geprüft werden:
 #### Voraussetzung
 
 * `.env.local` ist angelegt (`viper setup`).
-* Für Hetzner und Google Cloud müssen die Zugangsdaten gesetzt sein; AWS und Azure brauchen keine. Fehlt etwas, überspringt `viper find` den Anbieter mit einem Hinweis, die anderen laufen weiter.
+* Nur für Hetzner müssen Zugangsdaten gesetzt sein; AWS, Azure und Google Cloud brauchen keine. Fehlt etwas, überspringt `viper find` den Anbieter mit einem Hinweis, die anderen laufen weiter.
 
 | Anbieter | Für die Preisabfrage nötig |
 |---|---|
 | Hetzner | `HCLOUD_TOKEN` |
 | AWS | nichts: `viper find` liest die öffentliche Preisliste von AWS, ohne Konto und ohne Anmeldung |
 | Azure | nichts: Preise und VM-Größen sind öffentlich. Mit `AZURE_SUBSCRIPTION_ID` und `az login` fragt `viper find` die Größen genauer bei Ihrer Subscription ab. |
-| Google Cloud | `gcloud auth application-default login`, `GCP_PROJECT` und die aktivierte Cloud Billing API im Projekt |
+| Google Cloud | nichts: `viper find` liest die öffentlichen Preisseiten von Google. Ist `GCP_PROJECT` gesetzt, fragt es zuerst Ihr Projekt ab (dafür `gcloud auth application-default login` und die aktivierte Cloud Billing API); klappt das nicht, nimmt es die Preisseiten und sagt es. |
 
 #### Vorgehen
 
@@ -290,8 +290,8 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 * **Cache:** Die Preislisten sind groß (AWS je Region mehrere hundert MB, Azure rund 60 MB). `viper find` liest sie höchstens einmal am Tag und merkt sich nur das Nötige (wenige KB je Region) im Cache-Verzeichnis, unter Linux `~/.cache/viper/`. Der erste Lauf einer Region dauert deshalb etwas länger (`aws: reading the price list …`), die folgenden sind sofort fertig. Lässt sich eine Liste später nicht lesen, gilt der alte Stand weiter. Zum Erneuern vor Ablauf löschen Sie die Dateien. Bricht ein Download ab (die AWS-Datei ist groß), versucht `viper find` es dreimal und nennt dann einen Netzwerkfehler (Proxy oder VPN kommen als Ursache in Frage).
 * AWS: Bare-Metal-Typen (`*.metal`) fehlen.
 * Azure: Ohne Subscription stammen Kerne und RAM aus den Daten des Preisrechners auf der Azure-Website. Das ist keine dokumentierte Schnittstelle; ändert Microsoft sie, fehlen nur diese Angaben, bis `viper` angepasst ist.
-* Bei Google Cloud setzt sich der Preis aus den Preisen für Kerne und Arbeitsspeicher der Typenfamilie zusammen. Geteilte Kerne (`e2-micro`) und Typen mit lokaler SSD fehlen. Bei den neuen Serien mit Hyperdisk kommen Leistungsaufschläge der Platte nicht dazu.
-* Azure und Google Cloud sind für `viper find` noch nicht in einem echten Konto getestet; bei Azure sind Preise und VM-Größen aber aus den öffentlichen Quellen geprüft.
+* Google Cloud: Die Preisseiten (Allzweck, Compute-, Arbeitsspeicher- und Speicheroptimiert) und die Seite der Platten sind Webseiten, keine Schnittstelle; `viper find` liest die Tabellen daraus (zusammen rund 60 MB, einmal am Tag, Preise je Region in Dollar). Ändert Google die Seiten, fehlen Preise (`no prices found …`) und es erscheinen keine falschen. Geteilte Kerne (`e2-micro`), Typen mit lokaler SSD und Beschleuniger-Typen (GPU) fehlen. Ob ein Typ in Ihrer Zone angeboten wird, prüft `viper find` nicht. Bei den neuen Serien mit Hyperdisk kommen Leistungsaufschläge der Platte nicht dazu. Über das Projekt (Cloud Billing) setzt sich der Preis aus den Preisen für Kerne und Arbeitsspeicher der Typenfamilie zusammen.
+* Der Weg über das eigene Konto (Azure-Subscription, Google-Projekt) ist für `viper find` noch nicht in einem echten Konto getestet. Die öffentlichen Quellen (AWS, Azure, Google Cloud) sind gegen die echten Dateien und Seiten geprüft.
 
 ### Protokolle ansehen
 
@@ -994,3 +994,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.60 | v0.12.0 | `viper find` fragt jetzt auch AWS, Azure und Google Cloud ab (gleichzeitig), rechnet die getrennt gewählte Systemplatte in den Preis ein und kennt `--provider`. AWS braucht dafür keine Anmeldung: `viper find` liest die öffentliche Preisliste und hält sie einen Tag im Cache (`~/.cache/viper`). |
 | 1.61 | v0.12.0 | Korrektur zu 1.60: Die Preisliste von AWS kommt aus der öffentlichen Preisdatei mit Tages-Cache statt aus der API; kein AWS-Konto nötig. |
 | 1.62 | v0.12.0 | `viper find` zeigt alle Anbieter in einer nach Preis sortierten Tabelle und rechnet sie auf eine Basis um: Euro (AWS mit dem Kurs der EZB) und derselbe Mehrwertsteuersatz (`--vat`). Azure braucht keine Subscription mehr (VM-Größen aus den öffentlichen Daten des Preisrechners, sonst aus der Subscription), und die Preislisten von Azure liegen wie die von AWS einen Tag im Cache. Ein abgebrochener AWS-Download wird wiederholt. |
+| 1.63 | v0.12.0 | `viper find` braucht für Google Cloud keine Anmeldung und kein Projekt mehr: Es liest die öffentlichen Preisseiten (Cache einen Tag). Ein gesetztes `GCP_PROJECT` wird zuerst genutzt, bei einem Fehler gilt der Rückfall, und die Meldung nennt den Grund. |
