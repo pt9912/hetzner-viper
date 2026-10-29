@@ -718,7 +718,7 @@ func TestADeployKeyIsNotBypassedByTheGithubToken(t *testing.T) {
 			clone = call
 		}
 	}
-	if strings.Join(scp.args, " ") != "scp -F "+w.c.SSHConfig+" -q "+key+" hetzner-claude-web:.ssh/deploy_key" || chmod.args == nil {
+	if strings.Join(scp.args, " ") != "scp -F "+w.c.SSHConfig+" -q "+filepath.ToSlash(key)+" hetzner-claude-web:.ssh/deploy_key" || chmod.args == nil {
 		t.Errorf("scp %q chmod %q", scp.args, chmod.args)
 	}
 	if clone.command() != "bash -s -- 'git@github.com:o/r.git' '/Development/r' '' '1'" {
