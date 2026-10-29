@@ -1,0 +1,73 @@
+name: price sources
+
+# viper find reads web pages of Hetzner and Google, which are no interface and change without notice.
+# Every night this checks that what viper reads from them (and from the lists of AWS and Azure and the
+# rates of the ECB) is still there, and opens an issue if not. The checks look at the form (enough types,
+# the known ones among them, prices above zero), not at the prices. A source that cannot be reached skips
+# its check and does not open an issue: that says nothing about viper.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  ISSUE_TITLE: "viper find: Preisquellen lassen sich nicht mehr auswerten"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - id: live
+        run: |
+          set -o pipefail
+          go test -tags live -count=1 -timeout 25m -v ./internal/live/ 2>&1 | tee live.log
+
+      # a finding: one issue, and a comment on it for every night the finding stays
+      - name: open or update the issue
+        if: always() && steps.live.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "Die nächtliche Prüfung der Quellen von \`viper find\` hat etwas gefunden: Eine Quelle antwortet, aber \`viper\` kann sie nicht mehr wie bisher auswerten (die Seite oder Liste hat sich vermutlich geändert)."
+            echo
+            echo "Lauf: $RUN_URL"
+            echo
+            echo '```'
+            grep -E '^(=== RUN|--- (FAIL|SKIP|PASS)|\s+\S+_test\.go:[0-9]+|FAIL|panic)' live.log | head -60
+            echo '```'
+            echo
+            echo "Wo die Auswertung steht: \`docs/maintainer/architektur.md\`, Abschnitt Preisquellen von find."
+          } > body.md
+          number=$(gh issue list --state open --search "$ISSUE_TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body-file body.md
+          else
+            gh issue create --title "$ISSUE_TITLE" --body-file body.md
+          fi
+
+      # all sources read again and none skipped: the finding is gone
+      - name: close the issue
+        if: always() && steps.live.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if grep -q -- '--- SKIP' live.log; then
+            echo "a source could not be reached: the issue stays as it is"
+            exit 0
+          fi
+          number=$(gh issue list --state open --search "$ISSUE_TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue close "$number" --comment "Alle Quellen lassen sich wieder auswerten: $RUN_URL"
+          fi

@@ -40,6 +40,30 @@ Der Login-Schlüssel muss kein Objekt beim Anbieter sein: `LoginKey.Ref` ist der
 
   Beide kosten wenige Cent und räumen auch bei einem Fehler auf. Die Anmeldung kommt aus `~/.aws`; im Container muss das Verzeichnis schreibbar sein, damit das SSO-Token erneuert werden kann.
 * Die Rechnerdatei `machines/aws-test.env.local` hat dieselben Einstellungen wie der Lauf, für einen Versuch von Hand.
+* Die Quellen von `viper find` prüft jede Nacht der Workflow `price sources` (Build-Tag `live`, siehe unten).
+
+## Preisquellen von find
+
+`viper find` liest seine Preise aus öffentlichen Quellen, ohne Konto. Zwei davon sind Webseiten, keine Schnittstelle, und ändern sich ohne Vorwarnung:
+
+| Anbieter | Quelle | Auswertung |
+|---|---|---|
+| Hetzner | die Seiten unter `hetzner.com/cloud/…` (Ausstattung) und die Datei `cloud_data.json`, die sie laden (Preise je Standort, IPv4) | `internal/adapter/driven/hetzner/public.go`: Text der Seiten mit einem Muster, die Datei als JSON |
+| Google Cloud | die Preisseiten der Familien, die Seite der Platten, die Netzwerk-Preisseite | `internal/adapter/driven/gcp/web.go`: Muster über den Datenblock der Seite (Regionsetiketten, Textzellen, Preise), Tabellen sind die Zellen zwischen zwei Etiketten |
+| Azure | Daten des Preisrechners (Kerne, RAM) und die Retail Prices API (Preise) | `internal/adapter/driven/azure/catalog.go` |
+| AWS | öffentliche Preisdatei je Region (EC2 und Netzwerkdienst) | `internal/adapter/driven/aws/catalog.go`, als Strom gelesen |
+| EZB | tägliche Referenzkurse | `internal/adapter/driven/ecb/ecb.go` |
+
+Die Regeln dabei: eine Zeile, die nicht passt, fehlt, sie wird nie geraten; eine Seite, die gar nichts liefert, ist ein Fehler (`did it change?`) und wird nicht gemerkt; das Ergebnis liegt einen Tag im Cache (`internal/adapter/driven/pricecache`), und ein alter Stand gilt ohne Netz höchstens sieben Tage.
+
+### Nächtliche Prüfung
+
+Der Workflow `.github/workflows/sources.yml` (`price sources`) führt jede Nacht um 03:17 UTC die Tests in `internal/live/` aus (Build-Tag `live`; von Hand: `go test -tags live -count=1 -v ./internal/live/`, rund eine Minute). Sie lesen die echten Quellen und prüfen die Form (genug Typen, bekannte Typen darunter, Preise über null, die IPv4-Gebühr), nicht die Preise.
+
+* **Quelle nicht erreichbar** (Netz, Zeitlimit, `403`, `429`, `5xx`; `internal/livecheck`): Der Test überspringt sich. Das sagt nichts über `viper`, und es gibt kein Issue.
+* **Quelle antwortet, wird aber nicht mehr gelesen:** Der Test schlägt fehl, und der Workflow legt ein Issue „viper find: Preisquellen lassen sich nicht mehr auswerten“ an (oder kommentiert das offene) mit den Zeilen des Laufs. Die nächste Nacht, in der alle Quellen wieder gelesen werden und keine übersprungen ist, schließt es.
+
+Bei einem Issue: Die Seite im Browser ansehen, das Muster in der Auswertung anpassen (es steht in der Tabelle oben), den Test von Hand laufen lassen und einen Test mit der neuen Form der Seite ergänzen. Geplante Workflows laufen nur auf dem Standard-Branch, und GitHub schaltet sie nach 60 Tagen ohne Aktivität im Repository ab.
 
 ## Stand der Anbieter
 
