@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -56,6 +57,9 @@ func SkipOrFail(t *testing.T, format string, args ...any) {
 // New makes a fake server in a temporary directory.
 func New(t *testing.T, brewPath string) *Server {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake server runs the server scripts in bash on Unix paths")
+	}
 	root := t.TempDir()
 	s := &Server{t: t, State: filepath.Join(root, "state"), Home: filepath.Join(root, "state", "remote-home"), BrewPath: brewPath,
 		Env: map[string]string{}, mockDir: filepath.Join(root, "remote")}

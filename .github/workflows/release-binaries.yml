@@ -1,6 +1,6 @@
 name: release binaries
 
-# Attaches the viper binaries to the release of a v* tag (Go cross-compiles them all on one runner).
+# Attaches the viper binaries to the release of a v* tag (the Dockerfile cross-compiles them all: make dist).
 on:
   push:
     tags: ['v[0-9]*']
@@ -21,20 +21,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
       - run: make check
       - name: Build
-        run: |
-          mkdir dist
-          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
-            os=${target%/*}; arch=${target#*/}
-            ext=; [ "$os" = windows ] && ext=.exe
-            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
-              -o "dist/viper_${GITHUB_REF_NAME}_${os}_${arch}${ext}" ./cmd/viper
-          done
-          (cd dist && sha256sum viper_* > SHA256SUMS)
+        run: make dist VERSION="${GITHUB_REF_NAME}"   # all platforms and SHA256SUMS, in the Dockerfile
       - name: Attach to the release
         env:
           GH_TOKEN: ${{ github.token }}

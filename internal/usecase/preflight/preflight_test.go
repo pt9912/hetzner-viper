@@ -339,10 +339,10 @@ func TestKeyFilesOfTheSettings(t *testing.T) {
 	if err := os.WriteFile(good, []byte(pubKey), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	e.machine("a", "IPAD_SSH_PUBLIC_KEY_FILE="+priv+"\n")
-	e.machine("b", "IPAD_SSH_PUBLIC_KEY_FILE=~/.ssh/ipad.pub\nGIT_DEPLOY_KEY_FILE="+priv+"\n")
+	e.machine("a", "IPAD_SSH_PUBLIC_KEY_FILE="+filepath.ToSlash(priv)+"\n") // a \ in .env.local is an escape
+	e.machine("b", "IPAD_SSH_PUBLIC_KEY_FILE=~/.ssh/ipad.pub\nGIT_DEPLOY_KEY_FILE="+filepath.ToSlash(priv)+"\n")
 	e.machine("c", "IPAD_SSH_PUBLIC_KEY_FILE=/nonexistent/key.pub\n")
-	e.machine("d", "IPAD_SSH_PUBLIC_KEY_FILE="+good+"\n")
+	e.machine("d", "IPAD_SSH_PUBLIC_KEY_FILE="+filepath.ToSlash(good)+"\n")
 	if err := os.WriteFile(filepath.Join(e.home, ".ssh", "garbage.pub"), []byte("not a key\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +352,7 @@ func TestKeyFilesOfTheSettings(t *testing.T) {
 	c, _, _ := e.run("c", "")
 	d, _, _ := e.run("d", "")
 	f, _, _ := e.run("e", "")
-	mustContain(t, a, "FAIL  IPAD_SSH_PUBLIC_KEY_FILE must be a public key (.pub), not a private key: "+priv)
+	mustContain(t, a, "FAIL  IPAD_SSH_PUBLIC_KEY_FILE must be a public key (.pub), not a private key: "+filepath.ToSlash(priv))
 	mustContain(t, b, "ok    IPAD_SSH_PUBLIC_KEY_FILE readable", "ok    GIT_DEPLOY_KEY_FILE readable")
 	mustContain(t, c, "FAIL  IPAD_SSH_PUBLIC_KEY_FILE: File not readable: /nonexistent/key.pub")
 	mustContain(t, d, "ok    IPAD_SSH_PUBLIC_KEY_FILE readable")

@@ -296,6 +296,9 @@ func TestLoadChecksNamesAndDomain(t *testing.T) {
 // The parser must read what the scripts read: the same variables with the same values as
 // `set -euo pipefail; set -a; source file` in bash, and an error wherever bash fails.
 func TestSourceAgreesWithBash(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("bash brings its own environment variables there")
+	}
 	bash, err := exec.LookPath("bash")
 	if err != nil {
 		t.Skip("no bash")

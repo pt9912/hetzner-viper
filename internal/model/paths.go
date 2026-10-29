@@ -29,7 +29,7 @@ func KeyPath(setting, dir, home string) string {
 			p = abs
 		}
 	}
-	return p
+	return filepath.FromSlash(p) // a ~ expanded in .env.local leaves "home/rest"
 }
 
 // ExpandHome turns a leading ~ into the home directory (${SSH_KEY/#\~/$HOME}).

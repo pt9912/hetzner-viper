@@ -103,8 +103,8 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 * **VS Code:** `viper up` öffnet VS Code, wenn `code` vorhanden ist, ohne dass VS Code Ihre Tokens erbt. Mit `--no-code` öffnet es VS Code nicht.
 * **Abbruch:** Ein erstes Ctrl-C beendet den laufenden Befehl und wird protokolliert (`interrupted`); ein zweites beendet `viper` sofort. Ein abgebrochenes `viper up` lässt den Server stehen; ein erneutes `viper up` setzt die Einrichtung fort.
 * **macOS:** Ein Binary aus dem Browser versieht macOS mit einer Quarantäne-Markierung, die das Starten verhindert. Entfernen Sie sie mit `xattr -d com.apple.quarantine ~/bin/viper`. Auf macOS ist `viper` bisher nicht getestet.
-* **Windows:** Es gibt ein Binary für Windows (`windows_amd64.exe`), es ist aber nicht getestet und nicht alle Funktionen sind dort geprüft. Voraussetzung ist ein OpenSSH-Client (`ssh`, `ssh-keygen`) im `PATH`. Zuverlässiger ist `viper` innerhalb von WSL mit dem Linux-Binary.
-* **Quellcode:** Das Release enthält auch den Quellcode. Mit Docker und `make` bauen Sie `viper` selbst, ohne Go zu installieren: `make build` legt `dist/viper` ab (`make build GOOS=darwin GOARCH=arm64` für ein anderes System, `make help` zeigt alle Ziele). Mit installiertem Go geht auch `go build ./cmd/viper`. Für die Benutzung ist das nicht nötig.
+* **Windows:** Es gibt ein Binary für Windows (`windows_amd64.exe`), es ist aber nur teilweise getestet; nicht alle Funktionen sind dort geprüft. Voraussetzung ist ein OpenSSH-Client (`ssh`, `ssh-keygen`) im `PATH`. Pfade in `.env.local` schreiben Sie dort mit `/` (`SSH_KEY=C:/Users/Name/.ssh/hetzner-build`); ein `\` gilt in dieser Schreibweise als Fluchtzeichen und geht verloren. Zuverlässiger ist `viper` innerhalb von WSL mit dem Linux-Binary.
+* **Quellcode:** Das Release enthält auch den Quellcode. Mit Docker und `make` bauen Sie `viper` selbst, ohne Go zu installieren: `make build` legt `dist/viper` ab (`make build GOOS=darwin GOARCH=arm64` für ein anderes System, für Windows `dist/viper.exe`; `make dist` baut alle Plattformen wie ein Release; `make help` zeigt alle Ziele). Mit installiertem Go geht auch `go build ./cmd/viper`. Für die Benutzung ist das nicht nötig.
 
 ### Erstmalige Einrichtung
 
@@ -934,5 +934,5 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.52 | v0.8.0 | Release v0.8.0: die Änderungen 1.48 bis 1.51 (Anbieter AWS, Google Cloud und Azure, Betrieb ohne Cloudflare). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.8.0`. |
 | 1.53 | v0.9.0 | Neu: Einstellungen `AWS_TAGS` und `AWS_TAGS_SHARED` (nur AWS): zusätzliche Tags für Instanz und Systemplatte bzw. für Schlüsselpaar und Security Group beim Anlegen; `viper preflight` prüft Syntax und AWS-Grenzen. |
 | 1.54 | v0.9.0 | Release v0.9.0: die Änderung 1.53 (`AWS_TAGS`, `AWS_TAGS_SHARED`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.9.0`. |
-| 1.55 | v0.10.0 | Neu: Binary für Windows (`windows_amd64.exe`), noch nicht getestet; empfohlen bleibt WSL mit dem Linux-Binary. |
+| 1.55 | v0.10.0 | Neu: Binary für Windows (`windows_amd64.exe`), nur teilweise getestet; empfohlen bleibt WSL mit dem Linux-Binary. Pfade in `.env.local` stehen dort mit `/`. |
 | 1.56 | v0.10.0 | Release v0.10.0: die Änderung 1.55 (Windows-Binary). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.10.0`. |
