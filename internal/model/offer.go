@@ -34,6 +34,10 @@ type Need struct {
 	Location string
 	// Provider limits the search to one provider; "" for all.
 	Provider string
+	// HasVAT says that VATPercent is asked for (0 for prices without VAT); else the prices have the
+	// VAT that the providers report.
+	HasVAT     bool
+	VATPercent float64
 }
 
 // Fits reports whether the offer has what the need asks for.

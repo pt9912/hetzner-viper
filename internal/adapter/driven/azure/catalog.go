@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -11,43 +12,71 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/pricecache"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"golang.org/x/sync/errgroup"
 )
 
-// retailPrices is the public price list of Azure; it needs no login.
-const retailPrices = "https://prices.azure.com/api/retail/prices"
+const (
+	// retailPrices is the public price list of Azure; it needs no login.
+	retailPrices = "https://prices.azure.com/api/retail/prices"
+	// calculatorData is what the pricing calculator on the Azure website reads: the VM sizes with
+	// cores, memory and prices. It is public but no documented API, so it is only the fallback for
+	// the sizes if the subscription cannot tell them.
+	calculatorData = "https://azure.microsoft.com/api/v3/pricing/virtual-machines/calculator/?culture=en-us&discount=mosp"
 
-// SizeInfo is what the VM sizes of a location say of one size.
-type SizeInfo struct {
-	Name     string
-	VCPUs    int
-	MemoryMB int
+	// cacheMaxAge is how long a digest is used before the price lists are read again.
+	cacheMaxAge = 24 * time.Hour
+)
+
+// Spec is the size of a VM size.
+type Spec struct {
+	VCPUs int     `json:"vcpus"`
+	RAMGB float64 `json:"ram_gb"`
 }
 
-// Sizes lists the VM sizes of a location.
-type Sizes func(ctx context.Context, location string) ([]SizeInfo, error)
+// Specs gives the size of the VM sizes of a location, by the name that Key makes of theirs.
+type Specs func(ctx context.Context, location string) (map[string]Spec, error)
 
-// Catalog is the price list of the Linux VMs of Azure: the sizes of a location from the
-// subscription, their pay-as-you-go prices from the public Retail Prices API.
+// Key is the name of a VM size as the sources spell it alike: "Standard_D4as_v5" and "d4asv5" are
+// the same size.
+func Key(name string) string {
+	return strings.ReplaceAll(strings.TrimPrefix(strings.ToLower(name), "standard_"), "_", "")
+}
+
+// Catalog is the price list of the Linux VMs of Azure. The prices are from the public Retail
+// Prices API. The size of the VM sizes (cores, memory) is from the subscription (the API for the
+// VM sizes of a location) if there is one and it answers, else from the data of the pricing
+// calculator on the Azure website. What it digests is kept in the cache directory for a day.
 type Catalog struct {
-	sizes Sizes
-	http  *http.Client
-	base  string // the price list's address, retailPrices unless a test says otherwise
+	official Specs // from the subscription; nil without one
+	website  Specs
+	http     *http.Client
+	base     string // the price list's address, retailPrices unless a test says otherwise
+	dir      string // the cache directory; "" for none
+	now      func() time.Time
+	notice   io.Writer // where it says what takes long or what it falls back to; nil for nowhere
 }
 
-// NewCatalog returns a catalog; it looks for the Azure credentials when it is first used.
-func NewCatalog(subscriptionID string) *Catalog {
-	return &Catalog{sizes: sdkSizes(subscriptionID), http: &http.Client{Timeout: 60 * time.Second}, base: retailPrices}
+// NewCatalog returns a catalog; subscriptionID may be "". It looks for the Azure credentials when
+// it first needs them. dir is the cache directory ("" for none), notice where it says what it does.
+func NewCatalog(subscriptionID, dir string, notice io.Writer) *Catalog {
+	h := &http.Client{Timeout: 5 * time.Minute}
+	c := &Catalog{http: h, base: retailPrices, dir: dir, now: time.Now, notice: notice}
+	c.website = c.calculatorSpecs(calculatorData)
+	if subscriptionID != "" {
+		c.official = sdkSpecs(subscriptionID)
+	}
+	return c
 }
 
-// NewCatalogWith returns a catalog over given sizes and a given price list (for tests).
-func NewCatalogWith(sizes Sizes, h *http.Client, base string) *Catalog {
-	return &Catalog{sizes: sizes, http: h, base: base}
+// NewCatalogWith returns a catalog over given sources of sizes and a given price list (for tests).
+func NewCatalogWith(official, website Specs, h *http.Client, base, dir string, now func() time.Time, notice io.Writer) *Catalog {
+	return &Catalog{official: official, website: website, http: h, base: base, dir: dir, now: now, notice: notice}
 }
 
-func sdkSizes(subscriptionID string) Sizes {
-	return func(ctx context.Context, location string) ([]SizeInfo, error) {
+func sdkSpecs(subscriptionID string) Specs {
+	return func(ctx context.Context, location string) (map[string]Spec, error) {
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
 		if err != nil {
 			return nil, err
@@ -56,7 +85,7 @@ func sdkSizes(subscriptionID string) Sizes {
 		if err != nil {
 			return nil, err
 		}
-		var out []SizeInfo
+		out := map[string]Spec{}
 		pager := c.NewListPager(location, nil)
 		for pager.More() {
 			page, err := pager.NextPage(ctx)
@@ -64,7 +93,7 @@ func sdkSizes(subscriptionID string) Sizes {
 				return nil, err
 			}
 			for _, s := range page.Value {
-				out = append(out, SizeInfo{Name: str(s.Name), VCPUs: int(i32(s.NumberOfCores)), MemoryMB: int(i32(s.MemoryInMB))})
+				out[Key(str(s.Name))] = Spec{VCPUs: int(i32(s.NumberOfCores)), RAMGB: float64(i32(s.MemoryInMB)) / 1024}
 			}
 		}
 		return out, nil
@@ -74,22 +103,101 @@ func sdkSizes(subscriptionID string) Sizes {
 // Describe is an API error without the request details, safe to show.
 func (*Catalog) Describe(err error) string { return (*Client)(nil).Describe(err) }
 
+// digest is what the catalog keeps of the price lists of a location.
+type digest struct {
+	Fetched  time.Time `json:"fetched"`
+	Currency string    `json:"currency"`
+	Types    []entry   `json:"types"`
+	// SSD are the Standard SSD tiers with their price per month.
+	SSD []tier `json:"ssd"`
+}
+
+// entry is a VM size with its pay-as-you-go price per hour.
+type entry struct {
+	Name   string  `json:"name"`
+	VCPUs  int     `json:"vcpus"`
+	RAMGB  float64 `json:"ram_gb"`
+	Hourly float64 `json:"hourly"`
+}
+
+type tier struct {
+	GB      int     `json:"gb"`
+	Monthly float64 `json:"monthly"`
+}
+
 // Offers lists the VM sizes of the location that have a price, with the price of a Standard SSD
 // system disk of diskGB (64 GB for 0) added. The prices are in euro without VAT.
 func (c *Catalog) Offers(ctx context.Context, location string, diskGB int) ([]model.Offer, error) {
 	if location == "" {
 		return nil, fmt.Errorf("no location: give --location or SERVER_LOCATION")
 	}
+	d, err := c.digestOf(ctx, location)
+	if err != nil {
+		return nil, err
+	}
 	if diskGB <= 0 {
 		diskGB = int(Options{}.diskGB())
 	}
-	// the sizes and the two price lists do not depend on each other
+	disk, ok := d.diskPrice(diskGB)
+	if !ok {
+		return nil, fmt.Errorf("no price of Standard SSD disks of %d GB in %s", diskGB, location)
+	}
+	out := make([]model.Offer, 0, len(d.Types))
+	for _, t := range d.Types {
+		arch := "x86"
+		if armSize(t.Name) {
+			arch = "arm"
+		}
+		out = append(out, model.Offer{
+			Provider: "azure", Type: t.Name, Location: location, VCPU: t.VCPUs, RAMGB: t.RAMGB, Arch: arch, SysDiskGB: diskGB,
+			HourlyPrice: t.Hourly + disk/model.HoursPerMonth, MonthlyPrice: t.Hourly*model.HoursPerMonth + disk, Currency: d.Currency,
+		})
+	}
+	return out, nil
+}
+
+// diskPrice is the price per month of the smallest Standard SSD tier that holds diskGB.
+func (d *digest) diskPrice(diskGB int) (float64, bool) {
+	best, bestGB := 0.0, 0
+	for _, t := range d.SSD {
+		if t.GB >= diskGB && (bestGB == 0 || t.GB < bestGB) {
+			best, bestGB = t.Monthly, t.GB
+		}
+	}
+	return best, bestGB != 0
+}
+
+// digestOf is the digest of the location: the cached one if it is young enough, else a new one. If
+// the price lists cannot be read, an old digest is better than none.
+func (c *Catalog) digestOf(ctx context.Context, location string) (*digest, error) {
+	name := "azure-" + location + ".json"
+	var cached *digest
+	var d digest
+	if pricecache.Read(c.dir, name, &d) && len(d.Types) > 0 && len(d.SSD) > 0 {
+		cached = &d
+		if c.now().Sub(d.Fetched) < cacheMaxAge {
+			return cached, nil
+		}
+	}
+	fresh, err := c.fetch(ctx, location)
+	switch {
+	case err == nil:
+		pricecache.Write(c.dir, name, fresh)
+		return fresh, nil
+	case cached != nil && ctx.Err() == nil:
+		return cached, nil
+	}
+	return nil, err
+}
+
+// fetch reads the sizes and the two price lists, at the same time as they do not depend on each other.
+func (c *Catalog) fetch(ctx context.Context, location string) (*digest, error) {
 	var (
-		sizes            []SizeInfo
+		specs            map[string]Spec
 		vmItems, ssdItem []priceItem
 		g, gc            = errgroup.WithContext(ctx)
 	)
-	g.Go(func() (err error) { sizes, err = c.sizes(gc, location); return err })
+	g.Go(func() (err error) { specs, err = c.specs(gc, location); return err })
 	g.Go(func() (err error) { vmItems, err = c.items(gc, filterOf("Virtual Machines", "", location)); return err })
 	g.Go(func() (err error) {
 		ssdItem, err = c.items(gc, filterOf("Storage", "Standard SSD Managed Disks", location))
@@ -98,25 +206,104 @@ func (c *Catalog) Offers(ctx context.Context, location string, diskGB int) ([]mo
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
+	d := &digest{Fetched: c.now(), SSD: ssdTiers(ssdItem)}
 	prices, currency := hourlyPrices(vmItems)
-	disk, err := diskPrice(ssdItem, diskGB)
-	if err != nil {
-		return nil, fmt.Errorf("%w in %s", err, location)
+	d.Currency = currency
+	for name, p := range prices {
+		if s, ok := specs[Key(name)]; ok && s.VCPUs > 0 && s.RAMGB > 0 {
+			d.Types = append(d.Types, entry{Name: name, VCPUs: s.VCPUs, RAMGB: s.RAMGB, Hourly: p})
+		}
 	}
-	var out []model.Offer
-	for _, s := range sizes {
-		p, ok := prices[strings.ToLower(s.Name)]
-		if !ok {
-			continue
+	switch {
+	case len(d.Types) == 0:
+		return nil, fmt.Errorf("no VM sizes with a price in %s", location)
+	case len(d.SSD) == 0:
+		return nil, fmt.Errorf("no price of Standard SSD disks in %s", location)
+	}
+	return d, nil
+}
+
+// specs is the size of the VM sizes: from the subscription if there is one and it answers, else
+// from the website.
+func (c *Catalog) specs(ctx context.Context, location string) (map[string]Spec, error) {
+	if c.official != nil {
+		s, err := c.official(ctx, location)
+		if err == nil {
+			return s, nil
 		}
-		arch := "x86"
-		if armSize(s.Name) {
-			arch = "arm"
+		if c.notice != nil {
+			fmt.Fprintf(c.notice, "azure: the sizes of the subscription are not available (%s); using the data of the Azure website\n", c.Describe(err))
 		}
-		out = append(out, model.Offer{
-			Provider: "azure", Type: s.Name, Location: location, VCPU: s.VCPUs, RAMGB: float64(s.MemoryMB) / 1024, Arch: arch, SysDiskGB: diskGB,
-			HourlyPrice: p + disk/model.HoursPerMonth, MonthlyPrice: p*model.HoursPerMonth + disk, Currency: currency,
-		})
+	}
+	return c.website(ctx, location)
+}
+
+// specsCache keeps the sizes from the website, which are the same for every location.
+type specsCache struct {
+	Fetched time.Time       `json:"fetched"`
+	Specs   map[string]Spec `json:"specs"`
+}
+
+// calculatorSpecs reads the sizes from the data of the pricing calculator, once a day.
+func (c *Catalog) calculatorSpecs(addr string) Specs {
+	return func(ctx context.Context, _ string) (map[string]Spec, error) {
+		var cached specsCache
+		if pricecache.Read(c.dir, "azure-specs.json", &cached) && len(cached.Specs) > 0 && c.now().Sub(cached.Fetched) < cacheMaxAge {
+			return cached.Specs, nil
+		}
+		if c.notice != nil {
+			fmt.Fprintln(c.notice, "azure: reading the VM sizes from the Azure website (a large file, once a day) ...")
+		}
+		specs, err := c.readCalculator(ctx, addr)
+		if err != nil {
+			if len(cached.Specs) > 0 && ctx.Err() == nil {
+				return cached.Specs, nil
+			}
+			return nil, err
+		}
+		pricecache.Write(c.dir, "azure-specs.json", specsCache{Fetched: c.now(), Specs: specs})
+		return specs, nil
+	}
+}
+
+// calculator is the part of the data of the pricing calculator the catalog reads: the offers by
+// name ("linux-d4asv5-standard"), of which it takes the standard Linux ones.
+type calculator struct {
+	Offers map[string]struct {
+		Cores float64 `json:"cores"`
+		RAM   float64 `json:"ram"`
+	} `json:"offers"`
+}
+
+func (c *Catalog) readCalculator(ctx context.Context, addr string) (map[string]Spec, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, addr, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		if ue, ok := err.(*url.Error); ok {
+			err = ue.Err
+		}
+		return nil, fmt.Errorf("VM sizes: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }() // read only
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("VM sizes: HTTP %d", resp.StatusCode)
+	}
+	var data calculator
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, fmt.Errorf("VM sizes: %w", err)
+	}
+	out := map[string]Spec{}
+	for name, o := range data.Offers {
+		size, ok := strings.CutPrefix(name, "linux-")
+		if size, ok2 := strings.CutSuffix(size, "-standard"); ok && ok2 && o.Cores >= 1 && o.RAM > 0 {
+			out[size] = Spec{VCPUs: int(o.Cores), RAMGB: o.RAM}
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("VM sizes: none in the data")
 	}
 	return out, nil
 }
@@ -161,49 +348,40 @@ func (c *Catalog) items(ctx context.Context, filter string) ([]priceItem, error)
 	return out, nil
 }
 
-// hourlyPrices are the pay-as-you-go prices of the Linux VMs by lower-case size name, and their currency.
+// hourlyPrices are the pay-as-you-go prices of the Linux VMs by size name, and their currency.
 func hourlyPrices(items []priceItem) (map[string]float64, string) {
 	prices, currency := map[string]float64{}, ""
 	for _, it := range items {
 		if !payAsYouGoLinux(it) {
 			continue
 		}
-		key := strings.ToLower(it.ArmSkuName)
-		if cur, ok := prices[key]; !ok || it.RetailPrice < cur {
-			prices[key] = it.RetailPrice
+		if cur, ok := prices[it.ArmSkuName]; !ok || it.RetailPrice < cur {
+			prices[it.ArmSkuName] = it.RetailPrice
 		}
 		currency = it.CurrencyCode
 	}
 	return prices, currency
 }
 
-// ssdTiers are the sizes of the Standard SSD disks by name of the tier; a disk costs what the
-// smallest tier it fits in costs.
-func ssdTiers() map[string]int {
+// ssdSizes are the sizes of the Standard SSD disks by name of the tier.
+func ssdSizes() map[string]int {
 	return map[string]int{
 		"E1": 4, "E2": 8, "E3": 16, "E4": 32, "E6": 64, "E10": 128, "E15": 256, "E20": 512, "E30": 1024,
 		"E40": 2048, "E50": 4096, "E60": 8192, "E70": 16384, "E80": 32767,
 	}
 }
 
-// diskPrice is the price per month of a locally redundant Standard SSD that holds diskGB.
-func diskPrice(items []priceItem, diskGB int) (float64, error) {
-	best, bestSize := 0.0, 0
-	tiers := ssdTiers()
+// ssdTiers are the locally redundant Standard SSD tiers of the price list with their monthly price.
+func ssdTiers(items []priceItem) []tier {
+	sizes := ssdSizes()
+	var out []tier
 	for _, it := range items {
-		tier, _, _ := strings.Cut(it.SkuName, " ")
-		size, ok := tiers[tier]
-		if !ok || !strings.HasSuffix(it.MeterName, " LRS Disk") || it.UnitOfMeasure != "1/Month" || size < diskGB {
-			continue
-		}
-		if bestSize == 0 || size < bestSize {
-			best, bestSize = it.RetailPrice, size
+		name, _, _ := strings.Cut(it.SkuName, " ")
+		if gb, ok := sizes[name]; ok && strings.HasSuffix(it.MeterName, " LRS Disk") && it.UnitOfMeasure == "1/Month" && it.RetailPrice > 0 {
+			out = append(out, tier{GB: gb, Monthly: it.RetailPrice})
 		}
 	}
-	if bestSize == 0 {
-		return 0, fmt.Errorf("no price of Standard SSD disks of %d GB", diskGB)
-	}
-	return best, nil
+	return out
 }
 
 // payAsYouGoLinux tells the plain Linux price of a size from the Windows, spot and low-priority ones.

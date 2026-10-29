@@ -13,6 +13,7 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/aws"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/azure"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/cloudflare"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/ecb"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/editor"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/gcp"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/git"
@@ -152,7 +153,7 @@ func Find(get func(string) string, notice io.Writer) find.Service {
 	for _, name := range model.ProviderNames() {
 		info, _ := model.LookupProvider(name)
 		src := find.Source{Name: name}
-		for _, c := range info.Credentials {
+		for _, c := range findCredentials(name, info) {
 			if get(c) == "" && src.Skip == "" {
 				src.Skip = c + " is not set"
 			}
@@ -163,7 +164,16 @@ func Find(get func(string) string, notice io.Writer) find.Service {
 		}
 		sources = append(sources, src)
 	}
-	return find.Service{Deps: find.Deps{Sources: sources}}
+	return find.Service{Deps: find.Deps{Sources: sources, Rates: ecb.New(cacheDir())}}
+}
+
+// findCredentials are the settings viper find needs of a provider. AWS (the public price list) and
+// Azure (the subscription only gives the VM sizes more exactly) need none.
+func findCredentials(name string, info model.ProviderInfo) []string {
+	if name == "aws" || name == "azure" {
+		return nil
+	}
+	return info.Credentials
 }
 
 // defaultLocation is where the price list of a provider is read if --location says nothing; ""
@@ -196,7 +206,7 @@ func setCatalog(src *find.Source, get func(string) string, notice io.Writer) {
 		c := aws.NewCatalog(cacheDir(), notice)
 		src.Catalog, src.Describe = c, c.Describe
 	case "azure":
-		c := azure.NewCatalog(get("AZURE_SUBSCRIPTION_ID"))
+		c := azure.NewCatalog(get("AZURE_SUBSCRIPTION_ID"), cacheDir(), notice)
 		src.Catalog, src.Describe = c, c.Describe
 	case "gcp":
 		c := gcp.NewCatalog(get("GCP_PROJECT"))

@@ -1,5 +1,6 @@
 // Package find looks up the server types of the providers that fit what a machine needs and shows
-// them with their prices. It only reads and changes nothing.
+// them with their prices, on one basis so that they can be compared: one currency (euro) and the
+// same VAT for all. It only reads and changes nothing.
 package find
 
 import (
@@ -7,15 +8,20 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"sync"
 	"text/tabwriter"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/catalog"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/fx"
 )
 
 // DefaultTop is how many server types of each provider are shown.
 const DefaultTop = 3
+
+// currency is the currency all prices are shown in.
+const currency = "EUR"
 
 // Source is the price list of one provider; Catalog is nil if there is none to read, and Skip
 // says why.
@@ -33,20 +39,25 @@ type Source struct {
 type Deps struct {
 	Sources []Source
 	Top     int // per provider; 0 is DefaultTop
+	// Rates converts the prices of a provider that bills in another currency; nil to show them as
+	// they are.
+	Rates fx.Rates
 }
 
 // Service is the use case Find.
 type Service struct{ Deps }
 
-// result is what one provider gave: the server types to show, or a line for errOut.
+// result is what one provider gave: all its offers, or a line for errOut.
 type result struct {
-	best []model.Offer
-	note string
+	offers []model.Offer
+	read   bool // the price list was read (it may have no offers)
+	note   string
 }
 
 // Find shows the cheapest server types of every provider that have at least what need asks for
-// and returns how many it showed. The price lists are read at the same time; the output keeps the
-// order of the providers. A provider that cannot be read is named on errOut and left out.
+// and returns how many it showed. The price lists are read at the same time. The prices are
+// brought to one basis (euro, one VAT) and the rows are ordered by price. A provider that cannot be
+// read is named on errOut and left out.
 func (s Service) Find(ctx context.Context, need model.Need, out, errOut io.Writer) int {
 	top := s.Top
 	if top <= 0 {
@@ -61,25 +72,32 @@ func (s Service) Find(ctx context.Context, need model.Need, out, errOut io.Write
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results[i] = look(ctx, src, need, top)
+			results[i] = look(ctx, src, need)
 		}()
 	}
 	wg.Wait()
-	shown := 0
+	basis := s.normalize(ctx, need, results)
+	var rows []model.Offer
 	for i, r := range results {
+		best := cheapest(r.offers, need, top)
+		if len(best) == 0 && r.read {
+			results[i].note = fmt.Sprintf("%s: no server type fits", s.Sources[i].Name)
+		}
+		rows = append(rows, best...)
+	}
+	sort.Slice(rows, func(i, j int) bool { return less(rows[i], rows[j]) })
+	show(out, rows, basis, need)
+	// the notes after the table, so that they are not lost between it and the command
+	for _, r := range results {
 		if r.note != "" {
 			fmt.Fprintln(errOut, r.note)
 		}
-		if len(r.best) > 0 {
-			show(out, s.Sources[i].Name, r.best, need)
-			shown += len(r.best)
-		}
 	}
-	return shown
+	return len(rows)
 }
 
-// look reads the price list of one provider and picks the cheapest that fit.
-func look(ctx context.Context, src Source, need model.Need, top int) result {
+// look reads the price list of one provider.
+func look(ctx context.Context, src Source, need model.Need) result {
 	if src.Catalog == nil {
 		return result{note: fmt.Sprintf("skipped %s: %s", src.Name, src.Skip)}
 	}
@@ -95,11 +113,74 @@ func look(ctx context.Context, src Source, need model.Need, top int) result {
 		}
 		return result{note: fmt.Sprintf("skipped %s: %s", src.Name, reason)}
 	}
-	best := cheapest(offers, need, top)
-	if len(best) == 0 {
-		return result{note: fmt.Sprintf("%s: no server type fits", src.Name)}
+	return result{offers: offers, read: true}
+}
+
+// basis says what the prices were brought to.
+type basis struct {
+	vat       float64            // the VAT in all prices; 0 for none
+	converted map[string]fx.Rate // by currency that was converted to euro
+	kept      []string           // currencies that could not be converted
+}
+
+// normalize brings all the offers to euro and to one VAT, in place: --vat if it is given, else the
+// VAT that a provider reports (Hetzner, whose prices have it in), else none.
+func (s Service) normalize(ctx context.Context, need model.Need, results []result) basis {
+	b := basis{converted: map[string]fx.Rate{}, vat: need.VATPercent}
+	if !need.HasVAT {
+		b.vat = reportedVAT(results)
 	}
-	return result{best: best}
+	failed := map[string]bool{}
+	for i := range results {
+		for j := range results[i].offers {
+			o := &results[i].offers[j]
+			factor := (1 + b.vat/100) / (1 + o.VATPercent/100) // from the VAT in the price to the VAT asked for
+			if o.Currency != currency {
+				if rate, ok := s.rate(ctx, o.Currency, &b, failed); ok {
+					factor *= rate
+					o.Currency = currency
+				}
+			}
+			o.HourlyPrice *= factor
+			o.MonthlyPrice *= factor
+			o.VATPercent = b.vat
+		}
+	}
+	for c := range failed {
+		b.kept = append(b.kept, c)
+	}
+	sort.Strings(b.kept)
+	return b
+}
+
+// reportedVAT is the VAT that the prices of a provider have in, 0 if none has any.
+func reportedVAT(results []result) float64 {
+	for _, r := range results {
+		for _, o := range r.offers {
+			if o.VATPercent != 0 {
+				return o.VATPercent
+			}
+		}
+	}
+	return 0
+}
+
+// rate is the rate to euro of a currency, asked once.
+func (s Service) rate(ctx context.Context, from string, b *basis, failed map[string]bool) (float64, bool) {
+	if r, ok := b.converted[from]; ok {
+		return r.Value, true
+	}
+	if failed[from] || s.Rates == nil {
+		failed[from] = true
+		return 0, false
+	}
+	r, err := s.Rates.Rate(ctx, from, currency)
+	if err != nil {
+		failed[from] = true
+		return 0, false
+	}
+	b.converted[from] = r
+	return r.Value, true
 }
 
 // cheapest are the top cheapest server types that fit, each in the location where it is cheapest.
@@ -129,38 +210,89 @@ func less(a, b model.Offer) bool {
 	if a.MonthlyPrice != b.MonthlyPrice {
 		return a.MonthlyPrice < b.MonthlyPrice
 	}
+	if a.Provider != b.Provider {
+		return a.Provider < b.Provider
+	}
 	if a.Type != b.Type {
 		return a.Type < b.Type
 	}
 	return a.Location < b.Location
 }
 
-func show(out io.Writer, provider string, best []model.Offer, need model.Need) {
-	vat := "without VAT"
-	if best[0].VATPercent != 0 {
-		vat = fmt.Sprintf("incl. %g %% VAT", best[0].VATPercent)
+// show prints one table of the rows, what the prices mean, and the lines to copy.
+func show(out io.Writer, rows []model.Offer, b basis, need model.Need) {
+	if len(rows) == 0 {
+		return
 	}
-	fmt.Fprintf(out, "== %s (list prices in %s, %s)\n", provider, best[0].Currency, vat)
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "TYPE\tLOCATION\tvCPU\tRAM GB\tDISK GB\tARCH\tPER HOUR\tPER MONTH")
-	for _, o := range best {
+	fmt.Fprintln(w, "PROVIDER\tTYPE\tLOCATION\tvCPU\tRAM GB\tDISK GB\tARCH\tPER HOUR\tPER MONTH")
+	sysDisk := false
+	for _, o := range rows {
 		disk := "-"
 		switch {
 		case o.DiskGB != 0:
 			disk = fmt.Sprint(o.DiskGB)
 		case o.SysDiskGB != 0:
-			disk = fmt.Sprintf("%d*", o.SysDiskGB)
+			disk, sysDisk = fmt.Sprintf("%d*", o.SysDiskGB), true
 		}
-		fmt.Fprintf(w, "%s\t%s\t%d\t%g\t%s\t%s\t%.4f\t%.2f\n", o.Type, o.Location, o.VCPU, o.RAMGB, disk, o.Arch, o.HourlyPrice, o.MonthlyPrice)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%g\t%s\t%s\t%s\t%s\n", o.Provider, o.Type, o.Location, o.VCPU, o.RAMGB, disk, o.Arch,
+			money(o.HourlyPrice, 4, o.Currency), money(o.MonthlyPrice, 2, o.Currency))
 	}
 	_ = w.Flush()
-	c := best[0]
-	if c.SysDiskGB != 0 {
-		fmt.Fprintln(out, "* system disk, chosen apart from the type; its price is in the prices")
+	fmt.Fprintln(out, "\n"+legend(b))
+	if sysDisk {
+		fmt.Fprintln(out, "* system disk, chosen apart from the type; its price is in the prices.")
 	}
-	fmt.Fprintf(out, "cheapest: PROVIDER=%s SERVER_TYPE=%s SERVER_LOCATION=%s", c.Provider, c.Type, c.Location)
-	if info, _ := model.LookupProvider(c.Provider); c.DiskGB == 0 && info.DiskSetting != "" && need.DiskGB > 0 {
-		fmt.Fprintf(out, " %s=%d", info.DiskSetting, need.DiskGB)
+	fmt.Fprintln(out, "\nFor machines/<machine>.env.local (the cheapest of each provider):")
+	seen := map[string]bool{}
+	for _, o := range rows {
+		if !seen[o.Provider] {
+			seen[o.Provider] = true
+			fmt.Fprintf(out, "  %s\n", settingsLine(o, need))
+		}
 	}
-	fmt.Fprintln(out)
+}
+
+// legend says what the prices are: list prices on one basis, and where they were converted.
+func legend(b basis) string {
+	vat := "without VAT"
+	if b.vat != 0 {
+		vat = fmt.Sprintf("incl. %g %% VAT", b.vat)
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Prices are list prices in %s, %s; the fee for a public IPv4 address is not in them.", currency, vat)
+	var from []string
+	for c := range b.converted {
+		from = append(from, c)
+	}
+	sort.Strings(from)
+	for _, c := range from {
+		r := b.converted[c]
+		fmt.Fprintf(&sb, "\n%s converted at the rate of the European Central Bank of %s (1 %s = %.4f %s).", c, r.Date, c, r.Value, currency)
+	}
+	if len(b.kept) > 0 {
+		fmt.Fprintf(&sb, "\nNOT converted (no exchange rate): %s; those prices cannot be compared with the others.", strings.Join(b.kept, ", "))
+	}
+	return sb.String()
+}
+
+// money is a price with its currency, aligned to the right.
+func money(v float64, decimals int, currency string) string {
+	symbol := currency
+	switch currency {
+	case "EUR":
+		symbol = "€"
+	case "USD":
+		symbol = "$"
+	}
+	return fmt.Sprintf("%*.*f %s", 9, decimals, v, symbol)
+}
+
+// settingsLine is the settings that make a machine of the offer.
+func settingsLine(o model.Offer, need model.Need) string {
+	line := fmt.Sprintf("PROVIDER=%s SERVER_TYPE=%s SERVER_LOCATION=%s", o.Provider, o.Type, o.Location)
+	if info, _ := model.LookupProvider(o.Provider); o.DiskGB == 0 && info.DiskSetting != "" && need.DiskGB > 0 {
+		line += fmt.Sprintf(" %s=%d", info.DiskSetting, need.DiskGB)
+	}
+	return line
 }

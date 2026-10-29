@@ -203,3 +203,50 @@ func TestCatalogSaysThatItReadsALargeFile(t *testing.T) {
 		t.Errorf("%q", got)
 	}
 }
+
+// flaky serves the price list but breaks off the first n answers halfway, as a connection can.
+func flaky(t *testing.T, breaks int) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+	var n atomic.Int32
+	body := priceList()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if int(n.Add(1)) <= breaks {
+			w.Header().Set("Content-Length", fmt.Sprint(len(body)))
+			_, _ = w.Write([]byte(body[:len(body)/2])) // less than it promised: the client sees the body end early
+			return
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &n
+}
+
+func TestADownloadThatBreaksOffIsTriedAgain(t *testing.T) {
+	srv, requests := flaky(t, 2)
+	var notice bytes.Buffer
+	c := aws.NewCatalogWith("", srv.Client(), srv.URL+"/", time.Now, &notice)
+	offers, err := c.Offers(context.Background(), "eu-central-1", 0)
+	if err != nil || len(offers) != 3 || requests.Load() != 3 {
+		t.Fatalf("%d offers, %v, %d requests", len(offers), err, requests.Load())
+	}
+	if !strings.Contains(notice.String(), "trying again (3/3)") {
+		t.Errorf("%q", notice.String())
+	}
+}
+
+func TestADownloadThatKeepsBreakingOffGivesAClearError(t *testing.T) {
+	srv, requests := flaky(t, 99)
+	c := aws.NewCatalogWith("", srv.Client(), srv.URL+"/", time.Now, nil)
+	_, err := c.Offers(context.Background(), "eu-central-1", 0)
+	if err == nil || !strings.Contains(err.Error(), "broke off 3 times") || requests.Load() != 3 {
+		t.Errorf("%v, %d requests", err, requests.Load())
+	}
+}
+
+func TestAWrongAnswerIsNotTriedAgain(t *testing.T) {
+	srv, requests := server(t, "", 503)
+	c := aws.NewCatalogWith("", srv.Client(), srv.URL+"/", time.Now, nil)
+	if _, err := c.Offers(context.Background(), "eu-central-1", 0); err == nil || requests.Load() != 1 {
+		t.Errorf("%v, %d requests", err, requests.Load())
+	}
+}

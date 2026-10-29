@@ -7,14 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/pricecache"
 	"github.com/pt9912/hetzner-viper/internal/model"
 )
 
@@ -35,17 +36,23 @@ type Catalog struct {
 	base   string
 	now    func() time.Time
 	notice io.Writer // where it says that it reads a large file; nil for nowhere
+	// retryWait is the pause before the second try of a download that broke off, and twice that
+	// before the third.
+	retryWait time.Duration
 }
+
+// tries is how often a download that breaks off is started.
+const tries = 3
 
 // NewCatalog returns a catalog that keeps its cache in dir ("" for none) and says on notice that it
 // is reading a price list.
 func NewCatalog(dir string, notice io.Writer) *Catalog {
-	return &Catalog{dir: dir, http: &http.Client{}, base: bulkBase, now: time.Now, notice: notice}
+	return &Catalog{dir: dir, http: &http.Client{}, base: bulkBase, now: time.Now, notice: notice, retryWait: 2 * time.Second}
 }
 
 // NewCatalogWith returns a catalog over a given price list server and clock (for tests).
 func NewCatalogWith(dir string, h *http.Client, base string, now func() time.Time, notice io.Writer) *Catalog {
-	return &Catalog{dir: dir, http: h, base: base, now: now, notice: notice}
+	return &Catalog{dir: dir, http: h, base: base, now: now, notice: notice, retryWait: time.Millisecond}
 }
 
 // Describe is an error without the request details, safe to show.
@@ -121,58 +128,61 @@ func (c *Catalog) digestOf(ctx context.Context, region string) (*digest, error) 
 	return nil, err
 }
 
-func (c *Catalog) file(region string) string {
-	if c.dir == "" {
-		return ""
-	}
-	return filepath.Join(c.dir, "aws-ec2-"+region+".json")
-}
+func cacheName(region string) string { return "aws-ec2-" + region + ".json" }
 
 func (c *Catalog) load(region string) *digest {
-	f := c.file(region)
-	if f == "" {
-		return nil
-	}
-	b, err := os.ReadFile(f)
-	if err != nil {
-		return nil
-	}
 	var d digest
-	if json.Unmarshal(b, &d) != nil || len(d.Types) == 0 || d.GP3 <= 0 {
+	if !pricecache.Read(c.dir, cacheName(region), &d) || len(d.Types) == 0 || d.GP3 <= 0 {
 		return nil
 	}
 	return &d
 }
 
-// save keeps the digest; a cache that cannot be written only costs the next run a new download.
-func (c *Catalog) save(region string, d *digest) {
-	f := c.file(region)
-	if f == "" {
-		return
+func (c *Catalog) save(region string, d *digest) { pricecache.Write(c.dir, cacheName(region), d) }
+
+// fetch reads the price list of the region and digests it. A download that breaks off (the file is
+// large, a connection can fail on the way) is started again, up to tries times.
+func (c *Catalog) fetch(ctx context.Context, region string) (*digest, error) {
+	if c.notice != nil {
+		fmt.Fprintf(c.notice, "aws: reading the price list of %s (a large file, once a day) ...\n", region)
 	}
-	b, err := json.Marshal(d)
-	if err != nil || os.MkdirAll(c.dir, 0o755) != nil {
-		return
+	var err error
+	for try := 1; try <= tries; try++ {
+		var d *digest
+		if d, err = c.download(ctx, region); err == nil {
+			d.Fetched = c.now()
+			return d, nil
+		}
+		if !brokeOff(err) || try == tries {
+			break
+		}
+		if c.notice != nil {
+			fmt.Fprintf(c.notice, "aws: the download of the price list broke off (%s), trying again (%d/%d)\n", c.Describe(err), try+1, tries)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Duration(try) * c.retryWait):
+		}
 	}
-	// a file of its own, then rename: two runs at once do not read half a file
-	tmp, err := os.CreateTemp(c.dir, "aws-ec2-*.tmp")
-	if err != nil {
-		return
+	if brokeOff(err) {
+		return nil, fmt.Errorf("the download of the price list broke off %d times (%s): check the network, a proxy or VPN may cut long downloads", tries, c.Describe(err))
 	}
-	_, werr := tmp.Write(b)
-	if cerr := tmp.Close(); werr != nil || cerr != nil || os.Rename(tmp.Name(), f) != nil {
-		_ = os.Remove(tmp.Name())
-	}
+	return nil, err
 }
 
-// fetch reads the price list of the region and digests it.
-func (c *Catalog) fetch(ctx context.Context, region string) (*digest, error) {
+// brokeOff reports whether an error is a connection that failed or a body that ended too early,
+// which another try may get past; a wrong answer or a wrong list is not.
+func brokeOff(err error) bool {
+	var ne net.Error
+	return errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) || errors.Is(err, syscall.ECONNRESET) || errors.As(err, &ne)
+}
+
+// download makes one try.
+func (c *Catalog) download(ctx context.Context, region string) (*digest, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+region+"/index.json", nil)
 	if err != nil {
 		return nil, err
-	}
-	if c.notice != nil {
-		fmt.Fprintf(c.notice, "aws: reading the price list of %s (a large file, once a day) ...\n", region)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -189,7 +199,6 @@ func (c *Catalog) fetch(ctx context.Context, region string) (*digest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("price list: %w", err)
 	}
-	d.Fetched = c.now()
 	return d, nil
 }
 

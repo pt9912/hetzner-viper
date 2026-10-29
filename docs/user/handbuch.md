@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.61  
+Version: 1.62  
 Software-Version: v0.11.0  
 Stand: 29.10.2026  
 
@@ -246,18 +246,18 @@ Geprüft werden:
 
 ### Passenden Server-Typ suchen
 
-`viper find` sucht in den Preislisten Ihrer Cloud-Anbieter die günstigsten Server-Typen, die mindestens das haben, was Sie angeben. Es liest nur und legt nichts an. Die Anbieter werden gleichzeitig abgefragt.
+`viper find` sucht in den Preislisten Ihrer Cloud-Anbieter die günstigsten Server-Typen, die mindestens das haben, was Sie angeben, und stellt sie **vergleichbar** nebeneinander. Es liest nur und legt nichts an. Die Anbieter werden gleichzeitig abgefragt.
 
 #### Voraussetzung
 
 * `.env.local` ist angelegt (`viper setup`).
-* Die Zugangsdaten des Anbieters sind gesetzt oder Sie sind angemeldet. Anbieter, bei denen das fehlt, überspringt `viper find` mit einem Hinweis; die anderen laufen weiter.
+* Für Hetzner und Google Cloud müssen die Zugangsdaten gesetzt sein; AWS und Azure brauchen keine. Fehlt etwas, überspringt `viper find` den Anbieter mit einem Hinweis, die anderen laufen weiter.
 
 | Anbieter | Für die Preisabfrage nötig |
 |---|---|
 | Hetzner | `HCLOUD_TOKEN` |
 | AWS | nichts: `viper find` liest die öffentliche Preisliste von AWS, ohne Konto und ohne Anmeldung |
-| Azure | `az login` und `AZURE_SUBSCRIPTION_ID` (die Preise selbst sind öffentlich, die VM-Größen kommen aus Ihrer Subscription) |
+| Azure | nichts: Preise und VM-Größen sind öffentlich. Mit `AZURE_SUBSCRIPTION_ID` und `az login` fragt `viper find` die Größen genauer bei Ihrer Subscription ab. |
 | Google Cloud | `gcloud auth application-default login`, `GCP_PROJECT` und die aktivierte Cloud Billing API im Projekt |
 
 #### Vorgehen
@@ -268,23 +268,30 @@ Geprüft werden:
 * `--arch x86` oder `--arch arm`: nur diese Prozessor-Architektur (Standard: beide).
 * `--location ORT`: nur dieser Standort, etwa `fsn1` (Hetzner), `eu-central-1` (AWS), `germanywestcentral` (Azure) oder `europe-west3-b` (Google Cloud). Standortnamen unterscheiden sich je Anbieter: Zusammen mit `--provider` ist das eindeutig.
 * `--provider NAME`: nur dieser Anbieter (`hetzner`, `aws`, `azure`, `gcp`).
+* `--vat PROZENT`: Mehrwertsteuersatz für alle Preise; `--vat 0` zeigt Nettopreise. Ohne Angabe gilt der Satz Ihres Hetzner-Projekts (bei Ihnen 19 %), sonst keine Steuer.
 
 Ohne `--location` sucht Hetzner an allen Standorten. AWS, Azure und Google Cloud preisen eine Region nach der anderen: Sie suchen im `SERVER_LOCATION` Ihrer `.env.local`, wenn `PROVIDER` dort der Anbieter ist, sonst in der Standardregion des Anbieters.
 
 #### Ergebnis
 
-Für jeden Anbieter stehen die drei günstigsten Typen in einer Tabelle, mit Standort, Kernen, RAM, Platte und Preis je Stunde und je Monat. Jeder Typ erscheint an dem Standort, an dem er am günstigsten ist. Darunter steht eine Zeile `cheapest: PROVIDER=… SERVER_TYPE=… SERVER_LOCATION=…` zum Übernehmen in Ihre `machines/<rechner>.env.local`. Passt kein Typ, endet `viper find` mit Code 1.
+Eine Tabelle für alle Anbieter, **nach Monatspreis sortiert**. Je Anbieter stehen die drei günstigsten Typen darin, mit Standort, Kernen, RAM, Platte und Preis je Stunde und je Monat. Jeder Typ erscheint an dem Standort, an dem er am günstigsten ist. Darunter erklärt die Legende, was die Preise sind, und die Zeilen `PROVIDER=… SERVER_TYPE=… SERVER_LOCATION=…` nennen den günstigsten Typ je Anbieter zum Übernehmen in Ihre `machines/<rechner>.env.local`. Passt kein Typ, endet `viper find` mit Code 1.
 
-Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt und berechnet. Ihre Größe steht mit `*` in der Spalte `DISK GB` (`--disk`, ohne Angabe die Standardgröße von `viper`), ihr Preis ist in den Preisen enthalten, und die Zeile `cheapest` nennt die passende Einstellung, etwa `AWS_ROOT_GB=80`. Bei Hetzner gehört die Platte zum Typ: `--disk` ist dort eine Mindestgröße.
+Damit die Preise vergleichbar sind, rechnet `viper find` sie auf **eine Basis** um:
+
+* **Währung:** alles in Euro. AWS bietet nur US-Dollar; `viper find` rechnet sie mit dem Referenzkurs der Europäischen Zentralbank um (öffentlich, ohne Konto). Die Legende nennt Kurs und Tag. Ist kein Kurs zu bekommen, bleibt die Währung stehen, und die Legende sagt es: Diese Zeilen sind dann nicht vergleichbar.
+* **Mehrwertsteuer:** für alle Anbieter dieselbe (`--vat`). Hetzner nennt seine Preise mit Steuer, die anderen ohne; `viper find` rechnet beides auf denselben Satz um.
+
+Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt und berechnet. Ihre Größe steht mit `*` in der Spalte `DISK GB` (`--disk`, ohne Angabe die Standardgröße von `viper`), ihr Preis ist in den Preisen enthalten, und die Zeile für den Anbieter nennt die passende Einstellung, etwa `AWS_ROOT_GB=80`. Bei Hetzner gehört die Platte zum Typ: `--disk` ist dort eine Mindestgröße.
 
 #### Hinweise
 
-* Die Preise sind Listenpreise in der Währung des Anbieters: Hetzner in Euro inklusive Mehrwertsteuer (mit dem Satz Ihres Projekts), AWS in US-Dollar, Azure und Google Cloud in Euro, alle drei ohne Mehrwertsteuer. Die Kopfzeile jeder Tabelle nennt Währung und Steuer. Die Tabellen verschiedener Anbieter sind deshalb nicht ohne Weiteres vergleichbar.
-* Nicht enthalten sind Rabatte, Datenverkehr und die Gebühr für die öffentliche IPv4-Adresse. Die Hetzner Console zeigt ihre Preise inklusive IPv4: `viper find` zeigt daher etwa 0,60 € im Monat weniger.
+* Die Preise sind Listenpreise. Nicht enthalten sind Rabatte, Datenverkehr und die Gebühr für die öffentliche IPv4-Adresse; sie ist bei den Anbietern unterschiedlich hoch. Die Hetzner Console zeigt ihre Preise inklusive IPv4: `viper find` zeigt daher etwa 0,60 € im Monat weniger.
 * Der Monatspreis rechnet mit 730 Stunden.
+* **Cache:** Die Preislisten sind groß (AWS je Region mehrere hundert MB, Azure rund 60 MB). `viper find` liest sie höchstens einmal am Tag und merkt sich nur das Nötige (wenige KB je Region) im Cache-Verzeichnis, unter Linux `~/.cache/viper/`. Der erste Lauf einer Region dauert deshalb etwas länger (`aws: reading the price list …`), die folgenden sind sofort fertig. Lässt sich eine Liste später nicht lesen, gilt der alte Stand weiter. Zum Erneuern vor Ablauf löschen Sie die Dateien. Bricht ein Download ab (die AWS-Datei ist groß), versucht `viper find` es dreimal und nennt dann einen Netzwerkfehler (Proxy oder VPN kommen als Ursache in Frage).
+* AWS: Bare-Metal-Typen (`*.metal`) fehlen.
+* Azure: Ohne Subscription stammen Kerne und RAM aus den Daten des Preisrechners auf der Azure-Website. Das ist keine dokumentierte Schnittstelle; ändert Microsoft sie, fehlen nur diese Angaben, bis `viper` angepasst ist.
 * Bei Google Cloud setzt sich der Preis aus den Preisen für Kerne und Arbeitsspeicher der Typenfamilie zusammen. Geteilte Kerne (`e2-micro`) und Typen mit lokaler SSD fehlen. Bei den neuen Serien mit Hyperdisk kommen Leistungsaufschläge der Platte nicht dazu.
-* Die Preisliste von AWS ist je Region eine Datei von mehreren hundert MB (`eu-central-1`: rund 430 MB). `viper find` liest sie höchstens einmal am Tag und merkt sich nur das Nötige (rund 20 KB je Region) im Cache-Verzeichnis, unter Linux `~/.cache/viper/aws-ec2-<region>.json`. Der erste Lauf einer Region dauert deshalb etwas länger (`aws: reading the price list …`), die folgenden sind sofort fertig. Lässt sich die Liste später nicht lesen, gilt der alte Stand weiter. Zum Erneuern vor Ablauf löschen Sie die Datei. Bare-Metal-Typen (`*.metal`) fehlen.
-* Azure und Google Cloud sind für `viper find` noch nicht in einem echten Konto getestet.
+* Azure und Google Cloud sind für `viper find` noch nicht in einem echten Konto getestet; bei Azure sind Preise und VM-Größen aber aus den öffentlichen Quellen geprüft.
 
 ### Protokolle ansehen
 
@@ -986,3 +993,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.59 | v0.12.0 | Neu: `viper find` sucht Server-Typen nach CPUs, RAM und Platte und zeigt die günstigsten mit Preis (Hetzner: Euro inklusive Mehrwertsteuer, ohne IPv4); zunächst nur für Hetzner. |
 | 1.60 | v0.12.0 | `viper find` fragt jetzt auch AWS, Azure und Google Cloud ab (gleichzeitig), rechnet die getrennt gewählte Systemplatte in den Preis ein und kennt `--provider`. AWS braucht dafür keine Anmeldung: `viper find` liest die öffentliche Preisliste und hält sie einen Tag im Cache (`~/.cache/viper`). |
 | 1.61 | v0.12.0 | Korrektur zu 1.60: Die Preisliste von AWS kommt aus der öffentlichen Preisdatei mit Tages-Cache statt aus der API; kein AWS-Konto nötig. |
+| 1.62 | v0.12.0 | `viper find` zeigt alle Anbieter in einer nach Preis sortierten Tabelle und rechnet sie auf eine Basis um: Euro (AWS mit dem Kurs der EZB) und derselbe Mehrwertsteuersatz (`--vat`). Azure braucht keine Subscription mehr (VM-Größen aus den öffentlichen Daten des Preisrechners, sonst aus der Subscription), und die Preislisten von Azure liegen wie die von AWS einen Tag im Cache. Ein abgebrochener AWS-Download wird wiederholt. |

@@ -17,6 +17,8 @@ type options struct {
 	cpu, disk                int
 	ram                      float64
 	arch, location, provider string
+	vat                      float64
+	hasVAT                   bool
 	h                        *Host // the outside world
 }
 
@@ -43,7 +45,7 @@ var errHelp = errors.New("help")
 // isValueFlag reports whether the option takes a value.
 func isValueFlag(n string) bool {
 	switch n {
-	case "repo", "cmd", "dir", "cpu", "ram", "disk", "arch", "location", "provider":
+	case "repo", "cmd", "dir", "cpu", "ram", "disk", "arch", "location", "provider", "vat":
 		return true
 	}
 	return false
@@ -60,7 +62,7 @@ func commands() map[string]command {
 		"down":      {usage: "<machine> [--force]", machine: needMachine, flags: []string{"force"}, run: nativeDown},
 		"vscode":    {usage: "<machine>", machine: needMachine, run: nativeVSCode},
 		"dns":       {usage: "<machine>", machine: needMachine, run: nativeDNS},
-		"find":      {usage: "[--cpu N] [--ram GB] [--disk GB] [--arch x86|arm] [--location L] [--provider P]", machine: noMachine, flags: []string{"cpu", "ram", "disk", "arch", "location", "provider"}, run: nativeFind},
+		"find":      {usage: "[--cpu N] [--ram GB] [--disk GB] [--arch x86|arm] [--location L] [--provider P] [--vat PERCENT]", machine: noMachine, flags: []string{"cpu", "ram", "disk", "arch", "location", "provider", "vat"}, run: nativeFind},
 		"log":       {usage: "[<machine>] [--full]", machine: maybeMachine, flags: []string{"full"}, run: nativeLog},
 		"version":   {usage: "", machine: noMachine},
 	}
@@ -234,8 +236,20 @@ func setValue(o *options, name, flag, v string) error {
 		o.location = v
 	case "provider":
 		o.provider = v
+	case "vat":
+		return setVAT(o, name, v)
 	default:
 		return setNumber(o, name, flag, v)
 	}
+	return nil
+}
+
+// setVAT reads --vat: a percentage from 0 (prices without VAT) to 100.
+func setVAT(o *options, name, v string) error {
+	x, err := strconv.ParseFloat(v, 64)
+	if err != nil || math.IsNaN(x) || x < 0 || x > 100 {
+		return fmt.Errorf("viper %s: --vat needs a percentage between 0 and 100: %s", name, v)
+	}
+	o.vat, o.hasVAT = x, true
 	return nil
 }

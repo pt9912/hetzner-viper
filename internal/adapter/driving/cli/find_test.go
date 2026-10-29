@@ -28,11 +28,11 @@ func (f fakeFind) Find(_ context.Context, n model.Need, out, _ io.Writer) int {
 }
 
 func TestFindReadsTheNeedFromTheOptions(t *testing.T) {
-	name, o, err := cli.Parse([]string{"find", "--cpu", "4", "--ram=16", "--disk", "80", "--arch", "arm", "--location", "fsn1"})
-	if err != nil || name != "find" || o.CPU != 4 || o.RAM != 16 || o.Disk != 80 || o.Arch != "arm" || o.Location != "fsn1" {
+	name, o, err := cli.Parse([]string{"find", "--cpu", "4", "--ram=16", "--disk", "80", "--arch", "arm", "--location", "fsn1", "--vat", "7.5"})
+	if err != nil || name != "find" || o.CPU != 4 || o.RAM != 16 || o.Disk != 80 || o.Arch != "arm" || o.Location != "fsn1" || !o.HasVAT || o.VAT != 7.5 {
 		t.Fatalf("%s %+v %v", name, o, err)
 	}
-	for _, args := range [][]string{{"find", "--cpu", "0"}, {"find", "--cpu", "x"}, {"find", "--cpu", "2.5"}, {"find", "--ram", "-1"}, {"find", "--ram", "NaN"}, {"find", "--ram", "Inf"}, {"find", "web"}} {
+	for _, args := range [][]string{{"find", "--cpu", "0"}, {"find", "--cpu", "x"}, {"find", "--cpu", "2.5"}, {"find", "--ram", "-1"}, {"find", "--vat", "-1"}, {"find", "--vat", "101"}, {"find", "--vat", "NaN"}, {"find", "--ram", "NaN"}, {"find", "--ram", "Inf"}, {"find", "web"}} {
 		if _, _, err := cli.Parse(args); err == nil {
 			t.Errorf("%v: want an error", args)
 		}
