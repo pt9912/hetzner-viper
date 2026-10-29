@@ -156,6 +156,13 @@ func TestCreateServerMakesTheInstanceAndWaitsForItsAddress(t *testing.T) {
 	if *r.BlockDeviceMappings[0].DeviceName != "/dev/sda1" || *r.BlockDeviceMappings[0].Ebs.VolumeSize != 50 {
 		t.Errorf("root volume %+v", r.BlockDeviceMappings[0])
 	}
+	// viper down terminates the instance only: the volume must go with it, or it stays and costs money
+	if d := r.BlockDeviceMappings[0].Ebs.DeleteOnTermination; d == nil || !*d {
+		t.Error("the root volume must be deleted with the instance (DeleteOnTermination)")
+	}
+	if len(r.BlockDeviceMappings) != 1 {
+		t.Errorf("%d block devices, want only the root volume", len(r.BlockDeviceMappings))
+	}
 	if r.MetadataOptions.HttpTokens != types.HttpTokensStateRequired {
 		t.Error("the instance metadata must need a session token (IMDSv2)")
 	}
