@@ -13,16 +13,17 @@ import (
 
 // refused matches the answers that mean "not now, not you": a server that blocks the addresses of a CI
 // runner, limits the rate, or has an outage.
-var refused = regexp.MustCompile(`HTTP (403|429|5[0-9][0-9])`)
+var refused = regexp.MustCompile(`\bHTTP (403|429|5[0-9]{2})\b`)
 
 // Inconclusive reports whether err says only that the source could not be reached: a network
-// failure, a timeout, a connection that broke off, or a refusal (403, 429, 5xx).
+// failure, a timeout, a body that was cut off, or a refusal (403, 429, 5xx). A plain end of data
+// (io.EOF) is not: an empty answer is what a changed source can look like.
 func Inconclusive(err error) bool {
 	if err == nil {
 		return false
 	}
 	var ne net.Error
 	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
-		errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) || errors.As(err, &ne) ||
+		errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &ne) ||
 		refused.MatchString(err.Error())
 }

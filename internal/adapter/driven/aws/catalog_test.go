@@ -3,7 +3,9 @@ package aws_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -257,6 +259,10 @@ func TestADownloadThatKeepsBreakingOffGivesAClearError(t *testing.T) {
 	_, err := c.Offers(context.Background(), "eu-central-1", 0)
 	if err == nil || !strings.Contains(err.Error(), "broke off 3 times") || requests.Load() != 3 {
 		t.Errorf("%v, %d requests", err, requests.Load())
+	}
+	// the cause stays visible to the caller: a download that was cut off is not a changed source
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Errorf("the error does not say what broke off: %v", err)
 	}
 }
 

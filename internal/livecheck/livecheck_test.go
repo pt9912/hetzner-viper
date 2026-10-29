@@ -31,6 +31,8 @@ func TestWhatIsAFinding(t *testing.T) {
 		"nothing":      nil,
 		"changed":      errors.New("no prices found on the pricing page cloud/general-purpose/ (did it change?)"),
 		"gone":         errors.New("pricing page: HTTP 404"),
+		"empty answer": fmt.Errorf("price list: %w", io.EOF),
+		"other number": errors.New("pricing page: HTTP 4290"),
 		"format":       errors.New("pricing data: invalid character '<' looking for beginning of value"),
 		"no fee found": errors.New("no fee for an external IPv4 address found on the network pricing page (did it change?)"),
 	} {

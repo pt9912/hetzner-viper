@@ -4,6 +4,7 @@ package live_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,7 +21,8 @@ import (
 // answers but cannot be read any more fails it, with what the catalog says.
 func offers(t *testing.T, read func(ctx context.Context) ([]model.Offer, error)) []model.Offer {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	t.Parallel() // the sources are independent, and one slow one must not use up the time of the others
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 	out, err := read(ctx)
 	switch {
@@ -63,10 +65,10 @@ func TestHetznerPages(t *testing.T) {
 		t.Errorf("only %d offers", len(all))
 	}
 	sane(t, all)
-	// the families the pages show, one type of each
-	for _, typ := range []string{"cpx22", "ccx13"} {
-		if !has(all, func(o model.Offer) bool { return o.Type == typ && o.DiskGB > 0 }) {
-			t.Errorf("%s is not among the offers", typ)
+	// the families the pages show: a type may be retired, a family not unnoticed
+	for _, family := range []string{"cpx", "ccx"} {
+		if !has(all, func(o model.Offer) bool { return strings.HasPrefix(o.Type, family) && o.DiskGB > 0 }) {
+			t.Errorf("no type of the family %s is among the offers", family)
 		}
 	}
 	if !has(all, func(o model.Offer) bool { return o.Location == "fsn1" }) || !has(all, func(o model.Offer) bool { return o.Location == "hel1" }) {
@@ -82,8 +84,10 @@ func TestGooglePages(t *testing.T) {
 		t.Errorf("only %d offers", len(all))
 	}
 	sane(t, all)
-	if !has(all, func(o model.Offer) bool { return o.Type == "e2-standard-4" && o.VCPU == 4 && o.RAMGB == 16 }) {
-		t.Error("e2-standard-4 with 4 vCPUs and 16 GiB is not among the offers")
+	for _, family := range []string{"e2-", "n2-"} {
+		if !has(all, func(o model.Offer) bool { return strings.HasPrefix(o.Type, family) && o.VCPU > 0 && o.RAMGB > 0 }) {
+			t.Errorf("no type of the family %s is among the offers", family)
+		}
 	}
 	for _, o := range all {
 		if o.Type == "e2-micro" || o.Type == "e2-small" || o.Type == "e2-medium" {
@@ -121,6 +125,7 @@ func TestAWSPriceList(t *testing.T) {
 }
 
 func TestECBRates(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	r, err := ecb.New(t.TempDir()).Rate(ctx, "USD", "EUR")

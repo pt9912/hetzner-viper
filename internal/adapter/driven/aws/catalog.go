@@ -160,10 +160,24 @@ func (c *Catalog) fetch(ctx context.Context, region string) (*digest, error) {
 		}
 	}
 	if brokeOff(err) {
-		return nil, fmt.Errorf("the download of the price list broke off %d times (%s): check the network, a proxy or VPN may cut long downloads", tries, c.Describe(err))
+		return nil, &brokeOffError{tries: tries, cause: c.Describe(err), err: err}
 	}
 	return nil, err
 }
+
+// brokeOffError is a download that broke off every time it was tried. It keeps the error of the last
+// try, so that a caller can still see what kind it was.
+type brokeOffError struct {
+	tries int
+	cause string
+	err   error
+}
+
+func (e *brokeOffError) Error() string {
+	return fmt.Sprintf("the download of the price list broke off %d times (%s): check the network, a proxy or VPN may cut long downloads", e.tries, e.cause)
+}
+
+func (e *brokeOffError) Unwrap() error { return e.err }
 
 // brokeOff reports whether an error is a connection that was reset, timed out or ended too early,
 // which another try may get past. A wrong answer, a wrong list, a name that does not resolve (the

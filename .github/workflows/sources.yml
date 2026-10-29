@@ -29,7 +29,16 @@ jobs:
       - id: live
         run: |
           set -o pipefail
-          go test -tags live -count=1 -timeout 25m -v ./internal/live/ 2>&1 | tee live.log
+          go test -tags live -count=1 -timeout 20m -v ./internal/live/ 2>&1 | tee live.log
+
+      # a source that is skipped every night would go unseen: show it on the page of the run
+      - name: say which sources were skipped
+        if: always()
+        run: |
+          [ -f live.log ] || exit 0
+          grep -E '^\s*--- SKIP' live.log | while read -r line; do
+            echo "::warning title=source not reached::$line"
+          done || true
 
       # a finding: one issue, and a comment on it for every night the finding stays
       - name: open or update the issue
@@ -38,6 +47,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          # a test that failed is a finding; a build error, the timeout or a missing module is not
+          if ! grep -q -- '--- FAIL' live.log; then
+            echo "::error::the check broke without a finding (build, setup or timeout): no issue, see the log"
+            exit 0
+          fi
           {
             echo "Die nächtliche Prüfung der Quellen von \`viper find\` hat etwas gefunden: Eine Quelle antwortet, aber \`viper\` kann sie nicht mehr wie bisher auswerten (die Seite oder Liste hat sich vermutlich geändert)."
             echo
@@ -49,7 +63,7 @@ jobs:
             echo
             echo "Wo die Auswertung steht: \`docs/maintainer/architektur.md\`, Abschnitt Preisquellen von find."
           } > body.md
-          number=$(gh issue list --state open --search "$ISSUE_TITLE in:title" --json number --jq '.[0].number // empty')
+          number=$(gh issue list --state open --search "\"$ISSUE_TITLE\" in:title" --json number,title --jq 'map(select(.title == env.ISSUE_TITLE)) | .[0].number // empty')
           if [ -n "$number" ]; then
             gh issue comment "$number" --body-file body.md
           else
@@ -67,7 +81,7 @@ jobs:
             echo "a source could not be reached: the issue stays as it is"
             exit 0
           fi
-          number=$(gh issue list --state open --search "$ISSUE_TITLE in:title" --json number --jq '.[0].number // empty')
+          number=$(gh issue list --state open --search "\"$ISSUE_TITLE\" in:title" --json number,title --jq 'map(select(.title == env.ISSUE_TITLE)) | .[0].number // empty')
           if [ -n "$number" ]; then
             gh issue close "$number" --comment "Alle Quellen lassen sich wieder auswerten: $RUN_URL"
           fi

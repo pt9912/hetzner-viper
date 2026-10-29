@@ -60,8 +60,10 @@ Die Regeln dabei: eine Zeile, die nicht passt, fehlt, sie wird nie geraten; eine
 
 Der Workflow `.github/workflows/sources.yml` (`price sources`) führt jede Nacht um 03:17 UTC die Tests in `internal/live/` aus (Build-Tag `live`; von Hand: `go test -tags live -count=1 -v ./internal/live/`, rund eine Minute). Sie lesen die echten Quellen und prüfen die Form (genug Typen, bekannte Typen darunter, Preise über null, die IPv4-Gebühr), nicht die Preise.
 
-* **Quelle nicht erreichbar** (Netz, Zeitlimit, `403`, `429`, `5xx`; `internal/livecheck`): Der Test überspringt sich. Das sagt nichts über `viper`, und es gibt kein Issue.
-* **Quelle antwortet, wird aber nicht mehr gelesen:** Der Test schlägt fehl, und der Workflow legt ein Issue „viper find: Preisquellen lassen sich nicht mehr auswerten“ an (oder kommentiert das offene) mit den Zeilen des Laufs. Die nächste Nacht, in der alle Quellen wieder gelesen werden und keine übersprungen ist, schließt es.
+* **Quelle nicht erreichbar** (Netz, Zeitlimit, abgeschnittene Antwort, `403`, `429`, `5xx`; `internal/livecheck`): Der Test überspringt sich. Das sagt nichts über `viper`, und es gibt kein Issue. Eine leere Antwort (`EOF`) zählt nicht dazu: So sieht auch eine geänderte Quelle aus. Eine Quelle, die jede Nacht übersprungen wird (etwa weil sie die Rechner von GitHub abweist), fällt nicht auf Rot, steht aber als Warnung auf der Seite des Laufs („source not reached“).
+* **Quelle antwortet, wird aber nicht mehr gelesen:** Der Test schlägt fehl (`--- FAIL` im Protokoll), und der Workflow legt ein Issue „viper find: Preisquellen lassen sich nicht mehr auswerten“ an (oder kommentiert das offene) mit den Zeilen des Laufs. Die nächste Nacht, in der alle Quellen wieder gelesen werden und keine übersprungen ist, schließt es.
+
+Bricht der Lauf ohne einen fehlgeschlagenen Test ab (Aufbaufehler, fehlendes Modul, Zeitlimit), wird er rot, aber es gibt kein Issue; die Tests laufen gleichzeitig, damit eine langsame Quelle die anderen nicht die Zeit kostet. Die Prüfungen verlassen sich auf Familien (`cpx`, `ccx`, `e2-`, `n2-`) und nicht auf einzelne Typen, die Hetzner oder Google auch ohne Änderung der Seite ausmustern.
 
 Bei einem Issue: Die Seite im Browser ansehen, das Muster in der Auswertung anpassen (es steht in der Tabelle oben), den Test von Hand laufen lassen und einen Test mit der neuen Form der Seite ergänzen. Geplante Workflows laufen nur auf dem Standard-Branch, und GitHub schaltet sie nach 60 Tagen ohne Aktivität im Repository ab.
 
