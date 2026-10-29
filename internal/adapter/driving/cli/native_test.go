@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -97,7 +98,7 @@ func TestSetupCreatesTheTemplateOnlyOnce(t *testing.T) {
 	if b, err := os.ReadFile(filepath.Join(dir, "machines", "example.env.local.example")); err != nil || !strings.Contains(string(b), "REPO_URL=") {
 		t.Errorf("the template for one machine: %v %q", err, b)
 	}
-	if st, err := os.Stat(filepath.Join(dir, ".env.local")); err != nil || st.Mode().Perm() != 0o600 {
+	if st, err := os.Stat(filepath.Join(dir, ".env.local")); err != nil || runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Errorf("a new .env.local holds tokens and must be private: %v %v", st, err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=mine.example.com\n"), 0o600); err != nil {
@@ -133,12 +134,15 @@ func TestRealSshKeygenAcceptsWhatSetupAsks(t *testing.T) {
 			t.Errorf("%s missing", f)
 		}
 	}
-	if st, _ := os.Stat(filepath.Join(home, ".ssh", "hetzner-build")); st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(filepath.Join(home, ".ssh", "hetzner-build")); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Errorf("private key mode %v", st.Mode())
 	}
 }
 
 func TestExitCodeOfAChildAndOfOtherErrors(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("needs sh and signals")
+	}
 	err := exec.CommandContext(context.Background(), "sh", "-c", "exit 3").Run()
 	if cli.ExitCode(err) != 3 {
 		t.Errorf("exit code %d (%v)", cli.ExitCode(err), err)

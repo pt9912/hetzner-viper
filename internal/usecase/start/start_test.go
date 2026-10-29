@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -286,7 +287,7 @@ func TestCreatesAllResourcesForAMachine(t *testing.T) {
 	if pin, _ := os.ReadFile(w.c.KnownPin); string(pin) != "claude-web.example.com ssh-ed25519 AAAAnewhost\n" {
 		t.Errorf("pin %q", pin)
 	}
-	if st, _ := os.Stat(w.c.KnownPin); st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(w.c.KnownPin); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Errorf("pin mode %v", st.Mode())
 	}
 	if len(w.dnsSet) != 1 || w.dnsSet[0] != "claude-web.example.com 203.0.113.7" {

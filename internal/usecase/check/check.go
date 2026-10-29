@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -241,8 +242,8 @@ var certRe = regexp.MustCompile(`ssh-ed25519-cert-v01@openssh\.com [A-Za-z0-9+/=
 
 func sshAsAnotherDevice(ctx context.Context, r *report, c *model.Machine, d Deps) {
 	fmt.Fprintln(r.out, "== SSH like another device (host CA, DNS name)")
-	caKnown := c.SSHDir + "/known_hosts_hetzner_claude_ca"
-	_, stderr, err := d.Run(ctx, "", "ssh", "-n", "-F", "/dev/null", "-i", c.SSHKey, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
+	caKnown := filepath.Join(c.SSHDir, "known_hosts_hetzner_claude_ca")
+	_, stderr, err := d.Run(ctx, "", "ssh", "-n", "-F", os.DevNull, "-i", c.SSHKey, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile="+caKnown,
 		"-o", "HostKeyAlgorithms=ssh-ed25519-cert-v01@openssh.com", "builder@"+c.DNSHost, "true")
 	if err == nil {

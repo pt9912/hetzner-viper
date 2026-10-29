@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"unicode"
 
@@ -174,6 +175,9 @@ func keyFileChecks(r *report, c *model.Machine) {
 func permissionChecks(r *report, c *model.Machine) {
 	// config files hold API tokens: nobody but the owner should read them
 	for _, f := range []string{".env.local", filepath.Join("machines", c.Name+".env.local")} {
+		if runtime.GOOS == "windows" {
+			break // no mode bits there
+		}
 		if st, err := os.Stat(filepath.Join(c.Dir, f)); err == nil && st.Mode().Perm()&0o077 != 0 {
 			r.warn("%s is readable by other users; it may hold tokens: chmod 600 %s", f, f)
 		}

@@ -34,8 +34,8 @@ func KeyPath(setting, dir, home string) string {
 
 // ExpandHome turns a leading ~ into the home directory (${SSH_KEY/#\~/$HOME}).
 func ExpandHome(p, home string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		return home + p[1:]
+	if p == "~" || strings.HasPrefix(p, "~/") || filepath.Separator == '\\' && strings.HasPrefix(p, `~\`) {
+		return home + filepath.FromSlash(p[1:])
 	}
 	return p
 }

@@ -23,7 +23,7 @@ type Files struct{}
 func (Files) WriteConfig(c *model.Machine, ip string) error {
 	known := c.KnownPin
 	if st, err := os.Stat(c.KnownPin); err != nil || st.Size() == 0 {
-		known = c.SSHDir + "/known_hosts_hetzner_claude_ca"
+		known = filepath.Join(c.SSHDir, "known_hosts_hetzner_claude_ca")
 	}
 	body := fmt.Sprintf(`Host %s
     HostName %s
@@ -40,7 +40,7 @@ func (Files) WriteConfig(c *model.Machine, ip string) error {
     # the server is root-equivalent for the agent: never hand it the local ssh-agent or X11
     ForwardAgent no
     ForwardX11 no
-`, c.SSHAlias, ip, c.DNSHost, c.SSHKey, known)
+`, c.SSHAlias, ip, c.DNSHost, quote(c.SSHKey), quote(known))
 	if err := os.WriteFile(c.SSHConfig, []byte(body), 0o600); err != nil {
 		return err
 	}
@@ -119,12 +119,13 @@ func include(c *model.Machine, add bool) error {
 	if err != nil {
 		return err
 	}
-	line := "Include " + c.SSHConfig
+	line := "Include " + quote(c.SSHConfig)
+	isLine := includeMatcher(c)
 	var out string
 	switch {
 	case add:
 		for _, l := range strings.Split(string(b), "\n") {
-			if l == line {
+			if isLine(l) {
 				return os.Chmod(cfg, 0o600)
 			}
 		}
@@ -132,7 +133,7 @@ func include(c *model.Machine, add bool) error {
 	default:
 		var kept []string
 		for _, l := range strings.SplitAfter(string(b), "\n") {
-			if strings.TrimSuffix(l, "\n") != line {
+			if !isLine(l) {
 				kept = append(kept, l)
 			}
 		}
@@ -148,4 +149,21 @@ func include(c *model.Machine, add bool) error {
 func (Files) IncludeWarning(c *model.Machine) string {
 	target, _ := filepath.EvalSymlinks(filepath.Join(c.SSHDir, "config"))
 	return fmt.Sprintf("WARNING: could not edit ~/.ssh/config (%s); add or remove the line 'Include %s' yourself.", target, c.SSHConfig)
+}
+
+// quote puts a path with white space (C:\Users\Jane Doe\.ssh) in double quotes, as ssh_config needs.
+func quote(path string) string {
+	if strings.ContainsAny(path, " \t") {
+		return `"` + path + `"`
+	}
+	return path
+}
+
+// includeMatcher recognises the Include line of a machine, as an earlier version wrote it (no
+// quotes) and with the CRLF of a Windows file.
+func includeMatcher(c *model.Machine) func(string) bool {
+	return func(l string) bool {
+		l = strings.TrimRight(l, "\r\n")
+		return l == "Include "+quote(c.SSHConfig) || l == "Include "+c.SSHConfig
+	}
 }

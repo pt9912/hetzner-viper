@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -47,7 +48,7 @@ func TestSSHConfigPinsTheHostKeyOfThisServer(t *testing.T) {
 			t.Errorf("missing %q in\n%s", want, b)
 		}
 	}
-	if st, _ := os.Stat(c.SSHConfig); st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(c.SSHConfig); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Errorf("mode %v", st.Mode())
 	}
 	if err := os.WriteFile(c.KnownPin, []byte("claude-web.example.com ssh-ed25519 AAAA\n"), 0o600); err != nil {
@@ -133,6 +134,9 @@ func TestPinFromServer(t *testing.T) {
 }
 
 func TestSSHIncludeEditsInPlaceAndKeepsASymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("needs symlinks and file modes")
+	}
 	c := testConfig(t)
 	if err := os.MkdirAll(c.StateDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -158,7 +162,7 @@ func TestSSHIncludeEditsInPlaceAndKeepsASymlink(t *testing.T) {
 	if err := files().AddInclude(c); err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := os.ReadFile(target); strings.Count(string(b), "Include /") != 1 {
+	if b, _ := os.ReadFile(target); strings.Count(string(b), "Include ") != 1 {
 		t.Errorf("added twice: %q", b)
 	}
 	if st, _ := os.Stat(target); st.Mode().Perm() != 0o600 {
@@ -219,7 +223,7 @@ func TestParallelIncludesDoNotLoseLines(t *testing.T) {
 		}
 	}
 	b, _ := os.ReadFile(filepath.Join(c.SSHDir, "config"))
-	if n := strings.Count(string(b), "Include /"); n != 8 {
+	if n := strings.Count(string(b), "Include "); n != 8 {
 		t.Errorf("%d lines, want 8:\n%s", n, b)
 	}
 }

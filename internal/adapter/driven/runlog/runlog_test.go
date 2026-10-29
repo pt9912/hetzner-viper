@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ func open(t *testing.T) (*runlog.Log, string, *bytes.Buffer, *bytes.Buffer) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { l.Close(nil, 0) }) // Windows cannot remove an open file
 	l.SetNow(func() time.Time { return time.Date(2026, 10, 21, 15, 12, 3, 0, time.FixedZone("CEST", 2*3600)) })
 	return l, state, &out, &errb
 }
@@ -81,6 +83,9 @@ func TestAFailingRunWithoutAFinalEventIsLoggedAsFailed(t *testing.T) {
 }
 
 func TestPrivateFilesAndDirectories(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes do not exist on Windows")
+	}
 	l, state, _, _ := open(t)
 	l.Event("x")
 	for p, want := range map[string]os.FileMode{

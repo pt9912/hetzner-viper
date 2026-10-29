@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -81,7 +82,7 @@ func TestSetupCreatesTheKeysAndTrustsTheCA(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 	st, err := os.Stat(filepath.Join(dir, ".env.local"))
-	if err != nil || st.Mode().Perm() != 0o600 {
+	if err != nil || runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Fatalf("template copied with mode 600: %v %v", st, err)
 	}
 	if len(*calls) != 0 {

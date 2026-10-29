@@ -19,8 +19,9 @@ jobs:
       # tool fails the tests instead of skipping them)
       - run: make check
 
-  # Windows has no sshd, jq or shellcheck, so the full suite does not run there. This job only runs the
-  # tests; the step may fail until Windows is supported properly (look at its log for what breaks).
+  # Windows is not fully supported yet: some tests assume Unix (file modes, symlinks, /paths, sh) and
+  # some tools of the Linux job (sshd, jq, shellcheck) may be missing on the runner. This job only runs
+  # the tests; the step may fail until that is sorted out (look at its log for what breaks).
   windows:
     runs-on: windows-latest
     timeout-minutes: 15

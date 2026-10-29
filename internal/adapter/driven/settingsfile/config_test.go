@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -139,6 +140,9 @@ func setupDir(t *testing.T, env, machine string) string {
 }
 
 func TestLoadDerivesNamesAndPaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("expects Unix paths")
+	}
 	dir := setupDir(t, "DNS_DOMAIN=example.com\nSSH_KEY=~/.ssh/k\nSERVER_PREFIX=lab\n", "SERVER_TYPE=cpx52\n")
 	env := settings.Env{Lookup: envOf(map[string]string{"HCLOUD_TOKEN": "h", "CLOUDFLARE_API_TOKEN": "c", "CLOUDFLARE_ZONE_ID": "z"}), Home: "/home/me"}
 	c, err := settingsfile.Load(dir, "web", env, true)
@@ -385,6 +389,9 @@ func TestPrefixIsReadLikeTheScriptsReadIt(t *testing.T) {
 }
 
 func TestEnvWithoutLookupIsSafe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("expects Unix paths")
+	}
 	dir := setupDir(t, "DNS_DOMAIN=example.com\n", "")
 	c, err := settingsfile.Load(dir, "web", settings.Env{Home: "/h"}, false)
 	if err != nil || c.SSHKey != "/h/.ssh/hetzner-build" {
@@ -393,6 +400,9 @@ func TestEnvWithoutLookupIsSafe(t *testing.T) {
 }
 
 func TestKeyPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("expects Unix paths")
+	}
 	for _, c := range []struct{ setting, want string }{
 		{"", "/h/.ssh/hetzner-build"}, {"~/.ssh/k", "/h/.ssh/k"}, {"/abs/k", "/abs/k"}, {"keys/k", "/work/keys/k"}, {"./k", "/work/k"},
 	} {

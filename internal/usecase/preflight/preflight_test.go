@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -301,6 +302,9 @@ func TestBadAllowedCidrs(t *testing.T) {
 }
 
 func TestReadableConfigWithTokensIsWarnedAbout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes do not exist on Windows")
+	}
 	e := fixture(t, "")
 	if err := os.Chmod(filepath.Join(e.dir, ".env.local"), 0o644); err != nil {
 		t.Fatal(err)
@@ -356,6 +360,9 @@ func TestKeyFilesOfTheSettings(t *testing.T) {
 }
 
 func TestSshConfigNotWritableWarns(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes do not exist on Windows")
+	}
 	if os.Getuid() == 0 {
 		t.Skip("root can write anything")
 	}
