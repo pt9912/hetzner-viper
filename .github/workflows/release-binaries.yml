@@ -53,6 +53,25 @@ jobs:
           got=$("./viper_${TAG}_windows_amd64.exe" version)
           echo "$got"
           [ "$got" = "viper $TAG" ] || { echo "expected: viper $TAG"; exit 1; }
+      # viper setup runs on this computer only (no credentials, no network): it needs the OpenSSH client
+      - name: viper setup
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          exe="$PWD/viper_${TAG}_windows_amd64.exe"
+          mkdir work && cd work
+          # the first run creates .env.local and then asks for DNS_DOMAIN
+          if "$exe" setup; then echo "setup should ask for DNS_DOMAIN"; exit 1; fi
+          printf 'DNS_PROVIDER=none\n' >> .env.local
+          "$exe" setup
+          for f in hetzner-build hetzner-build.pub hetzner_claude_host_ca hetzner_claude_host_ca.pub known_hosts_hetzner_claude_ca; do
+            [ -s "$HOME/.ssh/$f" ] || { echo "missing ~/.ssh/$f"; exit 1; }
+          done
+          before=$(sha256sum "$HOME/.ssh/hetzner-build")
+          "$exe" setup >/dev/null
+          [ "$before" = "$(sha256sum "$HOME/.ssh/hetzner-build")" ] || { echo "a second setup changed the key"; exit 1; }
 
   # The Homebrew formula: filled from the SHA256SUMS of this tag, attached to the release as
   # viper.rb and put into the tap pt9912/homebrew-viper (secret HOMEBREW_TAP_GITHUB_TOKEN: a
