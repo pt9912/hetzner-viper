@@ -22,13 +22,14 @@ FROM src AS dist-build
 ARG VERSION=dev
 ARG PLATFORMS="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64"
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    set -eu; mkdir /out; \
+    set -eu; mkdir /out; pids=""; \
     for target in ${PLATFORMS}; do \
       os=${target%/*}; arch=${target#*/}; ext=""; \
       if [ "$os" = windows ]; then ext=".exe"; fi; \
       CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
-        -o "/out/viper_${VERSION}_${os}_${arch}${ext}" ./cmd/viper; \
+        -o "/out/viper_${VERSION}_${os}_${arch}${ext}" ./cmd/viper & pids="$pids $!"; \
     done; \
+    for pid in $pids; do wait "$pid"; done; \
     cd /out && sha256sum viper_* > SHA256SUMS
 
 FROM scratch AS dist
