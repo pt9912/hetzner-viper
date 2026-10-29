@@ -1,7 +1,7 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.53  
-Software-Version: v0.8.0  
+Version: 1.54  
+Software-Version: v0.9.0  
 Stand: 29.10.2026  
 
 ## 1. Einleitung
@@ -79,12 +79,12 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 
 **Mit Homebrew** (Linux und macOS): `brew install pt9912/viper/viper`, dann `viper version` (Update: `brew upgrade viper`). Sonst von Hand:
 
-1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.8.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`), und `SHA256SUMS`.
+1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.9.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`), und `SHA256SUMS`.
 2. Prüfen Sie die Datei und machen Sie sie ausführbar:
    ```bash
-   grep viper_v0.8.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
-   chmod +x viper_v0.8.0_linux_amd64
-   mv viper_v0.8.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
+   grep viper_v0.9.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
+   chmod +x viper_v0.9.0_linux_amd64
+   mv viper_v0.9.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
    ```
 3. Prüfen Sie die Installation: `viper version`.
 
@@ -931,4 +931,5 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.50 | v0.8.0 | Neu: Google Cloud (`gcp`) und Azure (`azure`) als Anbieter, noch nicht in einem echten Konto getestet. |
 | 1.51 | v0.8.0 | Neu: `DNS_PROVIDER=none` für den Betrieb ohne Cloudflare und ohne Domain. Die Kapitel zu Voraussetzungen, Einrichtung, Preflight und Fehlerbehebung gelten nun für alle Anbieter; die Plattengröße (`*_ROOT_GB`) wird geprüft. |
 | 1.52 | v0.8.0 | Release v0.8.0: die Änderungen 1.48 bis 1.51 (Anbieter AWS, Google Cloud und Azure, Betrieb ohne Cloudflare). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.8.0`. |
-| 1.53 | | Neu: Einstellung `AWS_TAGS` (nur AWS): zusätzliche Tags für Instanz und Systemplatte beim Anlegen; `viper preflight` prüft Syntax und AWS-Grenzen. |
+| 1.53 | v0.9.0 | Neu: Einstellung `AWS_TAGS` (nur AWS): zusätzliche Tags für Instanz und Systemplatte beim Anlegen; `viper preflight` prüft Syntax und AWS-Grenzen. |
+| 1.54 | v0.9.0 | Release v0.9.0: die Änderung 1.53 (`AWS_TAGS`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.9.0`. |
