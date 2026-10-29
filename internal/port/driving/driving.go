@@ -51,3 +51,9 @@ type Check interface {
 type Preflight interface {
 	Preflight(ctx context.Context, c *model.Machine, repoArg string, out, errOut io.Writer) int
 }
+
+// Find shows the server types of the providers that have at least what a machine needs, with
+// their prices, and returns how many it showed.
+type Find interface {
+	Find(ctx context.Context, need model.Need, out, errOut io.Writer) int
+}

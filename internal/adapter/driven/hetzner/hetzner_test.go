@@ -28,6 +28,20 @@ func api(t *testing.T) *httptest.Server {
 		case "/servers":
 			page["servers"] = []any{map[string]any{"id": 1, "name": "claude-web"}, map[string]any{"id": 2, "name": "claude-api"}}
 		case "/server_types":
+			if r.URL.Query().Get("name") == "" {
+				page["server_types"] = []any{map[string]any{
+					"id": 105, "name": "cpx32", "cores": 4, "memory": 8, "disk": 160, "architecture": "x86",
+					"locations": []any{
+						map[string]any{"id": 1, "name": "fsn1", "available": true},
+						map[string]any{"id": 2, "name": "nbg1", "available": false},
+						map[string]any{"id": 3, "name": "hel1", "available": true},
+					},
+					"prices": []any{
+						price("fsn1", "0.0136", "8.49"), price("nbg1", "0.0136", "8.49"), price("hel1", "bad", "8.49"),
+					},
+				}}
+				break
+			}
 			if r.URL.Query().Get("name") != "cpx32" {
 				page["server_types"] = []any{}
 				break
@@ -39,6 +53,9 @@ func api(t *testing.T) *httptest.Server {
 					map[string]any{"id": 2, "name": "nbg1", "available": false, "deprecation": map[string]any{"announced": "2026-01-01T00:00:00Z", "unavailable_after": "2026-12-31T00:00:00Z"}},
 				},
 			}}
+		case "/pricing":
+			_ = json.NewEncoder(w).Encode(map[string]any{"pricing": map[string]any{"currency": "EUR", "vat_rate": "19.000000"}})
+			return
 		case "/locations":
 			if r.URL.Query().Get("name") == "fsn1" {
 				page["locations"] = []any{map[string]any{"id": 1, "name": "fsn1"}}
@@ -61,6 +78,26 @@ func api(t *testing.T) *httptest.Server {
 	}))
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// price is a price with the net amount 1/1.19 of the gross one, which is all the test reads.
+func price(loc, hourly, monthly string) map[string]any {
+	return map[string]any{
+		"location":      loc,
+		"price_hourly":  map[string]any{"net": "0.01", "gross": hourly},
+		"price_monthly": map[string]any{"net": "7.00", "gross": monthly},
+	}
+}
+
+func TestOffersAreTheOrderablePricedTypes(t *testing.T) {
+	offers, err := hetzner.New("good", api(t).URL).Offers(context.Background())
+	if err != nil || len(offers) != 1 {
+		t.Fatalf("%+v %v", offers, err)
+	}
+	o := offers[0]
+	if o.Provider != "hetzner" || o.Type != "cpx32" || o.Location != "fsn1" || o.VCPU != 4 || o.RAMGB != 8 || o.DiskGB != 160 || o.Arch != "x86" || o.HourlyPrice != 0.0136 || o.MonthlyPrice != 8.49 || o.Currency != "EUR" || o.VATPercent != 19 {
+		t.Errorf("%+v", o)
+	}
 }
 
 func TestReadsTheProject(t *testing.T) {

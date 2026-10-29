@@ -5,13 +5,18 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
 type options struct {
 	machine, repo, cmd, dir   string
 	force, full, noCode, tmux bool
-	h                         *Host // the outside world
+	// the need of viper find
+	cpu, disk      int
+	ram            float64
+	arch, location string
+	h              *Host // the outside world
 }
 
 // host returns the outside world of the command.
@@ -35,7 +40,13 @@ type command struct {
 var errHelp = errors.New("help")
 
 // isValueFlag reports whether the option takes a value.
-func isValueFlag(n string) bool { return n == "repo" || n == "cmd" || n == "dir" }
+func isValueFlag(n string) bool {
+	switch n {
+	case "repo", "cmd", "dir", "cpu", "ram", "disk", "arch", "location":
+		return true
+	}
+	return false
+}
 
 // commands are the commands of viper by name.
 func commands() map[string]command {
@@ -48,6 +59,7 @@ func commands() map[string]command {
 		"down":      {usage: "<machine> [--force]", machine: needMachine, flags: []string{"force"}, run: nativeDown},
 		"vscode":    {usage: "<machine>", machine: needMachine, run: nativeVSCode},
 		"dns":       {usage: "<machine>", machine: needMachine, run: nativeDNS},
+		"find":      {usage: "[--cpu N] [--ram GB] [--disk GB] [--arch x86|arm] [--location L]", machine: noMachine, flags: []string{"cpu", "ram", "disk", "arch", "location"}, run: nativeFind},
 		"log":       {usage: "[<machine>] [--full]", machine: maybeMachine, flags: []string{"full"}, run: nativeLog},
 		"version":   {usage: "", machine: noMachine},
 	}
@@ -167,15 +179,7 @@ func parseFlag(o *options, name string, args []string, i *int, allowed map[strin
 			}
 			v = args[*i]
 		}
-		switch n {
-		case "repo":
-			o.repo = v
-		case "cmd":
-			o.cmd = v
-		case "dir":
-			o.dir = v
-		}
-		return nil
+		return setValue(o, name, n, v)
 	}
 	if hasValue {
 		return fmt.Errorf("viper %s: --%s takes no value", name, n)
@@ -189,6 +193,46 @@ func parseFlag(o *options, name string, args []string, i *int, allowed map[strin
 		o.noCode = true
 	case "tmux":
 		o.tmux = true
+	}
+	return nil
+}
+
+// setNumber reads the value of --cpu, --ram or --disk: a positive number.
+func setNumber(o *options, name, flag, v string) error {
+	x, err := strconv.ParseFloat(v, 64)
+	if err != nil || x <= 0 {
+		return fmt.Errorf("viper %s: --%s needs a positive number: %s", name, flag, v)
+	}
+	switch flag {
+	case "ram":
+		o.ram = x
+		return nil
+	case "cpu":
+		o.cpu = int(x)
+	case "disk":
+		o.disk = int(x)
+	}
+	if float64(int(x)) != x {
+		return fmt.Errorf("viper %s: --%s needs a whole number: %s", name, flag, v)
+	}
+	return nil
+}
+
+// setValue stores the value of an option that takes one.
+func setValue(o *options, name, flag, v string) error {
+	switch flag {
+	case "repo":
+		o.repo = v
+	case "cmd":
+		o.cmd = v
+	case "dir":
+		o.dir = v
+	case "arch":
+		o.arch = v
+	case "location":
+		o.location = v
+	default:
+		return setNumber(o, name, flag, v)
 	}
 	return nil
 }

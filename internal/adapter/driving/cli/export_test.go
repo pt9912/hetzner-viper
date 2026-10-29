@@ -15,17 +15,20 @@ import (
 type Opts struct {
 	Machine, Repo, Cmd, Dir   string
 	Force, Full, NoCode, Tmux bool
+	CPU, Disk                 int
+	RAM                       float64
+	Arch, Location            string
 	Host                      *Host
 }
 
 func (p *Opts) options() *options {
-	return &options{machine: p.Machine, repo: p.Repo, cmd: p.Cmd, dir: p.Dir, force: p.Force, full: p.Full, noCode: p.NoCode, tmux: p.Tmux, h: p.Host}
+	return &options{cpu: p.CPU, disk: p.Disk, ram: p.RAM, arch: p.Arch, location: p.Location, machine: p.Machine, repo: p.Repo, cmd: p.Cmd, dir: p.Dir, force: p.Force, full: p.Full, noCode: p.NoCode, tmux: p.Tmux, h: p.Host}
 }
 
 // Parse reads the command line.
 func Parse(args []string) (string, Opts, error) {
 	name, o, err := parse(args)
-	return name, Opts{Machine: o.machine, Repo: o.repo, Cmd: o.cmd, Dir: o.dir, Force: o.force, Full: o.full, NoCode: o.noCode, Tmux: o.tmux, Host: o.h}, err
+	return name, Opts{Machine: o.machine, Repo: o.repo, Cmd: o.cmd, Dir: o.dir, Force: o.force, Full: o.full, NoCode: o.noCode, Tmux: o.tmux, CPU: o.cpu, Disk: o.disk, RAM: o.ram, Arch: o.arch, Location: o.location, Host: o.h}, err
 }
 
 // IsHelp reports whether the error is the request for the help text.
@@ -53,6 +56,11 @@ func RunCommand(name string, p *Opts) error { return commands()[name].run(p.opti
 // NewAsker reads the answers to prompts from in.
 func NewAsker(ctx context.Context, in io.Reader, prompts io.Writer) func(string) string {
 	return newAsker(ctx, in, prompts)
+}
+
+// RunFind runs viper find with a given environment.
+func RunFind(ctx context.Context, p *Opts, env settings.Env, stdout, stderr io.Writer) error {
+	return runFind(ctx, p.options(), env, stdout, stderr)
 }
 
 // RunUp, RunDown, RunCheck and RunPreflight run the commands with a given environment.

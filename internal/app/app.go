@@ -10,6 +10,7 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/cloudflare"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/editor"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/git"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/hetzner"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/nodns"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/resolver"
 	runlogfile "github.com/pt9912/hetzner-viper/internal/adapter/driven/runlog"
@@ -23,6 +24,7 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/port/driven/runlog"
 	"github.com/pt9912/hetzner-viper/internal/port/driving"
 	"github.com/pt9912/hetzner-viper/internal/usecase/check"
+	"github.com/pt9912/hetzner-viper/internal/usecase/find"
 	"github.com/pt9912/hetzner-viper/internal/usecase/preflight"
 	"github.com/pt9912/hetzner-viper/internal/usecase/start"
 	"github.com/pt9912/hetzner-viper/internal/usecase/stop"
@@ -51,6 +53,7 @@ func Run(version string, args []string, stdin io.Reader, stdout, stderr io.Write
 			Down:      func(c *model.Machine, o driving.DownOptions) driving.Down { return Down(c, o) },
 			Check:     func(c *model.Machine) driving.Check { return Check(c) },
 			Preflight: func(c *model.Machine) driving.Preflight { return Preflight(c) },
+			Find:      func(get func(string) string) driving.Find { return Find(get) },
 			OpenLog: func(m *model.Machine, action string, stdout, stderr io.Writer) (runlog.Run, error) {
 				l, err := runlogfile.Open(m.StateDir, m.ServerName, action, stdout, stderr)
 				if err != nil {
@@ -133,6 +136,31 @@ func Check(c *model.Machine) check.Service {
 		Run:        system.Run,
 		SSH:        sshconfig.Files{},
 	}}
+}
+
+// Find is the use case Find over the price lists of the providers; a provider whose credentials
+// get does not give, or that has no price list yet, is named and left out.
+func Find(get func(string) string) find.Service {
+	var sources []find.Source
+	for _, name := range model.ProviderNames() {
+		src := find.Source{Name: name}
+		info, _ := model.LookupProvider(name)
+		for _, c := range info.Credentials {
+			if get(c) == "" && src.Skip == "" {
+				src.Skip = c + " is not set"
+			}
+		}
+		if src.Skip == "" {
+			switch name {
+			case "hetzner":
+				src.Catalog, src.Describe = hetzner.New(get("HCLOUD_TOKEN"), ""), hetzner.Error
+			default:
+				src.Skip = "no price list yet"
+			}
+		}
+		sources = append(sources, src)
+	}
+	return find.Service{Deps: find.Deps{Sources: sources}}
 }
 
 // vscode starts VS Code without the credentials of any provider in its environment.

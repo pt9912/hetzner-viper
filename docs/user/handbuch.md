@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.58  
+Version: 1.59  
 Software-Version: v0.11.0  
 Stand: 29.10.2026  
 
@@ -49,6 +49,7 @@ Bei den Anbietern:
 | `viper vscode <rechner>` | Öffnet VS Code (Remote-SSH) auf dem laufenden Rechner im Arbeitsverzeichnis, so wie `viper up` es nach dem Einrichten tut. Braucht den Befehl `code`. Die Terminals dort hängen sich an die tmux-Sitzung `claude`. |
 | `viper down <rechner>` | Prüft den Git-Stand, warnt vor ungesicherter Arbeit und löscht Server und DNS-Eintrag. |
 | `viper dns <rechner>` | Gibt den DNS-Namen des Rechners aus (`<SERVER_PREFIX>-<rechner>.<DNS_DOMAIN>`), ohne Zugriff auf den Anbieter oder Cloudflare. Mit `DNS_PROVIDER=none` gibt es keinen Namen; der Befehl nennt die zuletzt gespeicherte Adresse. |
+| `viper find` | Sucht Server-Typen, die mindestens die gewünschten CPUs, den RAM und die Platte haben, und zeigt die günstigsten mit Preis. Liest nur und braucht keinen Rechner. |
 | `viper log [<rechner>]` | Zeigt die lokalen Protokolle: Ereignisse aller Rechner, eines Rechners oder mit `--full` dessen vollständige Ausgabe. |
 | `viper help`, `viper version` | Zeigt alle Befehle bzw. die Version. |
 
@@ -242,6 +243,33 @@ Geprüft werden:
 * Haben spätere Updates auf dem Server einen Neustart nötig gemacht (Ubuntu meldet beim Login `*** System restart required ***`), warnt der Check. Starten Sie den Server dann mit `viper ssh <rechner> --cmd "sudo reboot"` neu. Laufende tmux-Sitzungen enden dabei, Dateien bleiben erhalten.
 * Direkt nach dem Anlegen kann die DNS-Prüfung für einige Minuten fehlschlagen, bis die Resolver den neuen Eintrag kennen.
 * Der lokale Resolver ist der Ihres Computers. Was er auflöst, prüfen Sie zusätzlich mit `getent hosts <name>` oder `ping <name>`.
+
+### Passenden Server-Typ suchen
+
+`viper find` sucht in den Preislisten Ihrer Cloud-Anbieter die günstigsten Server-Typen, die mindestens das haben, was Sie angeben. Es liest nur und legt nichts an.
+
+#### Voraussetzung
+
+* `.env.local` ist angelegt (`viper setup`).
+* Die Zugangsdaten des Anbieters sind gesetzt (bei Hetzner `HCLOUD_TOKEN`). Anbieter ohne Zugangsdaten überspringt `viper find` mit einem Hinweis.
+
+#### Vorgehen
+
+`viper find --cpu 4 --ram 16 --disk 80`
+
+* `--cpu N`, `--ram GB`, `--disk GB`: Mindestwerte; mindestens einer ist Pflicht.
+* `--arch x86` oder `--arch arm`: nur diese Prozessor-Architektur (Standard: beide).
+* `--location ORT`: nur dieser Standort, etwa `fsn1`.
+
+#### Ergebnis
+
+Für jeden Anbieter stehen die drei günstigsten Typen in einer Tabelle, mit Standort, Kernen, RAM, Platte und Preis je Stunde und je Monat. Jeder Typ erscheint an dem Standort, an dem er am günstigsten ist. Darunter steht eine Zeile `cheapest: PROVIDER=… SERVER_TYPE=… SERVER_LOCATION=…` zum Übernehmen in Ihre `machines/<rechner>.env.local`. Ist die Platte beim Anbieter vom Typ unabhängig (AWS, Google Cloud, Azure), steht dort zusätzlich die passende Einstellung, etwa `AWS_ROOT_GB=80`. Passt kein Typ, endet `viper find` mit Code 1.
+
+#### Hinweise
+
+* Die Preise sind Listenpreise in der Währung des Anbieters (Hetzner: Euro, mit dem Mehrwertsteuersatz Ihres Projekts; die Kopfzeile der Tabelle nennt ihn). Rabatte und die Gebühr für die öffentliche IPv4-Adresse sind nicht enthalten: Die Hetzner Console zeigt ihre Preise inklusive IPv4, `viper find` zeigt daher etwa 0,60 € im Monat weniger.
+* Bei Hetzner gehört die Platte zum Typ: `--disk` ist dort eine Mindestgröße.
+* Bisher hat nur Hetzner eine Preisliste; AWS, Google Cloud und Azure meldet `viper find` als „no price list yet“.
 
 ### Protokolle ansehen
 
@@ -940,3 +968,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.56 | v0.10.0 | Release v0.10.0: die Änderung 1.55 (Windows-Binary). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.10.0`. |
 | 1.57 | v0.11.0 | Neu: `VIPER_POST_CLONE` führt Shell-Befehle einmalig direkt nach dem Clone im Repository auf dem Server aus (nach Homebrew); `VIPER_POST_CLONE_ON_ERROR=retry`, `ignore` oder `abort` bestimmt das Verhalten bei einem Fehler, der Ausgang steht im Protokoll. |
 | 1.58 | v0.11.0 | Release v0.11.0: die Änderung 1.57 (`VIPER_POST_CLONE`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.11.0`. |
+| 1.59 | v0.12.0 | Neu: `viper find` sucht Server-Typen nach CPUs, RAM und Platte und zeigt die günstigsten mit Preis (Hetzner: Euro inklusive Mehrwertsteuer, ohne IPv4); zunächst nur für Hetzner. |
