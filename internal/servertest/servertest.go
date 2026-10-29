@@ -323,8 +323,7 @@ func (s *Server) dispatch(ctx context.Context, remote, stdin string, stdout, std
 		}
 		s.Write("gh-token", stdin)
 	// VIPER_POST_CLONE: the check for the marker of a fresh clone, and the commands (stdin) into a file
-	case strings.HasPrefix(remote, "test -e ") && strings.Contains(remote, "viper-post-clone-pending"),
-		strings.Contains(remote, "viper/post-clone.sh"):
+	case isPostCloneCall(remote):
 		return s.bash(ctx, remote, stdin, stdout, stderr)
 	// host key read over a CA-verified connection
 	case remote == "cat /etc/ssh/ssh_host_ed25519_key.pub":
@@ -337,6 +336,13 @@ func (s *Server) dispatch(ctx context.Context, remote, stdin string, stdout, std
 		return s.bash(ctx, remote, stdin, stdout, stderr)
 	}
 	return nil
+}
+
+// isPostCloneCall tells the two calls of VIPER_POST_CLONE that are not "bash -s": the check for
+// the marker of a fresh clone and the writing of the commands.
+func isPostCloneCall(remote string) bool {
+	return strings.HasPrefix(remote, "test -e ") && strings.Contains(remote, "viper-post-clone-pending") ||
+		strings.Contains(remote, "viper/post-clone.sh")
 }
 
 // installBrew is Homebrew's installer (MOCK_BREW_FAIL: it fails).

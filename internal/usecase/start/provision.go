@@ -16,14 +16,7 @@ import (
 
 // provision sets the server up once ssh works: the steps after the wait.
 func (r *runner) provision(ctx context.Context, status, id, repoURL string, remembered bool, deployKey string) (int, error) {
-	if code, err := r.verifyStatus(ctx, status); code != 0 || err != nil {
-		return code, err
-	}
-	r.swap(ctx)
-	if interrupted(ctx) {
-		return 1, driving.ErrShown
-	}
-	if code, err := r.workspace(ctx); code != 0 || err != nil {
+	if code, err := r.baseSystem(ctx, status); code != 0 || err != nil {
 		return code, err
 	}
 	if code, err := r.githubLogin(ctx, deployKey); code != 0 || err != nil {
@@ -43,6 +36,27 @@ func (r *runner) provision(ctx context.Context, status, id, repoURL string, reme
 	if interrupted(ctx) {
 		return 1, driving.ErrShown
 	}
+	if code, err := r.tools(ctx, repoURL, workdir); code != 0 || err != nil {
+		return code, err
+	}
+	return r.finish(ctx, id, workdir)
+}
+
+// baseSystem checks the new server and sets up its swap file and work directory.
+func (r *runner) baseSystem(ctx context.Context, status string) (int, error) {
+	if code, err := r.verifyStatus(ctx, status); code != 0 || err != nil {
+		return code, err
+	}
+	r.swap(ctx)
+	if interrupted(ctx) {
+		return 1, driving.ErrShown
+	}
+	return r.workspace(ctx)
+}
+
+// tools installs what the work needs after the clone: Homebrew, then the VIPER_POST_CLONE commands
+// (which can use the tools), then code-server.
+func (r *runner) tools(ctx context.Context, repoURL, workdir string) (int, error) {
 	r.homebrew(ctx, repoURL, workdir)
 	if interrupted(ctx) {
 		return 1, driving.ErrShown
@@ -54,7 +68,7 @@ func (r *runner) provision(ctx context.Context, status, id, repoURL string, reme
 	if interrupted(ctx) {
 		return 1, driving.ErrShown
 	}
-	return r.finish(ctx, id, workdir)
+	return 0, nil
 }
 
 // verifyStatus checks the readiness probe's report and repairs a failed Claude install.
