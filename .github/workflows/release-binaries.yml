@@ -33,6 +33,27 @@ jobs:
           gh release view "$GITHUB_REF_NAME" >/dev/null   # fails here, clearly, if there is none
           gh release upload "$GITHUB_REF_NAME" dist/* --clobber
 
+  # The Windows binary of the release, as a user downloads it, started on a real Windows runner: it must
+  # match SHA256SUMS and report the version of the tag (also for an existing release: -f tag=v0.10.0).
+  windows:
+    needs: binaries
+    if: ${{ !cancelled() && (needs.binaries.result == 'success' || needs.binaries.result == 'skipped') }}
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download, check and start
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --pattern "viper_${TAG}_windows_amd64.exe"
+          sha256sum --check --ignore-missing SHA256SUMS
+          got=$("./viper_${TAG}_windows_amd64.exe" version)
+          echo "$got"
+          [ "$got" = "viper $TAG" ] || { echo "expected: viper $TAG"; exit 1; }
+
   # The Homebrew formula: filled from the SHA256SUMS of this tag, attached to the release as
   # viper.rb and put into the tap pt9912/homebrew-viper (secret HOMEBREW_TAP_GITHUB_TOKEN: a
   # fine-grained token with Contents read and write for that one repository). Without the secret
