@@ -29,7 +29,9 @@ func TestCatalogPricesTheCoresAndTheMemory(t *testing.T) {
 			{Name: "t2a-standard-4", GuestCpus: 4, MemoryMb: 16384, Architecture: "ARM64"},
 			{Name: "e2-micro", GuestCpus: 2, MemoryMb: 1024, IsSharedCpu: true},
 			{Name: "c3-standard-4-lssd", GuestCpus: 4, MemoryMb: 16384},
-			{Name: "a2-highgpu-1g", GuestCpus: 12, MemoryMb: 87040}, // a family without a SKU of cores and memory
+			{Name: "a2-highgpu-1g", GuestCpus: 12, MemoryMb: 87040},                                                                              // a family without a SKU of cores and memory
+			{Name: "e2-with-gpu-1", GuestCpus: 4, MemoryMb: 16384, Accelerators: []*compute.MachineTypeAccelerators{{GuestAcceleratorCount: 1}}}, // billed apart
+			{Name: "g2-standard-16", GuestCpus: 16, MemoryMb: 65536},                                                                             // GPU by its family
 		}, nil
 	}
 	skus := func(_ context.Context, currency string) ([]*cloudbilling.Sku, error) {
@@ -37,6 +39,8 @@ func TestCatalogPricesTheCoresAndTheMemory(t *testing.T) {
 			t.Errorf("currency %q", currency)
 		}
 		return []*cloudbilling.Sku{
+			sku("G2 Instance Core running in Frankfurt", "OnDemand", "europe-west3", 0, 25_000_000),
+			sku("G2 Instance Ram running in Frankfurt", "OnDemand", "europe-west3", 0, 10_000_000),
 			sku("E2 Instance Core running in Frankfurt", "OnDemand", "europe-west3", 0, 25_000_000),
 			sku("E2 Instance Ram running in Frankfurt", "OnDemand", "europe-west3", 0, 10_000_000),
 			sku("E2 Instance Core running in Frankfurt", "Preemptible", "europe-west3", 0, 1_000_000),

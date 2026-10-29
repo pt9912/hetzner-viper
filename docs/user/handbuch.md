@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.63  
+Version: 1.64  
 Software-Version: v0.11.0  
 Stand: 29.10.2026  
 
@@ -290,7 +290,7 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 * **Cache:** Die Preislisten sind groß (AWS je Region mehrere hundert MB, Azure rund 60 MB). `viper find` liest sie höchstens einmal am Tag und merkt sich nur das Nötige (wenige KB je Region) im Cache-Verzeichnis, unter Linux `~/.cache/viper/`. Der erste Lauf einer Region dauert deshalb etwas länger (`aws: reading the price list …`), die folgenden sind sofort fertig. Lässt sich eine Liste später nicht lesen, gilt der alte Stand weiter. Zum Erneuern vor Ablauf löschen Sie die Dateien. Bricht ein Download ab (die AWS-Datei ist groß), versucht `viper find` es dreimal und nennt dann einen Netzwerkfehler (Proxy oder VPN kommen als Ursache in Frage).
 * AWS: Bare-Metal-Typen (`*.metal`) fehlen.
 * Azure: Ohne Subscription stammen Kerne und RAM aus den Daten des Preisrechners auf der Azure-Website. Das ist keine dokumentierte Schnittstelle; ändert Microsoft sie, fehlen nur diese Angaben, bis `viper` angepasst ist.
-* Google Cloud: Die Preisseiten (Allzweck, Compute-, Arbeitsspeicher- und Speicheroptimiert) und die Seite der Platten sind Webseiten, keine Schnittstelle; `viper find` liest die Tabellen daraus (zusammen rund 60 MB, einmal am Tag, Preise je Region in Dollar). Ändert Google die Seiten, fehlen Preise (`no prices found …`) und es erscheinen keine falschen. Geteilte Kerne (`e2-micro`), Typen mit lokaler SSD und Beschleuniger-Typen (GPU) fehlen. Ob ein Typ in Ihrer Zone angeboten wird, prüft `viper find` nicht. Bei den neuen Serien mit Hyperdisk kommen Leistungsaufschläge der Platte nicht dazu. Über das Projekt (Cloud Billing) setzt sich der Preis aus den Preisen für Kerne und Arbeitsspeicher der Typenfamilie zusammen.
+* Google Cloud: Die Preisseiten (Allzweck, Compute-, Arbeitsspeicher- und Speicheroptimiert) und die Seite der Platten sind Webseiten, keine Schnittstelle; `viper find` liest die Tabellen daraus (zusammen rund 60 MB, einmal am Tag, Preise je Region in Dollar). Ändert Google die Seiten, fehlen Preise (`no prices found …`) und es erscheinen keine falschen. Geteilte Kerne (`e2-micro`), Typen mit lokaler SSD und Beschleuniger-Typen (GPU) fehlen. Ob ein Typ in Ihrer Zone angeboten wird, prüft `viper find` nicht. Bei den neuen Serien mit Hyperdisk kommen Leistungsaufschläge der Platte nicht dazu. Über das Projekt (Cloud Billing) setzt sich der Preis aus den Preisen für Kerne und Arbeitsspeicher der Typenfamilie zusammen; Typen mit GPU fehlen dort, weil die GPU getrennt berechnet wird. Google liefert diese Preise in Euro mit eigenem Umrechnungskurs: Sie liegen deshalb etwas anders (zuletzt rund 2 % niedriger) als die Preise aus den Seiten, die `viper find` in Dollar liest und mit dem Kurs der EZB umrechnet.
 * Der Weg über das eigene Konto (Azure-Subscription, Google-Projekt) ist für `viper find` noch nicht in einem echten Konto getestet. Die öffentlichen Quellen (AWS, Azure, Google Cloud) sind gegen die echten Dateien und Seiten geprüft.
 
 ### Protokolle ansehen
@@ -995,3 +995,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.61 | v0.12.0 | Korrektur zu 1.60: Die Preisliste von AWS kommt aus der öffentlichen Preisdatei mit Tages-Cache statt aus der API; kein AWS-Konto nötig. |
 | 1.62 | v0.12.0 | `viper find` zeigt alle Anbieter in einer nach Preis sortierten Tabelle und rechnet sie auf eine Basis um: Euro (AWS mit dem Kurs der EZB) und derselbe Mehrwertsteuersatz (`--vat`). Azure braucht keine Subscription mehr (VM-Größen aus den öffentlichen Daten des Preisrechners, sonst aus der Subscription), und die Preislisten von Azure liegen wie die von AWS einen Tag im Cache. Ein abgebrochener AWS-Download wird wiederholt. |
 | 1.63 | v0.12.0 | `viper find` braucht für Google Cloud keine Anmeldung und kein Projekt mehr: Es liest die öffentlichen Preisseiten (Cache einen Tag). Ein gesetztes `GCP_PROJECT` wird zuerst genutzt, bei einem Fehler gilt der Rückfall, und die Meldung nennt den Grund. |
+| 1.64 | v0.12.0 | `viper find` über das Google-Projekt lässt Typen mit GPU aus (die GPU ist nicht im Preis). Hinweis zum anderen Umrechnungskurs der Google-Preise. |

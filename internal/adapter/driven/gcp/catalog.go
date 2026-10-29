@@ -140,7 +140,7 @@ func (c *Catalog) official(ctx context.Context, location, region string, diskGB 
 	for _, t := range types {
 		family, _, _ := strings.Cut(t.Name, "-")
 		r, ok := byFamily[family]
-		if !ok || t.IsSharedCpu || t.Deprecated != nil || strings.Contains(t.Name, "lssd") || strings.Contains(t.Name, "custom") || r.core == 0 || r.ram == 0 {
+		if !ok || t.IsSharedCpu || t.Deprecated != nil || hasGPU(t) || strings.Contains(t.Name, "lssd") || strings.Contains(t.Name, "custom") || r.core == 0 || r.ram == 0 {
 			continue
 		}
 		perGB, ok := disks[diskType(t.Name)]
@@ -159,6 +159,20 @@ func (c *Catalog) official(ctx context.Context, location, region string, diskGB 
 		})
 	}
 	return out, nil
+}
+
+// hasGPU tells the machine types that come with an accelerator, whose price is not that of the cores
+// and the memory: the GPU is billed apart.
+func hasGPU(t *compute.MachineType) bool {
+	if len(t.Accelerators) > 0 {
+		return true
+	}
+	for _, f := range []string{"a2-", "a3-", "a4-", "a4x-", "g2-", "g4-"} {
+		if strings.HasPrefix(t.Name, f) {
+			return true
+		}
+	}
+	return false
 }
 
 // familyRates are the on-demand prices of the cores and the memory of each family in a region.
