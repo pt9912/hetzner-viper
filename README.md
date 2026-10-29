@@ -16,6 +16,7 @@ It is meant for developers with their own cloud account: **Hetzner Cloud** (the 
 
 ```bash
 mkdir ~/viper && cd ~/viper        # where your .env.local lives
+viper find --cpu 4 --ram 16 --disk 80   # which server type fits, at which provider, for how much (read-only, no machine needed)
 viper setup                        # creates .env.local from a template; set DNS_DOMAIN (or DNS_PROVIDER=none) and the credentials, then run it again:
 viper setup                        # login key and local host CA
 viper preflight web                # read-only checks: settings, cloud provider, Cloudflare, GitHub
@@ -32,6 +33,7 @@ viper log [web] [--full]           # events of the machines, or one machine's fu
 | Feature | Setting | What it does |
 |---|---|---|
 | Read-only check | `viper preflight <name>` | Checks everything before anything is created: settings, local setup, cloud login (a Hetzner token, an AWS login, ...), server type available at the location, image, Cloudflare zone and record, GitHub token and repository access. `viper up` runs it first. |
+| Find a server type | `viper find --cpu N --ram GB --disk GB` | Looks up the cheapest server types with at least that much at Hetzner, AWS, Azure and Google Cloud and shows them in **one table, on one basis**: in euro (US dollars at the rate of the European Central Bank), with the same VAT for all (`--vat`), sorted by price, the system disk included, with the settings to copy. AWS, Azure and Google Cloud need no login: the public price lists are read once a day and kept in `~/.cache/viper`. Only Hetzner needs its token. Read-only. |
 | Cloud provider | `PROVIDER=hetzner` (default), `aws`, `gcp`, `azure` | Where the machines run. Credentials, server type, location and image have defaults per provider; AWS and Hetzner are the tried ones, `gcp` and `azure` are not yet tried in a real account. |
 | No Cloudflare (optional) | `DNS_PROVIDER=none` | No DNS record, no domain and no Cloudflare account: a machine is reached with `viper ssh <name>` or by its address (on AWS `viper up` also shows the name EC2 gives it). |
 | Extra AWS tags (optional) | `AWS_TAGS`, `AWS_TAGS_SHARED` | Tags for the instance and its volume (`AWS_TAGS`) and for the key pair and security group (`AWS_TAGS_SHARED`), applied at creation, so tag policies (`aws:RequestTag`) allow the start. Preflight checks them. |
