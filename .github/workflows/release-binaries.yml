@@ -1,6 +1,6 @@
 name: release binaries
 
-# Attaches the viper binaries to the release of a v* tag (the Dockerfile cross-compiles them all: make dist).
+# Attaches the viper binaries to the release of a v* tag (cross-compiled by make dist in the image of the devcontainer).
 on:
   push:
     tags: ['v[0-9]*']
@@ -21,9 +21,9 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
-      - run: make check
+      - run: tools/ci-devcontainer.sh check
       - name: Build
-        run: make dist VERSION="${GITHUB_REF_NAME}"   # all platforms and SHA256SUMS, in the Dockerfile
+        run: tools/ci-devcontainer.sh dist VERSION="${GITHUB_REF_NAME}"   # all platforms and SHA256SUMS
       - name: Attach to the release
         env:
           GH_TOKEN: ${{ github.token }}

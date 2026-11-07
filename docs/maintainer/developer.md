@@ -1,16 +1,10 @@
 # Entwickeln an viper
 
-Diese Anleitung richtet sich an Maintainer und beschreibt, wie Sie `viper` bauen und prüfen. Es gibt zwei Wege: den Devcontainer, in dem Go und die übrigen Werkzeuge installiert sind, und einen Rechner, der nur Docker und `make` hat. Die Gates sind in beiden Fällen dieselben.
+Diese Anleitung richtet sich an Maintainer und beschreibt, wie Sie `viper` bauen und prüfen. Entwickelt wird im Devcontainer, in dem Go und die übrigen Werkzeuge installiert sind.
 
-## Zwei Wege
+## Entwickeln im Devcontainer
 
-| | Devcontainer | Rechner mit Docker und `make` |
-|---|---|---|
-| Werkzeuge | Go, golangci-lint, `make`, `git`, `gh`, `jq`, `shellcheck`, `tmux` und Docker sind im Image | nur Docker und `make`; Go und die Test-Werkzeuge stecken in den Images aus dem `Dockerfile` |
-| `make fmt`, `vet`, `lint`, `test` | laufen direkt mit den installierten Werkzeugen | laufen in den Containern `viper-dev` und `viper-lint` |
-| `make build`, `dist` | immer in Docker (der Weg der Releases) | immer in Docker |
-
-Das `Makefile` wählt selbst: Findet es `go` und `golangci-lint` im `PATH`, nutzt es die installierten Werkzeuge, sonst baut es die Images. `make help` zeigt alle Ziele.
+Entwickelt wird nur im Devcontainer. Er enthält Go, golangci-lint, `make`, `git`, `gh`, `jq`, `shellcheck`, `tmux` und Docker. Alle `make`-Ziele (`fmt`, `vet`, `lint`, `test`, `build`, `dist`) laufen direkt mit diesen Werkzeugen. Das `Dockerfile` enthält nur noch die Release-Stages (`make dist-docker` baut damit ohne Go auf dem Rechner) und die Pins. `make help` zeigt alle Ziele.
 
 ## Der Devcontainer
 
@@ -36,7 +30,7 @@ Was Sie beachten müssen:
 * **Der Arbeitsbaum ist nicht gemountet.** Der Workspace ist ein Volume mit einem `git clone` von origin. Änderungen in Ihrem Arbeitsbaum auf dem Host sehen Sie im Container erst, nachdem Sie sie gepusht und im Container geholt haben, und umgekehrt.
 * **Es werden Volumes angelegt:** der Workspace-Clone und das verschachtelte Docker (`/var/lib/docker`). `make dev-remove` löscht sie. Nicht gepushte Arbeit im Container geht damit verloren.
 * **Der Container läuft mit `--privileged`,** damit das verschachtelte Docker startet. Er ist dann nicht mehr vom Host isoliert; `u-boot generate devcontainer` warnt davor. Starten Sie ihn nur mit Repositories, denen Sie vertrauen.
-* **`sshd` fehlt im Container,** weil das Feature einen Login-Dienst mit Root-Login öffnen würde. Die Tests mit einem echten `sshd` werden übersprungen; `tool-pruefung` meldet das als Warnung. Auf dem Weg mit Docker und `make` sind sie dabei.
+* **`sshd` fehlt im Container,** weil das Feature einen Login-Dienst mit Root-Login öffnen würde. Die Tests mit einem echten `sshd` werden übersprungen; `tool-pruefung` meldet das als Warnung.
 * **Das Image installiert Werkzeuge beim Bau aus dem Netz.** Go und golangci-lint prüft das Dockerfile über die SHA-256-Summe; die Homebrew-Formeln (`ripgrep`, `jq`, `shellcheck`, `tmux`) sind nicht gepinnt, ein späterer Bau kann also andere Versionen enthalten.
 
 ## Die Gates
@@ -64,7 +58,7 @@ Zwei Werkzeuge sind gepinnt:
 | golangci-lint (`v2.15.0`) | `Dockerfile` (`ARG GOLANGCI_LINT_VERSION`), `.devcontainer/Dockerfile` (`ARG GOLANGCI_LINT_VERSION`) |
 
 * **`pinsync`** (`tools/mk/pinsync.mk`) vergleicht die Werte an diesen Stellen mit `d-check` (Modul `pinsync`, die Stellen stehen in `.d-check.yml`). Es prüft Gleichheit, keine Aktualität. Das Image von `d-check` ist über seinen Digest gepinnt und läuft ohne Netz; der erste Lauf braucht Zugriff auf `ghcr.io`, um es zu ziehen.
-* **`tool-pruefung`** (`tools/mk/tool-pruefung.mk`, Skript `tools/tool-pruefung.sh`) prüft die Werkzeuge selbst gegen die Pins in `go.mod` und im `Dockerfile`. Mit `go` im `PATH` (Devcontainer) prüft es die installierten Werkzeuge: Go und golangci-lint auf die Version, dazu `bash`, `make`, `git`, `docker`, `gh`, `curl`, `jq`, `shellcheck`, `ssh-keygen` und `tmux` auf Anwesenheit. Ohne `go` baut `make` die Images und das Skript prüft diese. Das Skript prüft vorab, dass `go.mod` und `Dockerfile` dieselbe Go-Version nennen. Ohne `sshd` warnt es nur. Von Hand: `bash tools/tool-pruefung.sh [local | images]`.
+* **`tool-pruefung`** (`tools/mk/tool-pruefung.mk`, Skript `tools/tool-pruefung.sh`) prüft die Werkzeuge selbst gegen die Pins in `go.mod` und im `Dockerfile`. Es prüft die installierten Werkzeuge: Go und golangci-lint auf die Version, dazu `bash`, `make`, `git`, `docker`, `gh`, `curl`, `jq`, `shellcheck`, `ssh-keygen` und `tmux` auf Anwesenheit. Das Skript prüft vorab, dass `go.mod` und `Dockerfile` dieselbe Go-Version nennen. Ohne `sshd` warnt es nur. Von Hand: `bash tools/tool-pruefung.sh`.
 
 ### Einen Pin heben
 
@@ -81,4 +75,4 @@ Beide laufen in Docker, auch im Devcontainer, damit der Weg der Releases überal
 
 ## Tests
 
-Die Tests beschreibt [`architektur.md`](architektur.md#tests). Das Test-Image und der Devcontainer enthalten `bash`, `git`, `jq`, `ssh-keygen` und `shellcheck`; ein fehlendes Werkzeug lässt den Test fehlschlagen (`VIPER_REQUIRE_TOOLS=1` im Test-Image), sonst überspringt er ihn.
+Die Tests beschreibt [`architektur.md`](architektur.md#tests). Der Devcontainer enthält `bash`, `git`, `jq`, `ssh-keygen` und `shellcheck`; ein fehlendes Werkzeug lässt den Test fehlschlagen (`make test` setzt `VIPER_REQUIRE_TOOLS=1`), sonst überspringt er ihn.

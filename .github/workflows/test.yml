@@ -14,10 +14,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      # the same as locally: gofmt, go vet, golangci-lint and the tests run in the containers of
-      # the Dockerfile (Go and the tools the tests need: sshd, ssh-keygen, jq, shellcheck; a missing
-      # tool fails the tests instead of skipping them)
-      - run: make check
+      # the toolchain of the devcontainer (.devcontainer/Dockerfile): Go, golangci-lint and the tools
+      # the tests need; a missing tool fails the tests instead of skipping them
+      - run: tools/ci-devcontainer.sh check
 
   # Only the tests: those that need Unix (file modes, symlinks, the bash fake server) skip themselves on Windows.
   windows:

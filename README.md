@@ -61,7 +61,7 @@ Machines are disposable: everything that matters lives in the Git repository. Th
 
 ## What makes it trustworthy?
 
-- **Tests:** `make check` (gofmt, vet, golangci-lint and more than 300 tests, all in Docker; CI on every push; `make help` lists the targets, `make build` builds `dist/viper` without a Go installation). They cover setup, readiness check, multiple machines, Git clone, firewall and DNS protection, the safety prompts of `viper down`, the interruption by Ctrl-C and the parser of `.env.local` (compared with real bash). The generated cloud-init user-data is compared with reference files and parsed as YAML.
+- **Tests:** `make check` (gofmt, vet, golangci-lint and more than 300 tests, in the devcontainer; CI on every push; `make help` lists the targets, `make build` builds `dist/viper`, `make dist-docker` builds the release files without a Go installation). They cover setup, readiness check, multiple machines, Git clone, firewall and DNS protection, the safety prompts of `viper down`, the interruption by Ctrl-C and the parser of `.env.local` (compared with real bash). The generated cloud-init user-data is compared with reference files and parsed as YAML.
 - **Protection of foreign resources:** `viper` only changes and deletes DNS records it created itself.
 - **Real runs:** the end-to-end tests (build tag `e2e`) set a machine up on a real AWS account and delete it again (`viper up` and `viper down`, x86 and Arm, without Cloudflare); see [`docs/maintainer/architektur.md`](docs/maintainer/architektur.md) (German) for the architecture and the tests.
 - **Manual:** [`docs/user/handbuch.md`](docs/user/handbuch.md) (German) with version and change history.

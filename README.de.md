@@ -61,7 +61,7 @@ Rechner sind Wegwerfware: Alles, was zählt, liegt im Git-Repository. Deshalb gi
 
 ## Was macht es vertrauenswürdig?
 
-- **Tests:** `make check` (gofmt, vet, golangci-lint und über 300 Tests, alles in Docker; CI bei jedem Push; `make help` zeigt die Ziele, `make build` baut `dist/viper` ohne Go-Installation). Sie decken Einrichtung, Bereitschaftsprüfung, Mehrrechner-Betrieb, Git-Clone, Firewall- und DNS-Schutz, die Sicherheitsabfragen von `viper down`, den Abbruch mit Ctrl-C und den Parser für `.env.local` (verglichen mit echtem Bash) ab. Die erzeugten cloud-init-User-Data werden mit Referenzdateien verglichen und als YAML gelesen.
+- **Tests:** `make check` (gofmt, vet, golangci-lint und über 300 Tests, im Devcontainer; CI bei jedem Push; `make help` zeigt die Ziele, `make build` baut `dist/viper`, `make dist-docker` die Release-Dateien ohne Go-Installation). Sie decken Einrichtung, Bereitschaftsprüfung, Mehrrechner-Betrieb, Git-Clone, Firewall- und DNS-Schutz, die Sicherheitsabfragen von `viper down`, den Abbruch mit Ctrl-C und den Parser für `.env.local` (verglichen mit echtem Bash) ab. Die erzeugten cloud-init-User-Data werden mit Referenzdateien verglichen und als YAML gelesen.
 - **Schutz fremder Ressourcen:** `viper` ändert und löscht nur DNS-Einträge, die es selbst angelegt hat.
 - **Echte Läufe:** Die End-to-End-Tests (Build-Tag `e2e`) richten einen Rechner in einem echten AWS-Konto ein und löschen ihn wieder (`viper up` und `viper down`, x86 und Arm, ohne Cloudflare); Architektur und Tests beschreibt [`docs/maintainer/architektur.md`](docs/maintainer/architektur.md).
 - **Handbuch:** [`docs/user/handbuch.md`](docs/user/handbuch.md) mit Versions- und Änderungshistorie.

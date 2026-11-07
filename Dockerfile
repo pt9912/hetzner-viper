@@ -1,4 +1,5 @@
-# Builds viper without a Go installation on the host: docker build --output exports the files.
+# Builds viper without a Go installation on the host (make dist-docker): docker build --output exports the files.
+# The development happens in the devcontainer (.devcontainer/, made by u-boot); the ARGs below are pins.
 ARG GO_VERSION=1.27.3
 ARG GOLANGCI_LINT_VERSION=v2.15.0
 FROM golang:${GO_VERSION} AS src
@@ -34,22 +35,3 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 
 FROM scratch AS dist
 COPY --from=dist-build /out/ /
-
-# Development image: Go plus the tools the tests need (same as the CI installs).
-FROM golang:${GO_VERSION} AS dev
-# The tests run as the user of the host (UID/GID): some of them need a user who is not root
-# (an unwritable ~/.ssh/config), and ssh-keygen needs a passwd entry for the user.
-ARG UID=1000
-ARG GID=1000
-RUN apt-get update && apt-get install -y --no-install-recommends jq shellcheck openssh-server openssh-client git tmux python3 \
- && mkdir -p /run/sshd && rm -rf /var/lib/apt/lists/*
-RUN (getent group $GID >/dev/null || groupadd -g $GID dev) \
- && useradd -m -u $UID -g $GID -d /home/dev -s /bin/bash dev \
- && mkdir -p /home/dev/go /home/dev/.cache && chown -R $UID:$GID /home/dev
-USER dev
-WORKDIR /src
-ENV HOME=/home/dev GOPATH=/home/dev/go GOCACHE=/home/dev/.cache/go-build VIPER_REQUIRE_TOOLS=1
-
-# Lint: golangci-lint with .golangci.yml.
-FROM golangci/golangci-lint:${GOLANGCI_LINT_VERSION} AS lint
-WORKDIR /src
