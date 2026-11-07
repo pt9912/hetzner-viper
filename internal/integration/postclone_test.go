@@ -147,3 +147,15 @@ func TestPostCloneNeedsARepositoryAndAValidOnErrorValue(t *testing.T) {
 	}
 	r.Has(t, "VIPER_POST_CLONE_ON_ERROR must be retry, ignore or abort: skip", "VIPER_POST_CLONE without a repository: nothing to run")
 }
+
+func TestPostCloneCommandsFindBrewOnThePath(t *testing.T) {
+	tool(t, "git")
+	e := New(t, "")
+	// the lines that put brew on the PATH come into .bashrc/.profile with the last step, after this
+	e.Machine("web", "VIPER_POST_CLONE='command -v brew > \"$MOCK_STATE/brewpath\"'\n")
+	e.MustUp("web", originRepo(t))
+	got := strings.TrimSpace(e.Srv.File("brewpath"))
+	if got == "" || filepath.Base(got) != "brew" {
+		t.Errorf("brew is not on the PATH of the post-clone commands: %q", got)
+	}
+}

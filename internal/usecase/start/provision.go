@@ -354,7 +354,7 @@ func (r *runner) postClone(ctx context.Context, repoURL, workdir string) (int, e
 		err = r.ssh(ctx, cmds+"\n", "umask 077 && mkdir -p ~/.config/viper && cat > ~/.config/viper/post-clone.sh")
 	}
 	if err == nil {
-		err = r.script(ctx, postCloneScript, workdir, onError)
+		err = r.script(ctx, postCloneScript, workdir, onError, c.Setting("VIPER_BREW", "/home/linuxbrew/.linuxbrew/bin/brew"))
 	}
 	if err == nil {
 		r.lg.Event("post-clone commands ran")
