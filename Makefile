@@ -51,7 +51,7 @@ vet: $(IMAGES) ## go vet
 	$(RUN) go vet ./...
 
 fmt: $(IMAGES) ## list files that gofmt would change
-	$(RUN) sh -c 'test -z "$$(gofmt -l .)" || { gofmt -l .; exit 1; }'
+	$(RUN) sh -c 'o=$$(find . -name .cache -prune -o -name "*.go" -print | xargs gofmt -l); test -z "$$o" || { echo "$$o"; exit 1; }'
 
 lint-image: ## golangci-lint image
 	docker build --target lint -t viper-lint .

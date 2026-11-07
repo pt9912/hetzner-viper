@@ -106,7 +106,7 @@ RUN cd /home/linuxbrew/.linuxbrew \
  && test "$(git rev-parse HEAD)" = "${HOMEBREW_REVISION}" \
  && mkdir ../bin \
  && ln -s ../Homebrew/bin/brew ../bin/brew
-RUN HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ANALYTICS=1 brew install --formula 'ripgrep' 'jq' 'shellcheck' 'tmux'
+RUN HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ANALYTICS=1 brew install --formula 'ripgrep' 'jq' 'shellcheck' 'tmux' 'openssh'
 USER root
 # Status files of the container start scripts; `u-boot doctor`
 # reads them from the host. The directory belongs to the container user so the

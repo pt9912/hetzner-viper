@@ -19,15 +19,24 @@ import (
 // Trust logic against a real OpenSSH pair: the ssh config is written by the same code the commands
 // use, sshd runs unprivileged on 127.0.0.1. Needs sshd (and /run/sshd); skipped elsewhere.
 
+// sshdPath finds sshd: in the PATH (Homebrew's openssh in the devcontainer), else the distribution's place.
+func sshdPath() string {
+	if p, err := exec.LookPath("sshd"); err == nil {
+		return p
+	}
+	if _, err := os.Stat("/usr/sbin/sshd"); err == nil {
+		return "/usr/sbin/sshd"
+	}
+	return ""
+}
+
 func haveRealSshd(t *testing.T) {
 	t.Helper()
-	for _, p := range []string{"/usr/sbin/sshd", "/usr/bin/ssh"} {
-		if _, err := os.Stat(p); err != nil {
-			servertest.SkipOrFail(t, "no real sshd: %s", p)
-		}
+	if sshdPath() == "" {
+		servertest.SkipOrFail(t, "no real sshd")
 	}
-	if st, err := os.Stat("/run/sshd"); err != nil || !st.IsDir() {
-		servertest.SkipOrFail(t, "no /run/sshd")
+	if _, err := exec.LookPath("ssh"); err != nil {
+		servertest.SkipOrFail(t, "no real ssh: %v", err)
 	}
 }
 
@@ -76,7 +85,7 @@ func (s *realSshd) start(validity string) {
 	if err := os.WriteFile(filepath.Join(d, "sshd_config"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s.cmd = exec.Command("/usr/sbin/sshd", "-D", "-e", "-f", filepath.Join(d, "sshd_config"))
+	s.cmd = exec.Command(sshdPath(), "-D", "-e", "-f", filepath.Join(d, "sshd_config"))
 	if err := s.cmd.Start(); err != nil {
 		t.Fatal(err)
 	}

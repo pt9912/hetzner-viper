@@ -199,8 +199,30 @@ func (s *Server) keyscan(_ []string, stdout io.Writer) error {
 	return nil
 }
 
+// isHostSecret reports the variables of the real user (the devcontainer passes them through remoteEnv)
+// that the simulated server must not see: the probes would find a token the test never gave it.
+func isHostSecret(k string) bool {
+	switch k {
+	case "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
+		"ANTHROPIC_MODEL", "GH_TOKEN", "GIT_TOKEN":
+		return true
+	}
+	return false
+}
+
+// baseEnv is the environment of the test process without the variables of isHostSecret.
+func baseEnv() []string {
+	var e []string
+	for _, kv := range os.Environ() {
+		if k, _, _ := strings.Cut(kv, "="); !isHostSecret(k) {
+			e = append(e, kv)
+		}
+	}
+	return e
+}
+
 func (s *Server) env() []string {
-	e := append(os.Environ(),
+	e := append(baseEnv(),
 		"HOME="+s.Home, "MOCK_STATE="+s.State, "VIPER_TMP_DIRS="+filepath.Join(s.State, "remote-tmp"),
 		"VIPER_REBOOT_FILE="+filepath.Join(s.State, "reboot-required"), "VIPER_CLOUD_RESULT="+filepath.Join(s.State, "cloud-result.json"),
 		"VIPER_SWAPFILE="+filepath.Join(s.State, "remote-swapfile"), "VIPER_FSTAB="+filepath.Join(s.State, "remote-fstab"),
