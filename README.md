@@ -65,7 +65,7 @@ Machines are disposable: everything that matters lives in the Git repository. Th
 - **Protection of foreign resources:** `viper` only changes and deletes DNS records it created itself.
 - **Real runs:** the end-to-end tests (build tag `e2e`) set a machine up on a real AWS account and delete it again (`viper up` and `viper down`, x86 and Arm, without Cloudflare); see [`docs/maintainer/architektur.md`](docs/maintainer/architektur.md) (German) for the architecture and the tests.
 - **Manual:** [`docs/user/handbuch.md`](docs/user/handbuch.md) (German) with version and change history.
-- **Releases:** versions are tagged on the [Releases page](https://github.com/pt9912/hetzner-viper/releases) with the `viper` binaries and checksums; see [`docs/maintainer/releasing.md`](docs/maintainer/releasing.md) (German) for creating one.
+- **Releases:** versions are tagged on the [Releases page](https://github.com/pt9912/hetzner-viper/releases) with the `viper` binaries and checksums; see [`docs/maintainer/releasing.md`](docs/maintainer/releasing.md) (German) for creating one. Working on `viper` (devcontainer, gates): [`docs/maintainer/developer.md`](docs/maintainer/developer.md) (German).
 - **License:** MIT, see [`LICENSE`](LICENSE).
 
 ## Security and limits

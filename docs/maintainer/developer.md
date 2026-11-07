@@ -1,0 +1,84 @@
+# Entwickeln an viper
+
+Diese Anleitung richtet sich an Maintainer und beschreibt, wie Sie `viper` bauen und prüfen. Es gibt zwei Wege: den Devcontainer, in dem Go und die übrigen Werkzeuge installiert sind, und einen Rechner, der nur Docker und `make` hat. Die Gates sind in beiden Fällen dieselben.
+
+## Zwei Wege
+
+| | Devcontainer | Rechner mit Docker und `make` |
+|---|---|---|
+| Werkzeuge | Go, golangci-lint, `make`, `git`, `gh`, `jq`, `shellcheck`, `tmux` und Docker sind im Image | nur Docker und `make`; Go und die Test-Werkzeuge stecken in den Images aus dem `Dockerfile` |
+| `make fmt`, `vet`, `lint`, `test` | laufen direkt mit den installierten Werkzeugen | laufen in den Containern `viper-dev` und `viper-lint` |
+| `make build`, `dist` | immer in Docker (der Weg der Releases) | immer in Docker |
+
+Das `Makefile` wählt selbst: Findet es `go` und `golangci-lint` im `PATH`, nutzt es die installierten Werkzeuge, sonst baut es die Images. `make help` zeigt alle Ziele.
+
+## Der Devcontainer
+
+`u-boot` erzeugt den Devcontainer aus der Projektdatei `u-boot.yaml` (Sandbox-Profil mit verschachteltem Docker). Die erzeugten Dateien liegen in `.devcontainer/` (`Dockerfile`, `devcontainer.json`, `docker-init.sh`, `devcontainer.env.example`). `devcontainer.env` ist Ihre eigene Datei und steht in `.gitignore`. Die Werkzeug-Versionen stehen als `ARG` im erzeugten `Dockerfile`; ändern Sie sie nie dort, sondern in `u-boot.yaml` (siehe „Einen Pin heben“). Nach jeder Änderung an `u-boot.yaml`:
+
+```bash
+u-boot generate devcontainer
+```
+
+Der Devcontainer wird mit `make` bedient (`tools/mk/devcontainer.mk`, braucht das Programm `u-boot` auf dem Host; fehlt es, endet das Ziel mit Exit-Code 2):
+
+| Ziel | Wirkung | Optionen |
+|---|---|---|
+| `make dev-up` | startet den Devcontainer | `RECREATE=1` legt ihn neu an, `INSTANCE=<name>` wählt eine Instanz |
+| `make dev-shell` | startet ihn wie `dev-up` und öffnet eine Shell darin | `INSTANCE=<name>` |
+| `make dev-down` | stoppt ihn; er bleibt bestehen | `INSTANCE=<name>` |
+| `make dev-remove` | entfernt ihn **samt Volumes ohne Rückfrage** | `INSTANCE=<name>` |
+
+`dev-up` und `dev-shell` reichen `GIT_TOKEN` und `GH_TOKEN` aus `gh auth token` an den Container weiter, wenn sie nicht gesetzt sind. Ein gesetzter Wert hat Vorrang.
+
+Was Sie beachten müssen:
+
+* **Der Arbeitsbaum ist nicht gemountet.** Der Workspace ist ein Volume mit einem `git clone` von origin. Änderungen in Ihrem Arbeitsbaum auf dem Host sehen Sie im Container erst, nachdem Sie sie gepusht und im Container geholt haben, und umgekehrt.
+* **Es werden Volumes angelegt:** der Workspace-Clone und das verschachtelte Docker (`/var/lib/docker`). `make dev-remove` löscht sie. Nicht gepushte Arbeit im Container geht damit verloren.
+* **Der Container läuft mit `--privileged`,** damit das verschachtelte Docker startet. Er ist dann nicht mehr vom Host isoliert; `u-boot generate devcontainer` warnt davor. Starten Sie ihn nur mit Repositories, denen Sie vertrauen.
+* **`sshd` fehlt im Container,** weil das Feature einen Login-Dienst mit Root-Login öffnen würde. Die Tests mit einem echten `sshd` werden übersprungen; `tool-pruefung` meldet das als Warnung. Auf dem Weg mit Docker und `make` sind sie dabei.
+* **Das Image installiert Werkzeuge beim Bau aus dem Netz.** Go und golangci-lint prüft das Dockerfile über die SHA-256-Summe; die Homebrew-Formeln (`ripgrep`, `jq`, `shellcheck`, `tmux`) sind nicht gepinnt, ein späterer Bau kann also andere Versionen enthalten.
+
+## Die Gates
+
+`make gates` führt alle Prüfungen nacheinander aus; `make check` ist ein Alias dafür. Der Lauf `tests` der CI ruft `make check` auf. Die Kette steht in der Variablen `GATE_CHECKS` im `Makefile`. Die Fragmente unter `tools/mk/` tragen sich dort ein (`GATE_CHECKS := <ziel> $(GATE_CHECKS)`), bevor `gates` definiert wird. Bei einem seriellen Lauf gilt diese Reihenfolge; unter `make -j` ist sie nicht zugesagt.
+
+| Gate | Prüft |
+|---|---|
+| `tool-pruefung` | dass die Werkzeuge des laufenden Kontexts die gepinnten Versionen tragen (siehe unten) |
+| `pinsync` | dass die Pins an allen ihren Stellen gleich sind (siehe unten) |
+| `fmt` | gofmt |
+| `vet` | `go vet` |
+| `lint` | golangci-lint mit `.golangci.yml` |
+| `test` | `go test -race ./...` |
+
+Lassen Sie vor jedem Push die ganze Kette laufen, nicht nur `make test`: Schon eine Lint-Meldung (etwa zu hohe Komplexität) macht den Lauf auf `main` rot.
+
+### Pins
+
+Zwei Werkzeuge sind gepinnt:
+
+| Pin | Stellen |
+|---|---|
+| Go (`1.27.3`) | `go.mod` (Direktive `go`), `Dockerfile` (`ARG GO_VERSION`), `.devcontainer/Dockerfile` (`ARG GO_VERSION`) |
+| golangci-lint (`v2.15.0`) | `Dockerfile` (`ARG GOLANGCI_LINT_VERSION`), `.devcontainer/Dockerfile` (`ARG GOLANGCI_LINT_VERSION`) |
+
+* **`pinsync`** (`tools/mk/pinsync.mk`) vergleicht die Werte an diesen Stellen mit `d-check` (Modul `pinsync`, die Stellen stehen in `.d-check.yml`). Es prüft Gleichheit, keine Aktualität. Das Image von `d-check` ist über seinen Digest gepinnt und läuft ohne Netz; der erste Lauf braucht Zugriff auf `ghcr.io`, um es zu ziehen.
+* **`tool-pruefung`** (`tools/mk/tool-pruefung.mk`, Skript `tools/tool-pruefung.sh`) prüft die Werkzeuge selbst gegen die Pins in `go.mod` und im `Dockerfile`. Mit `go` im `PATH` (Devcontainer) prüft es die installierten Werkzeuge: Go und golangci-lint auf die Version, dazu `bash`, `make`, `git`, `docker`, `gh`, `curl`, `jq`, `shellcheck`, `ssh-keygen` und `tmux` auf Anwesenheit. Ohne `go` baut `make` die Images und das Skript prüft diese. Das Skript prüft vorab, dass `go.mod` und `Dockerfile` dieselbe Go-Version nennen. Ohne `sshd` warnt es nur. Von Hand: `bash tools/tool-pruefung.sh [local | images]`.
+
+### Einen Pin heben
+
+1. Den Wert an allen Stellen der Tabelle ändern. Für den Devcontainer ändern Sie `u-boot.yaml` (bei golangci-lint `u-boot config set devcontainer.features.golangci-lint.version v2.15.0`) und erzeugen `.devcontainer/` mit `u-boot generate devcontainer` neu. Bei Go liefert der Katalog von `u-boot` den Standardwert; weicht er von `go.mod` ab, setzen Sie `devcontainer.features.go-toolchain.version`.
+2. `make gates` laufen lassen. `pinsync` wird rot, solange eine Stelle fehlt; `tool-pruefung` wird rot, wenn ein Image oder der Devcontainer noch die alte Version trägt (bauen Sie ihn neu: `make dev-up RECREATE=1`).
+3. Den Grund der Hebung in den Commit-Text schreiben.
+
+## Bauen
+
+* `make build` baut `viper` für Ihren Rechner nach `dist/viper` (`make build VERSION=v0.5.0 GOOS=darwin GOARCH=arm64` für ein anderes Ziel, `GOOS=windows GOARCH=amd64` für `dist/viper.exe`). Geprüft wird mit `./dist/viper version`.
+* `make dist VERSION=v0.5.0` baut alle Release-Dateien samt `SHA256SUMS` nach `dist/`, genau wie der Workflow (siehe [`releasing.md`](releasing.md)).
+
+Beide laufen in Docker, auch im Devcontainer, damit der Weg der Releases überall derselbe ist.
+
+## Tests
+
+Die Tests beschreibt [`architektur.md`](architektur.md#tests). Das Test-Image und der Devcontainer enthalten `bash`, `git`, `jq`, `ssh-keygen` und `shellcheck`; ein fehlendes Werkzeug lässt den Test fehlschlagen (`VIPER_REQUIRE_TOOLS=1` im Test-Image), sonst überspringt er ihn.

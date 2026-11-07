@@ -1,0 +1,25 @@
+# d-check (ghcr.io/pt9912/d-check): only the module pinsync, run by make pinsync (tools/mk/pinsync.mk).
+# It compares the pinned versions of the toolchain at their places byte by byte: equality, not
+# freshness. tools/tool-pruefung.sh then checks the installed tools against the same places.
+# go: the Dockerfile (images of make test, build), the Dockerfile of the devcontainer (made by
+# u-boot from u-boot.yaml) and the go directive of go.mod. golangci-lint: both Dockerfiles.
+scan:
+  roots: ["."]
+  ignore: [".cache/**", "dist/**"]
+modules: [pinsync]
+pinsync:
+  pins:
+    - name: go
+      sources:
+        - file: Dockerfile
+          pattern: '^ARG GO_VERSION=(\d+\.\d+\.\d+)$'
+        - file: .devcontainer/Dockerfile
+          pattern: '^ARG GO_VERSION=(\d+\.\d+\.\d+)$'
+        - file: go.mod
+          pattern: '^go (\d+\.\d+\.\d+)$'
+    - name: golangci-lint
+      sources:
+        - file: Dockerfile
+          pattern: '^ARG GOLANGCI_LINT_VERSION=(v\S+)$'
+        - file: .devcontainer/Dockerfile
+          pattern: '^ARG GOLANGCI_LINT_VERSION=(v\S+)$'

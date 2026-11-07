@@ -65,7 +65,7 @@ Rechner sind Wegwerfware: Alles, was zählt, liegt im Git-Repository. Deshalb gi
 - **Schutz fremder Ressourcen:** `viper` ändert und löscht nur DNS-Einträge, die es selbst angelegt hat.
 - **Echte Läufe:** Die End-to-End-Tests (Build-Tag `e2e`) richten einen Rechner in einem echten AWS-Konto ein und löschen ihn wieder (`viper up` und `viper down`, x86 und Arm, ohne Cloudflare); Architektur und Tests beschreibt [`docs/maintainer/architektur.md`](docs/maintainer/architektur.md).
 - **Handbuch:** [`docs/user/handbuch.md`](docs/user/handbuch.md) mit Versions- und Änderungshistorie.
-- **Releases:** Versionen stehen als Tags auf der [Releases-Seite](https://github.com/pt9912/hetzner-viper/releases) mit den `viper`-Binaries und Prüfsummen; zum Erstellen siehe [`docs/maintainer/releasing.md`](docs/maintainer/releasing.md).
+- **Releases:** Versionen stehen als Tags auf der [Releases-Seite](https://github.com/pt9912/hetzner-viper/releases) mit den `viper`-Binaries und Prüfsummen; zum Erstellen siehe [`docs/maintainer/releasing.md`](docs/maintainer/releasing.md). Zum Entwickeln (Devcontainer, Gates) siehe [`docs/maintainer/developer.md`](docs/maintainer/developer.md).
 - **Lizenz:** MIT, siehe [`LICENSE`](LICENSE).
 
 ## Sicherheit und Grenzen

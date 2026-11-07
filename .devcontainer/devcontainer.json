@@ -1,0 +1,35 @@
+// BEGIN U-BOOT MANAGED BLOCK: init
+{
+  "name": "hetzner-viper",
+  "build": {
+    "dockerfile": "./Dockerfile",
+    "context": "."
+  },
+  "workspaceMount": "",
+  "workspaceFolder": "/workspaces/hetzner-viper",
+  "runArgs": ["--env-file=${localWorkspaceFolder}/.devcontainer/devcontainer.env", "--privileged"],
+  "mounts": [
+    "source=hetzner-viper-workspace-${devcontainerId},target=/workspaces/hetzner-viper,type=volume",
+    "source=hetzner-viper-docker-${devcontainerId},target=/var/lib/docker,type=volume"
+  ],
+  "postCreateCommand": "[ -d .git ] || git clone -- https://github.com/pt9912/hetzner-viper.git .",
+  "postStartCommand": "sudo sh /usr/local/bin/u-boot-docker-init",
+  "remoteEnv": {
+    "GIT_TOKEN": "${localEnv:GIT_TOKEN}",
+    "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}",
+    "CLAUDE_CODE_OAUTH_TOKEN": "${localEnv:CLAUDE_CODE_OAUTH_TOKEN}",
+    "GH_TOKEN": "${localEnv:GH_TOKEN}"
+  },
+  "containerEnv": {
+    "GOCACHE": "${containerWorkspaceFolder}/.cache/go-build",
+    "GOMODCACHE": "${containerWorkspaceFolder}/.cache/go-mod",
+    "GOFLAGS": "-mod=readonly -buildvcs=false",
+    "GOTOOLCHAIN": "local"
+  },
+  "features": {
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1.0.5": {},
+    "ghcr.io/devcontainers/features/node:2.1.1": {}
+  },
+  "remoteUser": "vscode"
+}
+// END U-BOOT MANAGED BLOCK: init

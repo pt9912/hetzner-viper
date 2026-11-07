@@ -7,3 +7,5 @@ machines/*.env.local
 .ssh-pub-key-file
 *.key
 *.pem
+.cache
+.devcontainer/devcontainer.env

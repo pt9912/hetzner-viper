@@ -1,5 +1,6 @@
 # Builds viper without a Go installation on the host: docker build --output exports the files.
 ARG GO_VERSION=1.27.3
+ARG GOLANGCI_LINT_VERSION=v2.15.0
 FROM golang:${GO_VERSION} AS src
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -50,5 +51,5 @@ WORKDIR /src
 ENV HOME=/home/dev GOPATH=/home/dev/go GOCACHE=/home/dev/.cache/go-build VIPER_REQUIRE_TOOLS=1
 
 # Lint: golangci-lint with .golangci.yml.
-FROM golangci/golangci-lint:v2.15.0 AS lint
+FROM golangci/golangci-lint:${GOLANGCI_LINT_VERSION} AS lint
 WORKDIR /src

@@ -1,0 +1,32 @@
+schemaVersion: 1
+project:
+  name: hetzner-viper
+devcontainer:
+  enabled: true
+  features:
+    brew:
+      enabled: true
+      packages:
+        - ripgrep
+        - jq
+        - shellcheck
+        - tmux
+    claude-code:
+      enabled: true
+      version: 1.0.5
+    gh:
+      enabled: true
+    go-toolchain:
+      enabled: true
+    golangci-lint:
+      enabled: true
+      version: v2.15.0
+    node:
+      enabled: true
+      version: 2.1.1
+  profile: sandbox
+  sandbox:
+    nestedRuntime: docker
+  containerEnv:
+    GOFLAGS: -mod=readonly -buildvcs=false
+    GOTOOLCHAIN: local
