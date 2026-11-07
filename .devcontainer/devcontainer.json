@@ -7,7 +7,7 @@
   },
   "workspaceMount": "",
   "workspaceFolder": "/workspaces/hetzner-viper",
-  "runArgs": ["--env-file=${localWorkspaceFolder}/.devcontainer/devcontainer.env", "--privileged"],
+  "runArgs": ["--env-file=${localWorkspaceFolder}/.devcontainer/devcontainer.env", "--privileged", "--memory=4g", "--cpus=2"],
   "mounts": [
     "source=hetzner-viper-workspace-${devcontainerId},target=/workspaces/hetzner-viper,type=volume",
     "source=hetzner-viper-docker-${devcontainerId},target=/var/lib/docker,type=volume"
