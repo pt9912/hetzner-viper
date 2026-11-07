@@ -1,8 +1,8 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.70  
-Software-Version: v0.13.0  
-Stand: 29.10.2026  
+Version: 1.72  
+Software-Version: v0.14.0  
+Stand: 07.11.2026  
 
 ## 1. Einleitung
 
@@ -80,12 +80,12 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 
 **Mit Homebrew** (Linux und macOS): `brew install pt9912/viper/viper`, dann `viper version` (Update: `brew upgrade viper`). Sonst von Hand:
 
-1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.13.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.13.0_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
+1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.14.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.14.0_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
 2. Prüfen Sie die Datei und machen Sie sie ausführbar:
    ```bash
-   grep viper_v0.13.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
-   chmod +x viper_v0.13.0_linux_amd64
-   mv viper_v0.13.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
+   grep viper_v0.14.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
+   chmod +x viper_v0.14.0_linux_amd64
+   mv viper_v0.14.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
    ```
 3. Prüfen Sie die Installation: `viper version`.
 
@@ -1005,3 +1005,5 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.68 | v0.13.0 | `viper find`: `--location` braucht `--provider`; gemerkte Preise gelten ohne Netz höchstens sieben Tage (bisher nur der Kurs der EZB); Google: geteilte Kerne auch ohne Projekt nicht mehr in der Liste. |
 | 1.69 | v0.13.0 | Release v0.13.0: die Änderungen 1.67 und 1.68 (`viper find` ohne Token bei Hetzner, IPv4-Gebühr im Preis, `--location` mit `--provider`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.13.0`. |
 | 1.70 | v0.14.0 | Die Voraussetzungen nennen auch Windows (`windows_amd64.exe`, nur teilweise getestet), wie der Abschnitt „`viper` installieren“. |
+| 1.71 | v0.14.0 | Korrektur: `brew` und die damit installierten Programme stehen den Befehlen von `VIPER_POST_CLONE` im `PATH` zur Verfügung (bisher: `brew: command not found`). |
+| 1.72 | v0.14.0 | Release v0.14.0: die Änderungen 1.70 und 1.71 (Windows-Binary in den Voraussetzungen, `brew` in `VIPER_POST_CLONE`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.14.0`. |
