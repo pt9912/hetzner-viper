@@ -24,16 +24,12 @@ var (
 	natsCertScript string
 	//go:embed scripts/natsidentity.sh
 	natsIdentityScript string
-	//go:embed scripts/natsconfig.sh
-	natsConfigScript string
 	//go:embed scripts/natsunit.sh
 	natsUnitScript string
 	//go:embed scripts/natscheck.sh
 	natsCheckScript string
 	//go:embed scripts/natscli.sh
 	natsCLIScript string
-	//go:embed scripts/natsread.sh
-	natsReadScript string
 	//go:embed scripts/natsfile.sh
 	natsFileScript string
 	//go:embed scripts/natsconnect.sh

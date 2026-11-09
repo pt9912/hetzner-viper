@@ -179,3 +179,17 @@ func TestCLIReleaseForPinsTheTool(t *testing.T) {
 		t.Error("no release for mips")
 	}
 }
+
+func TestParseEndpointReadsWhatRenderWrote(t *testing.T) {
+	id, _ := natsserver.NewIdentity()
+	out, err := natsserver.Config{Group: "dev", Host: "10.130.0.2", Port: 4333, Clients: []natsserver.Client{{Machine: "alpha", PublicKey: id.PublicKey}}}.Render()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e, ok := natsserver.ParseEndpoint(out); !ok || e != (natsserver.Endpoint{Host: "10.130.0.2", Port: 4333}) {
+		t.Errorf("%+v %v", e, ok)
+	}
+	if _, ok := natsserver.ParseEndpoint("# nothing"); ok {
+		t.Error("no endpoint in there")
+	}
+}

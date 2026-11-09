@@ -81,20 +81,19 @@ func Run(ctx context.Context, c *model.Machine, force bool, d Deps, lg runlog.Lo
 	if srv == nil {
 		return notFound(ctx, c, d, lg, out, errOut), nil
 	}
+	grp, code, err := planNATS(ctx, c, force, d, srv, out, errOut)
+	if code != 0 || err != nil {
+		return code, err
+	}
 	ip, id := srv.IPv4, srv.ID
 	d.SSH.ForgetStalePin(c, id, out)
 	if err := d.SSH.WriteConfig(c, ip); err != nil {
 		return 1, err
 	}
 	wss := workspaces(c)
-	skip, code, err := probeServer(ctx, c, force, d, id, ip, out, errOut)
+	skip, code, err := checkAndProbe(ctx, c, force, d, lg, id, ip, wss, out, errOut)
 	if code != 0 || err != nil {
 		return code, err
-	}
-	if !skip {
-		if code, err := checkServer(ctx, c, d, lg, wss, out, errOut); code != 0 || err != nil {
-			return code, err
-		}
 	}
 	fmt.Fprintf(errOut, "\nServer %s (%s) and ALL its data (including %s) will be DESTROYED.\n", c.ServerName, ip, strings.Join(wss, " "))
 	if d.Ask("Type DELETE to continue: ") != "DELETE" {
@@ -102,7 +101,26 @@ func Run(ctx context.Context, c *model.Machine, force bool, d Deps, lg runlog.Lo
 		lg.Final("cancelled (no DELETE)")
 		return 1, nil
 	}
-	return destroy(ctx, c, d, lg, srv, skip, out, errOut)
+	if code, err := grp.revoke(ctx, force); code != 0 || err != nil {
+		lg.Final("refused (the key could not be revoked)")
+		return code, err
+	}
+	code, err = destroy(ctx, c, d, lg, srv, skip, out, errOut)
+	if code == 0 && err == nil {
+		grp.after(ctx)
+	}
+	return code, err
+}
+
+// checkAndProbe checks that ssh works and, if it does, what would be lost. skip is true if --force
+// skipped the checks because ssh does not work.
+func checkAndProbe(ctx context.Context, c *model.Machine, force bool, d Deps, lg runlog.Log, id, ip string, wss []string, out, errOut io.Writer) (skip bool, code int, err error) {
+	skip, code, err = probeServer(ctx, c, force, d, id, ip, out, errOut)
+	if code != 0 || err != nil || skip {
+		return skip, code, err
+	}
+	code, err = checkServer(ctx, c, d, lg, wss, out, errOut)
+	return false, code, err
 }
 
 // workspaces are the directories the server was started with (start records each), else the configured one.

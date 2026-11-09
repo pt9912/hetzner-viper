@@ -3,13 +3,13 @@ package start
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/natsserver"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
+	"github.com/pt9912/hetzner-viper/internal/usecase/natsgroup"
 )
 
 // natsState is what viper up knows of the machine's NATS group between the steps.
@@ -153,64 +153,12 @@ func (r *runner) natsCleanup(ctx context.Context) {
 	r.printf("Private network %s removed again.\n", r.nats.network.Name)
 }
 
-// sshTarget is a machine of the group that viper reaches by ssh: this one or another one.
-type sshTarget struct{ config, alias string }
+// ops are the operations over ssh that viper up and viper down share.
+func (r *runner) ops() natsgroup.Ops { return natsgroup.Ops{Run: r.d.Run, SSH: r.d.SSH, Out: r.out} }
 
-func (r *runner) self() sshTarget { return sshTarget{r.c.SSHConfig, r.c.SSHAlias} }
-
-// peer is the ssh side of another machine of the group (the server, for a client). Its config is
-// written here if this computer does not have it; it trusts the host CA like any machine whose
-// pin is not here.
-func (r *runner) peer(s model.Server) (sshTarget, error) {
-	cc := *r.c
-	cc.ServerName = s.Name
-	cc.Name = strings.TrimPrefix(s.Name, r.c.ServerPrefix+"-")
-	cc.SSHAlias = "hetzner-" + s.Name
-	cc.DNSHost = s.Name + "." + r.c.DNSDomain
-	cc.KnownPin = filepath.Join(r.c.SSHDir, "known_hosts_hetzner_"+s.Name)
-	cc.SSHConfig = filepath.Join(r.c.SSHDir, "config_hetzner_"+s.Name)
-	if s.IPv4 == "" {
-		return sshTarget{}, fmt.Errorf("the server %s has no public address", s.Name)
-	}
-	if err := r.d.SSH.WriteConfig(&cc, s.IPv4); err != nil {
-		return sshTarget{}, err
-	}
-	return sshTarget{cc.SSHConfig, cc.SSHAlias}, nil
-}
-
-// remoteOn runs a script on a machine with data on stdin and returns what it printed. Unlike
-// script, the script is the argument of bash -c, because stdin carries the data. Lines that start
-// with "nats" are shown to the user unless quiet.
-func (r *runner) remoteOn(ctx context.Context, t sshTarget, quiet bool, stdin, script string, args ...string) (string, error) {
-	cmd := "bash -c " + model.Quote(script) + " nats " + model.QuoteAll(args...)
-	sshArgs := []string{"-F", t.config, "-o", "BatchMode=yes", t.alias, cmd}
-	if stdin == "" {
-		sshArgs = append([]string{"-n"}, sshArgs...)
-	}
-	stdout, stderr, err := r.d.Run(ctx, stdin, "ssh", sshArgs...)
-	if !quiet {
-		for _, l := range strings.Split(strings.TrimRight(stdout, "\n"), "\n") {
-			if strings.HasPrefix(l, "nats") {
-				r.printf("%s\n", l)
-			}
-		}
-	}
-	if err != nil {
-		return stdout, fmt.Errorf("%s", strings.TrimSpace(lastLines(stdout, 6)+"\n"+stderr))
-	}
-	return stdout, nil
-}
-
+// remote runs a script on this machine; see natsgroup.Ops.On.
 func (r *runner) remote(ctx context.Context, stdin, script string, args ...string) (string, error) {
-	return r.remoteOn(ctx, r.self(), false, stdin, script, args...)
-}
-
-func lastLines(s string, n int) string {
-	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
-	}
-	return strings.Join(lines, "\n")
+	return r.ops().On(ctx, natsgroup.Self(r.c), false, stdin, script, args...)
 }
 
 // natsSetup makes the machine what its role says, once it can be reached by ssh.
@@ -290,33 +238,13 @@ func (r *runner) natsIdentity(ctx context.Context) (string, error) {
 }
 
 // natsRegister enters the machine and its key in the configuration of the server and has the
-// server read it. Several machines may do this at once: the file is read together with its hash,
-// and written back only if nobody changed it in between; otherwise it is read again.
-func (r *runner) natsRegister(ctx context.Context, server sshTarget, serverIP, pub string) error {
+// server read it (natsgroup.Ops.Update keeps the entries of the others).
+func (r *runner) natsRegister(ctx context.Context, server natsgroup.Target, serverIP, pub string) error {
 	c := r.c
-	var lastErr error
-	for attempt := 0; attempt < 6; attempt++ {
-		out, err := r.remoteOn(ctx, server, true, "", natsReadScript, natsserver.Dir)
-		if err != nil {
-			return err
-		}
-		first, conf, _ := strings.Cut(out, "\n")
-		sha := strings.TrimPrefix(first, "sha256 ")
-		clients := natsserver.WithClient(natsserver.ParseClients(conf), natsserver.Client{Machine: c.Name, PublicKey: pub})
-		cfg, err := natsserver.Config{Group: c.NATS.Group, Host: serverIP, Port: c.NATS.Port, Clients: clients}.Render()
-		if err != nil {
-			return err
-		}
-		_, err = r.remoteOn(ctx, server, false, cfg, natsConfigScript, natsserver.Dir, strings.TrimSuffix(natsserver.Unit, ".service"), sha)
-		if err == nil {
-			return nil
-		}
-		if !strings.Contains(err.Error(), "changed meanwhile") {
-			return err
-		}
-		lastErr = err
+	add := func(l []natsserver.Client) ([]natsserver.Client, error) {
+		return natsserver.WithClient(l, natsserver.Client{Machine: c.Name, PublicKey: pub}), nil
 	}
-	return lastErr
+	return r.ops().Update(ctx, server, c.NATS.Group, natsserver.Endpoint{Host: serverIP, Port: c.NATS.Port}, add)
 }
 
 // natsFinish writes the connection file, then logs in once with the nats tool to see that it all
@@ -346,7 +274,7 @@ func (r *runner) natsServer(ctx context.Context, ip string) (int, error) {
 	if err != nil {
 		return fail("storing the identity", err)
 	}
-	if err := r.natsRegister(ctx, r.self(), ip, pub); err != nil {
+	if err := r.natsRegister(ctx, natsgroup.Self(c), ip, pub); err != nil {
 		return fail("writing the configuration", err)
 	}
 	if _, err := r.remote(ctx, natsserver.UnitFile(), natsUnitScript, strings.TrimSuffix(natsserver.Unit, ".service"), ip, fmt.Sprint(c.NATS.Port)); err != nil {
@@ -408,7 +336,7 @@ func (r *runner) natsClient(ctx context.Context) (int, error) {
 	if code != 0 || err != nil {
 		return code, err
 	}
-	target, err := r.peer(server.Server)
+	target, err := r.ops().Peer(c, server.Server)
 	if err != nil {
 		return fail("reaching the server", err)
 	}
@@ -422,7 +350,7 @@ func (r *runner) natsClient(ctx context.Context) (int, error) {
 	if err := r.natsRegister(ctx, target, server.Server.PrivateIP, pub); err != nil {
 		return fail("registering at the server", err)
 	}
-	cert, err := r.remoteOn(ctx, target, true, "", "cat \"$1\"", natsserver.CertFile)
+	cert, err := r.ops().On(ctx, target, true, "", "cat \"$1\"", natsserver.CertFile)
 	if err != nil || !strings.Contains(cert, "BEGIN CERTIFICATE") {
 		return fail("reading the certificate of the server", fmt.Errorf("%v", err))
 	}

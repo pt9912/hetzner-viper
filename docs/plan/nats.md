@@ -495,6 +495,24 @@ Die Reihenfolge folgt der Empfehlung in §15. Jeder Meilenstein ist einzeln abne
 
 Meilenstein-Status wird in den jeweiligen Pull Requests geführt, nicht in diesem Dokument.
 
+### Ergebnis Meilenstein 6 (`viper down`)
+
+Umgesetzt in `internal/usecase/stop/nats.go`; die gemeinsamen SSH-Operationen von `up` und `down` liegen in `internal/usecase/natsgroup` (SSH-Zugang zu einer anderen Maschine der Gruppe, Änderung der Clientliste mit Hash-Prüfung unter `flock`). Maßgeblich sind die Labels der Maschine, nicht `NATS_ENABLED`: eine Maschine mit NATS-Labels wird als Gruppenmitglied behandelt.
+
+- **Client:** Vor dem Löschen wird sein Schlüssel aus der Serverkonfiguration entfernt und der Server lädt neu. Schlägt das fehl, wird die Maschine nicht gelöscht (Meldung mit Hinweis auf `--force`). Mit `--force` wird sie trotzdem gelöscht, mit Warnung, dass der Eintrag bis zum Löschen des Servers bleibt. Hat die Gruppe keinen Server mehr, gibt es nichts zu widerrufen.
+- **Server:** Hat die Gruppe weitere Maschinen (in jedem Zustand), wird er nicht gelöscht und es gibt nicht einmal eine Rückfrage. Mit `--force` muss zusätzlich der Gruppenname eingegeben werden; die Gruppe endet, die Clients verlieren die Verbindung.
+- **Netzwerk:** Mit der letzten Maschine der Gruppe wird das private Netzwerk entfernt, vorher bleibt es bestehen.
+- Maschinen ohne NATS-Labels werden unverändert gelöscht, ohne ein Wort zu NATS.
+
+Praktisch bestätigt (zwei `cpx22`, danach gelöscht):
+- Ein NATS-Server schließt beim Neuladen ohne einen Benutzer dessen Verbindung (`Disconnected ... EOF`), jede Wiederverbindung scheitert mit `authorization violation`; die Verbindung des anderen Benutzers bleibt. Damit ist die Annahme aus §8 belegt.
+- `viper down alpha` wurde abgelehnt, solange Beta in der Gruppe war.
+- `viper down beta` entfernte den Schlüssel (`nats config: written, server reloaded`), in der Konfiguration blieb nur Alpha, und Beta wurde gelöscht.
+- `viper down alpha` als letzte Maschine löschte auch das Netzwerk `viper-nats-live`.
+- Der Parallelstart von Alpha und Beta funktionierte mit dem neuen Wartefenster (Beta wartete auf den Server).
+
+Nicht Teil von `down`: das gemeinsame Login-Schlüsselpaar und die Firewall des Präfixes bleiben wie bisher bestehen.
+
 ### Ergebnis Meilenstein 5 (Clientregistrierung)
 
 Umgesetzt in `internal/usecase/start/nats.go`. Ein Client wartet auf den Server (`ready`, höchstens 5 Minuten; ein ausgefallener Server beendet das Warten sofort), erreicht ihn per SSH (die SSH-Konfiguration des Servers wird bei Bedarf lokal angelegt), installiert das `nats`-Werkzeug (`v0.5.1`, gepinnte Prüfsumme), legt seine Identität an, trägt sich in die Serverkonfiguration ein, bekommt das Serverzertifikat und die Datei `connection.env` und meldet sich zur Probe mit dem NKey an.
@@ -507,7 +525,7 @@ Praktisch bestätigt (drei `cpx22` in `fsn1`, danach gelöscht):
 - Broadcast: Gamma empfängt, was Beta auf `viper.live.beta.status` veröffentlicht. Anfrage/Antwort: Beta fragt `viper.live.alpha.req.echo`, Alpha antwortet (`pong from alpha`, rtt 0,6 ms; Voraussetzung ist das eigene Inbox-Präfix `_INBOX.<maschine>`, das `connection.env` als `NATS_INBOX_PREFIX` liefert). Veröffentlichen in den Subtree einer anderen Maschine oder in eine andere Gruppe wird abgelehnt.
 - Die ACL-Entscheidung aus §6 trägt: Request-Subjects `viper.<g>.<empfänger>.req.>` gehen, alles andere fremde nicht.
 
-Noch nicht umgesetzt: Widerruf bei `viper down` (6) und `viper check` (7).
+Noch nicht umgesetzt: `viper check` (7).
 
 ### Ergebnis Meilenstein 4 (Server-Bootstrap)
 

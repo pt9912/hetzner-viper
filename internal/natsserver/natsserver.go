@@ -287,3 +287,25 @@ NATS_INBOX_PREFIX=_INBOX.%s
 VIPER_NATS_SUBJECT_PREFIX=viper.%s.%s
 `, host, port, CertFile, Dir, machine, group, machine)
 }
+
+// Endpoint is where the server listens.
+type Endpoint struct {
+	Host string
+	Port int
+}
+
+// ParseEndpoint reads host and port out of a configuration Render wrote.
+func ParseEndpoint(conf string) (Endpoint, bool) {
+	var e Endpoint
+	for _, l := range strings.Split(conf, "\n") {
+		if v, ok := strings.CutPrefix(l, "host: "); ok {
+			e.Host = strings.Trim(strings.TrimSpace(v), `"`)
+		}
+		if v, ok := strings.CutPrefix(l, "port: "); ok {
+			if _, err := fmt.Sscanf(strings.TrimSpace(v), "%d", &e.Port); err != nil {
+				return Endpoint{}, false
+			}
+		}
+	}
+	return e, e.Host != "" && e.Port != 0
+}
