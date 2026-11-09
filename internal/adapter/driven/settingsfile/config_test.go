@@ -414,3 +414,46 @@ func TestKeyPath(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadReadsNATSOnlyWhenEnabled(t *testing.T) {
+	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
+	c, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\n", ""), "web", env, false)
+	if err != nil || c.NATS != (model.NATSConfig{}) {
+		t.Fatalf("NATS is off by default: %+v %v", c.NATS, err)
+	}
+	// with NATS off, a bad group is not looked at: the settings read as before
+	c, err = settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nNATS_GROUP=Bad.Name\nNATS_PORT=x\n", ""), "web", env, false)
+	if err != nil || c.NATS.Enabled {
+		t.Fatalf("NATS off: %+v %v", c.NATS, err)
+	}
+	c, err = settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nNATS_ENABLED=true\nNATS_GROUP=entwicklung\n", ""), "web", env, false)
+	if err != nil || c.NATS != (model.NATSConfig{Enabled: true, Group: "entwicklung", Port: 4222}) {
+		t.Fatalf("NATS on: %+v %v", c.NATS, err)
+	}
+	c, err = settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nNATS_ENABLED=1\nNATS_GROUP=g\n", "NATS_PORT=4333\n"), "web", env, false)
+	if err != nil || c.NATS.Port != 4333 {
+		t.Fatalf("the machine's file wins: %+v %v", c.NATS, err)
+	}
+}
+
+func TestLoadRefusesBadNATSSettings(t *testing.T) {
+	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
+	base := "DNS_DOMAIN=example.com\nNATS_ENABLED=true\n"
+	for name, tc := range map[string]struct{ global, machine, want string }{
+		"no group":    {base, "", "NATS_GROUP: required"},
+		"group dots":  {base + "NATS_GROUP=a.b\n", "", "NATS_GROUP: 1 to 31"},
+		"group case":  {base + "NATS_GROUP=Dev\n", "", "NATS_GROUP: 1 to 31"},
+		"bad port":    {base + "NATS_GROUP=g\nNATS_PORT=22\n", "", "NATS_PORT"},
+		"bad switch":  {"DNS_DOMAIN=example.com\nNATS_ENABLED=maybe\n", "", "NATS_ENABLED: true or false"},
+		"other cloud": {base + "NATS_GROUP=g\nPROVIDER=aws\n", "", "need PROVIDER=hetzner"},
+	} {
+		_, err := settingsfile.Load(setupDir(t, tc.global, tc.machine), "web", env, false)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: got %v, want %q", name, err, tc.want)
+		}
+	}
+	long := strings.Repeat("a", 32)
+	if _, err := settingsfile.Load(setupDir(t, base+"NATS_GROUP=g\n", ""), long, env, false); err == nil || !strings.Contains(err.Error(), "Machine name") {
+		t.Errorf("a machine name over 31 characters: %v", err)
+	}
+}

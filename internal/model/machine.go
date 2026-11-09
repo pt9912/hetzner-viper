@@ -17,6 +17,10 @@ type Machine struct {
 	// Provider is the cloud the server is made in (PROVIDER).
 	Provider string
 
+	// NATS is the NATS group of the machine (NATS_ENABLED, NATS_GROUP, NATS_PORT); the zero value
+	// is off.
+	NATS NATSConfig
+
 	// DNSProvider is who makes the DNS name of the server: DNSCloudflare, or DNSNone for no name.
 	DNSProvider string
 

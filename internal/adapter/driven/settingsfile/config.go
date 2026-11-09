@@ -122,8 +122,39 @@ func Load(dir, machine string, env settings.Env, needTokens bool) (*model.Machin
 	if len(c.ServerName) > 63 {
 		return nil, fmt.Errorf("Server name %s is longer than 63 characters", c.ServerName)
 	}
+	if err := applyNATS(c); err != nil {
+		return nil, err
+	}
 	derivePaths(c, env.Home)
 	return c, nil
+}
+
+// applyNATS reads NATS_ENABLED, NATS_GROUP and NATS_PORT. With NATS off nothing else is checked, so
+// the settings of a machine without NATS are read as before.
+func applyNATS(c *model.Machine) error {
+	on, err := model.ParseNATSBool("NATS_ENABLED", c.Get("NATS_ENABLED"))
+	if err != nil || !on {
+		return err
+	}
+	if c.Provider != "hetzner" {
+		return fmt.Errorf("NATS_ENABLED: NATS groups need PROVIDER=hetzner for now, not %s", c.Provider)
+	}
+	group := strings.TrimSpace(c.Get("NATS_GROUP"))
+	if group == "" {
+		return errors.New("NATS_GROUP: required when NATS_ENABLED is on")
+	}
+	if err := model.CheckNATSName("NATS_GROUP", group); err != nil {
+		return err
+	}
+	if err := model.CheckNATSName("Machine name (NATS_ENABLED is on)", c.Name); err != nil {
+		return err
+	}
+	port, err := model.ParseNATSPort(c.Get("NATS_PORT"))
+	if err != nil {
+		return err
+	}
+	c.NATS = model.NATSConfig{Enabled: true, Group: group, Port: port}
+	return nil
 }
 
 func or(v, def string) string {
