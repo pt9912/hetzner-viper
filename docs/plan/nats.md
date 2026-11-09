@@ -607,7 +607,7 @@ Um die erste Version beherrschbar zu halten, bleiben folgende Funktionen außerh
 
 - NATS-Cluster mit mehreren Servern.
 - Automatisches Failover oder Servermigration.
-- JetStream und persistente Nachrichten.
+- JetStream und persistente Nachrichten (als eigene Erweiterung geplant: [`nats-jetstream-nuntius.md`](nats-jetstream-nuntius.md)).
 - Providerübergreifende NATS-Gruppen.
 - Externer Zugriff auf NATS.
 - Konfigurierbare ACL-Richtlinien, eine eigene CA und die Erneuerung des Serverzertifikats.
