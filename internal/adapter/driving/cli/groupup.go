@@ -135,7 +135,7 @@ func runGroupUp(ctx context.Context, o *options, env settings.Env, stdout, stder
 	}
 	if res := o.host().Services.Groups.Run(ctx, pre, o.parallel); driving.GroupExitCode(res) != 0 {
 		fmt.Fprintln(stderr, "Nothing was made: the checks of the group failed.")
-		return finishGroup(res, stdout, ws, true)
+		return finishGroup(res, stdout, ws)
 	}
 
 	// 2. the machines
@@ -158,7 +158,7 @@ func runGroupUp(ctx context.Context, o *options, env settings.Env, stdout, stder
 	for _, m := range g.Machines {
 		ordered = append(ordered, byName[m])
 	}
-	return finishGroup(ordered, stdout, ws, true)
+	return finishGroup(ordered, stdout, ws)
 }
 
 // groupUpState is what the tasks of a group start share.

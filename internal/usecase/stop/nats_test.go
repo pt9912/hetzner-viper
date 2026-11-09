@@ -272,3 +272,21 @@ func TestAMachineWithoutNATSLabelsIsDeletedAsBefore(t *testing.T) {
 		t.Errorf("no word about NATS: %s", n.all())
 	}
 }
+
+func TestGroupRoleSaysWhatTheMachineIsInItsGroupFromTheLabels(t *testing.T) {
+	for _, role := range []model.NATSRole{model.NATSClient, model.NATSServer} {
+		n := newNATSWorld(t, role, "beta")
+		d := n.deps()
+		d.Cloud = n.hz
+		got, group, ok, err := stop.Service{Deps: d}.GroupRole(context.Background(), n.c)
+		if err != nil || !ok || got != role || group != "dev" {
+			t.Errorf("%s: %v %q %v %v", role, got, group, ok, err)
+		}
+	}
+	// a machine without labels, or without a server, has no role
+	w := newWorld(t)
+	d := w.deps()
+	if _, _, ok, err := (stop.Service{Deps: d}).GroupRole(context.Background(), w.c); ok || err != nil {
+		t.Errorf("no NATS: %v %v", ok, err)
+	}
+}

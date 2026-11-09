@@ -156,3 +156,8 @@ func NewPrefixWriters(out io.Writer, width int, machines ...string) ([]io.Writer
 func RunGroupUp(ctx context.Context, p *Opts, env settings.Env, stdout, stderr io.Writer) error {
 	return runGroupUp(ctx, p.options(), env, stdout, stderr)
 }
+
+// RunGroupDown deletes the machines of a group; in has the answers.
+func RunGroupDown(ctx context.Context, p *Opts, env settings.Env, in io.Reader, stdout, stderr io.Writer) error {
+	return runGroupDown(ctx, p.options(), env, in, stdout, stderr)
+}

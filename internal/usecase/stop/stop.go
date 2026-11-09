@@ -286,3 +286,20 @@ type Service struct{ Deps Deps }
 func (s Service) Down(ctx context.Context, c *model.Machine, force bool, lg runlog.Log, out, errOut io.Writer) (int, error) {
 	return Run(ctx, c, force, s.Deps, lg, out, errOut)
 }
+
+// GroupRole reads the role of the machine in its NATS group from the labels of its server.
+func (s Service) GroupRole(ctx context.Context, c *model.Machine) (model.NATSRole, string, bool, error) {
+	var api cloud.NATSProvider
+	if !cloud.AsNATS(s.Deps.Cloud, &api) {
+		return "", "", false, nil
+	}
+	srv, err := s.Deps.Cloud.ServerByName(ctx, c.ServerName)
+	if err != nil || srv == nil {
+		return "", "", false, err
+	}
+	meta, err := api.NATSMetadataOf(ctx, srv.ID)
+	if err != nil || meta == nil {
+		return "", "", false, err
+	}
+	return meta.Role, meta.Group, true, nil
+}

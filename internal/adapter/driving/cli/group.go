@@ -39,7 +39,7 @@ func runGroup(ctx context.Context, o *options, env settings.Env, stdout, stderr 
 			return run(ctx, &mo, env, out, errOut)
 		})})
 	}
-	return finishGroup(o.host().Services.Groups.Run(ctx, tasks, o.parallel), stdout, ws, true)
+	return finishGroup(o.host().Services.Groups.Run(ctx, tasks, o.parallel), stdout, ws)
 }
 
 // groupWriters are the writers of the machines of a group: one lock for the terminal.
@@ -79,14 +79,12 @@ func (ws *groupWriters) task(m string, run func(ctx context.Context, out, errOut
 	}
 }
 
-// finishGroup prints the table (always, or only if a machine is not fine) and returns the exit status.
-func finishGroup(results []driving.GroupResult, stdout io.Writer, ws *groupWriters, always bool) error {
+// finishGroup prints the table and returns the exit status.
+func finishGroup(results []driving.GroupResult, stdout io.Writer, ws *groupWriters) error {
 	code := driving.GroupExitCode(results)
-	if always || code != 0 {
-		ws.mu.Lock()
-		driving.WriteGroupTable(stdout, results)
-		ws.mu.Unlock()
-	}
+	ws.mu.Lock()
+	driving.WriteGroupTable(stdout, results)
+	ws.mu.Unlock()
 	if code != 0 {
 		return exitStatus(code)
 	}

@@ -26,7 +26,11 @@ func runDown(ctx context.Context, o *options, env settings.Env, in io.Reader, st
 	ctx, cancel := notifyContext(ctx)
 	defer cancel()
 
-	down := o.host().Services.Down(c, driving.DownOptions{Ask: newAsker(ctx, in, l.Err())})
+	ask := o.ask
+	if ask == nil {
+		ask = newAsker(ctx, in, l.Err())
+	}
+	down := o.host().Services.Down(c, driving.DownOptions{Ask: ask})
 	code, err := down.Down(ctx, c, o.force, l, l.Out(), l.Err())
 	switch {
 	case ctx.Err() != nil:
@@ -93,6 +97,9 @@ func nativeDown(o *options) error {
 	env, err := o.host().Env()
 	if err != nil {
 		return err
+	}
+	if o.group != "" {
+		return runGroupDown(context.Background(), o, env, o.host().Stdin, o.host().Stdout, o.host().Stderr)
 	}
 	return runDown(context.Background(), o, env, o.host().Stdin, o.host().Stdout, o.host().Stderr)
 }

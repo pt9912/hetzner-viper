@@ -44,6 +44,14 @@ type Down interface {
 	Down(ctx context.Context, c *model.Machine, force bool, lg runlog.Log, out, errOut io.Writer) (int, error)
 }
 
+// GroupRoler is implemented by a Down that can say what its machine is in its NATS group, read from
+// the labels at the provider (not from the settings). The group commands stop the clients first and the
+// server last.
+type GroupRoler interface {
+	// GroupRole returns the role of the machine and its group; ok is false if it has none (or does not exist).
+	GroupRole(ctx context.Context, c *model.Machine) (role model.NATSRole, group string, ok bool, err error)
+}
+
 // DownOptions are what the caller decides about one run of Down.
 type DownOptions struct {
 	// Ask shows a prompt and returns the answer line ("" at the end of the input).

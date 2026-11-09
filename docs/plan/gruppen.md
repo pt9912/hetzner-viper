@@ -1,6 +1,6 @@
 # Plan: Gruppen-Dateien (`groups/`) – mehrere Rechner gemeinsam starten und stoppen
 
-Stand: 09.11.2026 · Status: Meilensteine 1 bis 4b umgesetzt (echter Lauf: drei Rechner in 7,6 Minuten, alle drei in der Gruppe registriert), der Rest offen
+Stand: 09.11.2026 · Status: Meilensteine 1 bis 5 umgesetzt (echte Läufe: `up --group` mit drei Rechnern in 7,6 Minuten, `down --group` in 21 Sekunden), Handbuch (6) offen
 
 ## 1 Ziel
 
@@ -64,8 +64,9 @@ Der Befehl liest zuerst den Zustand der Gruppe beim Anbieter und bricht **vor de
 ### Stopp, parallel in zwei Wellen
 
 * Erst alle Clients gleichzeitig, danach der Server. Das Netzwerk löscht die zweite Welle nach der Server-Löschung, wenn die Gruppe leer ist. Grund: Ein Server mit Clients wird ohne `--force` abgelehnt (`stop/nats.go`), und ein Client widerruft seinen Schlüssel am Server, solange dieser läuft. Scheitert oder bricht ein Client ab, startet die Server-Welle nicht.
-* **Fragen:** `stop.Run` fragt heute mitten im Ablauf (Gruppenname in `planNATS`, `DISCARD` nach dem SSH-Befund, `DELETE`, `CLEANUP`). Deshalb wird `stop` in zwei Phasen geteilt: Phase 1 ermittelt (Server suchen, Gruppenplan, SSH-Befund über ungesicherte Dateien) und liefert die nötigen Fragen, statt sie zu stellen; `groupops` stellt sie nacheinander, sammelt die Antworten; Phase 2 führt parallel aus. Phase 1 ist **nicht rein lesend**: wie heute vor `DELETE` schreibt sie lokale Dateien (`ForgetStalePin`, `WriteConfig`, `PinHostKey`), was harmlos ist. Für den Einzelbefehl ändert sich nichts (er ruft beide Phasen nacheinander); alle vorhandenen Tests in `stop_test.go` müssen unverändert grün bleiben.
-* **Schnappschuss des Servers:** Phase 1 des Servers sieht heute alle Clients als „andere“ (`others`), lehnt ohne `--force` ab und fragt mit `--force` nach dem Gruppennamen; `after()` entscheidet mit demselben Schnappschuss über das Löschen des Netzwerks. Phase 1 bekommt deshalb die Menge der gleichzeitig mitgelöschten Rechner (`departing`) und zieht sie von `others` ab. Gelesen wird sie für den Server **nach** der ersten Welle neu. `DELETE` wird einmal je Rechner gefragt (Sicherheitsabfrage bleibt je Rechner); der Gruppenname einmal je Gruppe.
+* **Fragen (so umgesetzt, abweichend vom ersten Entwurf):** `stop.Run` bleibt unverändert und fragt weiter mitten im Ablauf (Gruppenname in `planNATS`, `DISCARD`, `DELETE`, `CLEANUP`). Statt `stop` in zwei Phasen zu teilen, liest ein einziger Leser (`newAsker`) die Antworten für alle Rechner; ein Mutex lässt immer nur einen Rechner fragen, und die Aufforderung trägt seinen Namen (`[beta] Type DELETE to continue:`). Wer fragt, blockiert die anderen Rechner an dieser Stelle; sie laufen sonst weiter. Das ist einfacher und ändert den Einzelbefehl nicht.
+* **Schnappschuss des Servers:** Weil die Server-Welle erst beginnt, wenn die erste fertig ist, liest `planNATS` des Servers die Gruppe frisch: es sind nur noch Fremde „andere“. Eine Menge `departing` ist deshalb nicht nötig.
+* **Rollen:** Welcher Rechner der Server ist, entscheiden die Labels beim Anbieter, nicht die Reihenfolge der Datei: `stop.Service` implementiert dafür `driving.GroupRoler`.
 * **Fremde im Netzwerk:** Ein Rechner im Netzwerk, der nicht in der Datei steht, wird gemeldet, nicht beendet. Dann wird der Server nicht beendet (heute verweigert `planNATS` ihn wegen der Fremden ohne `--force` und fragt mit `--force` nach dem Gruppennamen; `down --group` überspringt ihn stattdessen mit einer Meldung: neuer Zweig), das Netzwerk bleibt, und der Exit-Status ist ungleich 0. `check --group` meldet sie ebenfalls.
 
 ### Ausgabe, Abbruch, Ergebnis
@@ -111,7 +112,7 @@ Das sind die Stellen, die bei gleichzeitigen Läufen kaputtgehen können, jede m
 | 3 | `check --group` und `ssh --group` (lesend; Lauf mit erfasster Ausgabe), Präfix-Schreiber, `groupops` mit Ergebnistabelle, Fabriken, Anbieter-Port und Abbruch |
 | 4a | Änderungen an `start` je Rechner: `OnServerCreated` (mit dem Sonderfall wiederverwendeter Server), „Preflight überspringen“, Wartezeit als Parameter, bessere Meldung in `natsRole`; getestet mit einem einzelnen `Up` |
 | 4b | `up --group`: Vorprüfung des Gruppenzustands, Vorarbeit, Server zuerst, Clients parallel, Jitter, Abbruch; echter Lauf mit drei Rechnern (auch bestehende Gruppe, Server fällt aus) |
-| 5a | `stop` in zwei Phasen (mit `departing` und neuem Lesen des Servers), ohne Gruppenbefehl; alle Tests in `stop_test.go` unverändert grün |
+| 5a | **geändert:** gemeinsamer Leser mit Sperre statt `stop` in zwei Phasen; `GroupRoler` für die Rolle nach den Labels |
 | 5b | `down --group`: Clients parallel, danach der Server, Fremde melden; echter Lauf mit Aufräumen |
 | 6 | Handbuch, Abnahme |
 

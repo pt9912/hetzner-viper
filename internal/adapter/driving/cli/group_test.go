@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,7 +36,6 @@ func TestGroupOptionsAreParsedAndExcludeAMachine(t *testing.T) {
 		{"check", "--parallel", "x", "--group", "dev"},
 		{"check"},
 		{"find", "--group", "dev"},
-		{"down", "--group", "dev"}, // not yet
 	} {
 		if _, _, err := cli.Parse(args); err == nil {
 			t.Errorf("%v must be refused", args)
@@ -336,5 +336,108 @@ func TestMachinesWithOtherKeysAndFirewallsWaitForTheirFirstMachine(t *testing.T)
 	// but still a client of the group: it waits for the server
 	if len(order) != 3 || order[0] != "alpha" {
 		t.Errorf("order %v", order)
+	}
+}
+
+// downFake is viper down of a machine of a group.
+type downFake struct {
+	name string
+	role model.NATSRole
+	ask  func(string) string
+	run  func(name string, ask func(string) string) (int, error)
+}
+
+func (d downFake) Down(_ context.Context, _ *model.Machine, _ bool, _ runlog.Log, _, _ io.Writer) (int, error) {
+	return d.run(d.name, d.ask)
+}
+
+func (d downFake) GroupRole(context.Context, *model.Machine) (model.NATSRole, string, bool, error) {
+	return d.role, "dev", true, nil
+}
+
+func downHost(h *cli.Host, roles map[string]model.NATSRole, run func(name string, ask func(string) string) (int, error)) {
+	h.Services.Down = func(c *model.Machine, o driving.DownOptions) driving.Down {
+		return downFake{name: c.Name, role: roles[c.Name], ask: o.Ask, run: run}
+	}
+}
+
+func downRoles() map[string]model.NATSRole {
+	return map[string]model.NATSRole{"alpha": model.NATSServer, "beta": model.NATSClient, "gamma": model.NATSClient}
+}
+
+func TestTheServerOfAGroupIsDeletedLastAndTheClientsTogether(t *testing.T) {
+	dir := upGroupDir(t, "alpha,beta,gamma", "")
+	_, h := fakeTools(t)
+	var mu sync.Mutex
+	var order []string
+	var running, peak int
+	downHost(h, downRoles(), func(name string, ask func(string) string) (int, error) {
+		mu.Lock()
+		running++
+		peak = max(peak, running)
+		mu.Unlock()
+		time.Sleep(60 * time.Millisecond)
+		mu.Lock()
+		running--
+		order = append(order, name)
+		mu.Unlock()
+		return 0, nil
+	})
+	var out, errb bytes.Buffer
+	err := cli.RunGroupDown(context.Background(), &cli.Opts{Host: h, Dir: dir, Group: "dev"}, upEnv(t), strings.NewReader(""), &out, &errb)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	if len(order) != 3 || order[2] != "alpha" || peak != 2 {
+		t.Errorf("order %v, %d at the same time", order, peak)
+	}
+}
+
+func TestTheServerStaysIfAClientIsNotDeleted(t *testing.T) {
+	dir := upGroupDir(t, "alpha,beta,gamma", "")
+	_, h := fakeTools(t)
+	var mu sync.Mutex
+	var ran []string
+	downHost(h, downRoles(), func(name string, ask func(string) string) (int, error) {
+		mu.Lock()
+		ran = append(ran, name)
+		mu.Unlock()
+		if name == "beta" {
+			return 1, nil // DISCARD refused, say
+		}
+		return 0, nil
+	})
+	var out, errb bytes.Buffer
+	err := cli.RunGroupDown(context.Background(), &cli.Opts{Host: h, Dir: dir, Group: "dev"}, upEnv(t), strings.NewReader(""), &out, &errb)
+	if cli.ExitCode(err) != 1 || slices.Contains(ran, "alpha") {
+		t.Fatalf("%v ran %v", err, ran)
+	}
+	for _, want := range []string{"alpha  skipped: the server stays: beta not deleted", "beta   failed", "gamma  ok"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("missing %q in\n%s", want, out.String())
+		}
+	}
+}
+
+func TestTheMachinesOfAGroupAskOneAfterTheOtherWithTheirName(t *testing.T) {
+	dir := upGroupDir(t, "alpha,beta,gamma", "")
+	_, h := fakeTools(t)
+	downHost(h, downRoles(), func(name string, ask func(string) string) (int, error) {
+		// the real question comes in the middle of the run; the machines ask at the same time
+		got := ask("Type DELETE to continue: ")
+		if got != "DELETE" {
+			return 1, nil
+		}
+		return 0, nil
+	})
+	var out, errb bytes.Buffer
+	err := cli.RunGroupDown(context.Background(), &cli.Opts{Host: h, Dir: dir, Group: "dev"}, upEnv(t), strings.NewReader("DELETE\nDELETE\nDELETE\n"), &out, &errb)
+	if err != nil {
+		t.Fatalf("%v\n%s\n%s", err, out.String(), errb.String())
+	}
+	for _, m := range []string{"[alpha] Type DELETE", "[beta] Type DELETE", "[gamma] Type DELETE"} {
+		if !strings.Contains(errb.String(), m) {
+			t.Errorf("missing %q in\n%s", m, errb.String())
+		}
 	}
 }
