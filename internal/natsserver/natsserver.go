@@ -1,0 +1,209 @@
+// Package natsserver is what the NATS server of a group is made from: the pinned release of
+// nats-server, its configuration and its systemd unit. It only builds text; installing it on the
+// server is the use case's (internal/usecase/start).
+package natsserver
+
+import (
+	"errors"
+	"fmt"
+	"net"
+	"sort"
+	"strings"
+
+	"github.com/nats-io/nkeys"
+	"github.com/pt9912/hetzner-viper/internal/model"
+)
+
+// Version is the release of nats-server viper installs.
+const Version = "v2.15.2"
+
+// checksums are the SHA-256 sums of the release tarballs, from the release's SHA256SUMS file.
+// They are pinned here so the download is checked against what was reviewed, not against what the
+// download server says today.
+func checksums() map[string]string {
+	return map[string]string{
+		"amd64": "67cb8e10bc6f0c4b47f75a728529a20953dbae2a4f9a4a52ae8517d65ae303ff",
+		"arm64": "bc2c788dcbf2849af749564e06a0d48c19bced851f2d68a2e21c54d078949b28",
+	}
+}
+
+// Release is the tarball to install on a machine of an architecture.
+type Release struct {
+	Version, Arch, URL, SHA256 string
+}
+
+// ReleaseFor is the release for a machine; arch is what `uname -m` says ("x86_64", "aarch64").
+func ReleaseFor(arch string) (Release, error) {
+	var goarch string
+	switch arch {
+	case "x86_64", "amd64":
+		goarch = "amd64"
+	case "aarch64", "arm64":
+		goarch = "arm64"
+	default:
+		return Release{}, fmt.Errorf("nats-server: no release for the architecture %q", arch)
+	}
+	return Release{
+		Version: Version, Arch: goarch, SHA256: checksums()[goarch],
+		URL: fmt.Sprintf("https://github.com/nats-io/nats-server/releases/download/%s/nats-server-%s-linux-%s.tar.gz", Version, Version, goarch),
+	}, nil
+}
+
+// Paths on the server. The directory belongs to the login user and is closed to others, so the
+// key never needs more than that.
+const (
+	Dir        = "/home/builder/.viper-nats"
+	ConfigFile = Dir + "/server.conf"
+	CertFile   = Dir + "/server.crt"
+	KeyFile    = Dir + "/server.key"
+	Binary     = "/usr/local/bin/nats-server"
+	Unit       = "viper-nats.service"
+)
+
+// Client is a machine that may use the server: its public NKey.
+type Client struct {
+	Machine   string
+	PublicKey string // starts with "U"
+}
+
+// Config is the configuration of the server.
+type Config struct {
+	Group string
+	// Host is the private IP the server listens on, never "0.0.0.0".
+	Host    string
+	Port    int
+	Clients []Client
+}
+
+// Permissions are the subjects a machine may use (the default policy, §6 of the plan): it
+// publishes to its own subtree and to the request subjects of the others, and listens to the
+// group and to its own inbox. Nothing else, so no machine can reach another group.
+func Permissions(group, machine string) (publish, subscribe []string) {
+	publish = []string{
+		fmt.Sprintf("viper.%s.%s.>", group, machine),
+		fmt.Sprintf("viper.%s.*.req.>", group),
+	}
+	subscribe = []string{
+		fmt.Sprintf("viper.%s.>", group),
+		fmt.Sprintf("_INBOX.%s.>", machine),
+	}
+	return publish, subscribe
+}
+
+func quoteList(l []string) string {
+	q := make([]string, len(l))
+	for i, s := range l {
+		q[i] = `"` + s + `"`
+	}
+	return strings.Join(q, ", ")
+}
+
+// Render is the content of server.conf. It refuses anything that could widen the server: a
+// listen address that is not a private IPv4 address, names outside the alphabet of the plan, a
+// key that is not a user NKey.
+func (c Config) Render() (string, error) {
+	if err := model.CheckNATSName("NATS group", c.Group); err != nil {
+		return "", err
+	}
+	ip := net.ParseIP(c.Host)
+	if ip == nil || ip.To4() == nil || !ip.IsPrivate() {
+		return "", fmt.Errorf("nats-server listens on a private IPv4 address, not %q", c.Host)
+	}
+	if c.Port < 1024 || c.Port > 65535 {
+		return "", fmt.Errorf("nats-server port %d", c.Port)
+	}
+	clients := append([]Client(nil), c.Clients...)
+	sort.Slice(clients, func(i, j int) bool { return clients[i].Machine < clients[j].Machine })
+	seen := map[string]bool{}
+	for _, cl := range clients {
+		if err := model.CheckNATSName("Machine name", cl.Machine); err != nil {
+			return "", err
+		}
+		if seen[cl.Machine] {
+			return "", fmt.Errorf("the machine %s is registered twice", cl.Machine)
+		}
+		seen[cl.Machine] = true
+		if !validUserKey(cl.PublicKey) {
+			return "", fmt.Errorf("the key of %s is not a public user NKey", cl.Machine)
+		}
+	}
+	if len(clients) == 0 {
+		return "", errors.New("nats-server needs at least one registered machine (no anonymous access)")
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "# written by viper; changes are overwritten\nserver_name: \"viper-%s\"\nhost: \"%s\"\nport: %d\n\n", c.Group, c.Host, c.Port)
+	fmt.Fprintf(&b, "tls {\n  cert_file: \"%s\"\n  key_file: \"%s\"\n  min_version: \"1.2\"\n  timeout: 5\n}\n\n", CertFile, KeyFile)
+	b.WriteString("authorization {\n  timeout: 5\n  users = [\n")
+	for _, cl := range clients {
+		pub, sub := Permissions(c.Group, cl.Machine)
+		fmt.Fprintf(&b, "    {\n      # %s\n      nkey: %s\n      permissions: {\n        publish: { allow: [%s] }\n        subscribe: { allow: [%s] }\n        allow_responses: true\n      }\n    }\n",
+			cl.Machine, cl.PublicKey, quoteList(pub), quoteList(sub))
+	}
+	b.WriteString("  ]\n}\n")
+	return b.String(), nil
+}
+
+// validUserKey tells whether k looks like a public user NKey: 56 characters of base32, starting with "U".
+func validUserKey(k string) bool {
+	if len(k) != 56 || k[0] != 'U' {
+		return false
+	}
+	for _, r := range k {
+		upper, digit := r >= 'A' && r <= 'Z', r >= '2' && r <= '7'
+		if !upper && !digit {
+			return false
+		}
+	}
+	return true
+}
+
+// UnitFile is the systemd unit of the server. It starts after the network is online and starts
+// again if it cannot bind yet, because the private interface may come up a moment after boot.
+func UnitFile() string {
+	return `[Unit]
+Description=NATS server of a viper group
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=builder
+ExecStart=` + Binary + ` -c ` + ConfigFile + `
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=` + Dir + `
+CapabilityBoundingSet=
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+`
+}
+
+// Identity is the NATS identity of a machine: a user NKey pair.
+type Identity struct {
+	Seed      string // private; starts with "SU", never leaves the machine it is written to
+	PublicKey string // starts with "U"
+}
+
+// NewIdentity creates a new identity in memory.
+func NewIdentity() (Identity, error) {
+	kp, err := nkeys.CreateUser()
+	if err != nil {
+		return Identity{}, err
+	}
+	defer kp.Wipe()
+	seed, err := kp.Seed()
+	if err != nil {
+		return Identity{}, err
+	}
+	pub, err := kp.PublicKey()
+	if err != nil {
+		return Identity{}, err
+	}
+	return Identity{Seed: string(seed), PublicKey: pub}, nil
+}

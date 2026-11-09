@@ -52,6 +52,7 @@ type runner struct {
 	out    io.Writer
 	errOut io.Writer
 	repo   string
+	nats   *natsState // the NATS group of the machine, nil without NATS
 }
 
 // interrupted reports that the run was cancelled (Ctrl-C): nothing more is started, and failures
@@ -113,22 +114,32 @@ func Run(ctx context.Context, c *model.Machine, repoArg string, d Deps, lg runlo
 	if code != 0 || err != nil {
 		return code, err
 	}
-	srv, reused, code, err := r.ensureServer(ctx, ca, ipadKey)
+	srv, reused, code, err := r.ensureServerInGroup(ctx, ca, ipadKey)
 	if code != 0 || err != nil {
 		return code, err
 	}
-	id := srv.ID
+	status, code, err := r.reachServer(ctx, srv, reused)
+	if code != 0 || err != nil {
+		return code, err
+	}
+	return r.provision(ctx, status, srv.ID, repoURL, remembered, deployKey)
+}
+
+// reachServer announces the server, waits until it can be reached by ssh, pins its host key and
+// makes it a member of its NATS group (if it has one). It returns the status of the server.
+func (r *runner) reachServer(ctx context.Context, srv *model.Server, reused bool) (string, int, error) {
 	if code, err := r.announceServer(ctx, srv); code != 0 || err != nil {
-		return code, err
+		return "", code, err
 	}
-	status, code, err := r.waitForServer(ctx, id, reused)
+	status, code, err := r.waitForServer(ctx, srv.ID, reused)
 	if code != 0 || err != nil {
-		return code, err
+		return "", code, err
 	}
-	if code, err := r.pinHostKey(ctx, id, srv.IPv4); code != 0 || err != nil {
-		return code, err
+	if code, err := r.pinHostKey(ctx, srv.ID, srv.IPv4); code != 0 || err != nil {
+		return "", code, err
 	}
-	return r.provision(ctx, status, id, repoURL, remembered, deployKey)
+	code, err = r.natsJoin(ctx, srv)
+	return status, code, err
 }
 
 // preflightChecks runs the read-only checks first, so a wrong setting fails before anything is created.

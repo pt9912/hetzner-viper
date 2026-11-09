@@ -1,0 +1,21 @@
+set -uo pipefail
+export LC_ALL=C
+dir="$1"; ip="$2"; cn="$3"
+umask 077
+mkdir -p "$dir" && chmod 700 "$dir" || { echo "nats cert: cannot create $dir"; exit 1; }
+crt="$dir/server.crt"; key="$dir/server.key"
+if [ -s "$crt" ] && [ -s "$key" ]; then
+  # no renewal: groups are short-lived. A certificate that is not usable any more ends the group.
+  if ! openssl x509 -in "$crt" -noout -checkend 0 >/dev/null 2>&1; then
+    echo "nats cert: the certificate has expired; create the group again"; exit 1
+  fi
+  if ! openssl x509 -in "$crt" -noout -ext subjectAltName 2>/dev/null | grep -qF "IP Address:$ip"; then
+    echo "nats cert: the certificate is not for $ip (the address of the server changed); create the group again"; exit 1
+  fi
+  echo "nats cert: kept ($(openssl x509 -in "$crt" -noout -enddate | cut -d= -f2))"; exit 0
+fi
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout "$key.new" -out "$crt.new" \
+  -days 31 -subj "/CN=$cn" -addext "subjectAltName=IP:$ip" >/dev/null 2>&1 || { rm -f "$key.new" "$crt.new"; echo "nats cert: openssl failed"; exit 1; }
+chmod 600 "$key.new"; chmod 644 "$crt.new"
+mv "$key.new" "$key" && mv "$crt.new" "$crt" || { echo "nats cert: cannot write the files"; exit 1; }
+echo "nats cert: created (valid 31 days, for $ip)"

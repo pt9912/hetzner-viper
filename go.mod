@@ -14,6 +14,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.81.0
 	github.com/aws/smithy-go v1.28.7
 	github.com/hetznercloud/hcloud-go/v2 v2.53.0
+	github.com/nats-io/nkeys v0.4.17
 	golang.org/x/sync v0.24.0
 	golang.org/x/sys v0.49.0
 	google.golang.org/api v0.309.0

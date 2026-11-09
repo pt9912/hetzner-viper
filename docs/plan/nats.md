@@ -237,9 +237,9 @@ Jede Maschine erhält eine eigene NATS-Identität, auch die Servermaschine selbs
 
 Bei `viper up beta`:
 
-1. Auf beta wird ein NKey-Paar erzeugt.
-2. Der private Seed bleibt auf beta (Dateimodus `0600`, Eigentümer: der Anwendungsnutzer).
-3. VIPER liest den öffentlichen Schlüssel aus.
+1. VIPER erzeugt das NKey-Paar im Speicher (Go-Bibliothek `nkeys`); auf der VM ist dafür kein Zusatzprogramm nötig.
+2. VIPER schreibt den Seed per SSH-Stdin auf beta (`~/.viper-nats/client.nk`, Modus `0600`, Eigentümer `builder`). Lokal wird er weder gespeichert noch protokolliert; er berührt den Operator-Rechner nur im Arbeitsspeicher. Hat beta bereits eine Identität, bleibt sie erhalten.
+3. VIPER erhält den öffentlichen Schlüssel von der VM (`client.pub`).
 4. VIPER verbindet sich über SSH mit dem NATS-Server.
 5. Auf dem Server wird unter einem Dateilock (`flock`) der öffentliche Schlüssel mit den passenden Berechtigungen in die Konfiguration eingetragen. Das Lock serialisiert parallele Registrierungen (z. B. gleichzeitiges `up beta` und `up gamma`).
 6. Die Konfiguration wird atomar ersetzt (Schreiben in temporäre Datei, Validierung, `rename`).
@@ -494,6 +494,18 @@ Die Reihenfolge folgt der Empfehlung in §15. Jeder Meilenstein ist einzeln abne
 | 7 | Diagnose (`check`) und Dokumentation | Prüfungen aus §9, Handbuch, Maintainer-Doku, Definition of Done erfüllt |
 
 Meilenstein-Status wird in den jeweiligen Pull Requests geführt, nicht in diesem Dokument.
+
+### Ergebnis Meilenstein 4 (Server-Bootstrap)
+
+Umgesetzt in `internal/natsserver` (Konfiguration, Unit, gepinntes Release `v2.15.2` mit SHA-256 je Architektur, NKey-Erzeugung) und `internal/usecase/start/nats.go` mit den Skripten `scripts/nats*.sh`. Mit `NATS_ENABLED` bestimmt `viper up` vor dem Erstellen die Rolle (Erststart-Sperre über das Netzwerk), legt den Server mit Labels und Netzwerk an, installiert nach dem SSH-Login das Binary mit Prüfsumme, erzeugt das Zertifikat und die Identität, schreibt die Konfiguration (mit `flock` und `nats-server -t` vor dem Ersetzen) und startet den systemd-Dienst. Anschließend prüft `natscheck.sh`, dass der Server auf der privaten IP antwortet und TLS sowie Login verlangt.
+
+Praktisch auf einem echten Hetzner-Server (`cpx22`, `fsn1`) bestätigt:
+- Der Download passt zur gepinnten Prüfsumme; der Dienst läuft als `builder`, lauscht nur auf `10.x.x.x:4222`, Port 4222 ist von außen nicht erreichbar, 8222 und 6222 sind nicht offen.
+- Mit einem Testclient auf dem Server: TLS und NKey-Login funktionieren, Publish/Subscribe im eigenen Subtree geht, Publish auf fremde Maschinen-Subtrees, andere Gruppen, fremde Subjects und `$SYS` sowie Subscribe auf andere Gruppen werden mit `Permissions Violation` abgelehnt. Ein Client, der dem Zertifikat nicht vertraut, kommt nicht durch.
+- Ein zweiter `viper up` ist idempotent: Binary, Zertifikat und Identität bleiben, die Konfiguration wird neu geschrieben und per Reload übernommen.
+- Labels am Server: `viper-managed=true`, Gruppe, Rolle `server`, Zustand `ready`.
+
+Noch nicht umgesetzt: die Clientrolle (Meilenstein 5; ein Client bricht bisher mit einer klaren Meldung ab und wird als `failed` markiert), `viper down` (6) und `viper check` (7).
 
 ### Ergebnis Meilenstein 0 (Code-Abgleich und Hetzner-Tests)
 

@@ -203,3 +203,20 @@ func (c *Cloud) DeletePrivateNetwork(_ context.Context, networkID string) error 
 	}
 	return nil
 }
+
+// NATSMetadataOf returns the NATS labels of a server, nil if it has none.
+func (c *Cloud) NATSMetadataOf(_ context.Context, serverID string) (*model.NATSMetadata, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for name, s := range c.Servers {
+		if s.ID != serverID {
+			continue
+		}
+		meta, ok, err := model.NATSMetadataFromLabels(c.Labels[name])
+		if err != nil || !ok {
+			return nil, err
+		}
+		return &meta, nil
+	}
+	return nil, fmt.Errorf("server %s not found", serverID)
+}

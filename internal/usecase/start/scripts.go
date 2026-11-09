@@ -18,4 +18,16 @@ var (
 	cdLineScript string
 	//go:embed scripts/inventory.sh
 	inventoryScript string
+	//go:embed scripts/natsinstall.sh
+	natsInstallScript string
+	//go:embed scripts/natscert.sh
+	natsCertScript string
+	//go:embed scripts/natsidentity.sh
+	natsIdentityScript string
+	//go:embed scripts/natsconfig.sh
+	natsConfigScript string
+	//go:embed scripts/natsunit.sh
+	natsUnitScript string
+	//go:embed scripts/natscheck.sh
+	natsCheckScript string
 )

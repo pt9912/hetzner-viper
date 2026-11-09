@@ -65,3 +65,23 @@ func (h *Client) UpdateNATSMetadata(ctx context.Context, serverID string, meta m
 	_, _, err = h.c.Server.Update(ctx, s, hcloud.ServerUpdateOpts{Labels: labels})
 	return err
 }
+
+// NATSMetadataOf returns the NATS labels of the server, nil if it has none.
+func (h *Client) NATSMetadataOf(ctx context.Context, serverID string) (*model.NATSMetadata, error) {
+	id, err := strconv.ParseInt(serverID, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("not a server ID: %s", serverID)
+	}
+	s, _, err := h.c.Server.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if s == nil {
+		return nil, fmt.Errorf("server %s not found", serverID)
+	}
+	meta, ok, err := model.NATSMetadataFromLabels(s.Labels)
+	if err != nil || !ok {
+		return nil, err
+	}
+	return &meta, nil
+}

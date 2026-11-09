@@ -16,6 +16,9 @@ type NATSProvider interface {
 	ListGroupMachines(ctx context.Context, group string) ([]model.GroupMember, error)
 	// UpdateNATSMetadata sets the NATS labels of the server and leaves its other labels alone.
 	UpdateNATSMetadata(ctx context.Context, serverID string, metadata model.NATSMetadata) error
+	// NATSMetadataOf returns the NATS labels of one server, nil if it carries none (it belongs to no
+	// group). An error if it carries them in a form that makes no sense.
+	NATSMetadataOf(ctx context.Context, serverID string) (*model.NATSMetadata, error)
 
 	// NetworkZone is the network zone of a location ("eu-central" for fsn1). An error if the
 	// location is unknown. Servers of one NATS group must all be in the same zone.
@@ -41,3 +44,21 @@ type NATSProvider interface {
 
 // ErrNetworkInUse is returned by DeletePrivateNetwork for a network with servers attached.
 var ErrNetworkInUse = errors.New("the private network still has servers attached")
+
+// AsNATS finds the NATS capability of a provider, looking through wrappers that hold the provider
+// (they have an Unwrap method, like errors do), and sets *target to it. It is false if the provider
+// cannot hold NATS groups.
+func AsNATS(p any, target *NATSProvider) bool {
+	for p != nil {
+		if n, ok := p.(NATSProvider); ok {
+			*target = n
+			return true
+		}
+		u, ok := p.(interface{ Unwrap() any })
+		if !ok {
+			return false
+		}
+		p = u.Unwrap()
+	}
+	return false
+}

@@ -122,6 +122,7 @@ func (r *runner) server(ctx context.Context, ca, keyName, ipadKeyFile string) (s
 	created, err := r.d.Cloud.CreateServer(ctx, model.ServerSpec{
 		Name: c.ServerName, Size: c.ServerType, Region: c.ServerLocation, Image: c.ServerImage,
 		SSHKey: keyName, Firewall: c.FirewallName, UserData: userData,
+		Labels: r.natsLabels(), Network: r.natsNetwork(),
 	})
 	if err != nil {
 		code, err := r.fail("creating the server %s failed: %s", c.ServerName, r.d.Cloud.Describe(err))

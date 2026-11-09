@@ -16,6 +16,14 @@ import (
 // Provider is the adapter chosen for a machine; its Provider is nil if the name has no adapter.
 type Provider struct{ cloud.Provider }
 
+// Unwrap is the adapter inside (cloud.AsNATS looks through it for capabilities the interface does not show).
+func (p Provider) Unwrap() any {
+	if p.Provider == nil {
+		return nil // an empty wrapper holds nothing (a nil interface inside any is not nil)
+	}
+	return p.Provider
+}
+
 // NewProvider is the adapter of the provider of the machine (one of model.ProviderNames). A
 // provider reads its own settings (token, region, project, ...) from the machine's settings.
 func NewProvider(m *model.Machine) Provider {
