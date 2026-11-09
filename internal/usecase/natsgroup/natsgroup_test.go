@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/natsserver"
 	"github.com/pt9912/hetzner-viper/internal/usecase/natsgroup"
@@ -140,5 +141,37 @@ func TestUpdateStartsAServerWithoutAConfiguration(t *testing.T) {
 	}
 	if e, ok := natsserver.ParseEndpoint(s.conf); !ok || e.Host != "10.9.0.2" || names(s) != "alpha" {
 		t.Errorf("%+v %q", e, names(s))
+	}
+}
+
+func TestAScriptIsRunAgainAfterALostConnectionButNotAfterAFailedScript(t *testing.T) {
+	calls, sleeps := 0, 0
+	lost := func(context.Context, string, string, ...string) (string, string, error) {
+		calls++
+		if calls < 3 {
+			return "", "kex_exchange_identification: read: Connection reset by peer\n", errors.New("exit status 255")
+		}
+		return "nats ok\n", "", nil
+	}
+	o := natsgroup.Ops{Run: lost, Sleep: func(time.Duration) { sleeps++ }}
+	out, err := o.On(context.Background(), natsgroup.Target{}, true, "", "echo", "x")
+	if err != nil || out != "nats ok\n" || calls != 3 || sleeps != 2 {
+		t.Fatalf("%q %v calls %d sleeps %d", out, err, calls, sleeps)
+	}
+	calls = 0
+	failed := func(context.Context, string, string, ...string) (string, string, error) {
+		calls++
+		return "nats cert: openssl failed\n", "", errors.New("exit status 1")
+	}
+	if _, err := (natsgroup.Ops{Run: failed, Sleep: func(time.Duration) {}}).On(context.Background(), natsgroup.Target{}, true, "", "echo"); err == nil || calls != 1 {
+		t.Errorf("a script that failed is not run again: %v calls %d", err, calls)
+	}
+	calls = 0
+	never := func(context.Context, string, string, ...string) (string, string, error) {
+		calls++
+		return "", "Connection refused\n", errors.New("exit status 255")
+	}
+	if _, err := (natsgroup.Ops{Run: never, Sleep: func(time.Duration) {}}).On(context.Background(), natsgroup.Target{}, true, "", "echo"); err == nil || calls != 12 {
+		t.Errorf("gives up after 12 tries: %v calls %d", err, calls)
 	}
 }

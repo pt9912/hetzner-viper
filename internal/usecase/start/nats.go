@@ -154,7 +154,9 @@ func (r *runner) natsCleanup(ctx context.Context) {
 }
 
 // ops are the operations over ssh that viper up and viper down share.
-func (r *runner) ops() natsgroup.Ops { return natsgroup.Ops{Run: r.d.Run, SSH: r.d.SSH, Out: r.out} }
+func (r *runner) ops() natsgroup.Ops {
+	return natsgroup.Ops{Run: r.d.Run, SSH: r.d.SSH, Out: r.out, Sleep: r.d.Sleep}
+}
 
 // remote runs a script on this machine; see natsgroup.Ops.On.
 func (r *runner) remote(ctx context.Context, stdin, script string, args ...string) (string, error) {
@@ -200,7 +202,7 @@ func (r *runner) natsSetup(ctx context.Context, srv *model.Server) (int, error) 
 
 // natsTools installs the nats tool on the machine and returns the release of nats-server for it.
 func (r *runner) natsTools(ctx context.Context, withServer bool) (int, error) {
-	arch, _, err := r.d.Run(ctx, "", "ssh", "-n", "-F", r.c.SSHConfig, "-o", "BatchMode=yes", r.c.SSHAlias, "uname -m")
+	arch, err := r.remote(ctx, "", `uname -m`)
 	if err != nil {
 		return r.fail("NATS: reading the architecture failed:\n%s", err)
 	}

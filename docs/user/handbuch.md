@@ -1,8 +1,8 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.72  
+Version: 1.73  
 Software-Version: v0.14.0  
-Stand: 07.11.2026  
+Stand: 09.11.2026  
 
 ## 1. Einleitung
 
@@ -230,6 +230,7 @@ Geprüft werden:
 
 * **DNS:** Der Name `<SERVER_PREFIX>-<rechner>.<DNS_DOMAIN>` löst bei den öffentlichen Resolvern von Cloudflare (1.1.1.1) und Google (8.8.8.8) auf die IP-Adresse des Servers auf. Zusätzlich zeigt der Check, was Ihr Computer auflöst.
 * **Zugriff wie ein anderes Gerät:** eine SSH-Verbindung über den DNS-Namen, bei der nur der Host-CA vertraut wird, nicht dem hinterlegten Schlüssel. So sieht das iPad oder ein zweiter Computer den Server, und dabei wird geprüft, dass das Zertifikat für den Namen gilt. Der Check zeigt auch, bis wann das Zertifikat gültig ist.
+* **NATS (nur für Rechner einer NATS-Gruppe):** Gruppe, genau ein Server im Zustand `ready`, privates Netzwerk und private Adresse beim Anbieter. Auf dem Rechner: das Serverzertifikat (Ablauf, passende Adresse), die Anmeldung mit dem Schlüssel des Rechners über TLS und, auf dem Server, der Dienst, die Adresse, auf der er lauscht (nur die private), und wer registriert ist. Von Ihrem Computer aus: dass der Port auf der öffentlichen Adresse nicht antwortet.
 * **Server:** cloud-init ist fertig. Claude Code ist installiert und, wenn `VIPER_CLAUDE_TOKEN` gesetzt ist, angemeldet und antwortet. `gh` ist installiert und, wenn `VIPER_GH_TOKEN` gesetzt ist, angemeldet. Docker läuft, die Swap ist aktiv (wenn `VIPER_SWAP` gesetzt ist), Homebrew ist installiert und im `PATH` (wenn `VIPER_HOMEBREW=1`), das Repository ist geklont, und die SSH-Härtung wirkt. Dazu kommen freier Speicher und Plattenplatz.
 
 #### Ergebnis
@@ -350,6 +351,68 @@ viper up api --repo https://git.example.org/team/api.git
 ```
 
 Jeder Rechner hat einen eigenen Server, eine eigene Platte und einen eigenen DNS-Namen. Sie beenden sie getrennt mit `viper down web` und `viper down api`.
+
+### Rechner über NATS verbinden (NATS-Gruppe)
+
+NATS ist ein schlankes Nachrichtensystem. Mit einer NATS-Gruppe verbinden Sie mehrere Rechner so, dass Programme auf ihnen einander Nachrichten schicken können (zum Beispiel Status melden oder Aufträge verteilen). Die Funktion ist optional und standardmäßig aus. Es läuft kein Verwaltungsdienst und es braucht keine zusätzliche Datenbank.
+
+#### Voraussetzung
+
+* Der Anbieter ist Hetzner Cloud (`PROVIDER=hetzner`). Andere Anbieter unterstützen NATS-Gruppen noch nicht.
+* Alle Rechner einer Gruppe liegen im selben Hetzner-Projekt und in derselben Netzwerkzone (zum Beispiel `fsn1`, `nbg1` und `hel1` gehören zu `eu-central`, `ash` zu `us-east`).
+* Rechnernamen und Gruppenname bestehen aus 1 bis 31 Kleinbuchstaben, Ziffern und Bindestrichen und beginnen und enden mit Buchstabe oder Ziffer. Ein vorhandener Rechner mit anderem Namen (etwa mit Unterstrich) kann nicht aufgenommen werden.
+
+#### Vorgehen
+
+1. Tragen Sie in `.env.local` (oder in `machines/<rechner>.env.local`) ein:
+
+   ```
+   NATS_ENABLED=true
+   NATS_GROUP=entwicklung
+   ```
+
+   `NATS_PORT` (Standard `4222`) brauchen Sie nur, wenn der Port abweichen soll.
+2. Starten Sie die Rechner wie gewohnt:
+
+   ```bash
+   viper up alpha
+   viper up beta
+   viper up gamma
+   ```
+
+   Der **erste** Rechner einer Gruppe wird der NATS-Server, alle weiteren sind Clients. Sie dürfen die Rechner auch gleichzeitig starten: Die Clients warten dann, bis der Server fertig ist.
+3. Prüfen Sie mit `viper check alpha` (und für die anderen Rechner genauso).
+
+#### Ergebnis
+
+Jeder Rechner der Gruppe hat im Verzeichnis `~/.viper-nats/` die Datei `connection.env` mit Adresse, Zertifikat und Schlüsseldatei:
+
+```
+NATS_URL=tls://10.115.0.2:4222
+NATS_CA_FILE=/home/builder/.viper-nats/server.crt
+NATS_NKEY_SEED_FILE=/home/builder/.viper-nats/client.nk
+NATS_INBOX_PREFIX=_INBOX.beta
+VIPER_NATS_SUBJECT_PREFIX=viper.entwicklung.beta
+```
+
+Auf allen Rechnern ist außerdem das Programm `nats` installiert. Beispiel auf `beta`:
+
+```bash
+. ~/.viper-nats/connection.env
+nats --server $NATS_URL --tlsca $NATS_CA_FILE --nkey $NATS_NKEY_SEED_FILE pub viper.entwicklung.beta.status "bereit"
+```
+
+**Wer darf was?** Jeder Rechner darf nur in seinen eigenen Bereich `viper.<gruppe>.<rechner>.>` senden und an andere Rechner Anfragen an `viper.<gruppe>.<empfänger>.req.>` schicken. Mitlesen darf er alles in `viper.<gruppe>.>`. Antworten auf Anfragen kommen an `_INBOX.<rechner>.>` zurück, deshalb muss ein Client für Anfragen dieses Präfix verwenden (`NATS_INBOX_PREFIX`; beim `nats`-Programm `--inbox-prefix`). Alles andere, auch andere Gruppen, wird abgelehnt.
+
+#### Hinweise
+
+* **Sicherheit:** Der Server lauscht nur im privaten Netzwerk (`10.x.x.x`) der Gruppe und ist aus dem Internet nicht erreichbar. Die Verbindung ist mit TLS verschlüsselt, und jeder Rechner meldet sich mit einem eigenen Schlüssel (NKey) an. Der geheime Schlüssel (`client.nk`) bleibt auf dem jeweiligen Rechner.
+* **Lebensdauer:** Das Zertifikat des Servers gilt einen Monat und wird nicht erneuert. NATS-Gruppen sind für Zeiträume von einem Tag bis zu wenigen Wochen gedacht. `viper check` warnt, wenn weniger als sieben Tage bleiben. Läuft das Zertifikat ab, legen Sie die Gruppe neu an.
+* **Der Server ist ein normaler Rechner.** Solange die Gruppe weitere Rechner hat, lässt `viper down` ihn nicht löschen. Löschen Sie zuerst die anderen Rechner. Mit `viper down <server> --force` beenden Sie die Gruppe trotzdem; dazu tippen Sie den Gruppennamen ein, und die anderen Rechner verlieren ihre Verbindung.
+* **Beim Löschen eines Clients** (`viper down beta`) entfernt `viper` zuerst seinen Schlüssel beim Server. Erst danach wird der Rechner gelöscht. Ist der Server nicht erreichbar, bleibt der Rechner bestehen; mit `--force` löschen Sie ihn trotzdem, der Eintrag bleibt dann bis zum Ende der Gruppe in der Serverkonfiguration.
+* Mit dem letzten Rechner der Gruppe löscht `viper down` auch das private Netzwerk `viper-nats-<gruppe>`.
+* Ein Rechner wechselt nicht stillschweigend die Gruppe: Ändern Sie `NATS_GROUP` für einen vorhandenen Rechner, bricht `viper up` ab. Löschen Sie ihn zuerst.
+* Nicht enthalten: mehrere Server, automatischer Ersatz eines ausgefallenen Servers, JetStream (dauerhafte Nachrichten), Zugriff von außen und Gruppen über mehrere Anbieter.
 
 ### Ein privates Repository per SSH klonen
 
@@ -673,6 +736,9 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `GCP_NETWORK`, `GCP_ROOT_GB` | VPC-Netz bzw. Größe der Bootplatte in GB (nur GCP) | `default` bzw. `50` |
 | `AZURE_SUBSCRIPTION_ID` | Azure-Abonnement (nur Azure, Pflichtangabe) | leer |
 | `AZURE_RESOURCE_GROUP`, `AZURE_SUBNET_ID`, `AZURE_ROOT_GB` | Ressourcengruppe, vorhandenes Subnetz bzw. Größe der Systemplatte in GB (nur Azure) | `viper`, eigenes Netz bzw. `64` |
+| `NATS_ENABLED` | `true`: der Rechner gehört zu einer NATS-Gruppe (nur Hetzner); `false` oder leer: aus | `false` |
+| `NATS_GROUP` | Name der NATS-Gruppe; Pflichtangabe mit `NATS_ENABLED=true`; 1 bis 31 Kleinbuchstaben, Ziffern, Bindestriche | leer |
+| `NATS_PORT` | Port des NATS-Servers im privaten Netzwerk (1024 bis 65535) | `4222` |
 | `DNS_PROVIDER` | Wer den DNS-Namen anlegt: `cloudflare` oder `none` (kein Eintrag, keine Domain, kein Cloudflare); wird nur aus den Einstellungsdateien gelesen | `cloudflare` |
 | `DNS_DOMAIN` | Ihre Domain; Pflichtangabe mit Cloudflare | leer |
 | `SSH_KEY` | Pfad Ihres Login-Schlüssels | `~/.ssh/hetzner-build` |
@@ -868,6 +934,26 @@ Der DNS-Eintrag ist ein A-Record ohne Cloudflare-Proxy, weil dieser SSH nicht we
 **Ursache:** Der DNS-Eintrag konnte nicht gelöscht werden, der Server ist aber gelöscht.  
 **Lösung:** Entfernen Sie den A-Record in Cloudflare von Hand.
 
+### Meldung: "The NATS group … has a network but no server"
+
+Der erste Start einer NATS-Gruppe wurde unterbrochen: Das private Netzwerk `viper-nats-<gruppe>` besteht seit mehr als 15 Minuten, aber es gibt keinen Server. Starten Sie `viper up` noch einmal auf dem Rechner, der der Server werden sollte. Gibt es ihn nicht mehr, löschen Sie die übrigen Rechner der Gruppe mit `viper down` und das Netzwerk in der Hetzner Console.
+
+### Meldung: "The server … belongs to the NATS group …, not … (NATS_GROUP)"
+
+Ein vorhandener Rechner ist in einer anderen NATS-Gruppe, als `NATS_GROUP` jetzt sagt. `viper` verschiebt ihn nicht. Setzen Sie `NATS_GROUP` zurück oder löschen Sie den Rechner zuerst.
+
+### Meldung: "… is the NATS server of the group …, and the group has other machines"
+
+`viper down` löscht einen NATS-Server nicht, solange die Gruppe weitere Rechner hat. Löschen Sie zuerst die anderen (`viper down <rechner>`) oder beenden Sie die Gruppe mit `viper down <server> --force`.
+
+### Meldung: "Revoking the key of … failed … The machine was NOT deleted"
+
+Beim Löschen eines Clients konnte sein Schlüssel nicht beim NATS-Server entfernt werden (Server nicht erreichbar). Prüfen Sie den Server mit `viper check <server>` oder löschen Sie den Client mit `viper down <rechner> --force`.
+
+### Meldung: "the server certificate has expired" (NATS)
+
+Das Zertifikat des NATS-Servers gilt einen Monat und wird nicht erneuert. Löschen Sie die Rechner der Gruppe und legen Sie sie neu an.
+
 ### `ping <rechner>.<domain>`: "Name oder Dienst nicht bekannt"
 
 **Ursache:** Ihr DNS-Server merkt sich, dass es den Namen nicht gibt. Das passiert, wenn der Name abgefragt wurde, während der DNS-Eintrag nicht existierte, etwa zwischen `viper down` und `viper up`. Die Zone erlaubt das Zwischenspeichern dieser negativen Antwort für bis zu 30 Minuten (`viper check` nennt den genauen Wert). Oft betrifft das den DNS-Server eines VPNs, während öffentliche Resolver den Namen schon auflösen.  
@@ -925,6 +1011,9 @@ Nein. Verwenden Sie die Shell oder `.env.local`, die nicht eingecheckt wird.
 | tmux | Programm, das Terminal-Sitzungen dauerhaft hält |
 | A-Record | DNS-Eintrag, der einen Namen auf eine IPv4-Adresse abbildet |
 | Zone-ID | Kennung Ihrer Domain bei Cloudflare |
+| NATS | Schlankes Nachrichtensystem; Programme senden und empfangen Nachrichten zu Themen (Subjects) |
+| NATS-Gruppe | Rechner, die über einen gemeinsamen NATS-Server in einem privaten Netzwerk Nachrichten austauschen (`NATS_GROUP`) |
+| NKey | Schlüsselpaar, mit dem sich ein Rechner am NATS-Server anmeldet; der geheime Teil (Seed) bleibt auf dem Rechner |
 
 ## 10. Support und Kontakt
 
@@ -1007,3 +1096,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.70 | v0.14.0 | Die Voraussetzungen nennen auch Windows (`windows_amd64.exe`, nur teilweise getestet), wie der Abschnitt „`viper` installieren“. |
 | 1.71 | v0.14.0 | Korrektur: `brew` und die damit installierten Programme stehen den Befehlen von `VIPER_POST_CLONE` im `PATH` zur Verfügung (bisher: `brew: command not found`). |
 | 1.72 | v0.14.0 | Release v0.14.0: die Änderungen 1.70 und 1.71 (Windows-Binary in den Voraussetzungen, `brew` in `VIPER_POST_CLONE`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.14.0`. |
+| 1.73 | nach v0.14.0 | Neu: NATS-Gruppen (nur Hetzner, optional): `NATS_ENABLED`, `NATS_GROUP`, `NATS_PORT`. Der erste Rechner einer Gruppe wird der NATS-Server, alle weiteren Clients, verbunden über ein privates Netzwerk mit TLS und eigenem Schlüssel je Rechner. `viper down` widerruft den Schlüssel eines Clients und schützt den Server, `viper check` prüft die Gruppe. |

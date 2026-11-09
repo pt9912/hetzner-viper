@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -43,6 +44,9 @@ type Deps struct {
 	Run system.Runner
 	// SSH writes the machine's ssh config if there is none yet.
 	SSH sshconfig.Store
+	// Dial opens a TCP connection from this computer (the NATS port must not be open to the
+	// internet); nil: net.Dialer.
+	Dial func(ctx context.Context, network, address string) (net.Conn, error)
 }
 
 type report struct {
@@ -156,6 +160,7 @@ func Run(ctx context.Context, c *model.Machine, d Deps, out, errOut io.Writer) (
 		return r.failures, fmt.Errorf("SSH to %s failed", c.SSHAlias)
 	}
 	serverChecks(r, c, parseProbe(stdout), workdir, repoURL)
+	natsChecks(ctx, r, c, d, srv)
 
 	fmt.Fprintln(out)
 	if r.failures > 0 {

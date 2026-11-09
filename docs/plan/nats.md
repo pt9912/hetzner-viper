@@ -495,6 +495,23 @@ Die Reihenfolge folgt der Empfehlung in §15. Jeder Meilenstein ist einzeln abne
 
 Meilenstein-Status wird in den jeweiligen Pull Requests geführt, nicht in diesem Dokument.
 
+### Ergebnis Meilenstein 7 (`viper check` und Dokumentation)
+
+Umgesetzt in `internal/usecase/check/natschecks.go` und `natsstatus.sh`. Der Abschnitt `== NATS (group …)` erscheint für jede Maschine mit NATS-Labels (und als Warnung, wenn `NATS_ENABLED` an ist, die Maschine aber in keiner Gruppe). Er prüft in drei Teilen, ohne etwas zu ändern:
+- **Beim Anbieter:** Gruppe (und Abgleich mit `NATS_GROUP`), genau ein Server, Zustand der Server (`ready`, `provisioning` als Warnung, `failed`), privates Netzwerk, private Adresse der Maschine.
+- **Auf der Maschine (per SSH):** `connection.env` vorhanden, Zertifikat (fehlt, abgelaufen, läuft in weniger als 7 Tagen ab, gilt für eine andere Adresse als die des Servers), Anmeldung mit dem NKey über TLS und, auf dem Server, der Dienst, die Adresse, auf der er lauscht (nur die private), sowie wer registriert ist (verwaiste Einträge als Warnung, fehlende bereite Clients als Fehler).
+- **Von außen:** Die öffentliche Adresse darf auf dem NATS-Port nicht antworten.
+
+Dokumentation: Kapitel „Rechner über NATS verbinden“, Einstellungen, Fehlerbehebung, Glossar und Änderungshistorie im Handbuch (1.73), Abschnitt „NATS-Gruppen“ in `docs/maintainer/architektur.md`.
+
+Praktisch bestätigt (zwei `cpx22`, danach gelöscht): gesunde Gruppe (`Check OK.` für Server und Client), Wiederanlauf einer Gruppe im Zustand `failed` mit `viper up`, gestoppter Dienst (Server: Dienst inaktiv, nichts lauscht, Login fehlgeschlagen; Client: Login fehlgeschlagen), nicht registrierter bereiter Client.
+
+Gefundene Fehler in diesem Meilenstein:
+- `nats rtt` beendet sich auch bei gestopptem Server und abgelehntem Schlüssel mit Status 0. Der Verbindungstest von `viper up` (seit Meilenstein 5) und der Check meldeten deshalb fälschlich Erfolg. Beide veröffentlichen jetzt eine Nachricht im eigenen Bereich (`nats pub`, Status 1 bei Fehlern).
+- Ein kurzer SSH-Abbruch (`Connection reset`), während der neue Server noch neu startet, ließ `viper up` scheitern. Verbindungsfehler werden jetzt bis zu 12 Mal wiederholt (die Skripte sind wiederholbar).
+
+Damit sind alle Meilensteine umgesetzt; die Definition of Done (§14) ist erfüllt, mit der Einschränkung zu Punkt 11: parallele Erststarts sind unterstützt und wurden mit mehreren Maschinen echt getestet.
+
 ### Ergebnis Meilenstein 6 (`viper down`)
 
 Umgesetzt in `internal/usecase/stop/nats.go`; die gemeinsamen SSH-Operationen von `up` und `down` liegen in `internal/usecase/natsgroup` (SSH-Zugang zu einer anderen Maschine der Gruppe, Änderung der Clientliste mit Hash-Prüfung unter `flock`). Maßgeblich sind die Labels der Maschine, nicht `NATS_ENABLED`: eine Maschine mit NATS-Labels wird als Gruppenmitglied behandelt.
@@ -525,7 +542,7 @@ Praktisch bestätigt (drei `cpx22` in `fsn1`, danach gelöscht):
 - Broadcast: Gamma empfängt, was Beta auf `viper.live.beta.status` veröffentlicht. Anfrage/Antwort: Beta fragt `viper.live.alpha.req.echo`, Alpha antwortet (`pong from alpha`, rtt 0,6 ms; Voraussetzung ist das eigene Inbox-Präfix `_INBOX.<maschine>`, das `connection.env` als `NATS_INBOX_PREFIX` liefert). Veröffentlichen in den Subtree einer anderen Maschine oder in eine andere Gruppe wird abgelehnt.
 - Die ACL-Entscheidung aus §6 trägt: Request-Subjects `viper.<g>.<empfänger>.req.>` gehen, alles andere fremde nicht.
 
-Noch nicht umgesetzt: `viper check` (7).
+
 
 ### Ergebnis Meilenstein 4 (Server-Bootstrap)
 
@@ -537,7 +554,7 @@ Praktisch auf einem echten Hetzner-Server (`cpx22`, `fsn1`) bestätigt:
 - Ein zweiter `viper up` ist idempotent: Binary, Zertifikat und Identität bleiben, die Konfiguration wird neu geschrieben und per Reload übernommen.
 - Labels am Server: `viper-managed=true`, Gruppe, Rolle `server`, Zustand `ready`.
 
-Die Clientrolle folgt in Meilenstein 5, `viper down` in 6 und `viper check` in 7.
+
 
 ### Ergebnis Meilenstein 0 (Code-Abgleich und Hetzner-Tests)
 

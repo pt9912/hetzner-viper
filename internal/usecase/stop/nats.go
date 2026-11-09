@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/natsserver"
@@ -109,7 +110,7 @@ func (p *natsPlan) revoke(ctx context.Context, force bool) (int, error) {
 }
 
 func (p *natsPlan) revokeAt(ctx context.Context, server model.Server) error {
-	ops := natsgroup.Ops{Run: p.d.Run, SSH: p.d.SSH, Out: p.out}
+	ops := natsgroup.Ops{Run: p.d.Run, SSH: p.d.SSH, Out: p.out, Sleep: func(time.Duration) {}} // a lost connection to the server is an error here, not a wait
 	target, err := ops.Peer(p.c, server)
 	if err != nil {
 		return err

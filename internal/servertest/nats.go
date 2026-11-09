@@ -119,7 +119,7 @@ func (c *Cloud) EnsurePrivateNetwork(ctx context.Context, group, location string
 		return *n, false, nil
 	}
 	c.nextID++
-	n := &model.PrivateNetwork{ID: strconv.FormatInt(c.nextID, 10), Name: name, IPRange: fmt.Sprintf("10.%d.0.0/16", 100+len(c.Networks)), Zone: zone, Created: c.Now}
+	n := &model.PrivateNetwork{ID: strconv.FormatInt(c.nextID, 10), Name: name, IPRange: fmt.Sprintf("10.%d.0.0/16", 115+len(c.Networks)), Zone: zone, Created: c.Now}
 	c.Networks[name] = n
 	c.call("network create %s", name)
 	return *n, true, nil

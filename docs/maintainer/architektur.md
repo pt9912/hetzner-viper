@@ -31,6 +31,35 @@ Die Abhängigkeiten laufen nach innen: `model` kennt nichts, die Ports kennen nu
 
 Der Login-Schlüssel muss kein Objekt beim Anbieter sein: `LoginKey.Ref` ist der Name des Schlüssels oder der Schlüssel selbst (GCP, Azure).
 
+## NATS-Gruppen
+
+Optional (`NATS_ENABLED`), nur Hetzner. Der Plan mit allen Entscheidungen und den Ergebnissen der Tests gegen Hetzner steht in `docs/plan/nats.md`; hier die Bausteine.
+
+| Baustein | Aufgabe |
+|---|---|
+| `model/nats.go` | Rolle, Zustand, Metadaten, Labels (`viper-managed`, `viper-nats-group`, `-role`, `-state`), Namensprüfung, `PrivateNetwork` |
+| `port/driven/cloud/nats.go` | `NATSProvider`: eine **optionale** Fähigkeit neben `Provider` (Gruppe auflisten, Labels, Netzwerkzone, privates Netzwerk anlegen/finden/anbinden/löschen). `cloud.AsNATS` findet sie auch hinter dem Wrapper `app.Provider` (`Unwrap`) |
+| `adapter/driven/hetzner/nats.go`, `network.go` | Umsetzung mit Label-Selektoren und Hetzner Networks |
+| `natsserver` | Reiner Text: gepinntes Release von `nats-server` und `nats` (Version, SHA-256), `server.conf`, systemd-Unit, NKey-Erzeugung, `connection.env` |
+| `usecase/natsgroup` | SSH-Operationen, die `up` und `down` teilen: andere Maschine der Gruppe erreichen, Clientliste ändern (`Ops.Update`) |
+| `usecase/start/nats.go` + `scripts/nats*.sh` | Rolle bestimmen, Server bootstrappen, Client registrieren |
+| `usecase/stop/nats.go` | Widerruf, Schutz des Servers, Netzwerk aufräumen |
+| `usecase/check/natschecks.go` + `natsstatus.sh` | Prüfungen aus der Sicht des Anbieters, der Maschine und von außen |
+| `servertest/nats.go` | Fake der Fähigkeit für die Use-Case-Tests |
+
+Verhalten, das man nicht aus dem Code erraten sollte:
+
+* **Erststart-Sperre:** Das Netzwerk `viper-nats-<gruppe>` wird angelegt, ohne vorher zu suchen. Hetzner erlaubt den Namen nur einmal (auch bei gleichzeitigen Aufrufen), also wird genau einer der Server-Kandidat. Ein Netzwerk ohne Server, das jünger als 15 Minuten ist, gilt als „Server wird noch angelegt“ (`firstStartWindow`); die Clients legen ihre Maschinen an und warten. Ein älteres Netzwerk ohne Server ist ein unterbrochener Start und wird abgelehnt. Eine automatische Übernahme der Serverrolle gibt es nicht (Labels haben kein Compare-and-Set).
+* **Clientliste:** Die Datei `~/.viper-nats/server.conf` trägt oben die Zeilen `# viper-client <maschine> <schlüssel>`; daraus liest `ParseClients` die Liste zurück. `Ops.Update` liest die Datei mit ihrem Hash, ändert die Liste und schreibt nur zurück, wenn der Hash unter `flock` noch stimmt (Skript beendet sich sonst mit Status 3, „changed meanwhile“); dann liest es neu. Bevor die Datei ersetzt wird, prüft `nats-server -t` sie.
+* **Skripte laufen als `bash -c '<skript>' nats <argumente>`**, weil stdin die Daten trägt (Konfiguration, Schlüssel). Verbindungsfehler von `ssh` werden bis zu 12 Mal wiederholt (`lostConnection`); alle Skripte sind wiederholbar. Zeilen, die mit `nats` beginnen, zeigt `up` dem Nutzer.
+* **Der Seed** entsteht im Speicher von `viper` (`nkeys`), geht per SSH-stdin auf die Maschine (`natsidentity.sh`, nur wenn dort noch keiner liegt) und wird lokal weder gespeichert noch protokolliert.
+* **Zertifikat:** selbstsigniert, 31 Tage, keine CA, keine Erneuerung (Gruppen laufen kurz); die Clients vertrauen genau diesem Zertifikat. Läuft es ab oder ändert sich die Adresse, endet die Gruppe.
+* **Labels entscheiden**, nicht `NATS_ENABLED`: `down` und `check` behandeln eine Maschine mit NATS-Labels als Gruppenmitglied.
+* **Falle `nats rtt`:** Das Programm beendet sich auch bei abgelehntem Login oder gestopptem Server mit Status 0. Die Verbindungstests (`natsconnect.sh`, `natsstatus.sh`) veröffentlichen deshalb eine Nachricht im eigenen Bereich (`nats pub`), das mit Status 1 endet.
+* **Neue Release-Version** von `nats-server` oder `nats`: Version und SHA-256 aus der `SHA256SUMS` des Releases in `natsserver.go` eintragen (`Version`, `checksums`, `CLIVersion`, `cliChecksums`) und einen echten Lauf machen (der Download wird gegen die Summe geprüft).
+
+Getestet wurde das Zusammenspiel mit echten Hetzner-Servern (mehrere Maschinen gleichzeitig, Wiederanlauf nach einem Fehler, `down` mit Widerruf, `check` bei gestopptem Dienst); die Unit-Tests laufen gegen Fakes. Ein Lauf kostet wenige Cent: Testprojekt, eigenes `SERVER_PREFIX`, `SERVER_TYPE=cpx22` (`cax11` war zeitweise nicht bestellbar), danach Server, Netzwerk `viper-nats-<gruppe>`, Firewall `<prefix>-ssh` und Schlüssel `<prefix>-login` löschen.
+
 ## Tests
 
 * `make test` führt alles mit `-race` aus und braucht kein Konto: die Use Cases laufen gegen Fakes (`internal/servertest`), die Adapter gegen nachgebildete APIs.
@@ -72,5 +101,5 @@ Bei einem Issue: Die Seite im Browser ansehen, das Muster in der Auswertung anpa
 | Anbieter | Getestet |
 |---|---|
 | AWS | echte Läufe: Adapter, `up` und `down`, x86 und ARM, ohne Cloudflare |
-| Hetzner | nur gegen nachgebildete Schnittstellen (die früheren Bash-Skripte liefen echt) |
+| Hetzner | Server anlegen und löschen gegen nachgebildete Schnittstellen (die früheren Bash-Skripte liefen echt); NATS-Gruppen (Netzwerke, Labels, Bootstrap, Clients, `down`, `check`) auch in echten Läufen |
 | Google Cloud, Azure | nur gegen nachgebildete Schnittstellen; die SDK-Schicht ist vom Compiler geprüft, nicht gegen ein Konto gelaufen |

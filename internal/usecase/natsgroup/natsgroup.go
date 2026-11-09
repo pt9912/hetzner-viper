@@ -11,6 +11,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/natsserver"
@@ -36,6 +37,24 @@ type Ops struct {
 	Run system.Runner
 	SSH sshconfig.Store
 	Out io.Writer
+	// Sleep waits between the tries after a lost connection; nil: time.Sleep.
+	Sleep system.Sleeper
+}
+
+// connectionTries is how often a script is run again after ssh itself failed (a server that is
+// still starting, or restarts once after its updates). The scripts can be run again: each of them
+// leaves the machine as it would after one run.
+const connectionTries = 12
+
+// lostConnection tells whether the stderr of ssh says that the connection failed, as opposed to
+// the script failing.
+func lostConnection(stderr string) bool {
+	for _, s := range []string{"Connection reset", "Connection closed", "Connection refused", "Connection timed out", "kex_exchange_identification", "Broken pipe", "No route to host"} {
+		if strings.Contains(stderr, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // Self is the machine c itself.
@@ -69,6 +88,14 @@ func (o Ops) On(ctx context.Context, t Target, quiet bool, stdin, script string,
 		sshArgs = append([]string{"-n"}, sshArgs...)
 	}
 	stdout, stderr, err := o.Run(ctx, stdin, "ssh", sshArgs...)
+	for try := 1; err != nil && lostConnection(stderr) && try < connectionTries && ctx.Err() == nil; try++ {
+		if o.Sleep != nil {
+			o.Sleep(5 * time.Second)
+		} else {
+			time.Sleep(5 * time.Second)
+		}
+		stdout, stderr, err = o.Run(ctx, stdin, "ssh", sshArgs...)
+	}
 	if !quiet && o.Out != nil {
 		for _, l := range strings.Split(strings.TrimRight(stdout, "\n"), "\n") {
 			if strings.HasPrefix(l, "nats") {
