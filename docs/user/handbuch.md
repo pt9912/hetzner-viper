@@ -1,7 +1,7 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.75  
-Software-Version: v0.15.0  
+Version: 1.76  
+Software-Version: v0.15.1  
 Stand: 09.11.2026  
 
 ## 1. Einleitung
@@ -80,12 +80,12 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 
 **Mit Homebrew** (Linux und macOS): `brew install pt9912/viper/viper`, dann `viper version` (Update: `brew upgrade viper`). Sonst von Hand:
 
-1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.15.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.15.0_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
+1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.15.1_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.15.1_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
 2. Prüfen Sie die Datei und machen Sie sie ausführbar:
    ```bash
-   grep viper_v0.15.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
-   chmod +x viper_v0.15.0_linux_amd64
-   mv viper_v0.15.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
+   grep viper_v0.15.1_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
+   chmod +x viper_v0.15.1_linux_amd64
+   mv viper_v0.15.1_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
    ```
 3. Prüfen Sie die Installation: `viper version`.
 
@@ -1099,3 +1099,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.73 | v0.15.0 | Neu: NATS-Gruppen (nur Hetzner, optional): `NATS_ENABLED`, `NATS_GROUP`, `NATS_PORT`. Der erste Rechner einer Gruppe wird der NATS-Server, alle weiteren Clients, verbunden über ein privates Netzwerk mit TLS und eigenem Schlüssel je Rechner. `viper down` widerruft den Schlüssel eines Clients und schützt den Server, `viper check` prüft die Gruppe. |
 | 1.74 | v0.15.0 | Release v0.15.0: die Änderung 1.73 (NATS-Gruppen). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.15.0`. |
 | 1.75 | v0.15.1 | Korrektur zu NATS-Gruppen: Rechner einer Gruppe konnten über die Antwort-Funktion von NATS (`allow_responses`) in fremde Bereiche senden; sie ist entfernt, Antworten sind normale Nachrichten im eigenen Bereich. Das Serverzertifikat neuer Gruppen ist ein Blattzertifikat (nötig für Clients in Rust). Gruppen aus v0.15.0 schließen die Lücke mit einem weiteren `viper up`. |
+| 1.76 | v0.15.1 | Release v0.15.1: die Änderung 1.75 (kein `allow_responses`, Blattzertifikat). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.15.1`. |
