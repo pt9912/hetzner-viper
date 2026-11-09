@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"path/filepath"
 	"strings"
 	"time"
@@ -39,6 +40,10 @@ type Ops struct {
 	Out io.Writer
 	// Sleep waits between the tries after a lost connection; nil: time.Sleep.
 	Sleep system.Sleeper
+	// Jitter returns a random time up to limit; Update waits that long after it lost a race with
+	// another machine, so that machines that start together do not collide again at the same moment.
+	// nil: no extra wait.
+	Jitter func(limit time.Duration) time.Duration
 }
 
 // connectionTries is how often a script is run again after ssh itself failed (a server that is
@@ -134,7 +139,7 @@ func (o Ops) Clients(ctx context.Context, server Target) ([]natsserver.Client, e
 // nothing is written.
 func (o Ops) Update(ctx context.Context, server Target, group string, first natsserver.Endpoint, change func([]natsserver.Client) ([]natsserver.Client, error)) error {
 	var lastErr error
-	for attempt := 0; attempt < 6; attempt++ {
+	for attempt := 0; attempt < updateTries; attempt++ {
 		out, err := o.On(ctx, server, true, "", readScript, natsserver.Dir)
 		if err != nil {
 			return err
@@ -164,6 +169,29 @@ func (o Ops) Update(ctx context.Context, server Target, group string, first nats
 			return err
 		}
 		lastErr = err
+		if o.Jitter != nil {
+			pause(o.Jitter(time.Duration(attempt+1) * 500 * time.Millisecond))
+		}
 	}
 	return lastErr
+}
+
+// updateTries is how often Update reads and writes again after another machine changed the file
+// in between. Eight machines that join at once need about one try each.
+const updateTries = 12
+
+// pause waits for real: it spreads out machines that lost a race, which Sleep (a wait after a lost
+// connection that some callers switch off) must not switch off.
+func pause(d time.Duration) {
+	if d > 0 {
+		time.Sleep(d)
+	}
+}
+
+// RandomJitter is the Jitter of the real runs.
+func RandomJitter(limit time.Duration) time.Duration {
+	if limit <= 0 {
+		return 0
+	}
+	return time.Duration(rand.Int64N(int64(limit))) //nolint:gosec // only spreads out retries
 }

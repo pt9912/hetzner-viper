@@ -41,10 +41,36 @@ func (Files) WriteConfig(c *model.Machine, ip string) error {
     ForwardAgent no
     ForwardX11 no
 `, c.SSHAlias, ip, c.DNSHost, quote(c.SSHKey), quote(known))
-	if err := os.WriteFile(c.SSHConfig, []byte(body), 0o600); err != nil {
+	return writeAtomic(c.SSHConfig, []byte(body))
+}
+
+// writeAtomic puts the file in place in one step (a file of its own next to it, then rename), so
+// that a reader never sees it empty or half written: several runs of a group write the config of the
+// server and read it with ssh -F at the same time. An unchanged file is not touched at all.
+func writeAtomic(path string, data []byte) error {
+	if old, err := os.ReadFile(path); err == nil && string(old) == string(data) {
+		return os.Chmod(path, 0o600)
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp*")
+	if err != nil {
 		return err
 	}
-	return os.Chmod(c.SSHConfig, 0o600)
+	tmp := f.Name()
+	_, werr := f.Write(data)
+	cerr := f.Close()
+	if werr == nil {
+		werr = cerr
+	}
+	if werr == nil {
+		werr = os.Chmod(tmp, 0o600)
+	}
+	if werr == nil {
+		werr = os.Rename(tmp, path)
+	}
+	if werr != nil {
+		_ = os.Remove(tmp) // best effort: the error is the one returned
+	}
+	return werr
 }
 
 // ForgetStalePin drops a pinned host key recorded for another server ID: the name was reused by
@@ -74,11 +100,10 @@ func (Files) PinHostKey(c *model.Machine, id string, ssh func(args ...string) (s
 	if err != nil || len(f) < 2 || f[0] != "ssh-ed25519" {
 		return
 	}
-	if err := os.WriteFile(c.KnownPin, []byte(c.DNSHost+" "+f[0]+" "+f[1]+"\n"), 0o600); err != nil {
+	if err := writeAtomic(c.KnownPin, []byte(c.DNSHost+" "+f[0]+" "+f[1]+"\n")); err != nil {
 		return
 	}
-	_ = os.Chmod(c.KnownPin, 0o600)                     // the file was just written with 600; this covers an older, looser one
-	_ = os.WriteFile(c.IDState, []byte(id+"\n"), 0o600) // best effort: without it the next run asks the API
+	_ = writeAtomic(c.IDState, []byte(id+"\n")) // best effort: without it the next run asks the API
 	fmt.Fprintf(out, "Pinned host key of %s (verified via host CA).\n", c.ServerName)
 }
 

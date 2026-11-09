@@ -155,7 +155,7 @@ func (r *runner) natsCleanup(ctx context.Context) {
 
 // ops are the operations over ssh that viper up and viper down share.
 func (r *runner) ops() natsgroup.Ops {
-	return natsgroup.Ops{Run: r.d.Run, SSH: r.d.SSH, Out: r.out, Sleep: r.d.Sleep}
+	return natsgroup.Ops{Run: r.d.Run, SSH: r.d.SSH, Out: r.out, Sleep: r.d.Sleep, Jitter: natsgroup.RandomJitter}
 }
 
 // remote runs a script on this machine; see natsgroup.Ops.On.

@@ -70,6 +70,14 @@ func EnsureLoginKey(ctx context.Context, api Keys, name, publicKey string) (mode
 		}
 	}
 	if err := api.SSHKeyCreate(ctx, name, publicKey); err != nil {
+		// another run (a machine started at the same moment) may have uploaded it first: look again
+		if again, lerr := api.SSHKeys(ctx); lerr == nil {
+			for _, k := range again {
+				if fp != "" && strings.EqualFold(k.Fingerprint, fp) {
+					return model.LoginKey{Ref: k.Name}, nil
+				}
+			}
+		}
 		return model.LoginKey{}, &cloud.OpError{Op: fmt.Sprintf("uploading the SSH key %s", name), Write: true, Err: err}
 	}
 	return model.LoginKey{Ref: name, Created: true}, nil
@@ -92,11 +100,9 @@ func EnsureFirewall(ctx context.Context, api Firewalls, name string, sources []s
 		return res, &cloud.OpError{Op: "listing the firewalls", Err: err}
 	}
 	if !exists {
-		if err := api.FirewallCreate(ctx, name); err != nil {
-			return res, &cloud.OpError{Op: fmt.Sprintf("creating the firewall %s", name), Write: true, Err: err}
+		if rules, res.Created, err = createFirewall(ctx, api, name); err != nil {
+			return res, err
 		}
-		res.Created = true
-		rules = nil
 	}
 	has := func(proto, port string) bool {
 		for _, rule := range rules {
@@ -118,6 +124,19 @@ func EnsureFirewall(ctx context.Context, api Firewalls, name string, sources []s
 		}
 	}
 	return res, nil
+}
+
+// createFirewall creates the firewall; if that fails because another run (a machine started at the
+// same moment) was first, it uses theirs and returns its rules.
+func createFirewall(ctx context.Context, api Firewalls, name string) (rules []FirewallRule, created bool, err error) {
+	if err := api.FirewallCreate(ctx, name); err != nil {
+		again, there, lerr := api.FirewallRules(ctx, name)
+		if lerr != nil || !there {
+			return nil, false, &cloud.OpError{Op: fmt.Sprintf("creating the firewall %s", name), Write: true, Err: err}
+		}
+		return again, false, nil
+	}
+	return nil, true, nil
 }
 
 // Reader is the part of the Hetzner API the checks read.

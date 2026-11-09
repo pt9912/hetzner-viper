@@ -227,3 +227,50 @@ func TestParallelIncludesDoNotLoseLines(t *testing.T) {
 		t.Errorf("%d lines, want 8:\n%s", n, b)
 	}
 }
+
+// Several runs of a group write the config of the server and read it with ssh -F at the same time:
+// a reader must never see the file empty or cut off.
+func TestWriteConfigIsAtomicForReadersThatRunAtTheSameTime(t *testing.T) {
+	c := testConfig(t)
+	if err := files().WriteConfig(c, "203.0.113.1"); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	bad := make(chan string, 1)
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			b, err := os.ReadFile(c.SSHConfig)
+			if err != nil || !strings.HasPrefix(string(b), "Host ") || !strings.HasSuffix(string(b), "ForwardX11 no\n") {
+				select {
+				case bad <- string(b):
+				default:
+				}
+				return
+			}
+		}
+	}()
+	for i := 0; i < 300; i++ {
+		if err := files().WriteConfig(c, "203.0.113."+string(rune('1'+i%2))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	close(done)
+	select {
+	case got := <-bad:
+		t.Fatalf("a reader saw a file that was not whole: %q", got)
+	default:
+	}
+	left, _ := filepath.Glob(c.SSHConfig + ".tmp*")
+	if len(left) != 0 {
+		t.Errorf("temporary files are left behind: %v", left)
+	}
+	st, err := os.Stat(c.SSHConfig)
+	if err != nil || (runtime.GOOS != "windows" && st.Mode().Perm() != 0o600) {
+		t.Errorf("mode %v %v", st, err)
+	}
+}

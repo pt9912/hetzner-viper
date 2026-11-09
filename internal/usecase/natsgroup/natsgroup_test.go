@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -115,12 +116,46 @@ func TestUpdateWritesNothingWhenThereIsNothingToChange(t *testing.T) {
 	}
 }
 
-func TestUpdateGivesUpAfterSixLostRaces(t *testing.T) {
+func TestUpdateGivesUpAfterTwelveLostRacesAndWaitsInBetween(t *testing.T) {
 	s := start(t, natsserver.Client{Machine: "alpha", PublicKey: key("A")})
 	s.failWriteAs = errors.New("the file changed meanwhile")
-	err := natsgroup.Ops{Run: s.run}.Update(context.Background(), natsgroup.Target{}, "dev", natsserver.Endpoint{}, func(l []natsserver.Client) ([]natsserver.Client, error) { return l, nil })
-	if err == nil || !strings.Contains(err.Error(), "changed meanwhile") {
-		t.Errorf("%v", err)
+	waits := 0
+	err := natsgroup.Ops{Run: s.run, Jitter: func(limit time.Duration) time.Duration { waits++; return time.Microsecond }}.Update(context.Background(), natsgroup.Target{}, "dev", natsserver.Endpoint{}, func(l []natsserver.Client) ([]natsserver.Client, error) { return l, nil })
+	if err == nil || !strings.Contains(err.Error(), "changed meanwhile") || waits != 12 {
+		t.Errorf("%v, %d waits", err, waits)
+	}
+}
+
+// Eight machines that join at the same moment: every one of them gets in, none is lost.
+func TestUpdateLetsEightMachinesRegisterAtTheSameTime(t *testing.T) {
+	s := start(t, natsserver.Client{Machine: "alpha", PublicKey: key("A")})
+	var mu sync.Mutex
+	run := func(ctx context.Context, stdin, name string, args ...string) (string, string, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return s.run(ctx, stdin, name, args...)
+	}
+	o := natsgroup.Ops{Run: run, Jitter: func(limit time.Duration) time.Duration { return limit / 500 }}
+	var wg sync.WaitGroup
+	errs := make([]error, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			add := func(l []natsserver.Client) ([]natsserver.Client, error) {
+				return natsserver.WithClient(l, natsserver.Client{Machine: "m" + string(rune('a'+i)), PublicKey: key(string(rune('A' + i)))}), nil
+			}
+			errs[i] = o.Update(context.Background(), natsgroup.Target{}, "dev", natsserver.Endpoint{}, add)
+		}()
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("machine %d: %v", i, err)
+		}
+	}
+	if got := names(s); got != "alpha,ma,mb,mc,md,me,mf,mg,mh" {
+		t.Errorf("registered: %q", got)
 	}
 }
 
