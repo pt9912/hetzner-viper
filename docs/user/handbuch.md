@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.78  
+Version: 1.79  
 Software-Version: v0.15.1  
 Stand: 09.11.2026  
 
@@ -95,7 +95,7 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 
 #### Hinweise
 
-* **Arbeitsverzeichnis:** `viper` liest `.env.local` (und `machines/<rechner>.env.local`) im aktuellen Verzeichnis oder in dem, das Sie mit `--dir <verzeichnis>` angeben. `viper setup` legt eine fehlende `.env.local` aus einer eingebauten Vorlage an. Ein relativer `SSH_KEY` gilt relativ zu diesem Verzeichnis.
+* **Arbeitsverzeichnis:** `viper` liest `.env.local` (und `groups/<gruppe>.env` und `machines/<rechner>.env.local`) im aktuellen Verzeichnis oder in dem, das Sie mit `--dir <verzeichnis>` angeben. `viper setup` legt eine fehlende `.env.local` aus einer eingebauten Vorlage an. Ein relativer `SSH_KEY` gilt relativ zu diesem Verzeichnis.
 * **Einstellungen:** `viper` versteht die Schreibweise der Datei (`NAME=wert`, Anführungszeichen, `$HOME`, `${NAME}`, mehrzeilige Werte, Kommentare) und lehnt anderes mit Zeilennummer ab, ohne die Zeile selbst zu zeigen (sie kann ein Token enthalten): Befehle und Ersetzungen wie `$(befehl)`, nicht gesetzte Variablen, `~benutzer`, `$'…'` und Windows-Zeilenenden (CRLF). Setzen Sie solche Werte als festen Text in Anführungszeichen und speichern Sie die Datei mit Unix-Zeilenenden.
 * **Fragen beim Löschen:** `viper down` fragt `DISCARD` bei ungesicherter Arbeit, `DELETE` zum Löschen und `CLEANUP` bei einem Rechner, den es beim Anbieter nicht mehr gibt. Die Antworten dürfen auch per Pipe kommen; eine leere Antwort, das Ende der Eingabe und eine letzte Zeile ohne Zeilenende bestätigen nichts.
 * **Verbindung:** `viper ssh` ersetzt sich selbst durch `ssh`: Signale und Exit-Code sind die von `ssh`.
@@ -413,6 +413,49 @@ nats --server $NATS_URL --tlsca $NATS_CA_FILE --nkey $NATS_NKEY_SEED_FILE pub vi
 * Mit dem letzten Rechner der Gruppe löscht `viper down` auch das private Netzwerk `viper-nats-<gruppe>`.
 * Ein Rechner wechselt nicht stillschweigend die Gruppe: Ändern Sie `NATS_GROUP` für einen vorhandenen Rechner, bricht `viper up` ab. Löschen Sie ihn zuerst.
 * Nicht enthalten: mehrere Server, automatischer Ersatz eines ausgefallenen Servers, JetStream (dauerhafte Nachrichten), Zugriff von außen und Gruppen über mehrere Anbieter.
+
+### Eine Gruppe von Rechnern gemeinsam starten und beenden (`groups/`)
+
+Statt jeden Rechner einzeln zu starten, legen Sie eine Gruppendatei an. Sie nennt die Rechner und die Einstellungen, die für alle gelten, und `viper` startet, prüft und beendet sie gemeinsam und **gleichzeitig**.
+
+#### Einrichten
+
+`viper setup` legt `groups/example.env.example` an. Kopieren Sie sie nach `groups/<gruppe>.env`; der Dateiname ist der Name der Gruppe (1 bis 31 Kleinbuchstaben, Ziffern, Bindestriche) und zugleich `NATS_GROUP`:
+
+```
+GROUP_MACHINES=alpha,beta,gamma
+NATS_ENABLED=true
+NATS_MCP=true
+```
+
+* `GROUP_MACHINES`: die Rechner, durch Komma getrennt (mit Leerzeichen den ganzen Wert in Anführungszeichen setzen). Jeder Name nur einmal; ein Rechner steht in höchstens einer Gruppe.
+* Alle anderen Zeilen sind Einstellungen für die Rechner der Gruppe. Die Rangfolge ist `.env.local`, dann die Gruppe, dann `machines/<rechner>.env.local` (der Rechner gewinnt). Ein Rechner braucht keine eigene Datei. Jeder Rechner darf einen eigenen `SERVER_TYPE`, `SERVER_LOCATION` und ein eigenes Image haben (bei NATS in einer Netzwerkzone).
+* Setzt die Datei eines Rechners eine andere `NATS_GROUP` als die Gruppe, bricht `viper` ab.
+* Die Gruppendatei gehört zu den Dateien, deren Rechte `viper preflight` prüft. Tokens gehören nicht hinein.
+* Auch `viper up alpha` für einen einzelnen Rechner der Gruppe nutzt die Einstellungen der Gruppe. Ist die Datei einer **anderen** Gruppe kaputt, warnt `viper` nur; nennt ihr Text den Rechner, bricht es ab, damit er seine Gruppe nicht stillschweigend verliert.
+
+#### Befehle
+
+| Befehl | Wirkung |
+|---|---|
+| `viper up --group g [--repo URL]` | startet alle Rechner der Gruppe |
+| `viper down --group g [--force]` | beendet alle Rechner der Gruppe |
+| `viper check --group g` | prüft alle Rechner |
+| `viper ssh --group g --cmd 'befehl'` | führt einen Befehl auf allen Rechnern aus |
+
+`--parallel N` begrenzt, wie viele Rechner gleichzeitig laufen (Standard 8). Jede Ausgabezeile trägt den Namen des Rechners (`[alpha] …`), am Ende steht eine Tabelle mit dem Ergebnis je Rechner. Der Exit-Status ist 0, wenn alle in Ordnung sind, 1 bei einem Fehler und 130 bei einem Abbruch mit Strg-C. VS Code wird bei `up --group` nicht geöffnet.
+
+#### Ablauf von `up --group`
+
+1. Die Prüfungen (`viper preflight`) laufen für alle Rechner. Scheitert eine, wird **nichts** angelegt.
+2. Besteht die Gruppe noch nicht, startet zuerst der erste Rechner mit NATS und legt Netzwerk und Server an. Sobald sein Server beim Anbieter existiert, starten alle übrigen gleichzeitig; sie warten bis zu 15 Minuten, bis der NATS-Server fertig ist. Der erste Rechner je Login-Schlüssel und Firewall legt sie an, die anderen mit denselben warten darauf.
+3. Scheitert der erste Rechner, bevor sein Server da ist, startet kein anderer. Scheitert er danach, werden die laufenden Starts der anderen abgebrochen. Bereits angelegte Server bleiben bestehen (wie bei einem einzelnen `viper up`); `viper up` wiederholt den Start.
+
+Drei Rechner brauchen so etwa so lange wie einer (im Test siebeneinhalb Minuten).
+
+#### Ablauf von `down --group`
+
+Zuerst werden alle Rechner gelöscht, die nicht der NATS-Server sind, gleichzeitig; danach der Server, und mit dem letzten Rechner das Netzwerk. Scheitert oder verweigert einer der ersten (zum Beispiel wegen ungesicherter Arbeit), bleibt der Server. Die Sicherheitsabfragen (`DISCARD`, `DELETE`) bleiben je Rechner: Es fragt immer nur ein Rechner zugleich, und die Frage nennt ihn (`[beta] Type DELETE to continue:`). Die anderen Rechner warten an ihrer Frage, bis sie an der Reihe sind. Rechner im Netzwerk der Gruppe, die nicht in der Datei stehen, beendet `down --group` nicht; dann bleibt der Server stehen, weil er sie noch braucht.
 
 ### Claude Code mit den anderen Rechnern der Gruppe sprechen lassen (NATS_MCP)
 
@@ -795,6 +838,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `NATS_ENABLED` | `true`: der Rechner gehört zu einer NATS-Gruppe (nur Hetzner); `false` oder leer: aus | `false` |
 | `NATS_GROUP` | Name der NATS-Gruppe; Pflichtangabe mit `NATS_ENABLED=true`; 1 bis 31 Kleinbuchstaben, Ziffern, Bindestriche | leer |
 | `NATS_PORT` | Port des NATS-Servers im privaten Netzwerk (1024 bis 65535) | `4222` |
+| `GROUP_MACHINES` | nur in `groups/<gruppe>.env`: die Rechner der Gruppe, durch Komma getrennt | – |
 | `NATS_MCP` | `true`: `viper up` installiert auf dem Rechner den MCP-Server `viper-nats-mcp` und trägt ihn bei Claude Code ein (Benutzerbereich, Name `nats`); braucht `NATS_ENABLED=true` | `false` |
 | `NATS_MCP_PUSH_FROM` | Maschinennamen, durch Komma getrennt, deren Nachrichten der Server in eine Claude-Code-Sitzung schiebt (nur wenn Sie Claude selbst mit dem Channel-Schalter starten, siehe unten); leer: nichts wird geschoben | leer |
 | `NATS_MCP_AUTOALLOW` | Welche Werkzeuge des MCP-Servers Claude Code ohne Nachfrage nutzen darf: `off`, `read` (`peers`, `inbox`) oder `all`; ein früher gesetzter Eintrag wird bei jedem `viper up` ersetzt | `off` |
@@ -1162,3 +1206,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.76 | v0.15.1 | Release v0.15.1: die Änderung 1.75 (kein `allow_responses`, Blattzertifikat). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.15.1`. |
 | 1.77 | nach v0.15.1 | Neu: `NATS_MCP`, `NATS_MCP_PUSH_FROM`, `NATS_MCP_AUTOALLOW`, `NATS_MCP_BINARY`. `viper up` installiert den eigenen MCP-Server `viper-nats-mcp` (im `viper`-Binary eingebaut, mit Prüfsumme) auf dem Rechner, schreibt `~/.viper-nats/mcp.env`, trägt ihn mit `claude mcp add --scope user` ein und prüft ihn über stdio; `viper check` prüft Binary, Eintrag, Push-Liste und erlaubte Werkzeuge. `viper` startet Claude nie mit dem Channel-Schalter und bestätigt dessen Dialog nie; es zeigt nur den Befehl. |
 | 1.78 | nach v0.15.1 | Neues Kapitel „Claude Code mit den anderen Rechnern der Gruppe sprechen lassen (NATS_MCP)“: Einrichten, Werkzeuge, Abholen und Schieben, `NATS_MCP_AUTOALLOW` und die Warnungen (nichts ist privat, Prompt-Injection auch beim Abholen, der Agent hält die Schlüssel, Channels sind eine Vorschau). |
+| 1.79 | nach v0.15.1 | Neu: Gruppendateien `groups/<gruppe>.env` mit `GROUP_MACHINES`. `viper up --group`, `down --group`, `check --group` und `ssh --group … --cmd` arbeiten für alle Rechner der Gruppe gleichzeitig (`--parallel N`, Ausgabe mit `[rechner]`-Präfix, Ergebnistabelle). Der Start legt zuerst den NATS-Server an, die übrigen Rechner folgen gleichzeitig; das Beenden löscht zuerst die Clients, zuletzt den Server. `viper setup` legt `groups/example.env.example` an. Korrigiert: Zwei Rechner, die gleichzeitig einer NATS-Gruppe beitraten, konnten sich die Serverkonfiguration gegenseitig überschreiben (`natsconfig.sh`). |

@@ -48,6 +48,15 @@ func createMachineExample(dir string, out io.Writer) error {
 	return writeTemplate(file, hetznerviper.MachineExample, 0o644, "Created %s: copy it to machines/<machine>.env.local for the settings of one machine.\n", out)
 }
 
+// createGroupExample writes groups/example.env.example unless it already exists.
+func createGroupExample(dir string, out io.Writer) error {
+	if err := os.MkdirAll(filepath.Join(dir, "groups"), 0o755); err != nil {
+		return err
+	}
+	file := filepath.Join(dir, "groups", "example.env.example")
+	return writeTemplate(file, hetznerviper.GroupExample, 0o644, "Created %s: copy it to groups/<group>.env to start and stop several machines together.\n", out)
+}
+
 // writeTemplate writes a template to a file that does not exist yet and says so; O_EXCL: two runs
 // at once do not truncate each other's file.
 func writeTemplate(file string, data []byte, mode os.FileMode, message string, out io.Writer) error {
@@ -98,6 +107,9 @@ func setup(o *options, env settings.Env, out io.Writer) error {
 	dir := settingsDir(o)
 	file := filepath.Join(dir, ".env.local")
 	if err := createEnvFile(file, out); err != nil {
+		return err
+	}
+	if err := createGroupExample(dir, out); err != nil {
 		return err
 	}
 	if err := createMachineExample(dir, out); err != nil {

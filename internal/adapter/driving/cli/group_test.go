@@ -441,3 +441,30 @@ func TestTheMachinesOfAGroupAskOneAfterTheOtherWithTheirName(t *testing.T) {
 		}
 	}
 }
+
+func TestSetupCreatesTheGroupExampleAndKeepsAnExistingOne(t *testing.T) {
+	env, _ := nativeEnv(t)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, h := fakeTools(t)
+	var out bytes.Buffer
+	if err := cli.Setup(&cli.Opts{Host: h, Dir: dir}, env, &out); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "groups", "example.env.example")
+	b, err := os.ReadFile(file)
+	if err != nil || !strings.Contains(string(b), "GROUP_MACHINES=") || !strings.Contains(out.String(), "groups/<group>.env") {
+		t.Fatalf("%v %q", err, out.String())
+	}
+	if err := os.WriteFile(file, []byte("mine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := cli.Setup(&cli.Opts{Host: h, Dir: dir}, env, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(file); string(b) != "mine\n" {
+		t.Error("an existing example is not overwritten")
+	}
+}

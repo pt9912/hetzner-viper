@@ -1,6 +1,6 @@
 # Plan: Gruppen-Dateien (`groups/`) – mehrere Rechner gemeinsam starten und stoppen
 
-Stand: 09.11.2026 · Status: Meilensteine 1 bis 5 umgesetzt (echte Läufe: `up --group` mit drei Rechnern in 7,6 Minuten, `down --group` in 21 Sekunden), Handbuch (6) offen
+Stand: 09.11.2026 · Status: umgesetzt (Meilensteine 1 bis 6); echte Läufe: `up --group` mit drei Rechnern in 7,6 Minuten, `down --group` in 21 Sekunden
 
 ## 1 Ziel
 

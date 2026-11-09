@@ -13,6 +13,11 @@ var EnvExample []byte
 //go:embed machines/example.env.local.example
 var MachineExample []byte
 
+// GroupExample is the template for groups/<group>.env.
+//
+//go:embed groups/example.env.example
+var GroupExample []byte
+
 // CloudInit is the cloud-init configuration every new server gets (the user-data is made from it).
 //
 //go:embed cloud-init.yaml

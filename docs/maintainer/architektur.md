@@ -62,6 +62,17 @@ Verhalten, das man nicht aus dem Code erraten sollte:
 
 Getestet wurde das Zusammenspiel mit echten Hetzner-Servern (mehrere Maschinen gleichzeitig, Wiederanlauf nach einem Fehler, `down` mit Widerruf, `check` bei gestopptem Dienst); die Unit-Tests laufen gegen Fakes. Ein Lauf kostet wenige Cent: Testprojekt, eigenes `SERVER_PREFIX`, `SERVER_TYPE=cpx22` (`cax11` war zeitweise nicht bestellbar), danach Server, Netzwerk `viper-nats-<gruppe>`, Firewall `<prefix>-ssh` und Schlüssel `<prefix>-login` löschen.
 
+## Gruppen (`groups/`)
+
+Der Plan mit Entscheidungen und Review-Ergebnissen steht in `docs/plan/gruppen.md`; hier die Bausteine.
+
+* **Laden:** `settingsfile/group.go` liest `groups/*.env`. `memberOf` findet die Gruppe eines Rechners (doppelte Zugehörigkeit ist ein Fehler; eine unlesbare Datei einer fremden Gruppe nur eine Warnung in `Machine.Warnings`, außer ihr Text nennt den Rechner). `Load` und `Prefix` setzen die Einstellungen der Gruppe zwischen `.env.local` und die Datei des Rechners und `NATS_GROUP` auf den Dateinamen. `LoadGroup` (Port `settings.Store`) liefert `model.Group` für die Gruppenbefehle.
+* **Ausführung:** `usecase/groupops.Runner` (Port `driving.GroupRunner`) führt Aufgaben je Rechner gleichzeitig aus, höchstens `--parallel` (Standard 8), und nimmt die Plätze in der Reihenfolge der Aufgaben, sodass die ersten Rechner zuerst starten. Das Ergebnis je Rechner (`GroupResult`), die Tabelle und der Exit-Status (`GroupExitCode`: 0, 1, 130) liegen im Port.
+* **Befehle:** `cli/group.go` (`runGroup` für `check` und `ssh --group`), `cli/groupup.go`, `cli/groupdown.go`. `prefixWriter` setzt Teilzeilen zusammen und schreibt unter einem Mutex je Terminal. `groupWriters.task` macht aus einem Lauf eine Aufgabe.
+* **Start:** `groupPlan` bestimmt, wer auf wen wartet: der erste Rechner mit NATS (der Server) auf niemanden, alle anderen mit NATS auf ihn, und je (Schlüssel, Firewall) wartet der Rest auf den ersten Rechner, der sie anlegt. Über `driving.UpOptions` meldet `start` mit `OnServerCreated`, dass der Server samt Rolle und Netz da ist (bei einem vorhandenen Server ohne Gruppe erst nach `natsSetup`); `SkipPreflight` (die Prüfung lief für alle vorab) und `ServerWait` (15 Minuten) gehören dazu. Ein `gate` je Rechner öffnet sich mit Erfolg oder ohne; scheitert der Server, werden die laufenden Clients über einen Kontext je Client abgebrochen.
+* **Stopp:** zwei Wellen (alle außer dem Server, dann der Server). Die Rolle liest `stop.Service.GroupRole` (Port `driving.GroupRoler`) aus den Labels. Die Fragen beantwortet ein gemeinsamer Leser (`newAsker`) hinter einem Mutex (`groupAsker`); die Aufforderung trägt den Namen des Rechners. Scheitert einer der ersten, bleibt der Server.
+* **Gemeinsamer Zustand:** `natsconfig.sh` schreibt in eine eigene Datei je Aufruf (vorher `server.conf.new` für alle, vor dem `flock`: gleichzeitig beitretende Rechner überschrieben sich); `Ops.Update` versucht 12 Mal mit zufälliger Pause (`Ops.Jitter`); `sshconfig` schreibt Konfiguration, Pin und ID atomar (temporäre Datei, Rename); `EnsureLoginKey` und `EnsureFirewall` nehmen das, was ein gleichzeitiger Lauf angelegt hat.
+
 ## Tests
 
 * `make test` führt alles mit `-race` aus und braucht kein Konto: die Use Cases laufen gegen Fakes (`internal/servertest`), die Adapter gegen nachgebildete APIs.
