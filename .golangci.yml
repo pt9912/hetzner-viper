@@ -240,8 +240,8 @@ linters:
           - staticcheck
         text: ^ST1005
 
-      # Why: cmd/viper is the entry point; it connects the process to its standard streams.
+      # Why: cmd/viper and cmd/viper-nats-mcp are the entry points; it connects the process to its standard streams.
       - linters:
           - forbidigo
-        path: ^cmd/viper/
+        path: ^cmd/viper(-nats-mcp)?/
         text: os\.Std(out|err)
