@@ -45,9 +45,11 @@ NATS_MCP=true
 
 ### Reihenfolge
 
-* **Start:** Besteht die Gruppe noch nicht, startet zuerst ein Rechner allein: der erste in `GROUP_MACHINES`. Er wird der NATS-Server (das Netzwerk entsteht, die Erststart-Sperre bleibt unverändert). Danach starten die übrigen. Besteht die Gruppe schon, starten alle fehlenden Rechner.
-* **Stopp:** Zuerst die Clients, zuletzt der Server. Das Netzwerk räumt `viper down` auf, sobald die Gruppe leer ist (vorhandene Logik).
-* **Parallelität:** Zunächst nacheinander (einfacher, lesbare Ausgabe, kein neues Fehlerbild). Parallel erst, wenn die Ausgabe je Rechner getrennt ist (Folgeschritt).
+* **Start, parallel von Anfang an:** Besteht die Gruppe noch nicht, legt zuerst der erste Rechner in `GROUP_MACHINES` das Netzwerk und seinen Server an (Sekunden; so entscheidet nicht der Zufall, wer Server wird, und die Erststart-Sperre bleibt unverändert). Sobald dieser Server beim Anbieter existiert, starten alle übrigen Rechner **gleichzeitig** und der Server richtet sich währenddessen ein. Die Clients warten schon heute bis zu 5 Minuten darauf, dass der Server „ready“ ist (`natsWaitForServer`); ihre Server entstehen, Cloud-init und Installation laufen also neben dem Server. Besteht die Gruppe schon, starten alle fehlenden Rechner gleichzeitig.
+* **Stopp:** Auch parallel, aber in zwei Wellen: erst alle Clients gleichzeitig, wenn alle fertig sind der Server (er widerruft sonst Schlüssel, die ein Client noch braucht). Das Netzwerk räumt `viper down` auf, sobald die Gruppe leer ist (vorhandene Logik).
+* **Ausgabe:** Jeder Rechner schreibt in einen eigenen Puffer; `viper` zeigt Zeilen mit dem Präfix `[alpha]` sofort an. Die Protokolldatei (`viper log`) bleibt je Rechner getrennt. Am Ende steht die Ergebnistabelle.
+* **Begrenzung:** Höchstens 8 Rechner gleichzeitig (`--parallel N` ändert das), wegen der Ratenbegrenzung der Anbieter-API und weil die Installer (Claude, Homebrew) je Adresse begrenzen.
+* **Fragen mit Eingabe:** Abfragen wie `DISCARD` lassen sich nicht parallel beantworten: `down --group` fragt vorher für alle Rechner nacheinander, sammelt die Antworten und führt erst danach parallel aus.
 
 ### Fehler
 
@@ -69,9 +71,9 @@ NATS_MCP=true
 |---|---|
 | 1 | Datei laden, Rangfolge und Prüfungen, mit Tests (noch kein neuer Befehl) |
 | 2 | `check --group` und `ssh --group` (lesend, ohne Risiko) |
-| 3 | `up --group` (Server zuerst, dann Clients, Ergebnistabelle); echter Lauf mit drei Rechnern |
-| 4 | `down --group` (Clients zuerst, Server zuletzt); echter Lauf mit Aufräumen |
-| 5 | Handbuch, Abnahme; danach optional Parallelität |
+| 3 | `up --group` (Server zuerst anlegen, dann alle übrigen parallel; Ergebnistabelle); echter Lauf mit drei Rechnern |
+| 4 | `down --group` (Clients parallel, danach der Server; Fragen vorab); echter Lauf mit Aufräumen |
+| 5 | Handbuch, Abnahme |
 
 ## 6 Offene Fragen
 
