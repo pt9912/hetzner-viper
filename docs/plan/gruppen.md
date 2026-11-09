@@ -114,8 +114,8 @@ Das sind die Stellen, die bei gleichzeitigen Läufen kaputtgehen können, jede m
 * Rechner ohne Datei in `machines/` sind erlaubt.
 * Gruppen ohne NATS sind erlaubt (alle gleichzeitig).
 * Rechner im Netzwerk, aber nicht in der Datei, werden gemeldet und nie von `down --group` beendet.
+* Jeder Rechner darf seinen eigenen Servertyp, Standort (innerhalb einer Netzwerkzone) und sein Image haben (wie im echten Test mit `cpx22` und `cax11`); `up --group` prüft das nicht auf Gleichheit.
 
 ## 8 Offene Fragen
 
 * Soll es einen Befehl geben, der die Gruppe aus dem Zustand beim Anbieter in eine Datei schreibt (`viper group export g`)?
-* Soll `viper up --group` auch die Standardwerte der Rechner prüfen (gleiche Serverart), oder darf jeder Rechner seinen Typ haben (wie im echten Test: `cpx22` und `cax11`)? Vorschlag: jeder Rechner darf seinen Typ haben.
