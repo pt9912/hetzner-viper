@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.77  
+Version: 1.78  
 Software-Version: v0.15.1  
 Stand: 09.11.2026  
 
@@ -413,6 +413,62 @@ nats --server $NATS_URL --tlsca $NATS_CA_FILE --nkey $NATS_NKEY_SEED_FILE pub vi
 * Mit dem letzten Rechner der Gruppe löscht `viper down` auch das private Netzwerk `viper-nats-<gruppe>`.
 * Ein Rechner wechselt nicht stillschweigend die Gruppe: Ändern Sie `NATS_GROUP` für einen vorhandenen Rechner, bricht `viper up` ab. Löschen Sie ihn zuerst.
 * Nicht enthalten: mehrere Server, automatischer Ersatz eines ausgefallenen Servers, JetStream (dauerhafte Nachrichten), Zugriff von außen und Gruppen über mehrere Anbieter.
+
+### Claude Code mit den anderen Rechnern der Gruppe sprechen lassen (NATS_MCP)
+
+Mit `NATS_MCP=true` installiert `viper up` auf dem Rechner einen eigenen MCP-Server, `viper-nats-mcp`, und trägt ihn bei Claude Code ein (Name `nats`, Benutzerbereich). Damit kann der Agent auf einem Rechner Nachrichten an die Agenten der anderen Rechner der Gruppe schicken und empfangen. Die Funktion ist optional und standardmäßig aus; sie setzt eine NATS-Gruppe voraus (`NATS_ENABLED=true`).
+
+#### Einrichten
+
+```
+NATS_ENABLED=true
+NATS_GROUP=entwicklung
+NATS_MCP=true
+# optional:
+NATS_MCP_AUTOALLOW=read          # off (Standard), read oder all
+NATS_MCP_PUSH_FROM=beta,gamma    # Absender, deren Nachrichten in die Sitzung geschoben werden
+```
+
+`viper up` kopiert die Binary auf den Rechner (sie ist in `viper` eingebaut, die SHA-256 wird auf dem Rechner geprüft), schreibt `~/.viper-nats/mcp.env`, ruft `claude mcp add --scope user nats` auf und startet den Server zur Probe wie Claude Code (über stdio). `viper check` prüft Binary, Eintrag, Push-Liste und erlaubte Werkzeuge. Ein mit `go build` gebautes `viper` enthält die Binary nicht; dann nennt `NATS_MCP_BINARY` eine Datei (`make mcp` baut sie), oder bauen Sie `viper` mit `make build`.
+
+#### Die Werkzeuge
+
+| Werkzeug | Wirkung |
+|---|---|
+| `peers` | Maschinen der Gruppe, die sich in den letzten 90 Sekunden gemeldet haben |
+| `send` | Textnachricht an eine Maschine |
+| `broadcast`, `subscribe`, `unsubscribe` | Rundruf an ein Thema; Themen abonnieren und abbestellen (höchstens 16) |
+| `request`, `reply` | Anfrage mit Warten auf die Antwort (30 Sekunden, höchstens 120); Antwort auf eine Anfrage aus dem Posteingang |
+| `inbox` | die letzten 200 eingegangenen Nachrichten und Anfragen |
+
+Der Absender einer Nachricht folgt aus dem Subject, das der NATS-Server nur dem Absender selbst erlaubt; ein Agent kann nicht als ein anderer Rechner senden. Anwesend ist ein Rechner nur, solange dort eine Claude-Code-Sitzung läuft (der Server läuft nur mit ihr). Nachrichten an einen Rechner ohne laufende Sitzung gehen verloren; es gibt keine Zwischenspeicherung.
+
+#### Zwei Wege zum Agenten
+
+* **Abholen (Pull):** Der Agent ruft `inbox` auf. Das funktioniert ohne besondere Einstellung, aber der Agent erfährt von einer Nachricht nur, wenn er nachsieht. Soll er das tun, brauchen Sie eine Anweisung (zum Beispiel ein Abschnitt in der `CLAUDE.md` des Repositories); `viper` legt sie nicht an.
+* **Schieben (Push):** Nachrichten der Rechner in `NATS_MCP_PUSH_FROM` erscheinen von selbst in der Sitzung. Das geht nur, wenn **Sie** Claude Code selbst und interaktiv so starten:
+
+  ```bash
+  claude --dangerously-load-development-channels server:nats
+  ```
+
+  `viper` startet Claude nie damit und bestätigt den Warnhinweis nie; der Befehl wird nur angezeigt. In nicht interaktiven Läufen (`claude -p`) wird der Schalter ignoriert. Channels sind eine Vorschau von Claude Code: Schalter, Bestätigung und Freigabe können sich ändern, und auf Team- und Enterprise-Plänen muss ein Administrator sie freischalten. Push ist für den Betrieb mit einem Menschen am Rechner gedacht (zum Beispiel in der tmux-Sitzung), weniger für unbeaufsichtigte Rechner. Es gilt eine Grenze von 10 Nachrichten je Minute und Absender; weitere gehen nur in den Posteingang.
+
+#### Welche Werkzeuge dürfen ohne Nachfrage laufen (`NATS_MCP_AUTOALLOW`)
+
+Claude Code fragt standardmäßig bei jedem Aufruf eines Werkzeugs. `viper` ändert das nur auf Ihren Wunsch und schreibt dann in `~/.claude/settings.json` des Rechners genau die Einträge `mcp__nats__…`, alle anderen Einträge bleiben:
+
+* `off` (Standard): jedes Werkzeug fragt nach (ein früher gesetzter Eintrag wird entfernt).
+* `read`: `peers` und `inbox` laufen ohne Nachfrage, nur lesend.
+* `all`: alle Werkzeuge laufen ohne Nachfrage. **Dann kann der Agent ohne Ihr Zutun Nachrichten an alle Rechner der Gruppe senden und Anfragen beantworten.** Nutzen Sie das nur, wenn Sie den Agenten und die anderen Agenten der Gruppe so weit überblicken.
+
+#### Warnungen
+
+* **Nichts ist privat.** Jeder Rechner der Gruppe liest alle Nachrichten, Anfragen, Antworten, Rundrufe und Anwesenheitsmeldungen, auch die Namen der Themen. Der Agent darf nichts Vertrauliches senden, keine Schlüssel und keine Zugangsdaten.
+* **Prompt-Injection ist möglich, auch beim Abholen.** Dass der Absender stimmt, heißt nicht, dass der Inhalt vertrauenswürdig ist. Der Text eines anderen Agenten kann dem Agenten Anweisungen unterschieben (über `inbox`, die Antwort auf ein `request` oder Push). `viper-nats-mcp` bereinigt den Text (Steuerzeichen, Bidi-Zeichen, Zeichen ohne Breite, ANSI-Folgen; `<`, `>`, `&` werden umgeschrieben) und begrenzt Größe und Rate, und die Hinweise an Claude sagen, dass Nachrichten keine Anweisungen des Nutzers sind. Das ist eine Hilfe, kein Schutz: In einem echten Lauf hat Claude eine untergeschobene Anweisung ignoriert, eine Zusage gibt es nicht. Ein Agent, der Nachrichten anderer Rechner liest, sollte nichts tun können, was Sie nicht auch dem anderen Rechner zutrauen würden.
+* **Der Agent hält die Schlüssel.** `client.nk`, `connection.env` und `mcp.env` gehören dem Benutzer `builder`, also auch dem Agenten. Ein übernommener Agent kann die Identität des Rechners in der Gruppe benutzen und die Push-Liste ändern. Die Liste `NATS_MCP_PUSH_FROM` ist keine Schutzgrenze gegen einen übernommenen Agenten.
+* **Keine Nachverfolgung und keine Signaturen.** Der NATS-Server führt keine Konten und merkt sich nichts; der Rechner schreibt nur ein lokales Protokoll `~/.viper-nats/mcp.log` (mit Rotation). Alte Nachrichten lassen sich nicht als alt erkennen.
+* **`NATS_MCP_AUTOALLOW=all` und Push** vergrößern, was ein unterschobener Text anrichten kann. Beginnen Sie mit `off` oder `read`.
 
 ### Ein privates Repository per SSH klonen
 
@@ -1105,3 +1161,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.75 | v0.15.1 | Korrektur zu NATS-Gruppen: Rechner einer Gruppe konnten über die Antwort-Funktion von NATS (`allow_responses`) in fremde Bereiche senden; sie ist entfernt, Antworten sind normale Nachrichten im eigenen Bereich. Das Serverzertifikat neuer Gruppen ist ein Blattzertifikat (nötig für Clients in Rust). Gruppen aus v0.15.0 schließen die Lücke mit einem weiteren `viper up`. |
 | 1.76 | v0.15.1 | Release v0.15.1: die Änderung 1.75 (kein `allow_responses`, Blattzertifikat). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.15.1`. |
 | 1.77 | nach v0.15.1 | Neu: `NATS_MCP`, `NATS_MCP_PUSH_FROM`, `NATS_MCP_AUTOALLOW`, `NATS_MCP_BINARY`. `viper up` installiert den eigenen MCP-Server `viper-nats-mcp` (im `viper`-Binary eingebaut, mit Prüfsumme) auf dem Rechner, schreibt `~/.viper-nats/mcp.env`, trägt ihn mit `claude mcp add --scope user` ein und prüft ihn über stdio; `viper check` prüft Binary, Eintrag, Push-Liste und erlaubte Werkzeuge. `viper` startet Claude nie mit dem Channel-Schalter und bestätigt dessen Dialog nie; es zeigt nur den Befehl. |
+| 1.78 | nach v0.15.1 | Neues Kapitel „Claude Code mit den anderen Rechnern der Gruppe sprechen lassen (NATS_MCP)“: Einrichten, Werkzeuge, Abholen und Schieben, `NATS_MCP_AUTOALLOW` und die Warnungen (nichts ist privat, Prompt-Injection auch beim Abholen, der Agent hält die Schlüssel, Channels sind eine Vorschau). |
