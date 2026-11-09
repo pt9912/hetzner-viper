@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"time"
 
@@ -22,7 +23,10 @@ func runUp(ctx context.Context, o *options, env settings.Env, stdout, stderr io.
 	ctx, stop := notifyContext(ctx)
 	defer stop()
 	up := o.host().Services.Up(c, driving.UpOptions{
-		NoCode: o.noCode,
+		NoCode:          o.noCode,
+		OnServerCreated: o.onServerCreated,
+		SkipPreflight:   o.skipPreflight,
+		ServerWait:      o.serverWait,
 		// the pauses end with an interruption
 		Sleep: func(d time.Duration) {
 			select {
@@ -61,6 +65,12 @@ func nativeUp(o *options) error {
 	env, err := o.host().Env()
 	if err != nil {
 		return err
+	}
+	if o.group != "" {
+		if o.noCode {
+			return fmt.Errorf("viper up --group: --no-code is the default for a group, VS Code is not opened")
+		}
+		return runGroupUp(context.Background(), o, env, o.host().Stdout, o.host().Stderr)
 	}
 	return runUp(context.Background(), o, env, o.host().Stdout, o.host().Stderr)
 }

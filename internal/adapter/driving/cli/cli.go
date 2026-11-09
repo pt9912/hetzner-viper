@@ -8,12 +8,18 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type options struct {
-	machine, repo, cmd, dir   string
-	group                     string // run for all machines of groups/<group>.env
-	parallel                  int    // how many machines of a group at the same time (0: the default)
+	machine, repo, cmd, dir string
+	group                   string // run for all machines of groups/<group>.env
+	// set by the group commands for the run of one machine, not by the command line
+	onServerCreated           func()
+	skipPreflight             bool
+	serverWait                time.Duration
+	noJitter                  bool // the tests: machines of a group start without a random pause
+	parallel                  int  // how many machines of a group at the same time (0: the default)
 	force, full, noCode, tmux bool
 	// the need of viper find
 	cpu, disk                int
@@ -58,7 +64,7 @@ func commands() map[string]command {
 	return map[string]command{
 		"setup":     {usage: "", machine: noMachine, run: nativeSetup},
 		"preflight": {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"}, run: nativePreflight},
-		"up":        {usage: "<machine> [--repo URL] [--no-code]", machine: needMachine, flags: []string{"repo", "no-code"}, run: nativeUp},
+		"up":        {usage: "<machine> [--repo URL] [--no-code] | --group G [--repo URL] [--parallel N]", machine: needMachine, flags: []string{"repo", "no-code", "group", "parallel"}, run: nativeUp},
 		"check":     {usage: "<machine> | --group G [--parallel N]", machine: needMachine, flags: []string{"group", "parallel"}, run: nativeCheck},
 		"ssh":       {usage: "<machine> [--cmd COMMAND | --tmux] | --group G --cmd COMMAND [--parallel N]", machine: needMachine, flags: []string{"cmd", "tmux", "group", "parallel"}, run: nativeSSH},
 		"down":      {usage: "<machine> [--force]", machine: needMachine, flags: []string{"force"}, run: nativeDown},

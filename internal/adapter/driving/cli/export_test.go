@@ -16,6 +16,7 @@ import (
 type Opts struct {
 	Machine, Repo, Cmd, Dir   string
 	Group                     string
+	NoJitter                  bool
 	Parallel                  int
 	Force, Full, NoCode, Tmux bool
 	CPU, Disk                 int
@@ -27,13 +28,13 @@ type Opts struct {
 }
 
 func (p *Opts) options() *options {
-	return &options{cpu: p.CPU, disk: p.Disk, ram: p.RAM, arch: p.Arch, location: p.Location, provider: p.Provider, vat: p.VAT, hasVAT: p.HasVAT, group: p.Group, parallel: p.Parallel, machine: p.Machine, repo: p.Repo, cmd: p.Cmd, dir: p.Dir, force: p.Force, full: p.Full, noCode: p.NoCode, tmux: p.Tmux, h: p.Host}
+	return &options{cpu: p.CPU, disk: p.Disk, ram: p.RAM, arch: p.Arch, location: p.Location, provider: p.Provider, vat: p.VAT, hasVAT: p.HasVAT, noJitter: p.NoJitter, group: p.Group, parallel: p.Parallel, machine: p.Machine, repo: p.Repo, cmd: p.Cmd, dir: p.Dir, force: p.Force, full: p.Full, noCode: p.NoCode, tmux: p.Tmux, h: p.Host}
 }
 
 // Parse reads the command line.
 func Parse(args []string) (string, Opts, error) {
 	name, o, err := parse(args)
-	return name, Opts{Group: o.group, Parallel: o.parallel, Machine: o.machine, Repo: o.repo, Cmd: o.cmd, Dir: o.dir, Force: o.force, Full: o.full, NoCode: o.noCode, Tmux: o.tmux, CPU: o.cpu, Disk: o.disk, RAM: o.ram, Arch: o.arch, Location: o.location, Provider: o.provider, VAT: o.vat, HasVAT: o.hasVAT, Host: o.h}, err
+	return name, Opts{NoJitter: o.noJitter, Group: o.group, Parallel: o.parallel, Machine: o.machine, Repo: o.repo, Cmd: o.cmd, Dir: o.dir, Force: o.force, Full: o.full, NoCode: o.noCode, Tmux: o.tmux, CPU: o.cpu, Disk: o.disk, RAM: o.ram, Arch: o.arch, Location: o.location, Provider: o.provider, VAT: o.vat, HasVAT: o.hasVAT, Host: o.h}, err
 }
 
 // IsHelp reports whether the error is the request for the help text.
@@ -149,4 +150,9 @@ func NewPrefixWriters(out io.Writer, width int, machines ...string) ([]io.Writer
 			pw.flush()
 		}
 	}
+}
+
+// RunGroupUp starts the machines of a group.
+func RunGroupUp(ctx context.Context, p *Opts, env settings.Env, stdout, stderr io.Writer) error {
+	return runGroupUp(ctx, p.options(), env, stdout, stderr)
 }

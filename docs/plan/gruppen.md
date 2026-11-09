@@ -1,6 +1,6 @@
 # Plan: Gruppen-Dateien (`groups/`) – mehrere Rechner gemeinsam starten und stoppen
 
-Stand: 09.11.2026 · Status: Meilensteine 1 bis 4a umgesetzt, der Rest offen
+Stand: 09.11.2026 · Status: Meilensteine 1 bis 4b umgesetzt (echter Lauf: drei Rechner in 7,6 Minuten, alle drei in der Gruppe registriert), der Rest offen
 
 ## 1 Ziel
 

@@ -30,36 +30,64 @@ func runGroup(ctx context.Context, o *options, env settings.Env, stdout, stderr 
 	}
 	ctx, stop := notifyContext(ctx)
 	defer stop()
-	var mu sync.Mutex
-	width := 0
-	for _, m := range g.Machines {
-		width = max(width, len(m))
-	}
+	ws := newGroupWriters(g.Machines, stdout, stderr)
 	tasks := make([]driving.GroupTask, 0, len(g.Machines))
 	for _, m := range g.Machines {
-		po, pe := newPrefixWriter(&mu, stdout, m, width), newPrefixWriter(&mu, stderr, m, width)
 		mo := *o
 		mo.machine, mo.group = m, ""
-		tasks = append(tasks, driving.GroupTask{Machine: m, Run: func(ctx context.Context) (int, error) {
-			defer po.flush()
-			defer pe.flush()
-			err := run(ctx, &mo, env, po, pe)
-			var es exitStatus
-			switch {
-			case err == nil:
-				return 0, nil
-			case errors.As(err, &es):
-				return int(es), nil
-			}
-			fmt.Fprintln(pe, err)
-			return 1, err
-		}})
+		tasks = append(tasks, driving.GroupTask{Machine: m, Run: ws.task(m, func(ctx context.Context, out, errOut io.Writer) error {
+			return run(ctx, &mo, env, out, errOut)
+		})})
 	}
-	results := o.host().Services.Groups.Run(ctx, tasks, o.parallel)
-	mu.Lock()
-	driving.WriteGroupTable(stdout, results)
-	mu.Unlock()
-	if code := driving.GroupExitCode(results); code != 0 {
+	return finishGroup(o.host().Services.Groups.Run(ctx, tasks, o.parallel), stdout, ws, true)
+}
+
+// groupWriters are the writers of the machines of a group: one lock for the terminal.
+type groupWriters struct {
+	mu       sync.Mutex
+	out, err map[string]*prefixWriter
+}
+
+func newGroupWriters(machines []string, stdout, stderr io.Writer) *groupWriters {
+	ws := &groupWriters{out: map[string]*prefixWriter{}, err: map[string]*prefixWriter{}}
+	width := 0
+	for _, m := range machines {
+		width = max(width, len(m))
+	}
+	for _, m := range machines {
+		ws.out[m], ws.err[m] = newPrefixWriter(&ws.mu, stdout, m, width), newPrefixWriter(&ws.mu, stderr, m, width)
+	}
+	return ws
+}
+
+// task makes the work of a machine a task: its output gets the prefix, and its error becomes an exit code.
+func (ws *groupWriters) task(m string, run func(ctx context.Context, out, errOut io.Writer) error) func(context.Context) (int, error) {
+	return func(ctx context.Context) (int, error) {
+		po, pe := ws.out[m], ws.err[m]
+		defer po.flush()
+		defer pe.flush()
+		err := run(ctx, po, pe)
+		var es exitStatus
+		switch {
+		case err == nil:
+			return 0, nil
+		case errors.As(err, &es):
+			return int(es), nil
+		}
+		fmt.Fprintln(pe, err)
+		return 1, err
+	}
+}
+
+// finishGroup prints the table (always, or only if a machine is not fine) and returns the exit status.
+func finishGroup(results []driving.GroupResult, stdout io.Writer, ws *groupWriters, always bool) error {
+	code := driving.GroupExitCode(results)
+	if always || code != 0 {
+		ws.mu.Lock()
+		driving.WriteGroupTable(stdout, results)
+		ws.mu.Unlock()
+	}
+	if code != 0 {
 		return exitStatus(code)
 	}
 	return nil

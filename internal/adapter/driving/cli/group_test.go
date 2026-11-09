@@ -10,10 +10,15 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driving/cli"
+	"github.com/pt9912/hetzner-viper/internal/model"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/runlog"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
+	"github.com/pt9912/hetzner-viper/internal/port/driving"
 )
 
 func TestGroupOptionsAreParsedAndExcludeAMachine(t *testing.T) {
@@ -126,5 +131,210 @@ func TestSSHForAGroupNeedsACommand(t *testing.T) {
 		if err := cli.RunCommand("ssh", p); err == nil || !strings.Contains(err.Error(), "needs --cmd") {
 			t.Errorf("%v", err)
 		}
+	}
+}
+
+// upFake is viper up of the machines of a group: what each does is set by its name.
+type upFake struct {
+	mu      sync.Mutex
+	started []string
+	signals map[string]bool
+	opts    map[string]driving.UpOptions
+	script  func(name string, o driving.UpOptions) (int, error)
+}
+
+func (f *upFake) services(h *cli.Host) {
+	f.signals, f.opts = map[string]bool{}, map[string]driving.UpOptions{}
+	h.Services.Up = func(c *model.Machine, o driving.UpOptions) driving.Up {
+		return upFunc(func(ctx context.Context) (int, error) {
+			f.mu.Lock()
+			f.started = append(f.started, c.Name)
+			f.opts[c.Name] = o
+			f.mu.Unlock()
+			return f.script(c.Name, o)
+		})
+	}
+	h.Services.Preflight = func(c *model.Machine) driving.Preflight { return preflightFunc(func() int { return 0 }) }
+}
+
+type upFunc func(ctx context.Context) (int, error)
+
+func (u upFunc) Up(ctx context.Context, _ *model.Machine, _ string, _ runlog.Log, _, _ io.Writer) (int, error) {
+	return u(ctx)
+}
+
+type preflightFunc func() int
+
+func (p preflightFunc) Preflight(context.Context, *model.Machine, string, io.Writer, io.Writer) int {
+	return p()
+}
+
+func upEnv(t *testing.T) settings.Env {
+	t.Helper()
+	env, _ := nativeEnv(t)
+	env.Lookup = func(k string) (string, bool) {
+		v, ok := map[string]string{"HOME": env.Home, "HCLOUD_TOKEN": "h"}[k]
+		return v, ok
+	}
+	return env
+}
+
+func upGroupDir(t *testing.T, machines, extra string) string {
+	t.Helper()
+	dir := t.TempDir()
+	write := func(rel, text string) {
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(".env.local", "DNS_DOMAIN=example.com\nDNS_PROVIDER=none\n")
+	write("groups/dev.env", "GROUP_MACHINES="+machines+"\nNATS_ENABLED=true\n"+extra)
+	return dir
+}
+
+func TestTheClientsOfANewGroupStartOnlyAfterTheServerExists(t *testing.T) {
+	dir := upGroupDir(t, "alpha,beta,gamma", "")
+	_, h := fakeTools(t)
+	f := &upFake{}
+	f.services(h)
+	var serverSignaled atomic.Bool
+	var early atomic.Int32
+	f.script = func(name string, o driving.UpOptions) (int, error) {
+		if name == "alpha" {
+			time.Sleep(50 * time.Millisecond)
+			serverSignaled.Store(true)
+			o.OnServerCreated()
+			time.Sleep(50 * time.Millisecond)
+			return 0, nil
+		}
+		if !serverSignaled.Load() {
+			early.Add(1)
+		}
+		return 0, nil
+	}
+	var out, errb bytes.Buffer
+	err := cli.RunGroupUp(context.Background(), &cli.Opts{Host: h, Dir: dir, Group: "dev", NoJitter: true}, upEnv(t), &out, &errb)
+	if err != nil {
+		t.Fatalf("%v\n%s\n%s", err, out.String(), errb.String())
+	}
+	if early.Load() != 0 || len(f.started) != 3 || f.started[0] != "alpha" {
+		t.Errorf("started %v, %d before the server", f.started, early.Load())
+	}
+	for _, m := range []string{"alpha", "beta", "gamma"} {
+		o := f.opts[m]
+		if !o.NoCode || !o.SkipPreflight || o.ServerWait != 15*time.Minute || o.OnServerCreated == nil {
+			t.Errorf("%s: %+v", m, o)
+		}
+	}
+	for _, want := range []string{"== Result", "alpha  ok", "beta   ok", "gamma  ok"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("missing %q in\n%s", want, out.String())
+		}
+	}
+}
+
+func TestNothingIsMadeIfTheChecksOfOneMachineFail(t *testing.T) {
+	dir := upGroupDir(t, "alpha,beta", "")
+	_, h := fakeTools(t)
+	f := &upFake{script: func(string, driving.UpOptions) (int, error) { return 0, nil }}
+	f.services(h)
+	h.Services.Preflight = func(c *model.Machine) driving.Preflight {
+		return preflightFunc(func() int {
+			if c.Name == "beta" {
+				return 1
+			}
+			return 0
+		})
+	}
+	var out, errb bytes.Buffer
+	err := cli.RunGroupUp(context.Background(), &cli.Opts{Host: h, Dir: dir, Group: "dev", NoJitter: true}, upEnv(t), &out, &errb)
+	if cli.ExitCode(err) == 0 || len(f.started) != 0 {
+		t.Fatalf("%v, started %v", err, f.started)
+	}
+	if !strings.Contains(errb.String(), "Nothing was made") {
+		t.Errorf("stderr:\n%s", errb.String())
+	}
+}
+
+func TestIfTheServerFailsBeforeItExistsNoClientIsStarted(t *testing.T) {
+	dir := upGroupDir(t, "alpha,beta,gamma", "")
+	_, h := fakeTools(t)
+	f := &upFake{script: func(name string, _ driving.UpOptions) (int, error) { return 1, driving.ErrShown }}
+	f.services(h)
+	var out, errb bytes.Buffer
+	err := cli.RunGroupUp(context.Background(), &cli.Opts{Host: h, Dir: dir, Group: "dev", NoJitter: true}, upEnv(t), &out, &errb)
+	if cli.ExitCode(err) != 1 || len(f.started) != 1 || f.started[0] != "alpha" {
+		t.Fatalf("%v started %v", err, f.started)
+	}
+	for _, want := range []string{"alpha  failed", "beta   failed: skipped: alpha failed before its server existed", "gamma  failed: skipped: alpha failed"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("missing %q in\n%s", want, out.String())
+		}
+	}
+}
+
+func TestIfTheServerFailsAfterItExistsTheClientsAreStopped(t *testing.T) {
+	dir := upGroupDir(t, "alpha,beta", "")
+	_, h := fakeTools(t)
+	betaRunning := make(chan struct{})
+	h.Services.Preflight = func(c *model.Machine) driving.Preflight { return preflightFunc(func() int { return 0 }) }
+	h.Services.Up = func(c *model.Machine, o driving.UpOptions) driving.Up {
+		return upFunc(func(ctx context.Context) (int, error) {
+			if c.Name == "beta" {
+				close(betaRunning)
+				<-ctx.Done()
+				return 1, ctx.Err()
+			}
+			o.OnServerCreated()
+			<-betaRunning
+			return 1, driving.ErrShown
+		})
+	}
+	var out, errb bytes.Buffer
+	start := time.Now()
+	err := cli.RunGroupUp(context.Background(), &cli.Opts{Host: h, Dir: dir, Group: "dev", NoJitter: true}, upEnv(t), &out, &errb)
+	if cli.ExitCode(err) != 1 || time.Since(start) > 3*time.Second {
+		t.Fatalf("%v after %v\n%s", err, time.Since(start), out.String())
+	}
+	if !strings.Contains(out.String(), "beta   failed: stopped because the server alpha failed") {
+		t.Errorf("table:\n%s", out.String())
+	}
+}
+
+func TestMachinesWithOtherKeysAndFirewallsWaitForTheirFirstMachine(t *testing.T) {
+	dir := upGroupDir(t, "alpha,beta,gamma", "")
+	if err := os.MkdirAll(filepath.Join(dir, "machines"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "machines", "gamma.env.local"), []byte("SERVER_PREFIX=other\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, h := fakeTools(t)
+	f := &upFake{}
+	f.services(h)
+	var order []string
+	var omu sync.Mutex
+	h.Services.Up = func(c *model.Machine, o driving.UpOptions) driving.Up {
+		return upFunc(func(context.Context) (int, error) {
+			omu.Lock()
+			order = append(order, c.Name)
+			omu.Unlock()
+			o.OnServerCreated()
+			time.Sleep(30 * time.Millisecond)
+			return 0, nil
+		})
+	}
+	var out, errb bytes.Buffer
+	if err := cli.RunGroupUp(context.Background(), &cli.Opts{Host: h, Dir: dir, Group: "dev", NoJitter: true}, upEnv(t), &out, &errb); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	// alpha is the server and the first of the prefix claude; gamma is the first of the prefix other
+	// but still a client of the group: it waits for the server
+	if len(order) != 3 || order[0] != "alpha" {
+		t.Errorf("order %v", order)
 	}
 }
