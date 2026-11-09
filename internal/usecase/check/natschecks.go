@@ -202,6 +202,9 @@ func natsServerChecks(r *report, c *model.Machine, v map[string]string, members 
 	} else {
 		r.bad("service viper-nats is %s", v["unit"])
 	}
+	if n := v["allow_responses"]; n != "" && n != "0" {
+		r.warn("server.conf still has allow_responses (written by viper v0.15.0): any machine of the group can publish to any subject; run viper up on a machine of the group to write the configuration again")
+	}
 	natsListenCheck(r, v["listen"], srv.PrivateIP)
 	natsRegistrationChecks(r, c, v["registered"], members)
 }

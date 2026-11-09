@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.74  
+Version: 1.75  
 Software-Version: v0.15.0  
 Stand: 09.11.2026  
 
@@ -230,7 +230,7 @@ Geprüft werden:
 
 * **DNS:** Der Name `<SERVER_PREFIX>-<rechner>.<DNS_DOMAIN>` löst bei den öffentlichen Resolvern von Cloudflare (1.1.1.1) und Google (8.8.8.8) auf die IP-Adresse des Servers auf. Zusätzlich zeigt der Check, was Ihr Computer auflöst.
 * **Zugriff wie ein anderes Gerät:** eine SSH-Verbindung über den DNS-Namen, bei der nur der Host-CA vertraut wird, nicht dem hinterlegten Schlüssel. So sieht das iPad oder ein zweiter Computer den Server, und dabei wird geprüft, dass das Zertifikat für den Namen gilt. Der Check zeigt auch, bis wann das Zertifikat gültig ist.
-* **NATS (nur für Rechner einer NATS-Gruppe):** Gruppe, genau ein Server im Zustand `ready`, privates Netzwerk und private Adresse beim Anbieter. Auf dem Rechner: das Serverzertifikat (Ablauf, passende Adresse), die Anmeldung mit dem Schlüssel des Rechners über TLS und, auf dem Server, der Dienst, die Adresse, auf der er lauscht (nur die private), und wer registriert ist. Von Ihrem Computer aus: dass der Port auf der öffentlichen Adresse nicht antwortet.
+* **NATS (nur für Rechner einer NATS-Gruppe):** Gruppe, genau ein Server im Zustand `ready`, privates Netzwerk und private Adresse beim Anbieter. Auf dem Rechner: das Serverzertifikat (Ablauf, passende Adresse), die Anmeldung mit dem Schlüssel des Rechners über TLS und, auf dem Server, der Dienst, die Adresse, auf der er lauscht (nur die private), wer registriert ist und ob die Konfiguration noch die Lücke von v0.15.0 enthält (`allow_responses`; Warnung, behoben durch ein weiteres `viper up`). Von Ihrem Computer aus: dass der Port auf der öffentlichen Adresse nicht antwortet.
 * **Server:** cloud-init ist fertig. Claude Code ist installiert und, wenn `VIPER_CLAUDE_TOKEN` gesetzt ist, angemeldet und antwortet. `gh` ist installiert und, wenn `VIPER_GH_TOKEN` gesetzt ist, angemeldet. Docker läuft, die Swap ist aktiv (wenn `VIPER_SWAP` gesetzt ist), Homebrew ist installiert und im `PATH` (wenn `VIPER_HOMEBREW=1`), das Repository ist geklont, und die SSH-Härtung wirkt. Dazu kommen freier Speicher und Plattenplatz.
 
 #### Ergebnis
@@ -391,7 +391,7 @@ Jeder Rechner der Gruppe hat im Verzeichnis `~/.viper-nats/` die Datei `connecti
 NATS_URL=tls://10.115.0.2:4222
 NATS_CA_FILE=/home/builder/.viper-nats/server.crt
 NATS_NKEY_SEED_FILE=/home/builder/.viper-nats/client.nk
-NATS_INBOX_PREFIX=_INBOX.beta
+NATS_INBOX_PREFIX=_INBOX.beta   # wird seit v0.15.1 nicht mehr gebraucht
 VIPER_NATS_SUBJECT_PREFIX=viper.entwicklung.beta
 ```
 
@@ -402,7 +402,7 @@ Auf allen Rechnern ist außerdem das Programm `nats` installiert. Beispiel auf `
 nats --server $NATS_URL --tlsca $NATS_CA_FILE --nkey $NATS_NKEY_SEED_FILE pub viper.entwicklung.beta.status "bereit"
 ```
 
-**Wer darf was?** Jeder Rechner darf nur in seinen eigenen Bereich `viper.<gruppe>.<rechner>.>` senden und an andere Rechner Anfragen an `viper.<gruppe>.<empfänger>.req.>` schicken. Mitlesen darf er alles in `viper.<gruppe>.>`. Antworten auf Anfragen kommen an `_INBOX.<rechner>.>` zurück, deshalb muss ein Client für Anfragen dieses Präfix verwenden (`NATS_INBOX_PREFIX`; beim `nats`-Programm `--inbox-prefix`). Alles andere, auch andere Gruppen, wird abgelehnt.
+**Wer darf was?** Jeder Rechner darf nur in seinen eigenen Bereich `viper.<gruppe>.<rechner>.>` senden und Anfragen an `viper.<gruppe>.<empfänger>.req.>` schicken. Mitlesen darf er alles in `viper.<gruppe>.>`. Alles andere, auch andere Gruppen, wird abgelehnt. **Antworten sind normale Nachrichten:** Wer antwortet, veröffentlicht sie in seinem eigenen Bereich, zum Beispiel `viper.<gruppe>.<antwortender>.res.<anfragender>`; das Antwort-Verfahren von NATS über ein Reply-Subject (`nats request`) funktioniert zwischen den Rechnern seit v0.15.1 nicht mehr. In `viper.<gruppe>.<rechner>.>` steht verlässlich, wer gesendet hat; in `viper.<gruppe>.<empfänger>.req.>` nicht, diesen Bereich darf jede Maschine beschreiben. **Alle Rechner der Gruppe können alles mitlesen**, nichts ist privat. Gruppen aus v0.15.0 hatten eine Lücke (Rechner konnten über die Antwort-Funktion `allow_responses` auch in fremde Bereiche senden); ein weiteres `viper up` auf einem Rechner der Gruppe schreibt die Konfiguration neu und schließt sie.
 
 #### Hinweise
 
@@ -1098,3 +1098,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.72 | v0.14.0 | Release v0.14.0: die Änderungen 1.70 und 1.71 (Windows-Binary in den Voraussetzungen, `brew` in `VIPER_POST_CLONE`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.14.0`. |
 | 1.73 | v0.15.0 | Neu: NATS-Gruppen (nur Hetzner, optional): `NATS_ENABLED`, `NATS_GROUP`, `NATS_PORT`. Der erste Rechner einer Gruppe wird der NATS-Server, alle weiteren Clients, verbunden über ein privates Netzwerk mit TLS und eigenem Schlüssel je Rechner. `viper down` widerruft den Schlüssel eines Clients und schützt den Server, `viper check` prüft die Gruppe. |
 | 1.74 | v0.15.0 | Release v0.15.0: die Änderung 1.73 (NATS-Gruppen). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.15.0`. |
+| 1.75 | v0.15.1 | Korrektur zu NATS-Gruppen: Rechner einer Gruppe konnten über die Antwort-Funktion von NATS (`allow_responses`) in fremde Bereiche senden; sie ist entfernt, Antworten sind normale Nachrichten im eigenen Bereich. Das Serverzertifikat neuer Gruppen ist ein Blattzertifikat (nötig für Clients in Rust). Gruppen aus v0.15.0 schließen die Lücke mit einem weiteren `viper up`. |

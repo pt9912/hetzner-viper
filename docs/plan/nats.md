@@ -220,7 +220,7 @@ Für Core NATS ist keine persistente Nachrichtenspeicherung vorgesehen. **JetStr
 
 ### TLS-Zertifikat
 
-**Festlegung:** Es gibt keine eigene CA. Der Server erhält ein selbstsigniertes **Blattzertifikat** (`CA:FALSE`, `serverAuth`; mit `CA:TRUE` lehnen rustls-Clients es mit `CaUsedAsEndEntity` ab, in einem echten Lauf bestätigt), dessen Schlüssel die Servermaschine nie verlässt (Eigentümer `builder`, Modus `0600`, ohne `sudo`). Die Clients vertrauen ausschließlich diesem Zertifikat (in der Clientkonfiguration als `ca_file` bzw. Vertrauensanker eingetragen). Die Clientauthentifizierung läuft über NKeys, TLS dient der Serverauthentifizierung und der Verschlüsselung.
+**Festlegung:** Es gibt keine eigene CA. Der Server erhält ein selbstsigniertes **Blattzertifikat** (`CA:FALSE`, `serverAuth`; mit `CA:TRUE` lehnen rustls-Clients es ab, siehe `nats-jetstream-nuntius.md` §13/Meilenstein 0), dessen Schlüssel die Servermaschine nie verlässt (Eigentümer `builder`, Modus `0600`, ohne `sudo`). Die Clients vertrauen ausschließlich diesem Zertifikat (in der Clientkonfiguration als `ca_file` bzw. Vertrauensanker eingetragen). Die Clientauthentifizierung läuft über NKeys, TLS dient der Serverauthentifizierung und der Verschlüsselung.
 
 - Das Zertifikat enthält die private IP als SAN. Alternativ kann ein vorhandener Maschinen-DNS-Name verwendet werden, sofern die Verbindung dann über diesen Namen aufgebaut und bei der TLS-Prüfung ausdrücklich verwendet wird.
 - **Laufzeit:** 1 Monat, **keine automatische Erneuerung**, analog zum bestehenden SSH-Host-Zertifikat (sieben Tage, ohne Erneuerung). Gruppen laufen typischerweise 1 Tag bis 2 Wochen und damit deutlich kürzer als das Zertifikat. Die kurze Laufzeit begrenzt zugleich den Schaden bei einem abgeflossenen Schlüssel. Ein zu lang laufendes Zertifikat benötigt keine Rotationslogik: Bei Ablauf wird die Gruppe neu aufgebaut.
@@ -271,9 +271,16 @@ viper.entwicklung.gamma.events
 | Publish | `viper.<g>.<m>.>` | Eigene Ereignisse und Status (Broadcast) |
 | Publish | `viper.<g>.*.req.>` | Anfragen an andere Maschinen |
 | Subscribe | `viper.<g>.>` | Gruppenweite Ereignisse und Anfragen |
-| Subscribe | `_INBOX.<m>.>` | Eigene Antworten |
+| Subscribe | `_INBOX.<m>.>` | (seit v0.15.1 ungenutzt, bleibt bestehen) |
 
-Anfragen an eine Maschine gehen an `viper.<g>.<empfänger>.req.<name>`, zum Beispiel `viper.entwicklung.gamma.req.build`. Die Antwort erfolgt über `allow_responses` auf dem Antwort-Subject des Absenders. Clients müssen ein eigenes Inbox-Präfix `_INBOX.<m>` verwenden, damit Antworten anderer Maschinen nicht lesbar sind. Die Standardrichtlinie ist bewusst offen für Lesen innerhalb der Gruppe: Jede Maschine kann alle Subjects der Gruppe mithören. Eine pauschale Freigabe auf `>` ist ausgeschlossen, ebenso Zugriff auf Subjects anderer Gruppen. Feinere, konfigurierbare Richtlinien sind ein späteres Feature; die Standardrichtlinie wird durch Unit-Tests der ACL-Erzeugung abgesichert (§12).
+Anfragen an eine Maschine gehen an `viper.<g>.<empfänger>.req.<name>`, zum Beispiel `viper.entwicklung.gamma.req.build`. Diesen Teilbaum darf **jede** Maschine beschreiben; der Absender ist dort also nicht belegt. **Antworten über das NATS-Reply-Feld gibt es nicht:** `allow_responses` ist seit v0.15.1 nicht mehr gesetzt (siehe unten). Wer antwortet, veröffentlicht eine normale Nachricht in seinem eigenen Bereich, zum Beispiel `viper.<g>.<antwortender>.res.<anfragender>`; der Anfragende liest sie mit und erkennt am dritten Token, wer geantwortet hat. Das Recht, `_INBOX.<m>.>` zu lesen, bleibt aus Kompatibilität bestehen, wird aber nicht mehr gebraucht. Die Standardrichtlinie ist bewusst offen für Lesen innerhalb der Gruppe: Jede Maschine kann alle Subjects der Gruppe mithören. Eine pauschale Freigabe auf `>` ist ausgeschlossen, ebenso Zugriff auf Subjects anderer Gruppen. Feinere, konfigurierbare Richtlinien sind ein späteres Feature; die Standardrichtlinie wird durch Unit-Tests der ACL-Erzeugung und durch einen Test mit einem echten NATS-Server abgesichert (§12).
+
+**Behoben in v0.15.1 (gefunden am 09.11.2026, betraf v0.15.0):** Die Sendeliste hielt nur gegen **direktes** Senden. `allow_responses: true` erlaubte einer Maschine, auf das Reply-Subject jeder Nachricht zu antworten, die ihr **zugestellt** wurde, ohne die Sendeliste zu prüfen. Weil jede Maschine `viper.<g>.>` liest und das Reply-Feld einer Nachricht frei wählbar ist, konnte jede Maschine auf **jedes** Subject der Gruppe senden. Mit `nats-server` 2.15.2 und den Rechten aus `Render` nachgewiesen:
+* *Eigenschleife:* Maschine C sendet `viper.<g>.c.x` mit `Reply=viper.<g>.a.out.b`, bekommt ihre eigene Nachricht zurück und antwortet darauf; B empfängt die Nachricht auf `viper.<g>.a.out.b`, ohne dass der Server einen Fehler meldet.
+* *Dritter:* C beantwortet eine fremde Anfrage von A (`Reply=_INBOX.a.1`); A erhält die Antwort.
+* *Frei gewähltes Reply-Feld:* C bittet B mit `Reply=viper.<g>.a.out.c` um eine Antwort; B veröffentlicht damit in A's Teilbaum.
+
+Seit v0.15.1 schreibt `Render` kein `allow_responses` mehr; alle drei Wege (und das direkte Senden) werden vom Server mit `Permission Violation` abgelehnt. Ein Test mit `nats-server` als Bibliothek (`internal/natsserver/forge_test.go`) prüft das mit den echten Rechten und schlägt an, wenn `allow_responses` zurückkehrt. Gruppen, die mit v0.15.0 angelegt wurden, behalten die Lücke, bis ein weiteres `viper up` auf einem Rechner der Gruppe die Konfiguration neu schreibt. Die Aussage „Wer sendet, steht im Subject“ gilt damit für den eigenen Teilbaum (`viper.<g>.<m>.>`); der Teilbaum `viper.<g>.*.req.>` bleibt ein offener, nicht authentifizierter Kanal.
 
 ### Schlüsselablage
 
@@ -539,7 +546,7 @@ Umgesetzt in `internal/usecase/start/nats.go`. Ein Client wartet auf den Server 
 
 Praktisch bestätigt (drei `cpx22` in `fsn1`, danach gelöscht):
 - Alpha (Server) und danach Beta und Gamma gleichzeitig mit einem erneuten Lauf von Alpha: alle drei Registrierungen sind in der Konfiguration, keine ging verloren.
-- Broadcast: Gamma empfängt, was Beta auf `viper.live.beta.status` veröffentlicht. Anfrage/Antwort: Beta fragt `viper.live.alpha.req.echo`, Alpha antwortet (`pong from alpha`, rtt 0,6 ms; Voraussetzung ist das eigene Inbox-Präfix `_INBOX.<maschine>`, das `connection.env` als `NATS_INBOX_PREFIX` liefert). Veröffentlichen in den Subtree einer anderen Maschine oder in eine andere Gruppe wird abgelehnt.
+- (Hinweis: Das hier beschriebene Anfrage/Antwort-Verfahren über das NATS-Reply-Feld gibt es seit v0.15.1 nicht mehr, siehe §6.) Broadcast: Gamma empfängt, was Beta auf `viper.live.beta.status` veröffentlicht. Anfrage/Antwort: Beta fragt `viper.live.alpha.req.echo`, Alpha antwortet (`pong from alpha`, rtt 0,6 ms; Voraussetzung ist das eigene Inbox-Präfix `_INBOX.<maschine>`, das `connection.env` als `NATS_INBOX_PREFIX` liefert). Veröffentlichen in den Subtree einer anderen Maschine oder in eine andere Gruppe wird abgelehnt.
 - Die ACL-Entscheidung aus §6 trägt: Request-Subjects `viper.<g>.<empfänger>.req.>` gehen, alles andere fremde nicht.
 
 

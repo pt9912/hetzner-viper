@@ -275,3 +275,21 @@ func TestMachinesWithoutNATSGetNoSection(t *testing.T) {
 		t.Errorf("%d\n%s", problems, out)
 	}
 }
+
+func TestTheServerCheckWarnsAboutAnOldConfigurationWithAllowResponses(t *testing.T) {
+	st := strings.Replace(healthyServer, "alpha,web", "beta,web", 1) + "allow_responses=3\n"
+	n := newNATSFixture(t, "", model.NATSServer, st)
+	out, problems := n.run()
+	if !strings.Contains(natsSection(out), "WARN  server.conf still has allow_responses") {
+		t.Errorf("%d\n%s", problems, natsSection(out))
+	}
+	if problems != 0 {
+		t.Errorf("a warning is no problem: %d", problems)
+	}
+	// a configuration without it (or a status from a machine that is no server) says nothing
+	ok := newNATSFixture(t, "", model.NATSServer, strings.Replace(healthyServer, "alpha,web", "beta,web", 1)+"allow_responses=0\n")
+	out, _ = ok.run()
+	if strings.Contains(natsSection(out), "allow_responses") {
+		t.Errorf("clean configuration:\n%s", natsSection(out))
+	}
+}

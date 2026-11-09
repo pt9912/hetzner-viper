@@ -30,5 +30,7 @@ if [ -s "$dir/server.conf" ]; then
   port="${NATS_URL##*:}"
   echo "unit=$(systemctl is-active viper-nats 2>/dev/null || true)"
   echo "listen=$(ss -ltn "sport = :$port" 2>/dev/null | awk 'NR > 1 {print $4}' | paste -sd, -)"
+  # v0.15.0 wrote allow_responses, which lets any machine publish anywhere in the group
+  echo "allow_responses=$(grep -c allow_responses "$dir/server.conf")"
   echo "registered=$(grep '^# viper-client ' "$dir/server.conf" | awk '{print $3}' | paste -sd, -)"
 fi

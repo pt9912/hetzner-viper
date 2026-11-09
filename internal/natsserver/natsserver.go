@@ -102,6 +102,13 @@ type Config struct {
 // Permissions are the subjects a machine may use (the default policy, §6 of the plan): it
 // publishes to its own subtree and to the request subjects of the others, and listens to the
 // group and to its own inbox. Nothing else, so no machine can reach another group.
+//
+// The users get no allow_responses: it lets a client publish to the reply subject of any message
+// delivered to it, without looking at the publish list. Every machine reads viper.<g>.> and the
+// reply subject of a message is chosen by its sender, so that would let any machine publish to any
+// subject (checked with nats-server 2.15.2: a machine can send its own message with a foreign
+// reply subject, receive it back and answer it). Answers are therefore plain messages in the
+// answering machine's own subtree.
 func Permissions(group, machine string) (publish, subscribe []string) {
 	publish = []string{
 		fmt.Sprintf("viper.%s.%s.>", group, machine),
@@ -164,7 +171,7 @@ func (c Config) Render() (string, error) {
 	b.WriteString("authorization {\n  timeout: 5\n  users = [\n")
 	for _, cl := range clients {
 		pub, sub := Permissions(c.Group, cl.Machine)
-		fmt.Fprintf(&b, "    {\n      # %s\n      nkey: %s\n      permissions: {\n        publish: { allow: [%s] }\n        subscribe: { allow: [%s] }\n        allow_responses: true\n      }\n    }\n",
+		fmt.Fprintf(&b, "    {\n      # %s\n      nkey: %s\n      permissions: {\n        publish: { allow: [%s] }\n        subscribe: { allow: [%s] }\n      }\n    }\n",
 			cl.Machine, cl.PublicKey, quoteList(pub), quoteList(sub))
 	}
 	b.WriteString("  ]\n}\n")

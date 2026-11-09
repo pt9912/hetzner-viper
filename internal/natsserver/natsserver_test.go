@@ -37,7 +37,7 @@ func TestRenderListensOnThePrivateIPOnlyAndGivesEachMachineItsSubjects(t *testin
 		`host: "10.130.0.2"`, "port: 4222", `server_name: "viper-dev"`, "cert_file: \"" + natsserver.CertFile + "\"", `min_version: "1.2"`,
 		`publish: { allow: ["viper.dev.alpha.>", "viper.dev.*.req.>"] }`,
 		`subscribe: { allow: ["viper.dev.>", "_INBOX.beta.>"] }`,
-		"allow_responses: true", "nkey: " + keyA,
+		"nkey: " + keyA,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
@@ -46,7 +46,7 @@ func TestRenderListensOnThePrivateIPOnlyAndGivesEachMachineItsSubjects(t *testin
 	if strings.Index(out, "# alpha") > strings.Index(out, "# beta") {
 		t.Error("clients are sorted, so the file only changes when the group does")
 	}
-	for _, bad := range []string{"0.0.0.0", "http_port", "jetstream", "8222", "6222", "cluster", `allow: [">"]`} {
+	for _, bad := range []string{"0.0.0.0", "http_port", "jetstream", "8222", "6222", "cluster", `allow: [">"]`, "allow_responses"} {
 		if strings.Contains(out, bad) {
 			t.Errorf("must not contain %q", bad)
 		}
