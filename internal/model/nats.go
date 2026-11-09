@@ -186,3 +186,11 @@ type PrivateNetwork struct {
 	// locations in it.
 	Zone string
 }
+
+// Group is a group of groups/<name>.env: the machines it names, in the order of the file; the first
+// machine of a new NATS group becomes its server (docs/plan/gruppen.md).
+type Group struct {
+	Name     string
+	File     string
+	Machines []string
+}

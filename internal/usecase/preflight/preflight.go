@@ -174,7 +174,14 @@ func keyFileChecks(r *report, c *model.Machine) {
 // permissionChecks warns about settings files readable by others and an unwritable ~/.ssh/config.
 func permissionChecks(r *report, c *model.Machine) {
 	// config files hold API tokens: nobody but the owner should read them
-	for _, f := range []string{".env.local", filepath.Join("machines", c.Name+".env.local")} {
+	files := []string{".env.local", filepath.Join("machines", c.Name+".env.local")}
+	if c.Group != "" {
+		files = append(files, filepath.Join("groups", c.Group+".env"))
+	}
+	for _, w := range c.Warnings {
+		r.warn("%s", w)
+	}
+	for _, f := range files {
 		if runtime.GOOS == "windows" {
 			break // no mode bits there
 		}

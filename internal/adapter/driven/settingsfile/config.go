@@ -75,9 +75,11 @@ func sourceFile(vars map[string]string, path string, env settings.Env) error {
 // file wins); a file that cannot be read counts as not set, so the default "claude" applies.
 func Prefix(dir, machine string, env settings.Env) string {
 	vars := map[string]string{}
-	for _, f := range []string{filepath.Join(dir, ".env.local"), filepath.Join(dir, "machines", machine+".env.local")} {
-		_ = sourceFile(vars, f, env)
+	_ = sourceFile(vars, filepath.Join(dir, ".env.local"), env)
+	if grp, err := memberOf(dir, machine, env); err == nil && grp.file != "" {
+		_ = sourceFile(vars, grp.file, env)
 	}
+	_ = sourceFile(vars, filepath.Join(dir, "machines", machine+".env.local"), env)
 	return or(vars["SERVER_PREFIX"], "claude")
 }
 
@@ -94,10 +96,20 @@ func Load(dir, machine string, env settings.Env, needTokens bool) (*model.Machin
 	if !nameRe.MatchString(machine) {
 		return nil, errors.New("Machine name: lowercase letters, digits, hyphens")
 	}
+	grp, err := memberOf(dir, machine, env)
+	if err != nil {
+		return nil, err
+	}
+	if err := applyGroup(vars, grp, env); err != nil {
+		return nil, err
+	}
 	if err := sourceFile(vars, filepath.Join(dir, "machines", machine+".env.local"), env); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	c := &model.Machine{Name: machine, Dir: dir}
+	if err := checkMachineGroup(vars, grp, machine); err != nil {
+		return nil, err
+	}
+	c := &model.Machine{Name: machine, Dir: dir, Group: grp.name, GroupFile: grp.file, Warnings: grp.warnings}
 	c.Vars = func(name string) string {
 		if v, ok := vars[name]; ok {
 			return v

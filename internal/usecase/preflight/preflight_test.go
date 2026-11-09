@@ -397,3 +397,24 @@ func TestWithoutDNSThePreflightSaysSo(t *testing.T) {
 		t.Errorf("no Cloudflare without a DNS name:\n%s", out)
 	}
 }
+
+func TestAGroupFileIsCheckedAndItsWarningsAreShown(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes do not exist on Windows")
+	}
+	e := fixture(t, "")
+	if err := os.MkdirAll(filepath.Join(e.dir, "groups"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(e.dir, "groups", "g.env"), []byte("GROUP_MACHINES=web\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(e.dir, "groups", "kaputt.env"), []byte("GROUP_MACHINES=Bad_Name\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, _, n := e.run("web", "")
+	mustContain(t, out, "WARN  "+filepath.Join("groups", "g.env")+" is readable by other users", "WARN  groups/kaputt.env is ignored")
+	if n != 0 {
+		t.Errorf("warnings are no problems: %d", n)
+	}
+}

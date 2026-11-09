@@ -1,6 +1,6 @@
 # Plan: Gruppen-Dateien (`groups/`) – mehrere Rechner gemeinsam starten und stoppen
 
-Stand: 09.11.2026 · Status: Entwurf nach einem Review gegen den Code, nichts umgesetzt
+Stand: 09.11.2026 · Status: Meilenstein 1 umgesetzt (Gruppendateien laden), der Rest offen
 
 ## 1 Ziel
 

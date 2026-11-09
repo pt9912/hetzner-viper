@@ -21,6 +21,12 @@ type Machine struct {
 	// is off.
 	NATS NATSConfig
 
+	// Group is the group of groups/<name>.env this machine is named in ("" if none); GroupFile is that
+	// file, and Warnings are what the loading of the settings found that does not stop it (a file of
+	// another group that cannot be read).
+	Group, GroupFile string
+	Warnings         []string
+
 	// DNSProvider is who makes the DNS name of the server: DNSCloudflare, or DNSNone for no name.
 	DNSProvider string
 
