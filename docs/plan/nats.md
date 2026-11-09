@@ -220,7 +220,7 @@ Für Core NATS ist keine persistente Nachrichtenspeicherung vorgesehen. **JetStr
 
 ### TLS-Zertifikat
 
-**Festlegung:** Es gibt keine eigene CA. Der Server erhält ein selbstsigniertes Zertifikat, dessen Schlüssel die Servermaschine nie verlässt (Eigentümer `builder`, Modus `0600`, ohne `sudo`). Die Clients vertrauen ausschließlich diesem Zertifikat (in der Clientkonfiguration als `ca_file` bzw. Vertrauensanker eingetragen). Die Clientauthentifizierung läuft über NKeys, TLS dient der Serverauthentifizierung und der Verschlüsselung.
+**Festlegung:** Es gibt keine eigene CA. Der Server erhält ein selbstsigniertes **Blattzertifikat** (`CA:FALSE`, `serverAuth`; mit `CA:TRUE` lehnen rustls-Clients es mit `CaUsedAsEndEntity` ab, in einem echten Lauf bestätigt), dessen Schlüssel die Servermaschine nie verlässt (Eigentümer `builder`, Modus `0600`, ohne `sudo`). Die Clients vertrauen ausschließlich diesem Zertifikat (in der Clientkonfiguration als `ca_file` bzw. Vertrauensanker eingetragen). Die Clientauthentifizierung läuft über NKeys, TLS dient der Serverauthentifizierung und der Verschlüsselung.
 
 - Das Zertifikat enthält die private IP als SAN. Alternativ kann ein vorhandener Maschinen-DNS-Name verwendet werden, sofern die Verbindung dann über diesen Namen aufgebaut und bei der TLS-Prüfung ausdrücklich verwendet wird.
 - **Laufzeit:** 1 Monat, **keine automatische Erneuerung**, analog zum bestehenden SSH-Host-Zertifikat (sieben Tage, ohne Erneuerung). Gruppen laufen typischerweise 1 Tag bis 2 Wochen und damit deutlich kürzer als das Zertifikat. Die kurze Laufzeit begrenzt zugleich den Schaden bei einem abgeflossenen Schlüssel. Ein zu lang laufendes Zertifikat benötigt keine Rotationslogik: Bei Ablauf wird die Gruppe neu aufgebaut.

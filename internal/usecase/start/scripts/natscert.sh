@@ -14,8 +14,12 @@ if [ -s "$crt" ] && [ -s "$key" ]; then
   fi
   echo "nats cert: kept ($(openssl x509 -in "$crt" -noout -enddate | cut -d= -f2))"; exit 0
 fi
+# a leaf certificate, not a CA: openssl req -x509 marks the certificate CA:TRUE by default, and rustls
+# (every Rust client, e.g. Nuntius) refuses such a certificate for a server (CaUsedAsEndEntity); Go clients do not
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout "$key.new" -out "$crt.new" \
-  -days 31 -subj "/CN=$cn" -addext "subjectAltName=IP:$ip" >/dev/null 2>&1 || { rm -f "$key.new" "$crt.new"; echo "nats cert: openssl failed"; exit 1; }
+  -days 31 -subj "/CN=$cn" \
+  -addext "basicConstraints=critical,CA:FALSE" -addext "keyUsage=critical,digitalSignature" \
+  -addext "extendedKeyUsage=serverAuth" -addext "subjectAltName=IP:$ip" >/dev/null 2>&1 || { rm -f "$key.new" "$crt.new"; echo "nats cert: openssl failed"; exit 1; }
 chmod 600 "$key.new"; chmod 644 "$crt.new"
 mv "$key.new" "$key" && mv "$crt.new" "$crt" || { echo "nats cert: cannot write the files"; exit 1; }
 echo "nats cert: created (valid 31 days, for $ip)"

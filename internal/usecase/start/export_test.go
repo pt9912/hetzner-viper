@@ -22,6 +22,9 @@ func Needle() string { return needle }
 // Probe exports probe for the tests.
 func Probe() string { return probe }
 
+// NatsCertScript exports natsCertScript for the tests.
+func NatsCertScript() string { return natsCertScript }
+
 // SwapScript exports swapScript for the tests.
 func SwapScript() string { return swapScript }
 
