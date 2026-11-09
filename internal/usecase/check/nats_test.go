@@ -293,3 +293,42 @@ func TestTheServerCheckWarnsAboutAnOldConfigurationWithAllowResponses(t *testing
 		t.Errorf("clean configuration:\n%s", natsSection(out))
 	}
 }
+
+const mcpOn = "NATS_ENABLED=true\nNATS_GROUP=dev\nNATS_MCP=true\nNATS_MCP_PUSH_FROM=alpha\nNATS_MCP_AUTOALLOW=read\n"
+
+func TestAHealthyMCPSetupPassesTheChecks(t *testing.T) {
+	st := healthyClient + "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=/home/builder/.viper-nats/viper-nats-mcp\nmcp_allowed=peers,inbox\nmcp_push=alpha\n"
+	n := newNATSFixture(t, mcpOn, model.NATSClient, st)
+	out, problems := n.run()
+	sec := natsSection(out)
+	if problems != 0 || strings.Contains(sec, "FAIL") || strings.Contains(sec, "WARN") {
+		t.Fatalf("%d problems:\n%s", problems, sec)
+	}
+	for _, want := range []string{"MCP server installed (viper-nats-mcp v1)", "registered with Claude Code", "messages of alpha are pushed"} {
+		if !strings.Contains(sec, want) {
+			t.Errorf("missing %q in\n%s", want, sec)
+		}
+	}
+}
+
+func TestMCPProblemsAreReported(t *testing.T) {
+	base := healthyClient + "mcp_bin=ok\nmcp_version=v\nmcp_claude=/b\nmcp_allowed=peers,inbox\nmcp_push=alpha\n"
+	for name, tc := range map[string]struct{ status, want string }{
+		"no binary":        {healthyClient + "mcp_bin=missing\n", "FAIL  NATS_MCP is on, but"},
+		"not registered":   {strings.Replace(base, "mcp_claude=/b", "mcp_claude=none", 1), "FAIL  Claude Code does not know the MCP server nats"},
+		"other push list":  {strings.Replace(base, "mcp_push=alpha", "mcp_push=", 1), "WARN  the machines whose messages are pushed"},
+		"other allow list": {strings.Replace(base, "mcp_allowed=peers,inbox", "mcp_allowed=", 1), "WARN  the tools of the MCP server allowed"},
+	} {
+		n := newNATSFixture(t, mcpOn, model.NATSClient, tc.status)
+		out, _ := n.run()
+		if sec := natsSection(out); !strings.Contains(sec, tc.want) {
+			t.Errorf("%s: missing %q in\n%s", name, tc.want, sec)
+		}
+	}
+	// NATS_MCP off: nothing is asked of the machine, a leftover is only mentioned
+	n := newNATSFixture(t, "", model.NATSClient, healthyClient+"mcp_bin=ok\nmcp_version=v\n")
+	out, _ := n.run()
+	if sec := natsSection(out); !strings.Contains(sec, "WARN  the MCP server is installed on the machine, but NATS_MCP is off") {
+		t.Errorf("leftover:\n%s", sec)
+	}
+}

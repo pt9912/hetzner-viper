@@ -146,7 +146,42 @@ func natsMachineChecks(ctx context.Context, r *report, c *model.Machine, d Deps,
 	if v["server"] == "yes" {
 		natsServerChecks(r, c, v, members, srv)
 	}
+	natsMCPChecks(r, c, v)
 	return st
+}
+
+// natsMCPChecks look at the MCP server of the machine (NATS_MCP): that it is there, that Claude Code
+// knows it, and that the push list and the allowed tools are the ones of the settings.
+func natsMCPChecks(r *report, c *model.Machine, v map[string]string) {
+	if !c.NATS.MCP {
+		if v["mcp_bin"] == "ok" {
+			r.warn("the MCP server is installed on the machine, but NATS_MCP is off (viper up does not remove it)")
+		}
+		return
+	}
+	if v["mcp_bin"] != "ok" {
+		r.bad("NATS_MCP is on, but %s/viper-nats-mcp is missing: run viper up %s", natsserver.Dir, c.Name)
+		return
+	}
+	r.ok("MCP server installed (%s)", v["mcp_version"])
+	switch v["mcp_claude"] {
+	case "no-jq":
+		r.warn("jq is missing on the machine: the entry of the MCP server in Claude Code was not checked")
+	case "none", "":
+		r.bad("Claude Code does not know the MCP server nats: run viper up %s", c.Name)
+	default:
+		r.ok("the MCP server is registered with Claude Code (%s)", v["mcp_claude"])
+	}
+	if want := strings.Join(c.NATS.MCPPushFrom, ","); v["mcp_push"] != want {
+		r.warn("the machines whose messages are pushed are %q on the machine, NATS_MCP_PUSH_FROM says %q: run viper up %s", v["mcp_push"], want, c.Name)
+	} else if want == "" {
+		r.ok("no message is pushed into a session (NATS_MCP_PUSH_FROM is empty)")
+	} else {
+		r.ok("messages of %s are pushed into a session with the channel flag", want)
+	}
+	if want := strings.Join(model.MCPAllowedTools(c.NATS.MCPAutoAllow), ","); v["mcp_claude"] != "no-jq" && v["mcp_allowed"] != want {
+		r.warn("the tools of the MCP server allowed without asking are %q, NATS_MCP_AUTOALLOW=%s says %q: run viper up %s", v["mcp_allowed"], c.NATS.MCPAutoAllow, want, c.Name)
+	}
 }
 
 func splitURL(url string) (host, port string) {

@@ -1,6 +1,7 @@
 package model_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
@@ -82,5 +83,20 @@ func TestNATSMetadataFromLabelsRefusesNonsense(t *testing.T) {
 		if _, ok, err := model.NATSMetadataFromLabels(l); ok || err == nil {
 			t.Errorf("%s: ok=%v err=%v", name, ok, err)
 		}
+	}
+}
+
+func TestMCPAllowedToolsFollowTheMode(t *testing.T) {
+	if got := model.MCPAllowedTools(model.AutoAllowOff); len(got) != 0 {
+		t.Errorf("off: %v", got)
+	}
+	if got := strings.Join(model.MCPAllowedTools(model.AutoAllowRead), ","); got != "peers,inbox" {
+		t.Errorf("read: %s", got)
+	}
+	if got := model.MCPAllowedTools(model.AutoAllowAll); len(got) != 8 || len(got) != len(model.MCPTools()) {
+		t.Errorf("all: %v", got)
+	}
+	if got := model.MCPAllowedTools("anything"); got != nil {
+		t.Errorf("an unknown mode allows nothing: %v", got)
 	}
 }

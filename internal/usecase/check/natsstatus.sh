@@ -34,3 +34,17 @@ if [ -s "$dir/server.conf" ]; then
   echo "allow_responses=$(grep -c allow_responses "$dir/server.conf")"
   echo "registered=$(grep '^# viper-client ' "$dir/server.conf" | awk '{print $3}' | paste -sd, -)"
 fi
+# the MCP server (NATS_MCP): the binary, its entry with Claude Code, the push list and the allowed tools
+if [ -x "$dir/viper-nats-mcp" ]; then
+  echo "mcp_bin=ok"
+  echo "mcp_version=$("$dir/viper-nats-mcp" --version 2>&1 | head -n 1)"
+else
+  echo "mcp_bin=missing"
+fi
+if command -v jq >/dev/null 2>&1; then
+  echo "mcp_claude=$(jq -r 'if .mcpServers.nats then (.mcpServers.nats.command // "") else "none" end' "$HOME/.claude.json" 2>/dev/null || echo none)"
+  echo "mcp_allowed=$(jq -r '[.permissions.allow[]? | select(startswith("mcp__nats__")) | sub("^mcp__nats__"; "")] | join(",")' "$HOME/.claude/settings.json" 2>/dev/null)"
+else
+  echo "mcp_claude=no-jq"
+fi
+echo "mcp_push=$(sed -n 's/^VIPER_NATS_MCP_PUSH_FROM=//p' "$dir/mcp.env" 2>/dev/null | head -n 1)"

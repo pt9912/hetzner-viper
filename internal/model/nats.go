@@ -50,6 +50,42 @@ type NATSConfig struct {
 	Enabled bool
 	Group   string
 	Port    int
+
+	// MCP: install the NATS MCP server (viper-nats-mcp) on the machine and register it with Claude
+	// Code (NATS_MCP). It needs Enabled.
+	MCP bool
+	// MCPPushFrom are the machines whose messages the MCP server pushes into the session of the agent
+	// (NATS_MCP_PUSH_FROM); empty: none.
+	MCPPushFrom []string
+	// MCPAutoAllow is whether viper allows the tools of the MCP server in the settings of Claude Code
+	// without asking each time: "off" (default), "read" (peers, inbox) or "all".
+	MCPAutoAllow string
+	// MCPBinary is a file to install instead of the one built into viper (NATS_MCP_BINARY, for
+	// builds that have none).
+	MCPBinary string
+}
+
+// The values of NATS_MCP_AUTOALLOW.
+const (
+	AutoAllowOff  = "off"
+	AutoAllowRead = "read"
+	AutoAllowAll  = "all"
+)
+
+// MCPTools are the tools of the NATS MCP server, in the order they are listed.
+func MCPTools() []string {
+	return []string{"peers", "send", "broadcast", "request", "reply", "inbox", "subscribe", "unsubscribe"}
+}
+
+// MCPAllowedTools are the tools that NATS_MCP_AUTOALLOW lets the agent use without asking.
+func MCPAllowedTools(mode string) []string {
+	switch mode {
+	case AutoAllowRead:
+		return []string{"peers", "inbox"}
+	case AutoAllowAll:
+		return MCPTools()
+	}
+	return nil
 }
 
 // NATSMetadata is what is kept with a machine at the cloud provider (as labels, tags, ...).

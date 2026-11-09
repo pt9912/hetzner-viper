@@ -418,7 +418,7 @@ func TestKeyPath(t *testing.T) {
 func TestLoadReadsNATSOnlyWhenEnabled(t *testing.T) {
 	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
 	c, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\n", ""), "web", env, false)
-	if err != nil || c.NATS != (model.NATSConfig{}) {
+	if err != nil || !reflect.DeepEqual(c.NATS, model.NATSConfig{}) {
 		t.Fatalf("NATS is off by default: %+v %v", c.NATS, err)
 	}
 	// with NATS off, a bad group is not looked at: the settings read as before
@@ -427,7 +427,7 @@ func TestLoadReadsNATSOnlyWhenEnabled(t *testing.T) {
 		t.Fatalf("NATS off: %+v %v", c.NATS, err)
 	}
 	c, err = settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nNATS_ENABLED=true\nNATS_GROUP=entwicklung\n", ""), "web", env, false)
-	if err != nil || c.NATS != (model.NATSConfig{Enabled: true, Group: "entwicklung", Port: 4222}) {
+	if err != nil || !reflect.DeepEqual(c.NATS, model.NATSConfig{Enabled: true, Group: "entwicklung", Port: 4222, MCPAutoAllow: "off"}) {
 		t.Fatalf("NATS on: %+v %v", c.NATS, err)
 	}
 	c, err = settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nNATS_ENABLED=1\nNATS_GROUP=g\n", "NATS_PORT=4333\n"), "web", env, false)
@@ -455,5 +455,43 @@ func TestLoadRefusesBadNATSSettings(t *testing.T) {
 	long := strings.Repeat("a", 32)
 	if _, err := settingsfile.Load(setupDir(t, base+"NATS_GROUP=g\n", ""), long, env, false); err == nil || !strings.Contains(err.Error(), "Machine name") {
 		t.Errorf("a machine name over 31 characters: %v", err)
+	}
+}
+
+func TestLoadReadsTheNATSMCPSettingsOnlyWhenNATSAndMCPAreOn(t *testing.T) {
+	env := settings.Env{Lookup: envOf(nil), Home: "/home/me"}
+	base := "DNS_DOMAIN=example.com\nNATS_ENABLED=true\nNATS_GROUP=g\n"
+	c, err := settingsfile.Load(setupDir(t, base+"NATS_MCP_PUSH_FROM=a\nNATS_MCP_AUTOALLOW=all\n", ""), "web", env, false)
+	if err != nil || c.NATS.MCP || c.NATS.MCPPushFrom != nil || c.NATS.MCPAutoAllow != "off" {
+		t.Fatalf("the settings of NATS_MCP are not looked at while it is off: %+v %v", c.NATS, err)
+	}
+	c, err = settingsfile.Load(setupDir(t, base+"NATS_MCP=true\n", ""), "web", env, false)
+	if err != nil || !c.NATS.MCP || len(c.NATS.MCPPushFrom) != 0 || c.NATS.MCPAutoAllow != "off" || c.NATS.MCPBinary != "" {
+		t.Fatalf("the defaults: %+v %v", c.NATS, err)
+	}
+	c, err = settingsfile.Load(setupDir(t, base+"NATS_MCP=1\nNATS_MCP_PUSH_FROM=\" alpha, beta ,alpha,\"\nNATS_MCP_AUTOALLOW=READ\nNATS_MCP_BINARY=~/mcp/bin\n", ""), "web", env, false)
+	if err != nil || strings.Join(c.NATS.MCPPushFrom, ",") != "alpha,beta" || c.NATS.MCPAutoAllow != "read" || c.NATS.MCPBinary != "/home/me/mcp/bin" {
+		t.Fatalf("%+v %v", c.NATS, err)
+	}
+}
+
+func TestLoadRefusesBadNATSMCPSettings(t *testing.T) {
+	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
+	base := "DNS_DOMAIN=example.com\nNATS_ENABLED=true\nNATS_GROUP=g\nNATS_MCP=true\n"
+	for name, tc := range map[string]struct{ settings, want string }{
+		"bad switch":      {"DNS_DOMAIN=example.com\nNATS_ENABLED=true\nNATS_GROUP=g\nNATS_MCP=maybe\n", "NATS_MCP: true or false"},
+		"push from dots":  {base + "NATS_MCP_PUSH_FROM=a.b\n", "NATS_MCP_PUSH_FROM"},
+		"push from wild":  {base + "NATS_MCP_PUSH_FROM=a,*\n", "NATS_MCP_PUSH_FROM"},
+		"push from self":  {base + "NATS_MCP_PUSH_FROM=web\n", "this machine itself"},
+		"autoallow other": {base + "NATS_MCP_AUTOALLOW=yes\n", "NATS_MCP_AUTOALLOW: off, read or all"},
+	} {
+		_, err := settingsfile.Load(setupDir(t, tc.settings, ""), "web", env, false)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: got %v, want %q", name, err, tc.want)
+		}
+	}
+	// NATS_MCP without NATS is not looked at
+	if c, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nNATS_MCP=true\nNATS_MCP_PUSH_FROM=a.b\n", ""), "web", env, false); err != nil || c.NATS.MCP {
+		t.Errorf("without NATS_ENABLED nothing is read: %+v %v", c.NATS, err)
 	}
 }

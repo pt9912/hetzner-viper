@@ -122,7 +122,7 @@ func Load(dir, machine string, env settings.Env, needTokens bool) (*model.Machin
 	if len(c.ServerName) > 63 {
 		return nil, fmt.Errorf("Server name %s is longer than 63 characters", c.ServerName)
 	}
-	if err := applyNATS(c); err != nil {
+	if err := applyNATS(c, env.Home); err != nil {
 		return nil, err
 	}
 	derivePaths(c, env.Home)
@@ -131,7 +131,7 @@ func Load(dir, machine string, env settings.Env, needTokens bool) (*model.Machin
 
 // applyNATS reads NATS_ENABLED, NATS_GROUP and NATS_PORT. With NATS off nothing else is checked, so
 // the settings of a machine without NATS are read as before.
-func applyNATS(c *model.Machine) error {
+func applyNATS(c *model.Machine, home string) error {
 	on, err := model.ParseNATSBool("NATS_ENABLED", c.Get("NATS_ENABLED"))
 	if err != nil || !on {
 		return err
@@ -153,7 +153,43 @@ func applyNATS(c *model.Machine) error {
 	if err != nil {
 		return err
 	}
-	c.NATS = model.NATSConfig{Enabled: true, Group: group, Port: port}
+	c.NATS = model.NATSConfig{Enabled: true, Group: group, Port: port, MCPAutoAllow: model.AutoAllowOff}
+	return applyNATSMCP(c, home)
+}
+
+// applyNATSMCP reads NATS_MCP and its settings. They are looked at only if NATS_MCP is on, like the
+// settings of every other feature that is off.
+func applyNATSMCP(c *model.Machine, home string) error {
+	on, err := model.ParseNATSBool("NATS_MCP", c.Get("NATS_MCP"))
+	if err != nil || !on {
+		return err
+	}
+	c.NATS.MCP = true
+	seen := map[string]bool{}
+	for _, m := range strings.Split(c.Get("NATS_MCP_PUSH_FROM"), ",") {
+		if m = strings.TrimSpace(m); m == "" || seen[m] {
+			continue
+		}
+		if err := model.CheckNATSName("NATS_MCP_PUSH_FROM", m); err != nil {
+			return err
+		}
+		if m == c.Name {
+			return fmt.Errorf("NATS_MCP_PUSH_FROM: %s is this machine itself", m)
+		}
+		seen[m] = true
+		c.NATS.MCPPushFrom = append(c.NATS.MCPPushFrom, m)
+	}
+	mode := strings.ToLower(strings.TrimSpace(c.Get("NATS_MCP_AUTOALLOW")))
+	switch mode {
+	case "":
+	case model.AutoAllowOff, model.AutoAllowRead, model.AutoAllowAll:
+		c.NATS.MCPAutoAllow = mode
+	default:
+		return fmt.Errorf("NATS_MCP_AUTOALLOW: off, read or all: %s", mode)
+	}
+	if f := strings.TrimSpace(c.Get("NATS_MCP_BINARY")); f != "" {
+		c.NATS.MCPBinary = model.ExpandHome(f, home)
+	}
 	return nil
 }
 

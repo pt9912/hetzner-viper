@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.76  
+Version: 1.77  
 Software-Version: v0.15.1  
 Stand: 09.11.2026  
 
@@ -739,6 +739,10 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `NATS_ENABLED` | `true`: der Rechner gehört zu einer NATS-Gruppe (nur Hetzner); `false` oder leer: aus | `false` |
 | `NATS_GROUP` | Name der NATS-Gruppe; Pflichtangabe mit `NATS_ENABLED=true`; 1 bis 31 Kleinbuchstaben, Ziffern, Bindestriche | leer |
 | `NATS_PORT` | Port des NATS-Servers im privaten Netzwerk (1024 bis 65535) | `4222` |
+| `NATS_MCP` | `true`: `viper up` installiert auf dem Rechner den MCP-Server `viper-nats-mcp` und trägt ihn bei Claude Code ein (Benutzerbereich, Name `nats`); braucht `NATS_ENABLED=true` | `false` |
+| `NATS_MCP_PUSH_FROM` | Maschinennamen, durch Komma getrennt, deren Nachrichten der Server in eine Claude-Code-Sitzung schiebt (nur wenn Sie Claude selbst mit dem Channel-Schalter starten, siehe unten); leer: nichts wird geschoben | leer |
+| `NATS_MCP_AUTOALLOW` | Welche Werkzeuge des MCP-Servers Claude Code ohne Nachfrage nutzen darf: `off`, `read` (`peers`, `inbox`) oder `all`; ein früher gesetzter Eintrag wird bei jedem `viper up` ersetzt | `off` |
+| `NATS_MCP_BINARY` | Datei, die statt des in `viper` eingebauten MCP-Servers installiert wird (nötig für ein mit `go build` gebautes `viper` ohne `make`) | leer |
 | `DNS_PROVIDER` | Wer den DNS-Namen anlegt: `cloudflare` oder `none` (kein Eintrag, keine Domain, kein Cloudflare); wird nur aus den Einstellungsdateien gelesen | `cloudflare` |
 | `DNS_DOMAIN` | Ihre Domain; Pflichtangabe mit Cloudflare | leer |
 | `SSH_KEY` | Pfad Ihres Login-Schlüssels | `~/.ssh/hetzner-build` |
@@ -1100,3 +1104,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.74 | v0.15.0 | Release v0.15.0: die Änderung 1.73 (NATS-Gruppen). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.15.0`. |
 | 1.75 | v0.15.1 | Korrektur zu NATS-Gruppen: Rechner einer Gruppe konnten über die Antwort-Funktion von NATS (`allow_responses`) in fremde Bereiche senden; sie ist entfernt, Antworten sind normale Nachrichten im eigenen Bereich. Das Serverzertifikat neuer Gruppen ist ein Blattzertifikat (nötig für Clients in Rust). Gruppen aus v0.15.0 schließen die Lücke mit einem weiteren `viper up`. |
 | 1.76 | v0.15.1 | Release v0.15.1: die Änderung 1.75 (kein `allow_responses`, Blattzertifikat). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.15.1`. |
+| 1.77 | nach v0.15.1 | Neu: `NATS_MCP`, `NATS_MCP_PUSH_FROM`, `NATS_MCP_AUTOALLOW`, `NATS_MCP_BINARY`. `viper up` installiert den eigenen MCP-Server `viper-nats-mcp` (im `viper`-Binary eingebaut, mit Prüfsumme) auf dem Rechner, schreibt `~/.viper-nats/mcp.env`, trägt ihn mit `claude mcp add --scope user` ein und prüft ihn über stdio; `viper check` prüft Binary, Eintrag, Push-Liste und erlaubte Werkzeuge. `viper` startet Claude nie mit dem Channel-Schalter und bestätigt dessen Dialog nie; es zeigt nur den Befehl. |

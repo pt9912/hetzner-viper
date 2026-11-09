@@ -30,3 +30,12 @@ func SwapScript() string { return swapScript }
 
 // JSONString exports jsonString for the tests.
 func JSONString(s string) string { return jsonString(s) }
+
+// NatsMCPInstallScript exports natsMCPInstallScript for the tests.
+func NatsMCPInstallScript() string { return natsMCPInstallScript }
+
+// NatsMCPClaudeScript exports natsMCPClaudeScript for the tests.
+func NatsMCPClaudeScript() string { return natsMCPClaudeScript }
+
+// NatsMCPTestScript exports natsMCPTestScript for the tests.
+func NatsMCPTestScript() string { return natsMCPTestScript }

@@ -34,4 +34,10 @@ var (
 	natsFileScript string
 	//go:embed scripts/natsconnect.sh
 	natsConnectScript string
+	//go:embed scripts/natsmcpinstall.sh
+	natsMCPInstallScript string
+	//go:embed scripts/natsmcpclaude.sh
+	natsMCPClaudeScript string
+	//go:embed scripts/natsmcptest.sh
+	natsMCPTestScript string
 )

@@ -153,7 +153,7 @@ Nur mit `NATS_MCP=true`, nach dem Beitritt zur Gruppe; Voraussetzung: `claude` i
 | 1b | Werkzeuge | Subjects und Parser, Anwesenheit, `send`, `broadcast`, `request`, `reply`, `inbox`, Wiederverbindung; Integrationstests mit einem NATS-Server als Bibliothek und den echten Rechten (inklusive Fälschungsversuchen und Prüfung über den asynchronen Fehler-Callback, dass Dritte die Nachricht nicht erhalten) |
 | 1c | Richtlinie | Push-Liste, Bereinigung, Grenzen, Quoten, Protokolldatei |
 | 2 | Binary und Release | `cmd/viper-nats-mcp`, Build in `make dist`/`Dockerfile`/Workflow, Einbettung bzw. Prüfsumme, Verhalten von Dev-Builds |
-| 3 | Integration in `viper` | Einstellungen, `Render`-Zerlegung, Installation, MCP-Eintrag, `mcp.env`, Verbindungstest, `check`; echter Lauf mit drei Maschinen (Befehle über stdio, ohne Claude) |
+| 3 | Integration in `viper` (**erledigt am 09.11.2026**: echter Lauf mit zwei Maschinen, amd64 und arm64; `claude mcp list` zeigt „Connected“, `viper check` ok) | Einstellungen, `Render`-Zerlegung, Installation, MCP-Eintrag, `mcp.env`, Verbindungstest, `check`; echter Lauf mit drei Maschinen (Befehle über stdio, ohne Claude) |
 | 4 | Doku und Abnahme | Handbuch (mit den Warnungen aus §3), Maintainer-Doku, echter Test mit Claude Code durch den Betreiber (Pull und Push) |
 
 ### Ergebnisse Meilenstein 0 (Stand 09.11.2026)

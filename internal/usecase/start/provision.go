@@ -29,6 +29,9 @@ func (r *runner) provision(ctx context.Context, status, id, repoURL string, reme
 	if code, err := r.claudeLogin(ctx); code != 0 || err != nil {
 		return code, err
 	}
+	if code, err := r.natsMCP(ctx); code != 0 || err != nil {
+		return code, err
+	}
 	workdir, code, err := r.repository(ctx, repoURL, remembered, deployKey)
 	if code != 0 || err != nil {
 		return code, err
