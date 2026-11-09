@@ -91,6 +91,9 @@ func (s *Service) Connect(ctx context.Context) error {
 	if _, err := nc.Subscribe(s.cfg.Names.PresenceSub(), s.onPresence); err != nil {
 		return err
 	}
+	// when this returns, the server has the subscriptions: a message sent at once by another machine is not
+	// missed (if the server cannot be reached yet, this gives up after a moment and the retries go on)
+	_ = nc.FlushTimeout(2 * time.Second)
 	go s.presenceLoop(ctx)
 	s.publishPresence("up", true)
 	return nil
