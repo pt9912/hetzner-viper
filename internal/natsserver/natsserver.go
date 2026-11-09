@@ -129,11 +129,63 @@ func quoteList(l []string) string {
 	return strings.Join(q, ", ")
 }
 
+// checkedClients validates the group and the machines and returns the machines sorted by name.
+func checkedClients(group string, in []Client) ([]Client, error) {
+	if err := model.CheckNATSName("NATS group", group); err != nil {
+		return nil, err
+	}
+	clients := append([]Client(nil), in...)
+	sort.Slice(clients, func(i, j int) bool { return clients[i].Machine < clients[j].Machine })
+	seen := map[string]bool{}
+	for _, cl := range clients {
+		if err := model.CheckNATSName("Machine name", cl.Machine); err != nil {
+			return nil, err
+		}
+		if seen[cl.Machine] {
+			return nil, fmt.Errorf("the machine %s is registered twice", cl.Machine)
+		}
+		seen[cl.Machine] = true
+		if !validUserKey(cl.PublicKey) {
+			return nil, fmt.Errorf("the key of %s is not a public user NKey", cl.Machine)
+		}
+	}
+	if len(clients) == 0 {
+		return nil, errors.New("nats-server needs at least one registered machine (no anonymous access)")
+	}
+	return clients, nil
+}
+
+// authorization is the authorization block of the configuration: the users with their keys and
+// the permissions of Permissions.
+func authorization(group string, clients []Client) string {
+	var b strings.Builder
+	b.WriteString("authorization {\n  timeout: 5\n  users = [\n")
+	for _, cl := range clients {
+		pub, sub := Permissions(group, cl.Machine)
+		fmt.Fprintf(&b, "    {\n      # %s\n      nkey: %s\n      permissions: {\n        publish: { allow: [%s] }\n        subscribe: { allow: [%s] }\n      }\n    }\n",
+			cl.Machine, cl.PublicKey, quoteList(pub), quoteList(sub))
+	}
+	b.WriteString("  ]\n}\n")
+	return b.String()
+}
+
+// AuthorizationBlock is the part of server.conf that holds the users and their permissions, with
+// the same checks as Render. Tests put it behind a listener of their own (loopback, no TLS), so
+// they run with the permissions of production.
+func AuthorizationBlock(group string, clients []Client) (string, error) {
+	cs, err := checkedClients(group, clients)
+	if err != nil {
+		return "", err
+	}
+	return authorization(group, cs), nil
+}
+
 // Render is the content of server.conf. It refuses anything that could widen the server: a
 // listen address that is not a private IPv4 address, names outside the alphabet of the plan, a
 // key that is not a user NKey.
 func (c Config) Render() (string, error) {
-	if err := model.CheckNATSName("NATS group", c.Group); err != nil {
+	clients, err := checkedClients(c.Group, c.Clients)
+	if err != nil {
 		return "", err
 	}
 	ip := net.ParseIP(c.Host)
@@ -143,24 +195,6 @@ func (c Config) Render() (string, error) {
 	if c.Port < 1024 || c.Port > 65535 {
 		return "", fmt.Errorf("nats-server port %d", c.Port)
 	}
-	clients := append([]Client(nil), c.Clients...)
-	sort.Slice(clients, func(i, j int) bool { return clients[i].Machine < clients[j].Machine })
-	seen := map[string]bool{}
-	for _, cl := range clients {
-		if err := model.CheckNATSName("Machine name", cl.Machine); err != nil {
-			return "", err
-		}
-		if seen[cl.Machine] {
-			return "", fmt.Errorf("the machine %s is registered twice", cl.Machine)
-		}
-		seen[cl.Machine] = true
-		if !validUserKey(cl.PublicKey) {
-			return "", fmt.Errorf("the key of %s is not a public user NKey", cl.Machine)
-		}
-	}
-	if len(clients) == 0 {
-		return "", errors.New("nats-server needs at least one registered machine (no anonymous access)")
-	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "# written by viper; changes are overwritten\n")
 	for _, cl := range clients {
@@ -168,13 +202,7 @@ func (c Config) Render() (string, error) {
 	}
 	fmt.Fprintf(&b, "server_name: \"viper-%s\"\nhost: \"%s\"\nport: %d\n\n", c.Group, c.Host, c.Port)
 	fmt.Fprintf(&b, "tls {\n  cert_file: \"%s\"\n  key_file: \"%s\"\n  min_version: \"1.2\"\n  timeout: 5\n}\n\n", CertFile, KeyFile)
-	b.WriteString("authorization {\n  timeout: 5\n  users = [\n")
-	for _, cl := range clients {
-		pub, sub := Permissions(c.Group, cl.Machine)
-		fmt.Fprintf(&b, "    {\n      # %s\n      nkey: %s\n      permissions: {\n        publish: { allow: [%s] }\n        subscribe: { allow: [%s] }\n      }\n    }\n",
-			cl.Machine, cl.PublicKey, quoteList(pub), quoteList(sub))
-	}
-	b.WriteString("  ]\n}\n")
+	b.WriteString(authorization(c.Group, clients))
 	return b.String(), nil
 }
 

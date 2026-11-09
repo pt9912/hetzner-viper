@@ -40,14 +40,12 @@ func forgeSetup(t *testing.T) (a, b, c *forgeClient) {
 		seeds[m] = id.Seed
 		clients = append(clients, natsserver.Client{Machine: m, PublicKey: id.PublicKey})
 	}
-	conf, err := natsserver.Config{Group: "g", Host: "10.0.0.2", Port: 4222, Clients: clients}.Render()
+	block, err := natsserver.AuthorizationBlock("g", clients)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// production permissions; a loopback listener without TLS for the test
-	conf = strings.Replace(conf, `host: "10.0.0.2"`, `host: "127.0.0.1"`, 1)
-	conf = strings.Replace(conf, "port: 4222", "port: -1", 1)
-	conf = conf[:strings.Index(conf, "tls {")] + conf[strings.Index(conf, "authorization {"):]
+	// production permissions behind a loopback listener without TLS
+	conf := "host: \"127.0.0.1\"\nport: -1\n\n" + block
 	path := t.TempDir() + "/server.conf"
 	if err := writeFile(path, conf); err != nil {
 		t.Fatal(err)
