@@ -27,6 +27,8 @@ type Store interface {
 	Load(dir, machine string, env Env, needTokens bool) (*model.Machine, error)
 	// LoadFile reads .env.local of dir (without a machine).
 	LoadFile(dir string, env Env) (map[string]string, error)
+	// LoadGroup reads groups/<name>.env of dir: the machines it names and its settings, checked.
+	LoadGroup(dir, name string, env Env) (*model.Group, error)
 	// Prefix is SERVER_PREFIX of a machine, as far as the files tell it.
 	Prefix(dir, machine string, env Env) string
 	// ProviderOf is the cloud provider and DNSProviderOf the DNS provider the settings in vars name.

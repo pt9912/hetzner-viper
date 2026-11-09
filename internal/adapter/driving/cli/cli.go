@@ -12,6 +12,8 @@ import (
 
 type options struct {
 	machine, repo, cmd, dir   string
+	group                     string // run for all machines of groups/<group>.env
+	parallel                  int    // how many machines of a group at the same time (0: the default)
 	force, full, noCode, tmux bool
 	// the need of viper find
 	cpu, disk                int
@@ -45,7 +47,7 @@ var errHelp = errors.New("help")
 // isValueFlag reports whether the option takes a value.
 func isValueFlag(n string) bool {
 	switch n {
-	case "repo", "cmd", "dir", "cpu", "ram", "disk", "arch", "location", "provider", "vat":
+	case "repo", "cmd", "dir", "group", "parallel", "cpu", "ram", "disk", "arch", "location", "provider", "vat":
 		return true
 	}
 	return false
@@ -57,8 +59,8 @@ func commands() map[string]command {
 		"setup":     {usage: "", machine: noMachine, run: nativeSetup},
 		"preflight": {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"}, run: nativePreflight},
 		"up":        {usage: "<machine> [--repo URL] [--no-code]", machine: needMachine, flags: []string{"repo", "no-code"}, run: nativeUp},
-		"check":     {usage: "<machine>", machine: needMachine, run: nativeCheck},
-		"ssh":       {usage: "<machine> [--cmd COMMAND | --tmux]", machine: needMachine, flags: []string{"cmd", "tmux"}, run: nativeSSH},
+		"check":     {usage: "<machine> | --group G [--parallel N]", machine: needMachine, flags: []string{"group", "parallel"}, run: nativeCheck},
+		"ssh":       {usage: "<machine> [--cmd COMMAND | --tmux] | --group G --cmd COMMAND [--parallel N]", machine: needMachine, flags: []string{"cmd", "tmux", "group", "parallel"}, run: nativeSSH},
 		"down":      {usage: "<machine> [--force]", machine: needMachine, flags: []string{"force"}, run: nativeDown},
 		"vscode":    {usage: "<machine>", machine: needMachine, run: nativeVSCode},
 		"dns":       {usage: "<machine>", machine: needMachine, run: nativeDNS},
@@ -122,7 +124,10 @@ func setMachine(o *options, name string, c command, positional []string) error {
 		}
 		o.machine = positional[0]
 	}
-	if c.machine == needMachine && o.machine == "" {
+	if o.group != "" && o.machine != "" {
+		return fmt.Errorf("viper %s: a machine and --group exclude each other\n%s", name, usageLine(name))
+	}
+	if c.machine == needMachine && o.machine == "" && o.group == "" {
 		return fmt.Errorf("%s", usageLine(name))
 	}
 	return nil
@@ -238,6 +243,14 @@ func setValue(o *options, name, flag, v string) error {
 		o.provider = v
 	case "vat":
 		return setVAT(o, name, v)
+	case "group":
+		o.group = v
+	case "parallel":
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 64 {
+			return fmt.Errorf("viper %s: --parallel needs a whole number from 1 to 64: %s", name, v)
+		}
+		o.parallel = n
 	default:
 		return setNumber(o, name, flag, v)
 	}

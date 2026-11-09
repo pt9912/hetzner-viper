@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -242,6 +243,15 @@ func nativeSSH(o *options) error {
 	env, err := o.host().Env()
 	if err != nil {
 		return err
+	}
+	if o.group != "" {
+		if o.cmd == "" || o.tmux {
+			return fmt.Errorf("viper ssh --group: needs --cmd COMMAND (a shell or tmux cannot be shared by machines)")
+		}
+		if err := o.host().need("ssh"); err != nil {
+			return err
+		}
+		return runGroup(context.Background(), o, env, o.host().Stdout, o.host().Stderr, sshOnce)
 	}
 	return connect(o, env, o.host().IsTerminal())
 }

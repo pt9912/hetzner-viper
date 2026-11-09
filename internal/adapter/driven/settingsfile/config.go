@@ -229,6 +229,11 @@ func (Files) LoadFile(dir string, env settings.Env) (map[string]string, error) {
 // Prefix is SERVER_PREFIX of a machine; see Prefix.
 func (Files) Prefix(dir, machine string, env settings.Env) string { return Prefix(dir, machine, env) }
 
+// LoadGroup reads groups/<name>.env; see LoadGroup.
+func (Files) LoadGroup(dir, name string, env settings.Env) (*model.Group, error) {
+	return LoadGroup(dir, name, env)
+}
+
 // ProviderOf is the provider the settings in vars name; see ProviderOf.
 func (Files) ProviderOf(vars map[string]string) string { return ProviderOf(vars) }
 

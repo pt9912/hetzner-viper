@@ -1,6 +1,6 @@
 # Plan: Gruppen-Dateien (`groups/`) – mehrere Rechner gemeinsam starten und stoppen
 
-Stand: 09.11.2026 · Status: Meilensteine 1 und 2 umgesetzt (Gruppendateien laden, gemeinsamer Zustand), der Rest offen
+Stand: 09.11.2026 · Status: Meilensteine 1 bis 3 umgesetzt (Gruppendateien, gemeinsamer Zustand, check/ssh --group), der Rest offen
 
 ## 1 Ziel
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"sort"
+	"sync"
 
 	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 )
@@ -14,6 +15,8 @@ import (
 // Opts are the options of a command.
 type Opts struct {
 	Machine, Repo, Cmd, Dir   string
+	Group                     string
+	Parallel                  int
 	Force, Full, NoCode, Tmux bool
 	CPU, Disk                 int
 	RAM                       float64
@@ -24,13 +27,13 @@ type Opts struct {
 }
 
 func (p *Opts) options() *options {
-	return &options{cpu: p.CPU, disk: p.Disk, ram: p.RAM, arch: p.Arch, location: p.Location, provider: p.Provider, vat: p.VAT, hasVAT: p.HasVAT, machine: p.Machine, repo: p.Repo, cmd: p.Cmd, dir: p.Dir, force: p.Force, full: p.Full, noCode: p.NoCode, tmux: p.Tmux, h: p.Host}
+	return &options{cpu: p.CPU, disk: p.Disk, ram: p.RAM, arch: p.Arch, location: p.Location, provider: p.Provider, vat: p.VAT, hasVAT: p.HasVAT, group: p.Group, parallel: p.Parallel, machine: p.Machine, repo: p.Repo, cmd: p.Cmd, dir: p.Dir, force: p.Force, full: p.Full, noCode: p.NoCode, tmux: p.Tmux, h: p.Host}
 }
 
 // Parse reads the command line.
 func Parse(args []string) (string, Opts, error) {
 	name, o, err := parse(args)
-	return name, Opts{Machine: o.machine, Repo: o.repo, Cmd: o.cmd, Dir: o.dir, Force: o.force, Full: o.full, NoCode: o.noCode, Tmux: o.tmux, CPU: o.cpu, Disk: o.disk, RAM: o.ram, Arch: o.arch, Location: o.location, Provider: o.provider, VAT: o.vat, HasVAT: o.hasVAT, Host: o.h}, err
+	return name, Opts{Group: o.group, Parallel: o.parallel, Machine: o.machine, Repo: o.repo, Cmd: o.cmd, Dir: o.dir, Force: o.force, Full: o.full, NoCode: o.noCode, Tmux: o.tmux, CPU: o.cpu, Disk: o.disk, RAM: o.ram, Arch: o.arch, Location: o.location, Provider: o.provider, VAT: o.vat, HasVAT: o.hasVAT, Host: o.h}, err
 }
 
 // IsHelp reports whether the error is the request for the help text.
@@ -110,3 +113,40 @@ func ManualLines(version string) string { return manualLines(version) }
 
 // TmuxCommand is what viper ssh --tmux runs on the machine.
 const TmuxCommand = tmuxCommand
+
+// MachineRun is the command for one machine of a group.
+type MachineRun func(ctx context.Context, p *Opts, env settings.Env, out, errOut io.Writer) error
+
+// RunGroup runs a command for the machines of a group.
+func RunGroup(ctx context.Context, p *Opts, env settings.Env, stdout, stderr io.Writer, run MachineRun) error {
+	return runGroup(ctx, p.options(), env, stdout, stderr, func(ctx context.Context, o *options, env settings.Env, out, errOut io.Writer) error {
+		q := *p
+		q.Machine, q.Group = o.machine, ""
+		return run(ctx, &q, env, out, errOut)
+	})
+}
+
+// ExitStatus is the error of a command that ended with that code.
+func ExitStatus(code int) error { return exitStatus(code) }
+
+// NewPrefixWriter writes the lines of a machine with its name in front, under a lock of its own.
+func NewPrefixWriter(out io.Writer, machine string, width int) (w io.Writer, flush func()) {
+	pw := newPrefixWriter(&sync.Mutex{}, out, machine, width)
+	return pw, pw.flush
+}
+
+// NewPrefixWriters makes the writers of several machines that share one lock.
+func NewPrefixWriters(out io.Writer, width int, machines ...string) ([]io.Writer, func()) {
+	mu := &sync.Mutex{}
+	var ws []io.Writer
+	var all []*prefixWriter
+	for _, m := range machines {
+		pw := newPrefixWriter(mu, out, m, width)
+		ws, all = append(ws, pw), append(all, pw)
+	}
+	return ws, func() {
+		for _, pw := range all {
+			pw.flush()
+		}
+	}
+}

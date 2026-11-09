@@ -47,5 +47,8 @@ func nativeCheck(o *options) error {
 	if err != nil {
 		return err
 	}
+	if o.group != "" {
+		return runGroup(context.Background(), o, env, o.host().Stdout, o.host().Stderr, runCheck)
+	}
 	return runCheck(context.Background(), o, env, o.host().Stdout, o.host().Stderr)
 }

@@ -13,7 +13,9 @@ import (
 // composition root (internal/app) gives the real ones, the tests others.
 type Services struct {
 	// Settings reads the settings of the machines.
-	Settings  settings.Store
+	Settings settings.Store
+	// Groups runs a command for the machines of a group at the same time (--group).
+	Groups    driving.GroupRunner
 	Up        func(c *model.Machine, o driving.UpOptions) driving.Up
 	Down      func(c *model.Machine, o driving.DownOptions) driving.Down
 	Check     func(c *model.Machine) driving.Check
