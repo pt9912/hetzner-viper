@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
@@ -41,18 +42,32 @@ type Deps struct {
 	SSH    sshconfig.Store
 	Sleep  system.Sleeper
 	Now    system.Clock
+	// OnServerCreated, SkipPreflight and ServerWait are the options of driving.UpOptions.
+	OnServerCreated func()
+	SkipPreflight   bool
+	ServerWait      time.Duration
 	// OpenVSCode opens the work directory in VS Code, if it is installed; errors are ignored.
 	OpenVSCode func(alias, workdir string)
 }
 
 type runner struct {
-	c      *model.Machine
-	d      Deps
-	lg     runlog.Log
-	out    io.Writer
-	errOut io.Writer
-	repo   string
-	nats   *natsState // the NATS group of the machine, nil without NATS
+	c        *model.Machine
+	d        Deps
+	lg       runlog.Log
+	out      io.Writer
+	errOut   io.Writer
+	repo     string
+	nats     *natsState // the NATS group of the machine, nil without NATS
+	signaled bool
+	existed  bool // the server was there before this run
+}
+
+// serverReady tells the caller (once) that the server of the machine exists and is in its group.
+func (r *runner) serverReady() {
+	if r.d.OnServerCreated != nil && !r.signaled {
+		r.signaled = true
+		r.d.OnServerCreated()
+	}
 }
 
 // interrupted reports that the run was cancelled (Ctrl-C): nothing more is started, and failures
@@ -118,6 +133,11 @@ func Run(ctx context.Context, c *model.Machine, repoArg string, d Deps, lg runlo
 	if code != 0 || err != nil {
 		return code, err
 	}
+	// a new server has role and network from its creation; one that was there without a group gets
+	// them in natsSetup, which signals then
+	if !r.existed || r.nats == nil {
+		r.serverReady()
+	}
 	status, code, err := r.reachServer(ctx, srv, reused)
 	if code != 0 || err != nil {
 		return code, err
@@ -144,6 +164,9 @@ func (r *runner) reachServer(ctx context.Context, srv *model.Server, reused bool
 
 // preflightChecks runs the read-only checks first, so a wrong setting fails before anything is created.
 func (r *runner) preflightChecks(ctx context.Context, repoArg string) (int, error) {
+	if r.d.SkipPreflight {
+		return 0, nil
+	}
 	var pre strings.Builder
 	if r.d.Preflight(ctx, repoArg, &pre, &pre) > 0 {
 		fmt.Fprint(r.errOut, pre.String())

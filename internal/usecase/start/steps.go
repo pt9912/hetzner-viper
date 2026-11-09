@@ -80,6 +80,7 @@ func (r *runner) server(ctx context.Context, ca, keyName, ipadKeyFile string) (s
 	}
 	if existing != nil {
 		r.printf("Existing server: reusing it.\n")
+		r.existed = true
 		id := existing.ID
 		r.d.SSH.ForgetStalePin(c, id, r.out)
 		r.lg.Event("reusing server id=%s", id)

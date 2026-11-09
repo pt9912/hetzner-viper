@@ -132,7 +132,7 @@ func (r *runner) natsRole(own *model.NATSMetadata, net model.PrivateNetwork, cre
 		r.printf("The first machine of the NATS group %s is still being made.\n", group)
 		return model.NATSClient, 0, nil
 	default:
-		msg = fmt.Sprintf("The NATS group %s has a network but no server (a first start was interrupted?). Run viper up on the machine that was to be the server, or delete the group's machines (viper down) and its network viper-nats-%s.", group, group)
+		msg = fmt.Sprintf("The NATS group %s has a network but no server (a first start was interrupted, or the server was deleted). Run viper up on the machine that was to be the server only if no other machine of the group exists; otherwise delete the group's machines (viper down) and then its network viper-nats-%s.", group, group)
 	}
 	code, err := r.fail("%s", msg)
 	return "", code, err
@@ -180,6 +180,7 @@ func (r *runner) natsSetup(ctx context.Context, srv *model.Server) (int, error) 
 		return r.fail("Setting the NATS labels of %s: %s", c.ServerName, r.d.Cloud.Describe(err))
 	}
 	r.printf("Private address of %s: %s\n", c.ServerName, ip)
+	r.serverReady() // role and network are set now
 
 	var code int
 	var err error
@@ -296,7 +297,11 @@ func (r *runner) natsServer(ctx context.Context, ip string) (int, error) {
 // failed ends the wait at once: the client does not take over its role.
 func (r *runner) natsWaitForServer(ctx context.Context) (model.GroupMember, int, error) {
 	group := r.c.NATS.Group
-	for i := 0; i < 60; i++ {
+	wait := r.d.ServerWait
+	if wait <= 0 {
+		wait = 5 * time.Minute
+	}
+	for i := 0; i < int(wait/(5*time.Second)); i++ {
 		if interrupted(ctx) {
 			code, err := r.fail("Interrupted.")
 			return model.GroupMember{}, code, err
@@ -323,7 +328,7 @@ func (r *runner) natsWaitForServer(ctx context.Context) (model.GroupMember, int,
 		}
 		r.d.Sleep(5 * time.Second)
 	}
-	code, err := r.fail("The NATS server of the group %s did not become ready within 5 minutes.", group)
+	code, err := r.fail("The NATS server of the group %s did not become ready within %d minutes.", group, int(wait.Minutes()))
 	return model.GroupMember{}, code, err
 }
 

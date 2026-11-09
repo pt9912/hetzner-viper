@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/runlog"
@@ -27,6 +28,15 @@ type UpOptions struct {
 	NoCode bool // do not open VS Code
 	// Sleep waits between two tries; the caller makes it end with an interruption.
 	Sleep system.Sleeper
+	// OnServerCreated is called once, as soon as the server of the machine exists at the provider and
+	// has its place in the NATS group (the role and the private network are set): a new server right
+	// after it was made, a server that was there without a group once it has joined. The group
+	// commands start the other machines of a new group then. It is not called if the run ends before.
+	OnServerCreated func()
+	// SkipPreflight: the caller has run the checks already (for all machines of a group).
+	SkipPreflight bool
+	// ServerWait is how long a client of a NATS group waits for the server to be ready; 0: 5 minutes.
+	ServerWait time.Duration
 }
 
 // Down deletes the machine after the checks, with the same results as Up.

@@ -119,6 +119,8 @@ func Up(c *model.Machine, o driving.UpOptions) start.Service {
 		SSH:    sshconfig.Files{},
 		Sleep:  sleep,
 		Now:    time.Now,
+
+		OnServerCreated: o.OnServerCreated, SkipPreflight: o.SkipPreflight, ServerWait: o.ServerWait,
 	}
 	if !o.NoCode {
 		d.OpenVSCode = func(alias, workdir string) { _ = vscode().Launch(alias, workdir) }

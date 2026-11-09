@@ -244,3 +244,88 @@ func TestWithoutNATSNothingChanges(t *testing.T) {
 		t.Errorf("no labels and no network without NATS: %+v", s)
 	}
 }
+
+func (n *natsWorld) runWith(f func(d *start.Deps)) (int, error) {
+	n.t.Helper()
+	d := n.deps()
+	d.Cloud = n.hz
+	f(&d)
+	code, err := start.Run(context.Background(), n.c, "", d, n.lg, &n.out, &n.err)
+	n.lg.Close(err, code)
+	return code, err
+}
+
+func TestTheCallerHearsOnceThatTheServerOfANewMachineExists(t *testing.T) {
+	n := newNATSWorld(t, "")
+	calls := 0
+	var labels map[string]string
+	code, _ := n.runWith(func(d *start.Deps) {
+		d.OnServerCreated = func() {
+			calls++
+			if len(n.created) == 1 {
+				labels = n.created[0].Labels
+			}
+		}
+	})
+	if code == 0 {
+		t.Fatal("the fake cannot run the server install")
+	}
+	if calls != 1 {
+		t.Fatalf("signaled %d times", calls)
+	}
+	if labels[model.LabelNATSRole] != "server" || labels[model.LabelNATSState] != "provisioning" {
+		t.Errorf("when the signal came, the server must have its role: %v", labels)
+	}
+}
+
+func TestNoSignalIfTheRunEndsBeforeTheServerExists(t *testing.T) {
+	n := newNATSWorld(t, "")
+	n.preflightProblems = 1
+	signaled := false
+	code, _ := n.runWith(func(d *start.Deps) { d.OnServerCreated = func() { signaled = true } })
+	if code == 0 || signaled {
+		t.Errorf("code %d signaled %v", code, signaled)
+	}
+}
+
+func TestTheCallerCanSkipThePreflightAndSetHowLongAClientWaits(t *testing.T) {
+	n := newNATSWorld(t, "")
+	n.preflightProblems = 1 // would stop the run
+	n.groupWithServer()
+	members, _ := n.hz.nc.ListGroupMachines(context.Background(), "dev")
+	if err := n.hz.nc.UpdateNATSMetadata(context.Background(), members[0].Server.ID, model.NATSMetadata{Group: "dev", Role: model.NATSServer, State: model.NATSProvisioning}); err != nil {
+		t.Fatal(err)
+	}
+	code, _ := n.runWith(func(d *start.Deps) { d.SkipPreflight = true; d.ServerWait = 15 * time.Minute })
+	if code == 0 {
+		t.Fatal("the server never gets ready")
+	}
+	has(t, n.all(), "did not become ready within 15 minutes")
+	if strings.Contains(n.all(), "FAIL  something") {
+		t.Error("the preflight was skipped")
+	}
+	if len(n.sleeps) < 179 {
+		t.Errorf("polled %d times, want about 180", len(n.sleeps))
+	}
+}
+
+func TestForAServerThatWasThereWithoutAGroupTheSignalComesWhenItHasJoined(t *testing.T) {
+	n := newNATSWorld(t, "")
+	ctx := context.Background()
+	plain, err := n.hz.nc.CreateServer(ctx, model.ServerSpec{Name: "claude-web"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n.server = plain
+	calls := 0
+	var meta *model.NATSMetadata
+	_, _ = n.runWith(func(d *start.Deps) {
+		d.OnServerCreated = func() {
+			calls++
+			meta, _ = n.hz.nc.NATSMetadataOf(ctx, plain.ID)
+		}
+	})
+	if calls != 1 || meta == nil || meta.Group != "dev" || meta.Role != model.NATSServer {
+		t.Fatalf("signaled %d times, labels at that moment %+v", calls, meta)
+	}
+}
