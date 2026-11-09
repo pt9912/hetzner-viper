@@ -32,7 +32,7 @@ func (h *Client) Validate(ctx context.Context, c model.Check) []model.Finding {
 
 // CreateServer creates the server and waits until it is running.
 func (h *Client) CreateServer(ctx context.Context, s model.ServerSpec) (*model.Server, error) {
-	return h.ServerCreate(ctx, ServerSpec{Name: s.Name, Type: s.Size, Location: s.Region, Image: s.Image, SSHKey: s.SSHKey, Firewall: s.Firewall, UserData: s.UserData})
+	return h.ServerCreate(ctx, ServerSpec{Name: s.Name, Type: s.Size, Location: s.Region, Image: s.Image, SSHKey: s.SSHKey, Firewall: s.Firewall, UserData: s.UserData, Labels: s.Labels, NetworkID: s.Network})
 }
 
 // EnsureLoginKey makes sure the public key is in the project; see the function of that name.

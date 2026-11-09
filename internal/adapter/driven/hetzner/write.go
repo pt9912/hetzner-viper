@@ -90,6 +90,8 @@ type ServerSpec struct {
 	SSHKey                      string // name of a key in the project
 	Firewall                    string // name of a firewall in the project
 	UserData                    string
+	Labels                      map[string]string
+	NetworkID                   string // ID of a private network to attach ("": none)
 }
 
 // ServerCreate creates a server and waits until it is running (hcloud server create).
@@ -124,6 +126,14 @@ func (h *Client) ServerCreate(ctx context.Context, s ServerSpec) (*model.Server,
 	if key == nil {
 		return nil, fmt.Errorf("SSH key %s not found", s.SSHKey)
 	}
+	var networks []*hcloud.Network
+	if s.NetworkID != "" {
+		nid, err := strconv.ParseInt(s.NetworkID, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("not a network ID: %s", s.NetworkID)
+		}
+		networks = []*hcloud.Network{{ID: nid}}
+	}
 	res, _, err := h.c.Server.Create(ctx, hcloud.ServerCreateOpts{
 		Name:       s.Name,
 		ServerType: st,
@@ -132,6 +142,8 @@ func (h *Client) ServerCreate(ctx context.Context, s ServerSpec) (*model.Server,
 		SSHKeys:    []*hcloud.SSHKey{key},
 		Firewalls:  []*hcloud.ServerCreateFirewall{{Firewall: *fw}},
 		UserData:   s.UserData,
+		Labels:     s.Labels,
+		Networks:   networks,
 	})
 	if err != nil {
 		return nil, err
@@ -146,6 +158,9 @@ func serverFrom(s *hcloud.Server) *model.Server {
 	out := &model.Server{ID: strconv.FormatInt(s.ID, 10), Name: s.Name, Created: s.Created}
 	if s.PublicNet.IPv4.IP != nil {
 		out.IPv4 = s.PublicNet.IPv4.IP.String()
+	}
+	if len(s.PrivateNet) > 0 && s.PrivateNet[0].IP != nil {
+		out.PrivateIP = s.PrivateNet[0].IP.String()
 	}
 	return out
 }

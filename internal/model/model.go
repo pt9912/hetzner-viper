@@ -17,6 +17,8 @@ type Server struct {
 	ID   string
 	Name string
 	IPv4 string
+	// PrivateIP is the address in the private network the server is attached to, "" if none.
+	PrivateIP string
 	// Hostname is the public name the cloud gives the server, "" if it gives none.
 	Hostname string
 	// Created is when the server was created.
@@ -30,6 +32,10 @@ type ServerSpec struct {
 	SSHKey                    string // Ref of the login key
 	Firewall                  string // name of the firewall
 	UserData                  string // cloud-init
+	// Labels are put on the server when it is created (nil: none), e.g. its NATS group.
+	Labels map[string]string
+	// Network is the ID of a private network the server is attached to when it is created ("": none).
+	Network string
 }
 
 // LoginKey is the login key in the provider.

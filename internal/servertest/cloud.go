@@ -28,6 +28,9 @@ type Cloud struct {
 	Locations     map[string]bool
 	Images        map[string]bool // "name/arch"
 	UserData      map[string]string
+	Labels        map[string]map[string]string     // labels of the servers, by server name
+	Networks      map[string]*model.PrivateNetwork // private networks, by name
+	attached      map[string]string                // server name -> network name
 	Created       []model.ServerSpec
 	Deleted       []string
 	Calls         []string // what was changed, in order: "key create ...", "server create ...", ...
@@ -183,6 +186,10 @@ func (c *Cloud) CreateServer(_ context.Context, s model.ServerSpec) (*model.Serv
 	srv := &model.Server{ID: strconv.FormatInt(c.nextID, 10), Name: s.Name, IPv4: fmt.Sprintf("203.0.113.%d", 10+len(c.Servers)), Created: c.Now}
 	c.Servers[s.Name] = srv
 	c.UserData[s.Name] = s.UserData
+	c.setLabels(s.Name, s.Labels)
+	if s.Network != "" {
+		srv.PrivateIP = c.attachLocked(s.Name, s.Network)
+	}
 	c.Created = append(c.Created, s)
 	cp := *srv
 	return &cp, nil
@@ -196,6 +203,8 @@ func (c *Cloud) DeleteServer(_ context.Context, id string) error {
 		if s.ID == id {
 			c.call("server delete %s", n)
 			delete(c.Servers, n)
+			delete(c.Labels, n)
+			delete(c.attached, n)
 			c.Deleted = append(c.Deleted, n)
 			return nil
 		}
