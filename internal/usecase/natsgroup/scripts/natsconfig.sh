@@ -2,7 +2,11 @@ set -uo pipefail
 export LC_ALL=C
 dir="$1"; unit="${2:-viper-nats}"; expect="${3:-}"; bin="${VIPER_NATS_BIN:-/usr/local/bin/nats-server}"
 umask 077
-conf="$dir/server.conf"; new="$conf.new"
+conf="$dir/server.conf"
+# a file of its own: machines that join at the same moment write at the same moment, and a common name
+# would let one replace what the other has just checked
+new=$(mktemp "$conf.XXXXXX") || { echo "nats config: cannot make a temporary file"; exit 1; }
+trap 'rm -f "$new"' EXIT
 cat > "$new" || { echo "nats config: cannot write $new"; exit 1; }
 # flock: machines that join at the same moment must not write the file at the same time
 exec 9>"$dir/.lock"
