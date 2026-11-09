@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/servertest"
@@ -114,11 +115,11 @@ func TestTheFirstMachineOfAGroupIsTheServerCandidateAndGetsLabelsAndNetwork(t *t
 func TestALaterMachineIsAClientOfTheExistingServer(t *testing.T) {
 	n := newNATSWorld(t, "")
 	n.groupWithServer()
-	code, _ := n.run()
+	code, _ := n.run() // the fake server cannot run the install: it stops after the server was made
 	if code == 0 {
-		t.Fatalf("clients are not implemented yet:\n%s", n.all())
+		t.Fatalf("the fake cannot run the client setup:\n%s", n.all())
 	}
-	has(t, n.all(), "this machine is the client.", "as a client is not implemented yet")
+	has(t, n.all(), "this machine is the client.")
 	if s := n.created[0]; s.Labels[model.LabelNATSRole] != "client" || s.Network == "" {
 		t.Errorf("spec %+v", s)
 	}
@@ -130,8 +131,43 @@ func TestALaterMachineIsAClientOfTheExistingServer(t *testing.T) {
 	}
 }
 
+func TestAClientWaitsForTheServerAndGivesUp(t *testing.T) {
+	n := newNATSWorld(t, "")
+	n.groupWithServer()
+	members, _ := n.hz.nc.ListGroupMachines(context.Background(), "dev")
+	if err := n.hz.nc.UpdateNATSMetadata(context.Background(), members[0].Server.ID, model.NATSMetadata{Group: "dev", Role: model.NATSServer, State: model.NATSProvisioning}); err != nil {
+		t.Fatal(err)
+	}
+	code, _ := n.run()
+	if code == 0 {
+		t.Fatal("a server that never gets ready must end the wait")
+	}
+	has(t, n.all(), "Waiting for the NATS server of the group dev", "did not become ready within 5 minutes")
+	if len(n.sleeps) < 59 {
+		t.Errorf("polled %d times", len(n.sleeps))
+	}
+}
+
+func TestAClientDoesNotWaitForAServerThatFailed(t *testing.T) {
+	n := newNATSWorld(t, "")
+	n.groupWithServer()
+	members, _ := n.hz.nc.ListGroupMachines(context.Background(), "dev")
+	if err := n.hz.nc.UpdateNATSMetadata(context.Background(), members[0].Server.ID, model.NATSMetadata{Group: "dev", Role: model.NATSServer, State: model.NATSFailed}); err != nil {
+		t.Fatal(err)
+	}
+	code, _ := n.run()
+	if code == 0 {
+		t.Fatal("must fail")
+	}
+	has(t, n.all(), "failed to start")
+	if len(n.sleeps) > 5 {
+		t.Errorf("no long wait for a failed server: %d sleeps", len(n.sleeps))
+	}
+}
+
 func TestAGroupWithANetworkButNoServerIsNotGuessedAbout(t *testing.T) {
 	n := newNATSWorld(t, "")
+	n.hz.nc.Now = n.now.Add(-time.Hour) // the network is old: nobody is still making the server
 	if _, _, err := n.hz.nc.EnsurePrivateNetwork(context.Background(), "dev", "fsn1"); err != nil {
 		t.Fatal(err)
 	}
@@ -140,6 +176,21 @@ func TestAGroupWithANetworkButNoServerIsNotGuessedAbout(t *testing.T) {
 		t.Fatalf("code %d, %d servers created", code, len(n.created))
 	}
 	has(t, n.all(), "has a network but no server", "viper-nats-dev")
+}
+
+func TestAYoungNetworkWithoutServerMeansTheFirstMachineIsStillBeingMade(t *testing.T) {
+	n := newNATSWorld(t, "")
+	if _, _, err := n.hz.nc.EnsurePrivateNetwork(context.Background(), "dev", "fsn1"); err != nil {
+		t.Fatal(err)
+	}
+	code, _ := n.run() // it then waits for a server that never comes; the fake ssh stops it
+	if code == 0 {
+		t.Fatal("no server appears in the test")
+	}
+	has(t, n.all(), "still being made", "this machine is the client.", "Waiting for the NATS server")
+	if len(n.created) != 1 || n.created[0].Labels[model.LabelNATSRole] != "client" {
+		t.Errorf("the client machine is made while it waits: %+v", n.created)
+	}
 }
 
 func TestAMachineOfAnotherGroupIsNotMovedSilently(t *testing.T) {

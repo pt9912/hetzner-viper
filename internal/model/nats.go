@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // NATSRole is what a machine does in its NATS group.
@@ -143,6 +144,8 @@ type PrivateNetwork struct {
 	Name string
 	// IPRange is the address range of the network, e.g. "10.123.0.0/16".
 	IPRange string
+	// Created is when the network was made.
+	Created time.Time
 	// Zone is the network zone at the provider ("eu-central"); servers can only be attached from
 	// locations in it.
 	Zone string

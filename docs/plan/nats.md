@@ -495,6 +495,20 @@ Die Reihenfolge folgt der Empfehlung in §15. Jeder Meilenstein ist einzeln abne
 
 Meilenstein-Status wird in den jeweiligen Pull Requests geführt, nicht in diesem Dokument.
 
+### Ergebnis Meilenstein 5 (Clientregistrierung)
+
+Umgesetzt in `internal/usecase/start/nats.go`. Ein Client wartet auf den Server (`ready`, höchstens 5 Minuten; ein ausgefallener Server beendet das Warten sofort), erreicht ihn per SSH (die SSH-Konfiguration des Servers wird bei Bedarf lokal angelegt), installiert das `nats`-Werkzeug (`v0.5.1`, gepinnte Prüfsumme), legt seine Identität an, trägt sich in die Serverkonfiguration ein, bekommt das Serverzertifikat und die Datei `connection.env` und meldet sich zur Probe mit dem NKey an.
+
+- **Registrierung ohne verlorene Einträge:** Die Konfiguration trägt am Anfang eine maschinenlesbare Liste (`# viper-client <maschine> <schlüssel>`). Ein Schreiber liest sie mit dem Hash der Datei, ergänzt seinen Eintrag und schreibt nur zurück, wenn der Hash unter dem `flock` noch stimmt, sonst liest er neu (bis zu 6 Versuche). Das gilt auch für den Server selbst.
+- **Paralleler Erststart:** Ein Netzwerk ohne Server, das jünger als 15 Minuten ist, gilt als „erste Maschine wird noch angelegt“: die Clients legen ihre Maschinen an und warten. Ein älteres Netzwerk ohne Server gilt als unterbrochener Start und wird mit klarer Meldung abgelehnt. Das zeigte der erste echte Parallelstart.
+
+Praktisch bestätigt (drei `cpx22` in `fsn1`, danach gelöscht):
+- Alpha (Server) und danach Beta und Gamma gleichzeitig mit einem erneuten Lauf von Alpha: alle drei Registrierungen sind in der Konfiguration, keine ging verloren.
+- Broadcast: Gamma empfängt, was Beta auf `viper.live.beta.status` veröffentlicht. Anfrage/Antwort: Beta fragt `viper.live.alpha.req.echo`, Alpha antwortet (`pong from alpha`, rtt 0,6 ms; Voraussetzung ist das eigene Inbox-Präfix `_INBOX.<maschine>`, das `connection.env` als `NATS_INBOX_PREFIX` liefert). Veröffentlichen in den Subtree einer anderen Maschine oder in eine andere Gruppe wird abgelehnt.
+- Die ACL-Entscheidung aus §6 trägt: Request-Subjects `viper.<g>.<empfänger>.req.>` gehen, alles andere fremde nicht.
+
+Noch nicht umgesetzt: Widerruf bei `viper down` (6) und `viper check` (7).
+
 ### Ergebnis Meilenstein 4 (Server-Bootstrap)
 
 Umgesetzt in `internal/natsserver` (Konfiguration, Unit, gepinntes Release `v2.15.2` mit SHA-256 je Architektur, NKey-Erzeugung) und `internal/usecase/start/nats.go` mit den Skripten `scripts/nats*.sh`. Mit `NATS_ENABLED` bestimmt `viper up` vor dem Erstellen die Rolle (Erststart-Sperre über das Netzwerk), legt den Server mit Labels und Netzwerk an, installiert nach dem SSH-Login das Binary mit Prüfsumme, erzeugt das Zertifikat und die Identität, schreibt die Konfiguration (mit `flock` und `nats-server -t` vor dem Ersetzen) und startet den systemd-Dienst. Anschließend prüft `natscheck.sh`, dass der Server auf der privaten IP antwortet und TLS sowie Login verlangt.
@@ -505,7 +519,7 @@ Praktisch auf einem echten Hetzner-Server (`cpx22`, `fsn1`) bestätigt:
 - Ein zweiter `viper up` ist idempotent: Binary, Zertifikat und Identität bleiben, die Konfiguration wird neu geschrieben und per Reload übernommen.
 - Labels am Server: `viper-managed=true`, Gruppe, Rolle `server`, Zustand `ready`.
 
-Noch nicht umgesetzt: die Clientrolle (Meilenstein 5; ein Client bricht bisher mit einer klaren Meldung ab und wird als `failed` markiert), `viper down` (6) und `viper check` (7).
+Die Clientrolle folgt in Meilenstein 5, `viper down` in 6 und `viper check` in 7.
 
 ### Ergebnis Meilenstein 0 (Code-Abgleich und Hetzner-Tests)
 

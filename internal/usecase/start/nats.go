@@ -3,7 +3,9 @@ package start
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/natsserver"
@@ -63,7 +65,7 @@ func (r *runner) natsPrepare(ctx context.Context) (int, error) {
 	if err != nil {
 		return r.fail("Listing the NATS group %s: %s", group, r.d.Cloud.Describe(err))
 	}
-	role, code, err := r.natsRole(own, created, members)
+	role, code, err := r.natsRole(own, net, created, members)
 	if code != 0 || err != nil {
 		return code, err
 	}
@@ -98,9 +100,15 @@ func (r *runner) natsOwnMembership(ctx context.Context, api cloud.NATSProvider) 
 	return own, 0, nil
 }
 
+// firstStartWindow is how long after the network was made a group without a server is taken for
+// one whose first machine is still being made (the network is made first, the server later).
+// After that it counts as a start that was interrupted.
+const firstStartWindow = 15 * time.Minute
+
 // natsRole is what the machine does in the group: its own role if it has one, the server if it
-// made the network, a client if the group has a server. Anything else is refused, never guessed.
-func (r *runner) natsRole(own *model.NATSMetadata, created bool, members []model.GroupMember) (model.NATSRole, int, error) {
+// made the network, a client if the group has a server or is about to get one. Anything else is
+// refused, never guessed.
+func (r *runner) natsRole(own *model.NATSMetadata, net model.PrivateNetwork, created bool, members []model.GroupMember) (model.NATSRole, int, error) {
 	group := r.c.NATS.Group
 	servers := 0
 	for _, m := range members {
@@ -119,6 +127,9 @@ func (r *runner) natsRole(own *model.NATSMetadata, created bool, members []model
 	case created:
 		msg = fmt.Sprintf("The network of the NATS group %s was just created, but the group has machines. Nothing was changed.", group)
 	case servers == 1:
+		return model.NATSClient, 0, nil
+	case !net.Created.IsZero() && r.d.Now().Sub(net.Created) < firstStartWindow:
+		r.printf("The first machine of the NATS group %s is still being made.\n", group)
 		return model.NATSClient, 0, nil
 	default:
 		msg = fmt.Sprintf("The NATS group %s has a network but no server (a first start was interrupted?). Run viper up on the machine that was to be the server, or delete the group's machines (viper down) and its network viper-nats-%s.", group, group)
@@ -142,24 +153,56 @@ func (r *runner) natsCleanup(ctx context.Context) {
 	r.printf("Private network %s removed again.\n", r.nats.network.Name)
 }
 
-// remote runs a script on the server with data on stdin and returns what it printed. Unlike
-// script, the script is the argument of bash -c, because stdin carries the data.
-func (r *runner) remote(ctx context.Context, stdin, script string, args ...string) (string, error) {
+// sshTarget is a machine of the group that viper reaches by ssh: this one or another one.
+type sshTarget struct{ config, alias string }
+
+func (r *runner) self() sshTarget { return sshTarget{r.c.SSHConfig, r.c.SSHAlias} }
+
+// peer is the ssh side of another machine of the group (the server, for a client). Its config is
+// written here if this computer does not have it; it trusts the host CA like any machine whose
+// pin is not here.
+func (r *runner) peer(s model.Server) (sshTarget, error) {
+	cc := *r.c
+	cc.ServerName = s.Name
+	cc.Name = strings.TrimPrefix(s.Name, r.c.ServerPrefix+"-")
+	cc.SSHAlias = "hetzner-" + s.Name
+	cc.DNSHost = s.Name + "." + r.c.DNSDomain
+	cc.KnownPin = filepath.Join(r.c.SSHDir, "known_hosts_hetzner_"+s.Name)
+	cc.SSHConfig = filepath.Join(r.c.SSHDir, "config_hetzner_"+s.Name)
+	if s.IPv4 == "" {
+		return sshTarget{}, fmt.Errorf("the server %s has no public address", s.Name)
+	}
+	if err := r.d.SSH.WriteConfig(&cc, s.IPv4); err != nil {
+		return sshTarget{}, err
+	}
+	return sshTarget{cc.SSHConfig, cc.SSHAlias}, nil
+}
+
+// remoteOn runs a script on a machine with data on stdin and returns what it printed. Unlike
+// script, the script is the argument of bash -c, because stdin carries the data. Lines that start
+// with "nats" are shown to the user unless quiet.
+func (r *runner) remoteOn(ctx context.Context, t sshTarget, quiet bool, stdin, script string, args ...string) (string, error) {
 	cmd := "bash -c " + model.Quote(script) + " nats " + model.QuoteAll(args...)
-	sshArgs := []string{"-F", r.c.SSHConfig, "-o", "BatchMode=yes", r.c.SSHAlias, cmd}
+	sshArgs := []string{"-F", t.config, "-o", "BatchMode=yes", t.alias, cmd}
 	if stdin == "" {
 		sshArgs = append([]string{"-n"}, sshArgs...)
 	}
 	stdout, stderr, err := r.d.Run(ctx, stdin, "ssh", sshArgs...)
-	for _, l := range strings.Split(strings.TrimRight(stdout, "\n"), "\n") {
-		if strings.HasPrefix(l, "nats") {
-			r.printf("%s\n", l)
+	if !quiet {
+		for _, l := range strings.Split(strings.TrimRight(stdout, "\n"), "\n") {
+			if strings.HasPrefix(l, "nats") {
+				r.printf("%s\n", l)
+			}
 		}
 	}
 	if err != nil {
 		return stdout, fmt.Errorf("%s", strings.TrimSpace(lastLines(stdout, 6)+"\n"+stderr))
 	}
 	return stdout, nil
+}
+
+func (r *runner) remote(ctx context.Context, stdin, script string, args ...string) (string, error) {
+	return r.remoteOn(ctx, r.self(), false, stdin, script, args...)
 }
 
 func lastLines(s string, n int) string {
@@ -188,12 +231,14 @@ func (r *runner) natsSetup(ctx context.Context, srv *model.Server) (int, error) 
 	}
 	r.printf("Private address of %s: %s\n", c.ServerName, ip)
 
-	if st.role != model.NATSServer {
-		meta.State = model.NATSFailed
-		_ = st.api.UpdateNATSMetadata(ctx, srv.ID, meta)
-		return r.fail("Joining a NATS group as a client is not implemented yet; this machine was attached to the network only.")
+	var code int
+	var err error
+	if st.role == model.NATSServer {
+		code, err = r.natsServer(ctx, ip)
+	} else {
+		code, err = r.natsClient(ctx)
 	}
-	if code, err := r.natsServer(ctx, ip); code != 0 || err != nil {
+	if code != 0 || err != nil {
 		meta.State = model.NATSFailed
 		_ = st.api.UpdateNATSMetadata(ctx, srv.ID, meta)
 		return code, err
@@ -202,8 +247,87 @@ func (r *runner) natsSetup(ctx context.Context, srv *model.Server) (int, error) 
 	if err := st.api.UpdateNATSMetadata(ctx, srv.ID, meta); err != nil {
 		return r.fail("Setting the NATS labels of %s: %s", c.ServerName, r.d.Cloud.Describe(err))
 	}
-	r.printf("NATS server of the group %s is ready at %s:%d.\n", c.NATS.Group, ip, c.NATS.Port)
 	return 0, nil
+}
+
+// natsTools installs the nats tool on the machine and returns the release of nats-server for it.
+func (r *runner) natsTools(ctx context.Context, withServer bool) (int, error) {
+	arch, _, err := r.d.Run(ctx, "", "ssh", "-n", "-F", r.c.SSHConfig, "-o", "BatchMode=yes", r.c.SSHAlias, "uname -m")
+	if err != nil {
+		return r.fail("NATS: reading the architecture failed:\n%s", err)
+	}
+	arch = strings.TrimSpace(arch)
+	if withServer {
+		rel, err := natsserver.ReleaseFor(arch)
+		if err != nil {
+			return r.fail("%v", err)
+		}
+		if _, err := r.remote(ctx, "", natsInstallScript, rel.Version, rel.URL, rel.SHA256); err != nil {
+			return r.fail("NATS: installing nats-server failed:\n%s", err)
+		}
+	}
+	cli, err := natsserver.CLIReleaseFor(arch)
+	if err != nil {
+		return r.fail("%v", err)
+	}
+	if _, err := r.remote(ctx, "", natsCLIScript, cli.Version, cli.URL, cli.SHA256); err != nil {
+		return r.fail("NATS: installing the nats tool failed:\n%s", err)
+	}
+	return 0, nil
+}
+
+// natsIdentity creates the machine's identity (or keeps the one it has) and returns its public key.
+func (r *runner) natsIdentity(ctx context.Context) (string, error) {
+	id, err := natsserver.NewIdentity()
+	if err != nil {
+		return "", err
+	}
+	out, err := r.remote(ctx, id.Seed+"\n"+id.PublicKey+"\n", natsIdentityScript, natsserver.Dir)
+	if err != nil {
+		return "", err
+	}
+	return lastNonEmpty(out), nil
+}
+
+// natsRegister enters the machine and its key in the configuration of the server and has the
+// server read it. Several machines may do this at once: the file is read together with its hash,
+// and written back only if nobody changed it in between; otherwise it is read again.
+func (r *runner) natsRegister(ctx context.Context, server sshTarget, serverIP, pub string) error {
+	c := r.c
+	var lastErr error
+	for attempt := 0; attempt < 6; attempt++ {
+		out, err := r.remoteOn(ctx, server, true, "", natsReadScript, natsserver.Dir)
+		if err != nil {
+			return err
+		}
+		first, conf, _ := strings.Cut(out, "\n")
+		sha := strings.TrimPrefix(first, "sha256 ")
+		clients := natsserver.WithClient(natsserver.ParseClients(conf), natsserver.Client{Machine: c.Name, PublicKey: pub})
+		cfg, err := natsserver.Config{Group: c.NATS.Group, Host: serverIP, Port: c.NATS.Port, Clients: clients}.Render()
+		if err != nil {
+			return err
+		}
+		_, err = r.remoteOn(ctx, server, false, cfg, natsConfigScript, natsserver.Dir, strings.TrimSuffix(natsserver.Unit, ".service"), sha)
+		if err == nil {
+			return nil
+		}
+		if !strings.Contains(err.Error(), "changed meanwhile") {
+			return err
+		}
+		lastErr = err
+	}
+	return lastErr
+}
+
+// natsFinish writes the connection file, then logs in once with the nats tool to see that it all
+// works: TLS, the key, the address.
+func (r *runner) natsFinish(ctx context.Context, serverIP string) error {
+	c := r.c
+	if _, err := r.remote(ctx, natsserver.ClientEnv(c.NATS.Group, c.Name, serverIP, c.NATS.Port), natsFileScript, natsserver.Dir, "connection.env", "644"); err != nil {
+		return err
+	}
+	_, err := r.remote(ctx, "", natsConnectScript, natsserver.Dir)
+	return err
 }
 
 // natsServer installs and starts the NATS server of the group on the machine.
@@ -212,34 +336,17 @@ func (r *runner) natsServer(ctx context.Context, ip string) (int, error) {
 	fail := func(what string, err error) (int, error) {
 		return r.fail("NATS server: %s failed:\n%s", what, err)
 	}
-	arch, _, err := r.d.Run(ctx, "", "ssh", "-n", "-F", c.SSHConfig, "-o", "BatchMode=yes", c.SSHAlias, "uname -m")
-	if err != nil {
-		return fail("reading the architecture", err)
-	}
-	rel, err := natsserver.ReleaseFor(strings.TrimSpace(arch))
-	if err != nil {
-		return r.fail("%v", err)
-	}
-	if _, err := r.remote(ctx, "", natsInstallScript, rel.Version, rel.URL, rel.SHA256); err != nil {
-		return fail("installing nats-server", err)
+	if code, err := r.natsTools(ctx, true); code != 0 || err != nil {
+		return code, err
 	}
 	if _, err := r.remote(ctx, "", natsCertScript, natsserver.Dir, ip, "viper-nats-"+c.NATS.Group); err != nil {
 		return fail("creating the certificate", err)
 	}
-	id, err := natsserver.NewIdentity()
-	if err != nil {
-		return fail("creating the identity", err)
-	}
-	out, err := r.remote(ctx, id.Seed+"\n"+id.PublicKey+"\n", natsIdentityScript, natsserver.Dir)
+	pub, err := r.natsIdentity(ctx)
 	if err != nil {
 		return fail("storing the identity", err)
 	}
-	pub := lastNonEmpty(out)
-	cfg, err := natsserver.Config{Group: c.NATS.Group, Host: ip, Port: c.NATS.Port, Clients: []natsserver.Client{{Machine: c.Name, PublicKey: pub}}}.Render()
-	if err != nil {
-		return fail("building the configuration", err)
-	}
-	if _, err := r.remote(ctx, cfg, natsConfigScript, natsserver.Dir); err != nil {
+	if err := r.natsRegister(ctx, r.self(), ip, pub); err != nil {
 		return fail("writing the configuration", err)
 	}
 	if _, err := r.remote(ctx, natsserver.UnitFile(), natsUnitScript, strings.TrimSuffix(natsserver.Unit, ".service"), ip, fmt.Sprint(c.NATS.Port)); err != nil {
@@ -248,6 +355,84 @@ func (r *runner) natsServer(ctx context.Context, ip string) (int, error) {
 	if _, err := r.remote(ctx, "", natsCheckScript, ip, fmt.Sprint(c.NATS.Port)); err != nil {
 		return fail("checking the server", err)
 	}
+	if err := r.natsFinish(ctx, ip); err != nil {
+		return fail("logging in", err)
+	}
+	r.printf("NATS server of the group %s is ready at %s:%d.\n", c.NATS.Group, ip, c.NATS.Port)
+	return 0, nil
+}
+
+// natsWaitForServer waits until the server of the group is ready and returns it. A server that
+// failed ends the wait at once: the client does not take over its role.
+func (r *runner) natsWaitForServer(ctx context.Context) (model.GroupMember, int, error) {
+	group := r.c.NATS.Group
+	for i := 0; i < 60; i++ {
+		if interrupted(ctx) {
+			code, err := r.fail("Interrupted.")
+			return model.GroupMember{}, code, err
+		}
+		members, err := r.nats.api.ListGroupMachines(ctx, group)
+		if err != nil {
+			code, err := r.fail("Listing the NATS group %s: %s", group, r.d.Cloud.Describe(err))
+			return model.GroupMember{}, code, err
+		}
+		for _, m := range members {
+			if m.NATS.Role != model.NATSServer {
+				continue
+			}
+			switch {
+			case m.NATS.State == model.NATSFailed:
+				code, err := r.fail("The NATS server %s of the group %s failed to start. Run viper up on it again, or delete the group.", m.Server.Name, group)
+				return model.GroupMember{}, code, err
+			case m.NATS.State == model.NATSReady && m.Server.PrivateIP != "":
+				return m, 0, nil
+			}
+		}
+		if i == 0 {
+			r.printf("Waiting for the NATS server of the group %s ...\n", group)
+		}
+		r.d.Sleep(5 * time.Second)
+	}
+	code, err := r.fail("The NATS server of the group %s did not become ready within 5 minutes.", group)
+	return model.GroupMember{}, code, err
+}
+
+// natsClient makes the machine a client of the group's server: its tool and key, its entry in the
+// server's configuration, the certificate it trusts, and a login to try it.
+func (r *runner) natsClient(ctx context.Context) (int, error) {
+	c := r.c
+	fail := func(what string, err error) (int, error) {
+		return r.fail("NATS client: %s failed:\n%s", what, err)
+	}
+	server, code, err := r.natsWaitForServer(ctx)
+	if code != 0 || err != nil {
+		return code, err
+	}
+	target, err := r.peer(server.Server)
+	if err != nil {
+		return fail("reaching the server", err)
+	}
+	if code, err := r.natsTools(ctx, false); code != 0 || err != nil {
+		return code, err
+	}
+	pub, err := r.natsIdentity(ctx)
+	if err != nil {
+		return fail("storing the identity", err)
+	}
+	if err := r.natsRegister(ctx, target, server.Server.PrivateIP, pub); err != nil {
+		return fail("registering at the server", err)
+	}
+	cert, err := r.remoteOn(ctx, target, true, "", "cat \"$1\"", natsserver.CertFile)
+	if err != nil || !strings.Contains(cert, "BEGIN CERTIFICATE") {
+		return fail("reading the certificate of the server", fmt.Errorf("%v", err))
+	}
+	if _, err := r.remote(ctx, cert, natsFileScript, natsserver.Dir, "server.crt", "644"); err != nil {
+		return fail("storing the certificate", err)
+	}
+	if err := r.natsFinish(ctx, server.Server.PrivateIP); err != nil {
+		return fail("logging in", err)
+	}
+	r.printf("NATS client %s of the group %s is ready (server %s:%d).\n", c.Name, c.NATS.Group, server.Server.PrivateIP, c.NATS.Port)
 	return 0, nil
 }
 

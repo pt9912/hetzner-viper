@@ -27,6 +27,30 @@ func checksums() map[string]string {
 	}
 }
 
+// CLIVersion is the release of the nats command line tool viper installs on the machines of a
+// group (to check the connection; people use it too).
+const CLIVersion = "v0.5.1"
+
+func cliChecksums() map[string]string {
+	return map[string]string{
+		"amd64": "f8a3e106deebed7afe736b7090359bda3aa62a04b310440bedc1d11a93c0ab4f",
+		"arm64": "91c661f1173ee9bfe07514eef55a29d25ac7757a0868c179e825eba976073adc",
+	}
+}
+
+// CLIReleaseFor is the nats tool for a machine; arch is what `uname -m` says.
+func CLIReleaseFor(arch string) (Release, error) {
+	r, err := ReleaseFor(arch)
+	if err != nil {
+		return Release{}, err
+	}
+	v := strings.TrimPrefix(CLIVersion, "v")
+	return Release{
+		Version: CLIVersion, Arch: r.Arch, SHA256: cliChecksums()[r.Arch],
+		URL: fmt.Sprintf("https://github.com/nats-io/natscli/releases/download/%s/nats-%s-linux-%s.zip", CLIVersion, v, r.Arch),
+	}, nil
+}
+
 // Release is the tarball to install on a machine of an architecture.
 type Release struct {
 	Version, Arch, URL, SHA256 string
@@ -131,7 +155,11 @@ func (c Config) Render() (string, error) {
 		return "", errors.New("nats-server needs at least one registered machine (no anonymous access)")
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "# written by viper; changes are overwritten\nserver_name: \"viper-%s\"\nhost: \"%s\"\nport: %d\n\n", c.Group, c.Host, c.Port)
+	fmt.Fprintf(&b, "# written by viper; changes are overwritten\n")
+	for _, cl := range clients {
+		fmt.Fprintf(&b, "%s%s %s\n", registryPrefix, cl.Machine, cl.PublicKey) // read back by ParseClients
+	}
+	fmt.Fprintf(&b, "server_name: \"viper-%s\"\nhost: \"%s\"\nport: %d\n\n", c.Group, c.Host, c.Port)
 	fmt.Fprintf(&b, "tls {\n  cert_file: \"%s\"\n  key_file: \"%s\"\n  min_version: \"1.2\"\n  timeout: 5\n}\n\n", CertFile, KeyFile)
 	b.WriteString("authorization {\n  timeout: 5\n  users = [\n")
 	for _, cl := range clients {
@@ -206,4 +234,56 @@ func NewIdentity() (Identity, error) {
 		return Identity{}, err
 	}
 	return Identity{Seed: string(seed), PublicKey: pub}, nil
+}
+
+const registryPrefix = "# viper-client "
+
+// ParseClients reads the machines out of a configuration Render wrote: the lines at its top that
+// say which machine has which key. Lines it does not know are ignored.
+func ParseClients(conf string) []Client {
+	var out []Client
+	for _, l := range strings.Split(conf, "\n") {
+		rest, ok := strings.CutPrefix(l, registryPrefix)
+		if !ok {
+			continue
+		}
+		if f := strings.Fields(rest); len(f) == 2 {
+			out = append(out, Client{Machine: f[0], PublicKey: f[1]})
+		}
+	}
+	return out
+}
+
+// WithClient returns the clients with this one added, or its key replaced if the machine is there.
+func WithClient(clients []Client, c Client) []Client {
+	out := make([]Client, 0, len(clients)+1)
+	for _, o := range clients {
+		if o.Machine != c.Machine {
+			out = append(out, o)
+		}
+	}
+	return append(out, c)
+}
+
+// WithoutClient returns the clients without the machine.
+func WithoutClient(clients []Client, machine string) []Client {
+	out := make([]Client, 0, len(clients))
+	for _, o := range clients {
+		if o.Machine != machine {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// ClientEnv is the file connection.env a machine of the group finds in Dir: where the server is
+// and which files to use, in the names the nats tool and most client libraries know.
+func ClientEnv(group, machine, host string, port int) string {
+	return fmt.Sprintf(`# written by viper
+NATS_URL=tls://%s:%d
+NATS_CA_FILE=%s
+NATS_NKEY_SEED_FILE=%s/client.nk
+NATS_INBOX_PREFIX=_INBOX.%s
+VIPER_NATS_SUBJECT_PREFIX=viper.%s.%s
+`, host, port, CertFile, Dir, machine, group, machine)
 }

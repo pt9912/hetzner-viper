@@ -56,7 +56,7 @@ func PickRange(existing []*net.IPNet, group string) (network, subnet string, err
 }
 
 func networkFrom(n *hcloud.Network) *model.PrivateNetwork {
-	out := &model.PrivateNetwork{ID: strconv.FormatInt(n.ID, 10), Name: n.Name}
+	out := &model.PrivateNetwork{ID: strconv.FormatInt(n.ID, 10), Name: n.Name, Created: n.Created}
 	if n.IPRange != nil {
 		out.IPRange = n.IPRange.String()
 	}

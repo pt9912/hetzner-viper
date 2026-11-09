@@ -120,3 +120,62 @@ func TestNewIdentityIsAUserKeyPairThatTheConfigAccepts(t *testing.T) {
 		t.Errorf("a real public key must pass the check: %v", err)
 	}
 }
+
+func TestClientsSurviveARenderAndAreReadBack(t *testing.T) {
+	a, _ := natsserver.NewIdentity()
+	b, _ := natsserver.NewIdentity()
+	cfg := natsserver.Config{Group: "dev", Host: "10.130.0.2", Port: 4222, Clients: []natsserver.Client{{Machine: "beta", PublicKey: b.PublicKey}, {Machine: "alpha", PublicKey: a.PublicKey}}}
+	out, err := cfg.Render()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := natsserver.ParseClients(out)
+	if len(got) != 2 || got[0] != (natsserver.Client{Machine: "alpha", PublicKey: a.PublicKey}) || got[1].Machine != "beta" {
+		t.Fatalf("%+v", got)
+	}
+	// the second render of what was read back is the same file
+	cfg.Clients = got
+	again, _ := cfg.Render()
+	if again != out {
+		t.Error("a render of the clients read back must give the same file")
+	}
+	if natsserver.ParseClients("") != nil || len(natsserver.ParseClients("# viper-client onlyname\n# other\n")) != 0 {
+		t.Error("nothing to read")
+	}
+}
+
+func TestWithAndWithoutClient(t *testing.T) {
+	c := []natsserver.Client{{Machine: "a", PublicKey: "k1"}, {Machine: "b", PublicKey: "k2"}}
+	got := natsserver.WithClient(c, natsserver.Client{Machine: "a", PublicKey: "k3"})
+	if len(got) != 2 || got[1] != (natsserver.Client{Machine: "a", PublicKey: "k3"}) {
+		t.Errorf("replace: %+v", got)
+	}
+	if got := natsserver.WithClient(c, natsserver.Client{Machine: "c", PublicKey: "k4"}); len(got) != 3 {
+		t.Errorf("add: %+v", got)
+	}
+	if got := natsserver.WithoutClient(c, "a"); len(got) != 1 || got[0].Machine != "b" {
+		t.Errorf("remove: %+v", got)
+	}
+	if len(c) != 2 || c[0].PublicKey != "k1" {
+		t.Error("the input is not changed")
+	}
+}
+
+func TestClientEnvNamesTheServerAndTheFiles(t *testing.T) {
+	e := natsserver.ClientEnv("dev", "beta", "10.130.0.2", 4222)
+	for _, want := range []string{"NATS_URL=tls://10.130.0.2:4222", "NATS_CA_FILE=" + natsserver.CertFile, "NATS_NKEY_SEED_FILE=" + natsserver.Dir + "/client.nk", "NATS_INBOX_PREFIX=_INBOX.beta", "VIPER_NATS_SUBJECT_PREFIX=viper.dev.beta"} {
+		if !strings.Contains(e, want) {
+			t.Errorf("missing %q in\n%s", want, e)
+		}
+	}
+}
+
+func TestCLIReleaseForPinsTheTool(t *testing.T) {
+	r, err := natsserver.CLIReleaseFor("aarch64")
+	if err != nil || r.Arch != "arm64" || len(r.SHA256) != 64 || !strings.HasSuffix(r.URL, "nats-0.5.1-linux-arm64.zip") {
+		t.Fatalf("%+v %v", r, err)
+	}
+	if _, err := natsserver.CLIReleaseFor("mips"); err == nil {
+		t.Error("no release for mips")
+	}
+}
