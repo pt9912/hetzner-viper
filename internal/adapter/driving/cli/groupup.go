@@ -52,22 +52,25 @@ func (g *gate) wait(ctx context.Context) (ok, open bool) {
 	}
 }
 
-// groupPlan is who has to be there before whom (docs/plan/gruppen.md): the first machine with NATS
-// becomes the server of a new group, so every other machine of the NATS group waits until its
-// server exists. The first machine that uses a login key and firewall waits for nobody, but the
-// others that use the same ones wait until it has made them, so that no two runs make them at once.
+// groupPlan is who has to be there before whom (docs/plan/gruppen.md): in a new NATS group the first
+// machine with NATS becomes the server, so every other machine of the NATS group waits until its
+// server exists. If the group exists already (some machine has its labels), nobody waits for a server.
+// The first machine that uses a login key and firewall waits for nobody, but the others that use the
+// same ones wait until it has made them, so that no two runs make them at once.
 type groupPlan struct {
-	order      []string // the machines: the server first, then the first of each key, then the rest
-	natsLeader string   // "" without NATS
+	order      []string        // each machine after the ones it waits for
+	natsLeader string          // the machine that becomes the server of a new group; "" without NATS or in an existing group
+	members    map[string]bool // the machines in the NATS group: they depend on the server
 	deps       map[string][]string
 }
 
-func planGroupUp(machines []string, cfgs map[string]*model.Machine) groupPlan {
-	p := groupPlan{deps: map[string][]string{}}
+func planGroupUp(machines []string, cfgs map[string]*model.Machine, groupExists bool) groupPlan {
+	p := groupPlan{deps: map[string][]string{}, members: map[string]bool{}}
 	leaders := map[string]string{} // key and firewall -> first machine that uses them
 	class := func(m string) string { return cfgs[m].KeyName + "|" + cfgs[m].FirewallName }
 	for _, m := range machines {
-		if p.natsLeader == "" && cfgs[m].NATS.Enabled {
+		p.members[m] = cfgs[m].NATS.Enabled
+		if p.natsLeader == "" && cfgs[m].NATS.Enabled && !groupExists {
 			p.natsLeader = m
 		}
 		if _, ok := leaders[class(m)]; !ok {
@@ -88,21 +91,69 @@ func planGroupUp(machines []string, cfgs map[string]*model.Machine) groupPlan {
 	return p
 }
 
-// orderOf puts the machines that wait for nobody first (the server of the group before the others),
-// so that they take the places of a limited run first.
+// orderOf sorts the machines so that each comes after the ones it waits for (they take the places of a
+// limited run in this order: a machine that waits must not hold the only place its dependency needs).
+// Among the machines that can start, the server of a new group comes first, then the ones that wait for
+// nobody, then the rest, each in the order of the file.
 func (p groupPlan) orderOf(machines []string) []string {
+	placed := map[string]bool{}
 	var order []string
-	if p.natsLeader != "" {
-		order = append(order, p.natsLeader)
+	for len(order) < len(machines) {
+		pick := p.next(machines, placed)
+		if pick == "" {
+			return append(order, machines...) // a cycle cannot happen; do not lose a machine if it does
+		}
+		placed[pick] = true
+		order = append(order, pick)
 	}
-	for _, wantFree := range []bool{true, false} {
+	return order
+}
+
+// next is the machine that starts next: the server if it can, else one that waits for nobody, else any
+// whose dependencies are placed; "" if there is none.
+func (p groupPlan) next(machines []string, placed map[string]bool) string {
+	ready := func(m string) bool {
+		if placed[m] {
+			return false
+		}
+		for _, d := range p.deps[m] {
+			if !placed[d] {
+				return false
+			}
+		}
+		return true
+	}
+	for _, want := range []func(string) bool{
+		func(m string) bool { return m == p.natsLeader },
+		func(m string) bool { return len(p.deps[m]) == 0 },
+		func(string) bool { return true },
+	} {
 		for _, m := range machines {
-			if m != p.natsLeader && (len(p.deps[m]) == 0) == wantFree {
-				order = append(order, m)
+			if ready(m) && want(m) {
+				return m
 			}
 		}
 	}
-	return order
+	return ""
+}
+
+// groupExists reports whether some machine of the group has its labels already: then the group has
+// its server, and nobody waits for one. A role that cannot be read counts as not existing.
+func groupExists(ctx context.Context, o *options, cfgs map[string]*model.Machine, machines []string) bool {
+	if o.host().Services.Down == nil {
+		return false
+	}
+	for _, m := range machines {
+		if !cfgs[m].NATS.Enabled {
+			continue
+		}
+		if r, ok := o.host().Services.Down(cfgs[m], driving.DownOptions{}).(driving.GroupRoler); ok {
+			if _, _, found, err := r.GroupRole(ctx, cfgs[m]); err == nil && found {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // runGroupUp starts the machines of a group at the same time. The checks of all machines run first
@@ -134,12 +185,14 @@ func runGroupUp(ctx context.Context, o *options, env settings.Env, stdout, stder
 		})})
 	}
 	if res := o.host().Services.Groups.Run(ctx, pre, o.parallel); driving.GroupExitCode(res) != 0 {
-		fmt.Fprintln(stderr, "Nothing was made: the checks of the group failed.")
+		if ctx.Err() == nil {
+			fmt.Fprintln(stderr, "Nothing was made: the checks of the group failed.")
+		}
 		return finishGroup(res, stdout, ws)
 	}
 
 	// 2. the machines
-	plan := planGroupUp(g.Machines, cfgs)
+	plan := planGroupUp(g.Machines, cfgs, groupExists(ctx, o, cfgs, g.Machines))
 	gates := map[string]*gate{}
 	for _, m := range g.Machines {
 		gates[m] = newGate()
@@ -167,20 +220,25 @@ type groupUpState struct {
 	gates map[string]*gate
 
 	mu           sync.Mutex
-	cancels      []context.CancelFunc // of the clients that are running
+	cancels      map[string]context.CancelFunc // of the clients that are running
+	stopped      map[string]bool               // the clients that were stopped because the server failed
 	leaderFailed bool
 }
 
-// addClient makes the run of a client stoppable when the server of the group fails; it returns the
+// addClient makes the run of a client of the new group stoppable when its server fails; it returns the
 // context of the run and what to call when it is over.
-func (st *groupUpState) addClient(ctx context.Context) (context.Context, context.CancelFunc) {
+func (st *groupUpState) addClient(ctx context.Context, m string) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(ctx)
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	if st.cancels == nil {
+		st.cancels, st.stopped = map[string]context.CancelFunc{}, map[string]bool{}
+	}
 	if st.leaderFailed {
+		st.stopped[m] = true
 		cancel()
 	} else {
-		st.cancels = append(st.cancels, cancel)
+		st.cancels[m] = cancel
 	}
 	return ctx, cancel
 }
@@ -190,15 +248,17 @@ func (st *groupUpState) serverFailed() {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	st.leaderFailed = true
-	for _, c := range st.cancels {
+	for m, c := range st.cancels {
+		st.stopped[m] = true
 		c()
 	}
 }
 
-func (st *groupUpState) failed() bool {
+// wasStopped reports that the run of m was stopped because the server failed (and did not fail by itself).
+func (st *groupUpState) wasStopped(m string) bool {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	return st.leaderFailed
+	return st.stopped[m]
 }
 
 // waitFor waits for the machines m depends on; an error says why m does not start.
@@ -208,9 +268,10 @@ func (st *groupUpState) waitFor(ctx context.Context, m string, noJitter bool) er
 		if !open {
 			return ctx.Err()
 		}
-		if !ok {
+		if !ok && dep == st.plan.natsLeader {
 			return skipped{fmt.Sprintf("skipped: %s failed before its server existed", dep)}
 		}
+		// the first machine of a key and firewall failed: the others make them themselves
 	}
 	if len(st.plan.deps[m]) == 0 || noJitter {
 		return nil
@@ -232,11 +293,11 @@ func (s skipped) Error() string { return s.why }
 // groupUpTask is the start of one machine: wait for the machines it depends on, run viper up for it,
 // and open its gate. If the server of the group fails, the clients that are still running are stopped.
 func groupUpTask(m string, o *options, env settings.Env, st *groupUpState, ws *groupWriters) func(context.Context) (int, error) {
-	isServer := m == st.plan.natsLeader
+	isServer := m == st.plan.natsLeader && m != ""
 	inner := ws.task(m, func(ctx context.Context, out, errOut io.Writer) error {
-		if !isServer {
+		if st.plan.natsLeader != "" && !isServer && st.plan.members[m] {
 			var done context.CancelFunc
-			ctx, done = st.addClient(ctx)
+			ctx, done = st.addClient(ctx, m)
 			defer done()
 		}
 		if err := st.waitFor(ctx, m, o.noJitter); err != nil {
@@ -256,7 +317,7 @@ func groupUpTask(m string, o *options, env settings.Env, st *groupUpState, ws *g
 			st.serverFailed()
 		}
 		var sk skipped
-		if !isServer && failed && st.failed() && ctx.Err() == nil && !errors.As(err, &sk) {
+		if failed && st.wasStopped(m) && ctx.Err() == nil && !errors.As(err, &sk) {
 			return 1, fmt.Errorf("stopped because the server %s failed", st.plan.natsLeader)
 		}
 		return code, err

@@ -468,3 +468,123 @@ func TestSetupCreatesTheGroupExampleAndKeepsAnExistingOne(t *testing.T) {
 		t.Error("an existing example is not overwritten")
 	}
 }
+
+func TestInAnExistingGroupNobodyWaitsForAServerAndNobodyIsStoppedByAFailure(t *testing.T) {
+	dir := upGroupDir(t, "newcomer,beta,gamma", "")
+	_, h := fakeTools(t)
+	// gamma is the server of the group that exists already; the newcomer is first in the file
+	downHost(h, map[string]model.NATSRole{"beta": model.NATSClient, "gamma": model.NATSServer}, nil)
+	h.Services.Preflight = func(c *model.Machine) driving.Preflight { return preflightFunc(func() int { return 0 }) }
+	var mu sync.Mutex
+	started := map[string]bool{}
+	h.Services.Up = func(c *model.Machine, o driving.UpOptions) driving.Up {
+		return upFunc(func(ctx context.Context) (int, error) {
+			mu.Lock()
+			started[c.Name] = true
+			mu.Unlock()
+			if c.Name == "newcomer" {
+				return 1, driving.ErrShown // fails at once, before it has a server
+			}
+			time.Sleep(100 * time.Millisecond)
+			if ctx.Err() != nil {
+				return 1, ctx.Err()
+			}
+			return 0, nil
+		})
+	}
+	var out, errb bytes.Buffer
+	err := cli.RunGroupUp(context.Background(), &cli.Opts{Host: h, Dir: dir, Group: "dev", NoJitter: true}, upEnv(t), &out, &errb)
+	if cli.ExitCode(err) != 1 {
+		t.Fatalf("the newcomer failed: %v", err)
+	}
+	for _, want := range []string{"newcomer  failed", "beta      ok", "gamma     ok"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the others must not be stopped; missing %q in\n%s", want, out.String())
+		}
+	}
+}
+
+func TestOneRunPlaceIsEnoughWhenTheServerWaitsForAMachineWithoutNATS(t *testing.T) {
+	dir := upGroupDir(t, "plain,beta", "")
+	if err := os.MkdirAll(filepath.Join(dir, "machines"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "machines", "plain.env.local"), []byte("NATS_ENABLED=false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, h := fakeTools(t)
+	f := &upFake{script: func(name string, o driving.UpOptions) (int, error) {
+		o.OnServerCreated()
+		return 0, nil
+	}}
+	f.services(h)
+	done := make(chan error, 1)
+	var out, errb bytes.Buffer
+	go func() {
+		done <- cli.RunGroupUp(context.Background(), &cli.Opts{Host: h, Dir: dir, Group: "dev", Parallel: 1, NoJitter: true}, upEnv(t), &out, &errb)
+	}()
+	select {
+	case err := <-done:
+		if err != nil || len(f.started) != 2 || f.started[0] != "plain" {
+			t.Errorf("%v started %v\n%s", err, f.started, out.String())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("--parallel 1 hangs: the server holds the only place and waits for a machine that never gets one")
+	}
+}
+
+func TestAMachineWithoutNATSIsNotStoppedWhenTheServerFails(t *testing.T) {
+	dir := upGroupDir(t, "alpha,plain", "")
+	if err := os.MkdirAll(filepath.Join(dir, "machines"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "machines", "plain.env.local"), []byte("NATS_ENABLED=false\nSERVER_PREFIX=other\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, h := fakeTools(t)
+	f := &upFake{}
+	f.services(h)
+	f.script = func(name string, o driving.UpOptions) (int, error) {
+		if name == "alpha" {
+			time.Sleep(30 * time.Millisecond)
+			return 1, driving.ErrShown
+		}
+		time.Sleep(150 * time.Millisecond)
+		return 0, nil
+	}
+	var out, errb bytes.Buffer
+	_ = cli.RunGroupUp(context.Background(), &cli.Opts{Host: h, Dir: dir, Group: "dev", NoJitter: true}, upEnv(t), &out, &errb)
+	if !strings.Contains(out.String(), "plain  ok") {
+		t.Errorf("a machine outside the NATS group goes on:\n%s", out.String())
+	}
+}
+
+func TestDownForAGroupStopsIfARoleCannotBeRead(t *testing.T) {
+	dir := upGroupDir(t, "alpha,beta", "")
+	_, h := fakeTools(t)
+	deleted := false
+	h.Services.Down = func(c *model.Machine, o driving.DownOptions) driving.Down {
+		return roleFails{downFake{name: c.Name, run: func(string, func(string) string) (int, error) { deleted = true; return 0, nil }}}
+	}
+	err := cli.RunGroupDown(context.Background(), &cli.Opts{Host: h, Dir: dir, Group: "dev"}, upEnv(t), strings.NewReader(""), io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "nothing was deleted") || deleted {
+		t.Errorf("%v deleted=%v", err, deleted)
+	}
+	// a Down that cannot tell its role at all is refused as well
+	h.Services.Down = func(c *model.Machine, o driving.DownOptions) driving.Down { return plainDown{} }
+	if err := cli.RunGroupDown(context.Background(), &cli.Opts{Host: h, Dir: dir, Group: "dev"}, upEnv(t), strings.NewReader(""), io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "cannot tell its role") {
+		t.Errorf("%v", err)
+	}
+}
+
+type roleFails struct{ downFake }
+
+func (roleFails) GroupRole(context.Context, *model.Machine) (model.NATSRole, string, bool, error) {
+	return "", "", false, errors.New("API down")
+}
+
+type plainDown struct{}
+
+func (plainDown) Down(context.Context, *model.Machine, bool, runlog.Log, io.Writer, io.Writer) (int, error) {
+	return 0, nil
+}

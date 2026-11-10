@@ -45,10 +45,16 @@ func runGroupDown(ctx context.Context, o *options, env settings.Env, in io.Reade
 		if err != nil {
 			return fmt.Errorf("%s: %w", m, err)
 		}
-		if r, ok := o.host().Services.Down(c, driving.DownOptions{}).(driving.GroupRoler); ok {
-			if role, _, found, err := r.GroupRole(ctx, c); err == nil && found {
-				roles[m] = role
-			}
+		r, ok := o.host().Services.Down(c, driving.DownOptions{}).(driving.GroupRoler)
+		if !ok {
+			return fmt.Errorf("%s: cannot tell its role in the NATS group; nothing was deleted", m)
+		}
+		role, _, found, err := r.GroupRole(ctx, c)
+		if err != nil {
+			return fmt.Errorf("%s: reading its role in the NATS group failed (nothing was deleted, the server must go last): %w", m, err)
+		}
+		if found {
+			roles[m] = role
 		}
 	}
 	taskOf := func(m string) driving.GroupTask {
