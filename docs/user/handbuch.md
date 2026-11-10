@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.82  
+Version: 1.83  
 Software-Version: v0.16.0  
 Stand: 10.11.2026  
 
@@ -8,7 +8,7 @@ Stand: 10.11.2026
 
 ### Zweck der Software
 
-Das Programm `viper` richtet mit einem Befehl einen entfernten Arbeitsrechner bei einem Cloud-Anbieter ein: Hetzner Cloud, AWS (Amazon EC2), Google Cloud oder Azure. Hetzner und AWS sind erprobt, Google Cloud und Azure noch nicht (Kapitel 4). Auf diesem Rechner arbeitet der Code-Agent Claude Code als „virtuelle Person“ (VIPER: VIrtual PERson) in Ihrem Repository. Sie arbeiten darauf über VS Code (Remote-SSH) oder über ein SSH-Terminal, zum Beispiel vom iPad.
+Das Programm `viper` richtet mit einem Befehl einen entfernten Arbeitsrechner bei einem Cloud-Anbieter ein: Hetzner Cloud, AWS (Amazon EC2), Google Cloud oder Azure. Hetzner und AWS sind in echten Konten erprobt; bei Google Cloud und Azure ist das nicht belegt (Kapitel 4). Auf diesem Rechner arbeitet der Code-Agent Claude Code als „virtuelle Person“ (VIPER: VIrtual PERson) in Ihrem Repository. Sie arbeiten darauf über VS Code (Remote-SSH) oder über ein SSH-Terminal, zum Beispiel vom iPad.
 
 Pro Git-Repository richten Sie einen eigenen Rechner ein. Beim Einrichten wird das Repository automatisch geklont. Wenn Sie fertig sind, löschen Sie den Rechner wieder. Alle Dateien auf dem Rechner werden dabei gelöscht. Sichern Sie Ihre Arbeit deshalb vorher mit `git push`.
 
@@ -297,7 +297,7 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 * AWS: Bare-Metal-Typen (`*.metal`) fehlen.
 * Azure: Ohne Subscription stammen Kerne und RAM aus den Daten des Preisrechners auf der Azure-Website. Das ist keine dokumentierte Schnittstelle; ändert Microsoft sie, fehlen nur diese Angaben, bis `viper` angepasst ist.
 * Google Cloud: Die Preisseiten (Allzweck, Compute-, Arbeitsspeicher- und Speicheroptimiert) und die Seite der Platten sind Webseiten, keine Schnittstelle; `viper find` liest die Tabellen daraus (zusammen rund 60 MB, einmal am Tag, Preise je Region in Dollar). Die Gebühr für die IPv4-Adresse steht auf der Netzwerk-Preisseite. Ändert Google eine der Seiten, bricht `viper find` für Google Cloud mit `no prices found …` ab, und es erscheinen keine falschen oder unvollständigen Preise. Bei Tabellen mit Rabattspalten gilt der höchste Preis der Zeile, der Preis ohne Rabatt. Geteilte Kerne (`e2-micro`, `e2-small`, `e2-medium`), Typen mit lokaler SSD und Beschleuniger-Typen (GPU) fehlen. Ob ein Typ in Ihrer Zone angeboten wird, prüft `viper find` nicht. Bei den neuen Serien mit Hyperdisk kommen Leistungsaufschläge der Platte nicht dazu. Über das Projekt (Cloud Billing) setzt sich der Preis aus den Preisen für Kerne und Arbeitsspeicher der Typenfamilie zusammen; Typen mit GPU fehlen dort, weil die GPU getrennt berechnet wird.  Auch dort liest `viper find` die Preise in Dollar und rechnet sie mit dem Kurs der EZB um; die Zahlen sind mit und ohne Projekt dieselben.
-* Der Weg über das eigene Konto (Azure-Subscription, Google-Projekt) ist für `viper find` noch nicht in einem echten Konto getestet. Die öffentlichen Quellen (AWS, Azure, Google Cloud) sind gegen die echten Dateien und Seiten geprüft.
+* Der Weg über das eigene Konto (Azure-Subscription, Google-Projekt) ist für `viper find` nicht gegen ein echtes Konto belegt. Die öffentlichen Quellen (AWS, Azure, Google Cloud) sind gegen die echten Dateien und Seiten geprüft.
 
 ### Protokolle ansehen
 
@@ -915,9 +915,9 @@ Mit `PROVIDER=aws` in `.env.local` (oder in `machines/<rechner>.env.local`) legt
 * **Berechtigungen:** Die Rolle muss Instanzen starten, beschreiben und beenden, Security Groups anlegen und ergänzen, Schlüsselpaare importieren und den SSM-Parameter von Canonical lesen dürfen. Mit `AWS_TAGS` oder `AWS_TAGS_SHARED` braucht sie außerdem `ec2:CreateTags` (beim Anlegen; eine Bedingung `ec2:CreateAction` ist möglich).
 * **Kosten:** AWS rechnet die Instanz und die Platte ab, solange der Server existiert. `viper down <rechner>` beendet die Instanz; Schlüsselpaar und Security Group bleiben für weitere Rechner erhalten.
 
-### Google Cloud und Azure als Anbieter (nicht in einem echten Konto getestet)
+### Google Cloud und Azure als Anbieter (nur gegen nachgebildete Schnittstellen getestet)
 
-Mit `PROVIDER=gcp` bzw. `PROVIDER=azure` richtet `viper up` den Server bei Google Compute Engine bzw. Microsoft Azure ein. **Diese beiden Anbieter sind gebaut und gegen nachgebildete Schnittstellen getestet, aber noch nicht in einem echten Konto ausprobiert.** Prüfen Sie zuerst mit `viper preflight <rechner>` und einem kleinen Server, und rechnen Sie mit Fehlern. Hetzner und AWS sind dagegen in echten Konten getestet.
+Mit `PROVIDER=gcp` bzw. `PROVIDER=azure` richtet `viper up` den Server bei Google Compute Engine bzw. Microsoft Azure ein. **Diese beiden Anbieter sind gebaut und gegen nachgebildete Schnittstellen getestet; ein Lauf in einem echten Konto ist nicht belegt (das Projekt hat dafür keinen Test, anders als bei AWS).** Prüfen Sie zuerst mit `viper preflight <rechner>` und einem kleinen Server, und rechnen Sie mit Fehlern. Hetzner und AWS sind dagegen in echten Konten getestet.
 
 * **Google Cloud:** Anmeldung mit `gcloud auth application-default login` (oder einer Dienstkonto-Datei in `GOOGLE_APPLICATION_CREDENTIALS`). `GCP_PROJECT` ist Pflicht. Der Server ist eine VM in der Zone aus `SERVER_LOCATION` im Netz `default` (oder `GCP_NETWORK`) mit öffentlicher Adresse. Die Firewall besteht aus zwei VPC-Regeln `<SERVER_PREFIX>-ssh` (IPv4) und `<SERVER_PREFIX>-ssh-ipv6`, die für VMs mit dem Netzwerk-Tag `<SERVER_PREFIX>-ssh` gelten. Die Rolle braucht Rechte für Compute-Instanzen und Firewall-Regeln.
 * **Azure:** Anmeldung mit `az login`. `AZURE_SUBSCRIPTION_ID` ist Pflicht. `viper` legt in der Ressourcengruppe (`viper`) ein virtuelles Netz `viper-vnet` mit Subnetz, eine Netzwerksicherheitsgruppe `<SERVER_PREFIX>-ssh` sowie je Server eine öffentliche Adresse, eine Netzwerkkarte und eine VM an. Alles trägt das Tag `viper`. `viper down` löscht VM, Netzwerkkarte, Adresse und Platte; Gruppe, Netz und Sicherheitsgruppe bleiben.
@@ -1265,3 +1265,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.80 | nach v0.15.1 | Die Kapitel zu Gruppendateien und `NATS_MCP` folgen dem Aufbau der anderen Aufgaben (Voraussetzung, Vorgehen, Ergebnis, Hinweise); die Befehlsübersicht, das Kapitel zu mehreren Rechnern und das NATS-Kapitel verweisen auf `--group`. Neu in der Fehlerbehebung: Meldungen zu Gruppen, zum Gruppenstart und -ende und zur Prüfung des MCP-Servers. Der MCP-Server verwirft Nachrichten mit unbekannten oder doppelten Feldern, kennzeichnet jede Textzeile in `inbox` und entfernt unsichtbare Zeichen; `viper check` vergleicht die Binary auf dem Rechner mit der dieses `viper`. |
 | 1.81 | v0.16.0 | Release v0.16.0: die Änderungen 1.77 bis 1.80 (Gruppendateien `groups/` und `--group`, MCP-Server `viper-nats-mcp` mit `NATS_MCP`, Korrektur der gleichzeitigen Beitritte zu einer NATS-Gruppe). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.16.0`. |
 | 1.82 | v0.16.0 | Neu: `viper mcp-binary --arch amd64\|arm64` schreibt den eingebauten MCP-Server als Datei nach stdout. |
+| 1.83 | nach v0.16.0 | Google Cloud und Azure gelten nicht mehr als „nicht in einem echten Konto getestet“, sondern als „nur gegen nachgebildete Schnittstellen getestet, ein Lauf in einem echten Konto ist nicht belegt“ (README, Handbuch, Vorlage); ob sie in der Praxis laufen, ist offen. |

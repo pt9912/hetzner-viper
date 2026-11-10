@@ -8,7 +8,7 @@
 
 Ein einzelnes Programm, `viper`, das mit einem Befehl einen entfernten Linux-Rechner bei einem Cloud-Anbieter (Hetzner Cloud, AWS, Google Cloud oder Azure) einrichtet. Auf diesem Rechner arbeitet der Code-Agent [Claude Code](https://github.com/anthropics/claude-code) remote in Ihrem Repository: Er liest und ändert Code, führt Builds und Tests aus und committet. Pro Git-Repository gibt es einen eigenen Rechner. Das Repository wird beim Einrichten automatisch geklont. Sie steuern den Agenten per SSH, VS Code Remote-SSH oder vom iPad, in einer tmux-Sitzung, die Verbindungsabbrüche übersteht. Wer fertig ist, löscht den Rechner wieder, und es entstehen keine laufenden Kosten.
 
-Zielgruppe sind Entwicklerinnen und Entwickler mit eigenem Cloud-Konto: **Hetzner Cloud** (Standard) oder **AWS** (`PROVIDER=aws`, Amazon EC2). Google Cloud und Azure (`PROVIDER=gcp`, `azure`) gibt es, sie sind aber noch nicht in einem echten Konto erprobt. Der DNS-Name der Rechner kommt aus einer Cloudflare-Zone; ohne Cloudflare und ohne Domain (`DNS_PROVIDER=none`) erreichen Sie einen Rechner über seine Adresse.
+Zielgruppe sind Entwicklerinnen und Entwickler mit eigenem Cloud-Konto: **Hetzner Cloud** (Standard) oder **AWS** (`PROVIDER=aws`, Amazon EC2). Google Cloud und Azure (`PROVIDER=gcp`, `azure`) gibt es, sie sind aber nur gegen nachgebildete Schnittstellen getestet; ein Lauf in einem echten Konto ist nicht belegt. Der DNS-Name der Rechner kommt aus einer Cloudflare-Zone; ohne Cloudflare und ohne Domain (`DNS_PROVIDER=none`) erreichen Sie einen Rechner über seine Adresse.
 
 ## Was kann ich heute tun?
 
@@ -35,7 +35,7 @@ viper mcp-binary --arch arm64 > f  # der eingebaute MCP-Server für NATS-Gruppen
 | Funktion | Einstellung | Wirkung |
 |---|---|---|
 | Prüfung nur lesend | `viper preflight <name>` | Prüft vorab, bevor etwas angelegt wird: Einstellungen, lokales Setup, Cloud-Anmeldung (Hetzner-Token, AWS-Anmeldung, ...), Bestellbarkeit des Servertyps am Standort, Image, Cloudflare-Zone und -Eintrag, GitHub-Token und Repo-Zugriff. `viper up` führt es zuerst aus. |
-| Cloud-Anbieter | `PROVIDER=hetzner` (Standard), `aws`, `gcp`, `azure` | Wo die Rechner laufen. Zugangsdaten, Servertyp, Standort und Image haben Standardwerte je Anbieter; AWS und Hetzner sind erprobt, `gcp` und `azure` noch nicht in einem echten Konto. |
+| Cloud-Anbieter | `PROVIDER=hetzner` (Standard), `aws`, `gcp`, `azure` | Wo die Rechner laufen. Zugangsdaten, Servertyp, Standort und Image haben Standardwerte je Anbieter; AWS und Hetzner sind erprobt, `gcp` und `azure` nur gegen nachgebildete Schnittstellen getestet (ein Lauf in einem echten Konto ist nicht belegt). |
 | Ohne Cloudflare (optional) | `DNS_PROVIDER=none` | Kein DNS-Eintrag, keine Domain, kein Cloudflare-Konto: Ein Rechner ist mit `viper ssh <name>` oder über seine Adresse erreichbar (bei AWS zeigt `viper up` auch den Namen, den EC2 vergibt). |
 | Eigene AWS-Tags (optional) | `AWS_TAGS`, `AWS_TAGS_SHARED` | Tags für Instanz und Systemplatte (`AWS_TAGS`) sowie für Schlüsselpaar und Security Group (`AWS_TAGS_SHARED`), gesetzt beim Anlegen, sodass auch Tag-Richtlinien (`aws:RequestTag`) den Start zulassen. Der Preflight prüft sie. |
 | Mehrere Rechner | `viper up api …` neben `web` | Jeder Rechner hat eigenen Server und DNS-Namen `<SERVER_PREFIX>-<name>.<DNS_DOMAIN>` (Standard-Präfix `claude`). |
