@@ -1,7 +1,7 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.80  
-Software-Version: v0.15.1  
+Version: 1.81  
+Software-Version: v0.16.0  
 Stand: 10.11.2026  
 
 ## 1. Einleitung
@@ -81,12 +81,12 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 
 **Mit Homebrew** (Linux und macOS): `brew install pt9912/viper/viper`, dann `viper version` (Update: `brew upgrade viper`). Sonst von Hand:
 
-1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.15.1_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.15.1_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
+1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.16.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.16.0_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
 2. Prüfen Sie die Datei und machen Sie sie ausführbar:
    ```bash
-   grep viper_v0.15.1_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
-   chmod +x viper_v0.15.1_linux_amd64
-   mv viper_v0.15.1_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
+   grep viper_v0.16.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
+   chmod +x viper_v0.16.0_linux_amd64
+   mv viper_v0.16.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
    ```
 3. Prüfen Sie die Installation: `viper version`.
 
@@ -1262,3 +1262,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.78 | nach v0.15.1 | Neues Kapitel „Claude Code mit den anderen Rechnern der Gruppe sprechen lassen (NATS_MCP)“: Einrichten, Werkzeuge, Abholen und Schieben, `NATS_MCP_AUTOALLOW` und die Warnungen (nichts ist privat, Prompt-Injection auch beim Abholen, der Agent hält die Schlüssel, Channels sind eine Vorschau). |
 | 1.79 | nach v0.15.1 | Neu: Gruppendateien `groups/<gruppe>.env` mit `GROUP_MACHINES`. `viper up --group`, `down --group`, `check --group` und `ssh --group … --cmd` arbeiten für alle Rechner der Gruppe gleichzeitig (`--parallel N`, Ausgabe mit `[rechner]`-Präfix, Ergebnistabelle). Der Start legt zuerst den NATS-Server an, die übrigen Rechner folgen gleichzeitig; das Beenden löscht zuerst die Clients, zuletzt den Server. `viper setup` legt `groups/example.env.example` an. Korrigiert: Zwei Rechner, die gleichzeitig einer NATS-Gruppe beitraten, konnten sich die Serverkonfiguration gegenseitig überschreiben (`natsconfig.sh`). |
 | 1.80 | nach v0.15.1 | Die Kapitel zu Gruppendateien und `NATS_MCP` folgen dem Aufbau der anderen Aufgaben (Voraussetzung, Vorgehen, Ergebnis, Hinweise); die Befehlsübersicht, das Kapitel zu mehreren Rechnern und das NATS-Kapitel verweisen auf `--group`. Neu in der Fehlerbehebung: Meldungen zu Gruppen, zum Gruppenstart und -ende und zur Prüfung des MCP-Servers. Der MCP-Server verwirft Nachrichten mit unbekannten oder doppelten Feldern, kennzeichnet jede Textzeile in `inbox` und entfernt unsichtbare Zeichen; `viper check` vergleicht die Binary auf dem Rechner mit der dieses `viper`. |
+| 1.81 | v0.16.0 | Release v0.16.0: die Änderungen 1.77 bis 1.80 (Gruppendateien `groups/` und `--group`, MCP-Server `viper-nats-mcp` mit `NATS_MCP`, Korrektur der gleichzeitigen Beitritte zu einer NATS-Gruppe). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.16.0`. |
