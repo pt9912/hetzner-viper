@@ -312,10 +312,13 @@ func TestAHealthyMCPSetupPassesTheChecks(t *testing.T) {
 }
 
 func TestMCPProblemsAreReported(t *testing.T) {
-	base := healthyClient + "mcp_bin=ok\nmcp_version=v\nmcp_claude=/b\nmcp_allowed=peers,inbox\nmcp_push=alpha\n"
+	const cmd = "/home/builder/.viper-nats/viper-nats-mcp"
+	base := healthyClient + "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=" + cmd + "\nmcp_allowed=peers,inbox\nmcp_push=alpha\n"
 	for name, tc := range map[string]struct{ status, want string }{
 		"no binary":        {healthyClient + "mcp_bin=missing\n", "FAIL  NATS_MCP is on, but"},
-		"not registered":   {strings.Replace(base, "mcp_claude=/b", "mcp_claude=none", 1), "FAIL  Claude Code does not know the MCP server nats"},
+		"not registered":   {strings.Replace(base, "mcp_claude="+cmd, "mcp_claude=none", 1), "FAIL  Claude Code does not know the MCP server nats"},
+		"other command":    {strings.Replace(base, "mcp_claude="+cmd, "mcp_claude=/old/place/mcp", 1), "FAIL  Claude Code starts /old/place/mcp for the MCP server nats"},
+		"does not run":     {strings.Replace(base, "mcp_version=viper-nats-mcp v1", "mcp_version=bash: Exec format error", 1), "FAIL  the MCP server on the machine does not run"},
 		"other push list":  {strings.Replace(base, "mcp_push=alpha", "mcp_push=", 1), "WARN  the machines whose messages are pushed"},
 		"other allow list": {strings.Replace(base, "mcp_allowed=peers,inbox", "mcp_allowed=", 1), "WARN  the tools of the MCP server allowed"},
 	} {

@@ -163,14 +163,20 @@ func natsMCPChecks(r *report, c *model.Machine, v map[string]string) {
 		r.bad("NATS_MCP is on, but %s/viper-nats-mcp is missing: run viper up %s", natsserver.Dir, c.Name)
 		return
 	}
+	if !strings.HasPrefix(v["mcp_version"], "viper-nats-mcp") {
+		r.bad("the MCP server on the machine does not run (wrong architecture?): %s; run viper up %s", v["mcp_version"], c.Name)
+		return
+	}
 	r.ok("MCP server installed (%s)", v["mcp_version"])
 	switch v["mcp_claude"] {
 	case "no-jq":
 		r.warn("jq is missing on the machine: the entry of the MCP server in Claude Code was not checked")
 	case "none", "":
 		r.bad("Claude Code does not know the MCP server nats: run viper up %s", c.Name)
-	default:
+	case natsserver.Dir + "/viper-nats-mcp":
 		r.ok("the MCP server is registered with Claude Code (%s)", v["mcp_claude"])
+	default:
+		r.bad("Claude Code starts %s for the MCP server nats, not %s/viper-nats-mcp: run viper up %s", v["mcp_claude"], natsserver.Dir, c.Name)
 	}
 	if want := strings.Join(c.NATS.MCPPushFrom, ","); v["mcp_push"] != want {
 		r.warn("the machines whose messages are pushed are %q on the machine, NATS_MCP_PUSH_FROM says %q: run viper up %s", v["mcp_push"], want, c.Name)

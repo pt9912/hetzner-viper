@@ -151,3 +151,84 @@ func TestTheConnectionTestNeedsTheToolsOfTheServer(t *testing.T) {
 		t.Errorf("must fail and show why: %v\n%s", err, out)
 	}
 }
+
+func TestOnlyALinuxProgramOfTheRightArchitectureIsAcceptedFromNATSMCPBinary(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the test program must be an ELF file")
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	here, other := runtime.GOARCH, "arm64"
+	if here == "arm64" {
+		other = "amd64"
+	}
+	if here != "amd64" && here != "arm64" {
+		t.Skip("neither amd64 nor arm64")
+	}
+	if err := start.CheckLinuxBinary(b, here); err != nil {
+		t.Errorf("the right one: %v", err)
+	}
+	if err := start.CheckLinuxBinary(b, other); err == nil {
+		t.Error("the wrong architecture must be refused")
+	}
+	if err := start.CheckLinuxBinary([]byte("#!/bin/sh\necho hi\n"), here); err == nil {
+		t.Error("a script is no program for the machine")
+	}
+}
+
+func TestABinaryThatDoesNotRunDoesNotReplaceTheOneThatWorks(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "nats")
+	good := "#!/bin/sh\necho viper-nats-mcp good\n"
+	if out, err := runScript(t, nil, good, start.NatsMCPInstallScript(), dir, sum(good)); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	broken := "#!/bin/sh\nexit 1\n"
+	out, err := runScript(t, nil, broken, start.NatsMCPInstallScript(), dir, sum(broken))
+	if err == nil || !strings.Contains(out, "does not run") {
+		t.Fatalf("must refuse: %v\n%s", err, out)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "viper-nats-mcp")); string(b) != good {
+		t.Error("the working binary was replaced")
+	}
+}
+
+func TestSettingsOfClaudeCodeStayAFileLinkedIntoADotfilesRepository(t *testing.T) {
+	env, home := fakeClaude(t)
+	real := filepath.Join(home, "dotfiles", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(real), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(real, []byte(`{"permissions":{"allow":["Bash(ls)"]}}`), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, link); err != nil {
+		t.Skip("no symlinks here")
+	}
+	if out, err := runScript(t, env, "", start.NatsMCPClaudeScript(), "/b", "peers"); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the link was replaced by a file: %v", err)
+	}
+	got, _ := os.ReadFile(real)
+	if !strings.Contains(string(got), "mcp__nats__peers") || !strings.Contains(string(got), "Bash(ls)") {
+		t.Errorf("%s", got)
+	}
+	if fi, _ := os.Stat(real); fi.Mode().Perm() != 0o640 {
+		t.Errorf("the rights of the file changed: %v", fi.Mode())
+	}
+	left, _ := filepath.Glob(real + ".*")
+	if len(left) != 0 {
+		t.Errorf("temporary files are left: %v", left)
+	}
+}

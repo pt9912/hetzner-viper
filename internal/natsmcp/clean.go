@@ -23,21 +23,25 @@ func Clean(s string) string {
 			return r
 		case r == 0x2028 || r == 0x2029: // line and paragraph separator
 			return '\n'
-		case r == '\r':
-			return -1
-		case unicode.IsControl(r):
-			return -1
-		case r >= 0x202A && r <= 0x202E, r >= 0x2066 && r <= 0x2069, r == 0x200E, r == 0x200F, // direction
-			r >= 0x200B && r <= 0x200D, r == 0x2060, r == 0xFEFF, r == 0xAD: // no width
-			return -1
-		case unicode.Is(unicode.Cf, r): // all other format characters, among them the Unicode tags U+E0000 to E007F
-			return -1
-		case r >= 0xFE00 && r <= 0xFE0F, r >= 0xE0100 && r <= 0xE01EF, // variation selectors
-			r == 0x034F, r == 0x115F, r == 0x1160, r == 0x3164, r == 0xFFA0: // invisible fillers
+		case r == '\r' || unicode.IsControl(r) || invisible(r):
 			return -1
 		}
 		return r
 	}, s)
+}
+
+// invisible reports the characters that show nothing or change how a text looks: direction, no width, the
+// other format characters (among them the Unicode tags that can hide a text), variation selectors, fillers.
+func invisible(r rune) bool {
+	switch {
+	case r >= 0x202A && r <= 0x202E, r >= 0x2066 && r <= 0x2069, r == 0x200E, r == 0x200F, // direction
+		r >= 0x200B && r <= 0x200D, r == 0x2060, r == 0xFEFF, r == 0xAD: // no width
+		return true
+	case r >= 0xFE00 && r <= 0xFE0F, r >= 0xE0100 && r <= 0xE01EF, // variation selectors
+		r == 0x034F, r == 0x115F, r == 0x1160, r == 0x3164, r == 0xFFA0: // invisible fillers
+		return true
+	}
+	return unicode.Is(unicode.Cf, r)
 }
 
 // EscapeTags writes &, < and > as entities, so a text cannot close the <channel> tag it is

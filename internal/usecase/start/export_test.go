@@ -39,3 +39,6 @@ func NatsMCPClaudeScript() string { return natsMCPClaudeScript }
 
 // NatsMCPTestScript exports natsMCPTestScript for the tests.
 func NatsMCPTestScript() string { return natsMCPTestScript }
+
+// CheckLinuxBinary exports checkLinuxBinary for the tests.
+func CheckLinuxBinary(data []byte, goarch string) error { return checkLinuxBinary(data, goarch) }

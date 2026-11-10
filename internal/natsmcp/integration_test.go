@@ -474,8 +474,8 @@ func TestAnAnswerThatCannotBeSentLeavesTheRequestOpen(t *testing.T) {
 
 func TestServeEndsWithTheSignalWhileItWaitsForTheNextLine(t *testing.T) {
 	ms := setup(t, nil)
-	inR, inW := io.Pipe() // nothing is ever written: the reader blocks
-	defer inW.Close()
+	inR, inW := io.Pipe()              // nothing is ever written: the reader blocks
+	defer func() { _ = inW.Close() }() // a pipe
 	srv := natsmcp.NewServer("t", "1", "i", ms["a"].svc.Tools(), io.Discard, nopLog{})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

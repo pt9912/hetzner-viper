@@ -1,8 +1,9 @@
 package start
 
 import (
+	"bytes"
 	"context"
-	"errors"
+	"debug/elf"
 	"fmt"
 	"os"
 	"strings"
@@ -60,13 +61,6 @@ func (r *runner) natsMCP(ctx context.Context) (int, error) {
 // natsMCPBinary is the binary for the architecture of the machine: the file named by NATS_MCP_BINARY
 // or the one built into viper.
 func (r *runner) natsMCPBinary(ctx context.Context) ([]byte, error) {
-	if f := r.c.NATS.MCPBinary; f != "" {
-		b, err := os.ReadFile(f)
-		if err != nil {
-			return nil, fmt.Errorf("NATS_MCP_BINARY: %w", err)
-		}
-		return b, nil
-	}
 	arch, err := r.remote(ctx, "", `uname -m`)
 	if err != nil {
 		return nil, fmt.Errorf("reading the architecture: %w", err)
@@ -75,11 +69,32 @@ func (r *runner) natsMCPBinary(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	b, err := mcpbin.Binary(rel.Arch)
-	if errors.Is(err, mcpbin.ErrNotIncluded) {
-		return nil, err
+	if f := r.c.NATS.MCPBinary; f != "" {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return nil, fmt.Errorf("NATS_MCP_BINARY: %w", err)
+		}
+		if err := checkLinuxBinary(b, rel.Arch); err != nil {
+			return nil, fmt.Errorf("NATS_MCP_BINARY %s: %w", f, err)
+		}
+		return b, nil
 	}
-	return b, err
+	return mcpbin.Binary(rel.Arch)
+}
+
+// checkLinuxBinary says whether data is a Linux program for the architecture ("amd64" or "arm64"): a file of
+// another architecture would replace the one that works and fail on the machine.
+func checkLinuxBinary(data []byte, goarch string) error {
+	f, err := elf.NewFile(bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("not a Linux program (ELF): %w", err)
+	}
+	defer func() { _ = f.Close() }() // a reader over memory
+	want := map[string]elf.Machine{"amd64": elf.EM_X86_64, "arm64": elf.EM_AARCH64}[goarch]
+	if f.Class != elf.ELFCLASS64 || f.Machine != want || f.Type != elf.ET_EXEC && f.Type != elf.ET_DYN {
+		return fmt.Errorf("it is for %s %s, the machine is %s", f.Class, f.Machine, goarch)
+	}
+	return nil
 }
 
 // natsMCPHint says how Claude Code gets the messages of other machines pushed into the session.
