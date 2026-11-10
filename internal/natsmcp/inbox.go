@@ -116,3 +116,14 @@ func (b *Inbox) Dropped(from string) int {
 	defer b.mu.Unlock()
 	return b.droppedBy[from]
 }
+
+// Unreply takes the mark of an answer back (the answer could not be sent).
+func (b *Inbox) Unreply(handle int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i := range b.entries {
+		if b.entries[i].Handle == handle {
+			b.entries[i].Replied = false
+		}
+	}
+}

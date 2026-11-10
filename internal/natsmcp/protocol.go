@@ -171,29 +171,57 @@ func readLine(r *bufio.Reader, limit int) (line []byte, tooLong bool, err error)
 	}
 }
 
-// Serve reads requests from in until it ends or ctx is done, and waits for the running calls.
+type inLine struct {
+	line    []byte
+	tooLong bool
+	err     error
+}
+
+// Serve reads requests from in until it ends or ctx is done, and waits for the running calls. The lines
+// are read in a goroutine, so that a signal ends the server even while it waits for the next line.
 func (s *Server) Serve(ctx context.Context, in io.Reader) error {
-	r := bufio.NewReaderSize(in, 64<<10)
-	for ctx.Err() == nil {
-		line, tooLong, err := readLine(r, maxLine)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
+	lines := make(chan inLine)
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		r := bufio.NewReaderSize(in, 64<<10)
+		for {
+			line, tooLong, err := readLine(r, maxLine)
+			select {
+			case lines <- inLine{bytes.Clone(line), tooLong, err}:
+			case <-done:
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	for {
+		var l inLine
+		select {
+		case <-ctx.Done():
+			s.stop()
+			return nil
+		case l = <-lines:
+		}
+		if l.err != nil {
+			if errors.Is(l.err, io.EOF) {
+				s.stop()
+				return nil
 			}
 			s.stop()
-			return err
+			return l.err
 		}
-		if tooLong {
+		if l.tooLong {
 			s.fail(nil, -32700, "line too long")
 			continue
 		}
-		if len(bytes.TrimSpace(line)) == 0 {
+		if len(bytes.TrimSpace(l.line)) == 0 {
 			continue
 		}
-		s.handle(ctx, line)
+		s.handle(ctx, l.line)
 	}
-	s.stop()
-	return nil
 }
 
 func (s *Server) stop() {

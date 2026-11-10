@@ -35,11 +35,13 @@ type Service struct {
 
 	nc *nats.Conn
 
-	mu      sync.Mutex
-	waiters map[string]*waiter
-	topics  map[string]*nats.Subscription
-	pushed  map[string][]time.Time
-	errs    int
+	mu         sync.Mutex
+	waiters    map[string]*waiter
+	topics     map[string]*nats.Subscription
+	pushed     map[string][]time.Time
+	errs       int
+	drops      int       // lines logged about messages of other machines
+	lastAnswer time.Time // of the last presence query that was answered
 }
 
 type waiter struct {
@@ -73,6 +75,7 @@ func (s *Service) Connect(ctx context.Context) error {
 	opts := []nats.Option{
 		nats.Name("viper-nats-mcp"), nats.Nkey(pub, kp.Sign), nats.NoEcho(),
 		nats.RetryOnFailedConnect(true), nats.MaxReconnects(-1), nats.ReconnectWait(2 * time.Second),
+		nats.IgnoreAuthErrorAbort(), // the server may not know the key yet (viper up of the machine is running): keep trying
 		nats.ErrorHandler(func(_ *nats.Conn, _ *nats.Subscription, err error) { s.logError("server error", err) }),
 		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) { s.logError("disconnected", err) }),
 		nats.ReconnectHandler(func(*nats.Conn) { s.log.Printf("reconnected") }),
@@ -101,6 +104,33 @@ func (s *Service) Connect(ctx context.Context) error {
 
 // logError logs the first errors of a kind and then only some, so a flood of refused messages
 // does not fill the log.
+// connectionState says in a few words why the tools cannot send now.
+func (s *Service) connectionState() string {
+	if s.nc == nil {
+		return "no connection was made"
+	}
+	switch s.nc.Status() {
+	case nats.CLOSED:
+		return "the connection is closed; restart the Claude Code session"
+	case nats.CONNECTING, nats.RECONNECTING, nats.DRAINING_SUBS, nats.DRAINING_PUBS:
+		return "it is retried; try again in a moment"
+	default:
+		return s.nc.Status().String()
+	}
+}
+
+// logLimited writes a line about a message of another machine: the first ones, then one of a hundred, so that
+// a flood of messages neither fills the file nor pushes the earlier lines out of it.
+func (s *Service) logLimited(format string, a ...any) {
+	s.mu.Lock()
+	s.drops++
+	n := s.drops
+	s.mu.Unlock()
+	if n <= 50 || n%100 == 0 {
+		s.log.Printf(format, a...)
+	}
+}
+
 func (s *Service) logError(what string, err error) {
 	s.mu.Lock()
 	s.errs++
@@ -162,10 +192,10 @@ func (s *Service) onOut(m *nats.Msg) {
 	}
 	e, err := Decode(m.Data, s.cfg.MaxText)
 	if err != nil {
-		s.log.Printf("refused a message from %s: %v", in.From, err)
+		s.logLimited("refused a message from %s: %v", in.From, err)
 		return
 	}
-	s.log.Printf("message from %s: kind=%s bytes=%d", in.From, e.Kind, len(m.Data))
+	s.logLimited("message from %s: kind=%s bytes=%d", in.From, e.Kind, len(m.Data))
 	switch e.Kind {
 	case "msg", "req":
 		s.receive(Entry{From: in.From, Kind: e.Kind, ID: e.ID, Text: e.Text, TS: s.now()})
@@ -181,7 +211,7 @@ func (s *Service) onOut(m *nats.Msg) {
 			default:
 			}
 		} else {
-			s.log.Printf("answer from %s to no open request of theirs", in.From)
+			s.logLimited("answer from %s to no open request of theirs", in.From)
 		}
 	}
 }
@@ -194,10 +224,10 @@ func (s *Service) onTopic(m *nats.Msg) {
 	}
 	e, err := Decode(m.Data, s.cfg.MaxText)
 	if err != nil || e.Kind != "msg" {
-		s.log.Printf("refused a topic message from %s", in.From)
+		s.logLimited("refused a topic message from %s", in.From)
 		return
 	}
-	s.log.Printf("topic message from %s: topic=%s bytes=%d", in.From, in.Arg, len(m.Data))
+	s.logLimited("topic message from %s: topic=%s bytes=%d", in.From, in.Arg, len(m.Data))
 	s.receive(Entry{From: in.From, Kind: "msg", Topic: in.Arg, Text: e.Text, TS: s.now()})
 }
 
@@ -215,9 +245,22 @@ func (s *Service) onPresence(m *nats.Msg) {
 		return
 	}
 	s.peers.Seen(in.From, s.now())
-	if e.Query { // somebody started: let it know that we are here, not all at the same moment
+	if e.Query && s.mayAnswerQuery() { // somebody started: let it know that we are here, not all at the same moment
 		time.AfterFunc(s.jitter(), func() { s.publishPresence("up", false) })
 	}
+}
+
+// mayAnswerQuery lets a presence query be answered at most every five seconds: one answer reaches
+// everybody, and a machine that sends queries in a flood does not make every other machine answer in a flood.
+func (s *Service) mayAnswerQuery() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now()
+	if !s.lastAnswer.IsZero() && now.Sub(s.lastAnswer) < 5*time.Second {
+		return false
+	}
+	s.lastAnswer = now
+	return true
 }
 
 // receive stores a message and pushes it if the policy lets it.

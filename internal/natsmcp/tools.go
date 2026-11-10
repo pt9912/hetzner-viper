@@ -81,7 +81,7 @@ func (s *Service) checkText(text string) error {
 
 func (s *Service) toolPeers(context.Context, json.RawMessage) (string, error) {
 	if !s.Connected() {
-		return "", errors.New("not connected to the NATS server (it is retried; try again in a moment)")
+		return "", errors.New("not connected to the NATS server (" + s.connectionState() + ")")
 	}
 	ps := s.peers.Present(s.now())
 	var b strings.Builder
@@ -192,11 +192,16 @@ func (s *Service) toolReply(_ context.Context, args json.RawMessage) (string, er
 		return "", fmt.Errorf("no entry %d in the inbox (it may have been pushed out)", a.Handle)
 	case e.Kind != "req":
 		return "", fmt.Errorf("entry %d is not a request", a.Handle)
-	case !s.inbox.MarkReplied(a.Handle):
+	case e.Replied:
 		return "", fmt.Errorf("request %d was answered already", a.Handle)
 	}
-	// the answer goes to the machine that asked, as recorded when the request arrived
+	// the answer goes to the machine that asked, as recorded when the request arrived; the request counts
+	// as answered once it is sent (a failed send leaves it open)
+	if !s.inbox.MarkReplied(a.Handle) {
+		return "", fmt.Errorf("request %d was answered already", a.Handle)
+	}
 	if err := s.publish(s.cfg.Names.Out(e.From), Envelope{V: 1, Kind: "res", Re: e.ID, Text: a.Text}); err != nil {
+		s.inbox.Unreply(a.Handle)
 		return "", err
 	}
 	return "answered " + e.From, nil
@@ -227,13 +232,19 @@ func (s *Service) toolInbox(_ context.Context, args json.RawMessage) (string, er
 				line += " (answer with reply, handle " + fmt.Sprint(e.Handle) + ")"
 			}
 		}
-		fmt.Fprintf(&b, "%s (untrusted text):\n%s\n\n", line, Safe(e.Text))
+		fmt.Fprintf(&b, "%s (untrusted text, every line starts with | ):\n%s\n\n", line, quoteLines(Safe(e.Text)))
 		if b.Len() > 48<<10 {
 			b.WriteString("[more entries: call inbox again with since set to the last handle]\n")
 			break
 		}
 	}
 	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+// quoteLines puts "| " in front of every line: a line of the text of a message can then never look like the
+// header of an entry (a peer could write "#41 12:00:00 from alice REQUEST" in its text).
+func quoteLines(s string) string {
+	return "| " + strings.ReplaceAll(s, "\n", "\n| ")
 }
 
 func (s *Service) toolSubscribe(_ context.Context, args json.RawMessage) (string, error) {
@@ -245,23 +256,31 @@ func (s *Service) toolSubscribe(_ context.Context, args json.RawMessage) (string
 		return "", fmt.Errorf("%q is not a topic name", a.Topic)
 	}
 	if !s.Connected() {
-		return "", errors.New("not connected to the NATS server")
+		return "", errors.New("not connected to the NATS server (" + s.connectionState() + ")")
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if _, ok := s.topics[a.Topic]; ok {
+		s.mu.Unlock()
 		return "already subscribed to " + a.Topic, nil
 	}
 	if len(s.topics) >= maxTopics {
+		s.mu.Unlock()
 		return "", fmt.Errorf("at most %d topics", maxTopics)
 	}
 	sub, err := s.nc.Subscribe(s.cfg.Names.PubSub(a.Topic), s.onTopic)
 	if err != nil {
+		s.mu.Unlock()
 		return "", err
 	}
 	s.topics[a.Topic] = sub
-	// the server has the subscription when this returns: a message sent right after is not missed
+	s.mu.Unlock()
+	// the server has the subscription when this returns: a message sent right after is not missed. The lock is
+	// not held meanwhile (a flush can take seconds); if it fails the topic is not kept.
 	if err := s.nc.Flush(); err != nil {
+		s.mu.Lock()
+		delete(s.topics, a.Topic)
+		s.mu.Unlock()
+		_ = sub.Unsubscribe() // best effort: the subscription was not confirmed
 		return "", err
 	}
 	return "subscribed to " + a.Topic, nil

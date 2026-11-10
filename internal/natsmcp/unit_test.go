@@ -188,3 +188,14 @@ func TestPeersCountOnlyWhenSeenRecently(t *testing.T) {
 		t.Errorf("%+v", got)
 	}
 }
+
+func TestCleanRemovesInvisibleCharactersThatCanHideAnInstruction(t *testing.T) {
+	// the Unicode tags spell "do it" without showing it; variation selectors and fillers show nothing either
+	hidden := "ok" + string([]rune{0xE0064, 0xE006F, 0xE0020, 0xE0069, 0xE0074}) + string([]rune{0xFE0F, 0xE0100, 0x034F, 0x3164, 0x115F}) + "!"
+	if got := natsmcp.Clean(hidden); got != "ok!" {
+		t.Errorf("%q", got)
+	}
+	if got := natsmcp.Clean("Grüße, 你好, 👍\n\tx"); got != "Grüße, 你好, 👍\n\tx" {
+		t.Errorf("text must stay: %q", got)
+	}
+}

@@ -62,7 +62,7 @@ func checkEnvelope(e Envelope, maxText int) error {
 	switch e.Kind {
 	case "msg", "req", "res", "presence":
 	default:
-		return fmt.Errorf("kind %q", e.Kind)
+		return fmt.Errorf("kind %q", truncate(e.Kind, 32))
 	}
 	if e.ID != "" && !idRe.MatchString(e.ID) || e.Kind == "req" && e.ID == "" {
 		return errors.New("bad id")
@@ -121,4 +121,15 @@ func (p *Peers) Present(now time.Time) []Peer {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
+}
+
+// truncate cuts s to n bytes (at a character) with "..." when it is longer: text of another machine in a log line.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "..."
 }
