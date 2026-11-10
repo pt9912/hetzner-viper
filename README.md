@@ -28,6 +28,8 @@ viper vscode web                   # open VS Code on the machine again (as viper
 viper down web                     # check for unsaved work, then delete machine "web"
 viper dns web                      # print the DNS name of machine "web"
 viper log [web] [--full]           # events of the machines, or one machine's full output
+viper up --group dev               # all machines named in groups/dev.env, at the same time (also down, check, ssh --cmd)
+viper mcp-binary --arch arm64 > f  # the built-in MCP server for NATS groups, as a file
 ```
 
 | Feature | Setting | What it does |
@@ -38,6 +40,9 @@ viper log [web] [--full]           # events of the machines, or one machine's fu
 | No Cloudflare (optional) | `DNS_PROVIDER=none` | No DNS record, no domain and no Cloudflare account: a machine is reached with `viper ssh <name>` or by its address (on AWS `viper up` also shows the name EC2 gives it). |
 | Extra AWS tags (optional) | `AWS_TAGS`, `AWS_TAGS_SHARED` | Tags for the instance and its volume (`AWS_TAGS`) and for the key pair and security group (`AWS_TAGS_SHARED`), applied at creation, so tag policies (`aws:RequestTag`) allow the start. Preflight checks them. |
 | Several machines | `viper up api …` next to `web` | Each machine has its own server and DNS name `<SERVER_PREFIX>-<name>.<DNS_DOMAIN>` (default prefix `claude`). |
+| Machine groups | `groups/<group>.env`, `viper up\|down\|check --group <group>`, `viper ssh --group <group> --cmd …` | The file names the machines (`GROUP_MACHINES=alpha,beta`) and the settings they share; one command starts, checks or deletes them all **at the same time**, with a `[machine]` prefix on every line and a table of results. A new NATS group gets its server first, the other machines follow while it is set up; `down` deletes the clients first and the server last. |
+| NATS groups (optional, Hetzner) | `NATS_ENABLED`, `NATS_GROUP`, `NATS_PORT` | Machines of a group talk to each other over NATS on a private network: TLS, an NKey for each machine, and subjects in which only the machine itself may send (the sender of a message is the server's word). The first machine becomes the server, the others clients; `viper down` revokes the key of a client. |
+| Claude Code talks to other machines (optional) | `NATS_MCP`, `NATS_MCP_PUSH_FROM`, `NATS_MCP_AUTOALLOW` | Installs the MCP server `viper-nats-mcp` (built into `viper`, checked by SHA-256) on each machine of a NATS group and registers it with Claude Code: tools to list machines, send, ask and answer. Nothing in the group is private, and text from other agents is untrusted input: read the warnings in the manual first. |
 | GitHub | `VIPER_GH_TOKEN` | A GitHub PAT, ideally fine-grained per machine with Contents and Pull requests read and write (a `GH_TOKEN` exported for your local `gh` is deliberately not used). The GitHub CLI `gh` is logged in on the server and `git` pushes over HTTPS, so the agent can also open pull requests. |
 | Claude subscription | `VIPER_CLAUDE_TOKEN` | A long-lived token for your Claude subscription from `claude setup-token`. Claude Code is logged in on the server, so there is no `/login` after each new server. |
 | Another model | `VIPER_ANTHROPIC_BASE_URL`, `VIPER_ANTHROPIC_AUTH_TOKEN`, `VIPER_CLAUDE_MODEL` | Points Claude Code on the server at any Anthropic-compatible API, such as Ollama's cloud (`https://ollama.com`) or your own vLLM server. Preflight tests key and model with one small request. |
