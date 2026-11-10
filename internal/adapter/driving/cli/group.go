@@ -93,7 +93,7 @@ func finishGroup(results []driving.GroupResult, stdout io.Writer, ws *groupWrite
 
 // sshOnce runs one command on a machine and returns what it printed (the machines of a group cannot
 // share the terminal, so no ssh takes the place of viper).
-func sshOnce(ctx context.Context, o *options, env settings.Env, out, _ io.Writer) error {
+func sshOnce(ctx context.Context, o *options, env settings.Env, out, errOut io.Writer) error {
 	c, err := o.host().Services.Settings.Load(settingsDir(o), o.machine, env, false)
 	if err != nil {
 		return err
@@ -104,7 +104,17 @@ func sshOnce(ctx context.Context, o *options, env settings.Env, out, _ io.Writer
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	text, err := o.host().OutputTool("ssh", "-n", "-F", c.SSHConfig, "-o", "BatchMode=yes", c.SSHAlias, o.cmd)
+	args := []string{"-n", "-F", c.SSHConfig, "-o", "BatchMode=yes", c.SSHAlias, o.cmd}
+	if st := o.host().StreamTool; st != nil {
+		if err := st(ctx, "", out, errOut, "ssh", args...); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return exitStatus(1)
+		}
+		return nil
+	}
+	text, err := o.host().OutputTool("ssh", args...)
 	if text != "" {
 		fmt.Fprint(out, strings.TrimRight(text, "\n")+"\n")
 	}

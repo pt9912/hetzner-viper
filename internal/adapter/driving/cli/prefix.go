@@ -15,6 +15,7 @@ type prefixWriter struct {
 	mu     *sync.Mutex // the terminal's: one for all machines (and both streams)
 	out    io.Writer
 	prefix string
+	rmu    sync.Mutex // the unfinished line: a program that outlives its run may still write
 	rest   []byte
 }
 
@@ -27,6 +28,8 @@ func newPrefixWriter(mu *sync.Mutex, out io.Writer, machine string, width int) *
 }
 
 func (w *prefixWriter) Write(p []byte) (int, error) {
+	w.rmu.Lock()
+	defer w.rmu.Unlock()
 	w.rest = append(w.rest, p...)
 	for {
 		i := bytes.IndexAny(w.rest, "\n\r")
@@ -54,6 +57,8 @@ func (w *prefixWriter) emit(line []byte) {
 
 // flush writes an unfinished last line.
 func (w *prefixWriter) flush() {
+	w.rmu.Lock()
+	defer w.rmu.Unlock()
 	if len(w.rest) > 0 {
 		w.emit(w.rest)
 		w.rest = nil

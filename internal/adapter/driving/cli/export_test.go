@@ -161,3 +161,8 @@ func RunGroupUp(ctx context.Context, p *Opts, env settings.Env, stdout, stderr i
 func RunGroupDown(ctx context.Context, p *Opts, env settings.Env, in io.Reader, stdout, stderr io.Writer) error {
 	return runGroupDown(ctx, p.options(), env, in, stdout, stderr)
 }
+
+// RunGroupSSH runs a command on the machines of a group.
+func RunGroupSSH(ctx context.Context, p *Opts, env settings.Env, stdout, stderr io.Writer) error {
+	return runGroup(ctx, p.options(), env, stdout, stderr, sshOnce)
+}

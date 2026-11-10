@@ -38,7 +38,7 @@ func runGroupDown(ctx context.Context, o *options, env settings.Env, in io.Reade
 	ctx, stop := notifyContext(ctx)
 	defer stop()
 	ws := newGroupWriters(g.Machines, stdout, stderr)
-	askFor := groupAsker(ctx, in, stderr)
+	askFor := groupAsker(ctx, in, lockedWriter{mu: &ws.mu, w: stderr})
 	roles := map[string]model.NATSRole{}
 	for _, m := range g.Machines {
 		c, err := o.host().Services.Settings.Load(settingsDir(o), m, env, true)
@@ -100,4 +100,16 @@ func notDone(results []driving.GroupResult) []string {
 		}
 	}
 	return bad
+}
+
+// lockedWriter writes under the lock of the terminal, so that a prompt does not cut into a line of a machine.
+type lockedWriter struct {
+	mu *sync.Mutex
+	w  io.Writer
+}
+
+func (l lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
 }

@@ -50,6 +50,7 @@ func Run(version string, args []string, stdin io.Reader, stdout, stderr io.Write
 			return system.Exec(stdin, stdout, stderr, name, args...)
 		},
 		OutputTool: system.Output,
+		StreamTool: system.Stream,
 		LookPath:   system.LookPath,
 		Env:        system.HostEnvironment,
 		IsTerminal: func() bool { return system.IsTerminal(stdin) && system.IsTerminal(stdout) },

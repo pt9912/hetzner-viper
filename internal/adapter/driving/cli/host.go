@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"github.com/pt9912/hetzner-viper/internal/port/driven/system"
 	"io"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
@@ -39,6 +40,9 @@ type Host struct {
 	RunTool    func(name string, args ...string) error
 	ExecTool   func(name string, args ...string) error
 	OutputTool func(name string, args ...string) (string, error)
+	// StreamTool runs a program with its output going to the writers as it comes; it ends with ctx
+	// (the group commands use it; without it they fall back to OutputTool).
+	StreamTool system.Streamer
 	LookPath   func(file string) (string, error)
 	// Env is the home directory and the environment.
 	Env func() (settings.Env, error)

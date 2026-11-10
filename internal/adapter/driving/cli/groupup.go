@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"math/rand/v2"
+	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -174,6 +176,7 @@ func runGroupUp(ctx context.Context, o *options, env settings.Env, stdout, stder
 		cfgs[m] = c
 	}
 	ws := newGroupWriters(g.Machines, stdout, stderr)
+	noticeMachinesWithoutFile(o, g.Machines, stdout)
 
 	// 1. the checks of all machines, before anything is made
 	var pre []driving.GroupTask
@@ -321,5 +324,19 @@ func groupUpTask(m string, o *options, env settings.Env, st *groupUpState, ws *g
 			return 1, fmt.Errorf("stopped because the server %s failed", st.plan.natsLeader)
 		}
 		return code, err
+	}
+}
+
+// noticeMachinesWithoutFile says which machines of the group have no machines/<m>.env.local: they get the
+// settings of the group, which is fine, unless a name in GROUP_MACHINES has a typo and makes a new server.
+func noticeMachinesWithoutFile(o *options, machines []string, stdout io.Writer) {
+	var without []string
+	for _, m := range machines {
+		if !exists(filepath.Join(settingsDir(o), "machines", m+".env.local")) {
+			without = append(without, m)
+		}
+	}
+	if len(without) > 0 {
+		fmt.Fprintf(stdout, "No machines/<machine>.env.local for %s: they use the settings of the group. A name in GROUP_MACHINES with a typo would make a new server.\n", strings.Join(without, ", "))
 	}
 }

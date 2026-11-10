@@ -37,9 +37,17 @@ func TestRunKeepsTheOrderAndSumsUp(t *testing.T) {
 	}
 }
 
+// waitFor waits until the condition holds (or two seconds have passed): no sleeps that must be long enough.
+func waitFor(cond func() bool) {
+	deadline := time.Now().Add(2 * time.Second)
+	for !cond() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestRunRunsAtTheSameTimeButNotMoreThanTheLimit(t *testing.T) {
 	var running, peak atomic.Int32
-	mk := func(n string) driving.GroupTask {
+	mk := func(n string, want int32) driving.GroupTask {
 		return driving.GroupTask{Machine: n, Run: func(context.Context) (int, error) {
 			now := running.Add(1)
 			for {
@@ -48,18 +56,25 @@ func TestRunRunsAtTheSameTimeButNotMoreThanTheLimit(t *testing.T) {
 					break
 				}
 			}
-			time.Sleep(30 * time.Millisecond)
+			waitFor(func() bool { return peak.Load() >= want }) // all that may run are running
 			running.Add(-1)
 			return 0, nil
 		}}
 	}
-	tasks := []driving.GroupTask{mk("a"), mk("b"), mk("c"), mk("d"), mk("e"), mk("f")}
-	groupops.Runner{}.Run(context.Background(), tasks, 3)
+	names := []string{"a", "b", "c", "d", "e", "f"}
+	build := func(want int32) []driving.GroupTask {
+		var ts []driving.GroupTask
+		for _, n := range names {
+			ts = append(ts, mk(n, want))
+		}
+		return ts
+	}
+	groupops.Runner{}.Run(context.Background(), build(3), 3)
 	if peak.Load() != 3 {
 		t.Errorf("peak %d, want 3", peak.Load())
 	}
 	peak.Store(0)
-	groupops.Runner{}.Run(context.Background(), tasks, 0) // the default of 8: all six at once
+	groupops.Runner{}.Run(context.Background(), build(6), 0) // the default of 8: all six at once
 	if peak.Load() != 6 {
 		t.Errorf("peak %d, want 6", peak.Load())
 	}

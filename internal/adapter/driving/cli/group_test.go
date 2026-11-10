@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driving/cli"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/runlog"
@@ -376,7 +377,17 @@ func TestTheServerOfAGroupIsDeletedLastAndTheClientsTogether(t *testing.T) {
 		running++
 		peak = max(peak, running)
 		mu.Unlock()
-		time.Sleep(60 * time.Millisecond)
+		if name != "alpha" { // the two clients wait for each other: they run at the same time
+			for i := 0; i < 2000; i++ {
+				mu.Lock()
+				p := peak
+				mu.Unlock()
+				if p >= 2 {
+					break
+				}
+				time.Sleep(time.Millisecond)
+			}
+		}
 		mu.Lock()
 		running--
 		order = append(order, name)
@@ -587,4 +598,40 @@ type plainDown struct{}
 
 func (plainDown) Down(context.Context, *model.Machine, bool, runlog.Log, io.Writer, io.Writer) (int, error) {
 	return 0, nil
+}
+
+func TestSSHForAGroupShowsWhatSSHSaysAndStopsWithTheContext(t *testing.T) {
+	dir := upGroupDir(t, "alpha,beta", "")
+	env := upEnv(t)
+	// the SSH config of each machine must exist: viper up made it
+	for _, m := range []string{"alpha", "beta"} {
+		c, err := settingsfile.Load(dir, m, env, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(c.SSHConfig), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(c.SSHConfig, []byte("Host x\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, h := fakeTools(t)
+	h.StreamTool = func(ctx context.Context, _ string, stdout, stderr io.Writer, name string, args ...string) error {
+		last := args[len(args)-1]
+		if strings.Contains(strings.Join(args, " "), "beta") {
+			fmt.Fprintln(stderr, "Permission denied (publickey).")
+			return errors.New("exit status 255")
+		}
+		fmt.Fprintln(stdout, "ran "+last)
+		return nil
+	}
+	var out, errb bytes.Buffer
+	err := cli.RunGroupSSH(context.Background(), &cli.Opts{Host: h, Dir: dir, Group: "dev", Cmd: "uptime"}, env, &out, &errb)
+	if cli.ExitCode(err) != 1 {
+		t.Fatalf("%v", err)
+	}
+	if !strings.Contains(out.String(), "[alpha] ran uptime") || !strings.Contains(errb.String(), "[beta]  Permission denied (publickey).") || !strings.Contains(out.String(), "beta   failed") {
+		t.Errorf("stdout:\n%s\nstderr:\n%s", out.String(), errb.String())
+	}
 }

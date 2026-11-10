@@ -76,16 +76,16 @@ func LoadGroup(dir, name string, env settings.Env) (*model.Group, error) {
 	vars := map[string]string{}
 	if err := sourceFile(vars, file, env); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("No group %s: there is no %s", name, filepath.Join(groupDir, name+".env"))
+			return nil, fmt.Errorf("No group %s: there is no %s/%s.env", name, groupDir, name)
 		}
 		return nil, err
 	}
 	machines, err := parseGroupMachines(vars["GROUP_MACHINES"])
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", filepath.Join(groupDir, name+".env"), err)
+		return nil, fmt.Errorf("%s/%s.env: %w", groupDir, name, err)
 	}
 	if g := strings.TrimSpace(vars["NATS_GROUP"]); g != "" && g != name {
-		return nil, fmt.Errorf("%s: NATS_GROUP is %s, but the group is %s (the name of the file)", filepath.Join(groupDir, name+".env"), g, name)
+		return nil, fmt.Errorf("%s/%s.env: NATS_GROUP is %s, but the group is %s (the name of the file)", groupDir, name, g, name)
 	}
 	return &model.Group{Name: name, File: file, Machines: machines}, nil
 }
@@ -102,7 +102,7 @@ func memberOf(dir, machine string, env settings.Env) (membership, error) {
 			if namesMachine(GroupFileOf(dir, n), machine) {
 				return m, err
 			}
-			m.warnings = append(m.warnings, fmt.Sprintf("%s is ignored: %v", filepath.Join(groupDir, n+".env"), err))
+			m.warnings = append(m.warnings, fmt.Sprintf("%s/%s.env is ignored: %v", groupDir, n, err))
 			continue
 		}
 		for _, x := range g.Machines {
@@ -121,22 +121,16 @@ func memberOf(dir, machine string, env settings.Env) (membership, error) {
 	return m, nil
 }
 
-var groupMachinesLine = regexp.MustCompile(`(?m)^\s*(?:export\s+)?GROUP_MACHINES=(.*)$`)
-
-// namesMachine looks at the raw text of a group file for a line GROUP_MACHINES= that names the machine.
+// namesMachine looks at the raw text of a group file for the machine, as a word anywhere in it (also in
+// a line that is not a plain GROUP_MACHINES=…, or after a syntax error): a file that cannot be read
+// must not take the group away from a machine silently, so it is better to stop once too often.
 func namesMachine(file, machine string) bool {
 	b, err := os.ReadFile(file)
 	if err != nil {
 		return false
 	}
-	for _, m := range groupMachinesLine.FindAllSubmatch(b, -1) {
-		for _, f := range strings.FieldsFunc(string(m[1]), func(r rune) bool { return r == ',' || r == ' ' || r == '\t' || r == '"' || r == '\'' }) {
-			if f == machine {
-				return true
-			}
-		}
-	}
-	return false
+	re := regexp.MustCompile(`(^|[^A-Za-z0-9_-])` + regexp.QuoteMeta(machine) + `($|[^A-Za-z0-9_-])`)
+	return re.Match(b)
 }
 
 // applyGroup puts the settings of the group file between .env.local and the file of the machine,

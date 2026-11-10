@@ -279,6 +279,7 @@ func TestGroupRoleSaysWhatTheMachineIsInItsGroupFromTheLabels(t *testing.T) {
 		d := n.deps()
 		d.Cloud = n.hz
 		got, group, ok, err := stop.Service{Deps: d}.GroupRole(context.Background(), n.c)
+		n.lg.Close(nil, 0) // the log file of the world must be closed before the temporary directory goes (Windows)
 		if err != nil || !ok || got != role || group != "dev" {
 			t.Errorf("%s: %v %q %v %v", role, got, group, ok, err)
 		}
@@ -286,7 +287,9 @@ func TestGroupRoleSaysWhatTheMachineIsInItsGroupFromTheLabels(t *testing.T) {
 	// a machine without labels, or without a server, has no role
 	w := newWorld(t)
 	d := w.deps()
-	if _, _, ok, err := (stop.Service{Deps: d}).GroupRole(context.Background(), w.c); ok || err != nil {
+	_, _, ok, err := (stop.Service{Deps: d}).GroupRole(context.Background(), w.c)
+	w.lg.Close(nil, 0)
+	if ok || err != nil {
 		t.Errorf("no NATS: %v %v", ok, err)
 	}
 }
