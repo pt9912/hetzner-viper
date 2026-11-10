@@ -1,11 +1,13 @@
 package natsmcp
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"sort"
 	"sync"
@@ -45,6 +47,9 @@ func Decode(data []byte, maxText int) (Envelope, error) {
 	if len(data) > maxWire {
 		return Envelope{}, fmt.Errorf("message of %d bytes", len(data))
 	}
+	if err := checkKeys(data); err != nil {
+		return Envelope{}, err
+	}
 	var e Envelope
 	if err := json.Unmarshal(data, &e); err != nil {
 		return Envelope{}, err
@@ -56,6 +61,45 @@ func Decode(data []byte, maxText int) (Envelope, error) {
 		return Envelope{}, err
 	}
 	return e, nil
+}
+
+// checkKeys makes the reading of a message strict: the top level is an object, every key is one of the
+// fields of the envelope in exactly that spelling (encoding/json would also take "Kind" or "KIND"), and no key
+// is there twice (encoding/json takes the last, other programs the first: a way to show two readers two
+// different messages). A protocol change raises "v", so a field this version does not know is a refusal.
+func checkKeys(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
+		return errors.New("not a JSON object")
+	}
+	seen := map[string]bool{}
+	for dec.More() {
+		t, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		key, _ := t.(string)
+		switch key {
+		case "v", "kind", "id", "re", "text", "state", "query":
+		default:
+			return fmt.Errorf("unknown field %q", truncate(key, 32))
+		}
+		if seen[key] {
+			return fmt.Errorf("field %q twice", key)
+		}
+		seen[key] = true
+		var skip json.RawMessage
+		if err := dec.Decode(&skip); err != nil {
+			return err
+		}
+	}
+	if _, err := dec.Token(); err != nil { // the closing brace
+		return err
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return errors.New("text after the JSON object")
+	}
+	return nil
 }
 
 func checkEnvelope(e Envelope, maxText int) error {

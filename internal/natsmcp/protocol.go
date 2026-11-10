@@ -70,7 +70,8 @@ type Server struct {
 	out io.Writer
 
 	mu          sync.Mutex
-	initialized bool
+	initialized bool // the client said notifications/initialized
+	sawInit     bool // the client sent the request initialize
 	running     map[string]context.CancelFunc
 	cancelled   map[string]bool // the calls the client cancelled: they are not answered
 	wg          sync.WaitGroup
@@ -244,6 +245,10 @@ func (s *Server) handle(ctx context.Context, line []byte) {
 		s.notification(req)
 		return
 	}
+	if (req.Method == "tools/list" || req.Method == "tools/call") && !s.hasInitialized() {
+		s.fail(req.ID, -32002, "the server is not initialized: send initialize first")
+		return
+	}
 	switch req.Method {
 	case "initialize":
 		s.initialize(req)
@@ -283,7 +288,16 @@ func (s *Server) notification(req rpcRequest) {
 	}
 }
 
+func (s *Server) hasInitialized() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sawInit
+}
+
 func (s *Server) initialize(req rpcRequest) {
+	s.mu.Lock()
+	s.sawInit = true
+	s.mu.Unlock()
 	var p struct {
 		ProtocolVersion string `json:"protocolVersion"`
 	}

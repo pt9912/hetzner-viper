@@ -223,3 +223,24 @@ func TestTwoSessionsDoNotRotateTheLogAgainAndAgain(t *testing.T) {
 		t.Errorf("the rotated file lost lines:\n%s", old)
 	}
 }
+
+func TestDecodeIsStrictAboutKeys(t *testing.T) {
+	good := `{"v":1,"kind":"msg","text":"hi"}`
+	if _, err := natsmcp.Decode([]byte(good), 100); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"capital key":       `{"v":1,"Kind":"msg","text":"hi"}`,
+		"upper case key":    `{"V":1,"kind":"msg"}`,
+		"key twice":         `{"v":1,"kind":"msg","text":"a","text":"b"}`,
+		"kind twice":        `{"v":1,"kind":"msg","kind":"req","id":"` + strings.Repeat("a", 32) + `"}`,
+		"unknown field":     `{"v":1,"kind":"msg","text":"hi","extra":1}`,
+		"text after object": `{"v":1,"kind":"msg"} {"v":1}`,
+		"array":             `[1]`,
+		"not json":          `hello`,
+	} {
+		if _, err := natsmcp.Decode([]byte(data), 100); err == nil {
+			t.Errorf("%s must be refused", name)
+		}
+	}
+}

@@ -52,6 +52,17 @@ func newRig(t *testing.T, tools ...natsmcp.Tool) *rig {
 	return r
 }
 
+// newInitializedRig is a rig whose client has sent initialize (tools are only served after that).
+func newInitializedRig(t *testing.T, tools ...natsmcp.Tool) *rig {
+	t.Helper()
+	r := newRig(t, tools...)
+	r.send(`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`)
+	if m := r.read(); m["id"] != float64(0) {
+		t.Fatalf("initialize: %v", m)
+	}
+	return r
+}
+
 func (r *rig) send(s string) {
 	r.t.Helper()
 	if _, err := io.WriteString(r.in, s+"\n"); err != nil {
@@ -143,7 +154,7 @@ func TestBadLinesGetAParseErrorAndDoNotStopTheServer(t *testing.T) {
 }
 
 func TestToolsAreListedCalledAndTheirErrorsAreResultsNotProtocolErrors(t *testing.T) {
-	r := newRig(t,
+	r := newInitializedRig(t,
 		natsmcp.Tool{Name: "echo", Description: "d", Schema: map[string]any{"type": "object"}, Run: func(_ context.Context, a json.RawMessage) (string, error) { return "echo " + string(a), nil }},
 		natsmcp.Tool{Name: "boom", Description: "d", Schema: map[string]any{"type": "object"}, Run: func(context.Context, json.RawMessage) (string, error) { return "", errors.New("it failed") }},
 		natsmcp.Tool{Name: "big", Description: "d", Schema: map[string]any{"type": "object"}, Run: func(context.Context, json.RawMessage) (string, error) { return strings.Repeat("x", 100<<10), nil }},
@@ -177,7 +188,7 @@ func TestToolsAreListedCalledAndTheirErrorsAreResultsNotProtocolErrors(t *testin
 
 func TestAWaitingCallDoesNotBlockOthersAndCanBeCancelled(t *testing.T) {
 	started := make(chan struct{})
-	r := newRig(t, natsmcp.Tool{Name: "wait", Description: "d", Schema: map[string]any{"type": "object"}, Run: func(ctx context.Context, _ json.RawMessage) (string, error) {
+	r := newInitializedRig(t, natsmcp.Tool{Name: "wait", Description: "d", Schema: map[string]any{"type": "object"}, Run: func(ctx context.Context, _ json.RawMessage) (string, error) {
 		close(started)
 		<-ctx.Done()
 		return "", errors.New("cancelled")
@@ -216,7 +227,7 @@ func TestChannelNotificationsComeOnlyAfterInitializedAndKeepOnlyIdentifierKeys(t
 }
 
 func TestTheServerEndsWhenStdinEndsAndWaitsForCalls(t *testing.T) {
-	r := newRig(t, natsmcp.Tool{Name: "slow", Description: "d", Schema: map[string]any{"type": "object"}, Run: func(ctx context.Context, _ json.RawMessage) (string, error) {
+	r := newInitializedRig(t, natsmcp.Tool{Name: "slow", Description: "d", Schema: map[string]any{"type": "object"}, Run: func(ctx context.Context, _ json.RawMessage) (string, error) {
 		<-ctx.Done()
 		return "", errors.New("cancelled")
 	}})
@@ -230,5 +241,21 @@ func TestTheServerEndsWhenStdinEndsAndWaitsForCalls(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("the server did not end")
+	}
+}
+
+func TestToolsAreNotServedBeforeInitialize(t *testing.T) {
+	r := newRig(t, natsmcp.Tool{Name: "x", Description: "d", Schema: map[string]any{"type": "object"}, Run: func(context.Context, json.RawMessage) (string, error) { return "ran", nil }})
+	for _, req := range []string{`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"x"}}`} {
+		r.send(req)
+		m := r.read()
+		e, _ := m["error"].(map[string]any)
+		if e == nil || e["code"] != float64(-32002) {
+			t.Errorf("%s: %v", req, m)
+		}
+	}
+	r.send(`{"jsonrpc":"2.0","id":3,"method":"ping"}`)
+	if m := r.read(); m["id"] != float64(3) || m["error"] != nil {
+		t.Errorf("ping needs no initialize: %v", m)
 	}
 }
