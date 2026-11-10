@@ -189,9 +189,11 @@ func TestAWaitingCallDoesNotBlockOthersAndCanBeCancelled(t *testing.T) {
 		t.Fatalf("ping must be answered while a call waits: %v", m)
 	}
 	r.send(`{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":10}}`)
-	m := r.read()
-	if m["id"] != float64(10) || result(m)["isError"] != true {
-		t.Errorf("%v", m)
+	// a cancelled request is not answered (the client has forgotten it): the next answer is the one to the ping
+	time.Sleep(100 * time.Millisecond)
+	r.send(`{"jsonrpc":"2.0","id":12,"method":"ping"}`)
+	if m := r.read(); m["id"] != float64(12) {
+		t.Errorf("nothing may come for the cancelled call: %v", m)
 	}
 }
 

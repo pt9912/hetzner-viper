@@ -38,6 +38,8 @@ fi
 if [ -x "$dir/viper-nats-mcp" ]; then
   echo "mcp_bin=ok"
   echo "mcp_version=$("$dir/viper-nats-mcp" --version 2>&1 | head -n 1)"
+  echo "mcp_sha=$(sha256sum "$dir/viper-nats-mcp" 2>/dev/null | cut -d' ' -f1)"
+  echo "mcp_arch=$(uname -m)"
 else
   echo "mcp_bin=missing"
 fi

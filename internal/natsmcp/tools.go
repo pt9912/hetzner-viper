@@ -219,26 +219,45 @@ func (s *Service) toolInbox(_ context.Context, args json.RawMessage) (string, er
 		return "no new messages", nil
 	}
 	var b strings.Builder
+	if n := s.inbox.DroppedTotal(); n > 0 {
+		fmt.Fprintf(&b, "[%d older messages were pushed out of the inbox because it was full]\n\n", n)
+	}
 	for _, e := range entries {
-		line := fmt.Sprintf("#%d %s from %s", e.Handle, e.TS.UTC().Format("15:04:05"), e.From)
-		if e.Topic != "" {
-			line += " topic " + e.Topic
+		text := Safe(e.Text)
+		if len(text) > maxEntryText {
+			text = text[:maxEntryText] + " [text cut: it was longer than 8 KB when shown]"
 		}
-		if e.Kind == "req" {
-			line += " REQUEST"
-			if e.Replied {
-				line += " (answered)"
-			} else {
-				line += " (answer with reply, handle " + fmt.Sprint(e.Handle) + ")"
-			}
-		}
-		fmt.Fprintf(&b, "%s (untrusted text, every line starts with | ):\n%s\n\n", line, quoteLines(Safe(e.Text)))
-		if b.Len() > 48<<10 {
-			b.WriteString("[more entries: call inbox again with since set to the last handle]\n")
+		item := fmt.Sprintf("%s (untrusted text, every line starts with | ):\n%s\n\n", inboxHeader(e), quoteLines(text))
+		if b.Len()+len(item) > maxInboxOutput && b.Len() > 0 {
+			fmt.Fprintf(&b, "[more entries: call inbox again with since=%d]\n", e.Handle-1)
 			break
 		}
+		b.WriteString(item)
 	}
 	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+// The output of inbox stays below the limit of a result (maxResult) even where the escaping makes a text longer.
+const (
+	maxEntryText   = 8 << 10
+	maxInboxOutput = 40 << 10
+)
+
+// inboxHeader is the first line of an entry: who, when, and what can be done with it.
+func inboxHeader(e Entry) string {
+	line := fmt.Sprintf("#%d %s from %s", e.Handle, e.TS.UTC().Format("15:04:05"), e.From)
+	if e.Topic != "" {
+		line += " topic " + e.Topic
+	}
+	if e.Kind == "req" {
+		line += " REQUEST"
+		if e.Replied {
+			line += " (answered)"
+		} else {
+			line += " (answer with reply, handle " + fmt.Sprint(e.Handle) + ")"
+		}
+	}
+	return line
 }
 
 // quoteLines puts "| " in front of every line: a line of the text of a message can then never look like the

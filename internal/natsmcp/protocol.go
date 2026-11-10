@@ -72,13 +72,14 @@ type Server struct {
 	mu          sync.Mutex
 	initialized bool
 	running     map[string]context.CancelFunc
+	cancelled   map[string]bool // the calls the client cancelled: they are not answered
 	wg          sync.WaitGroup
 }
 
 // NewServer returns a server that writes its answers to out.
 func NewServer(name, version, instructions string, tools []Tool, out io.Writer, log Logger) *Server {
 	s := &Server{name: name, version: version, instructions: instructions, tools: tools, out: out, log: log,
-		byName: map[string]Tool{}, running: map[string]context.CancelFunc{}}
+		byName: map[string]Tool{}, running: map[string]context.CancelFunc{}, cancelled: map[string]bool{}}
 	for _, t := range tools {
 		s.byName[t.Name] = t
 	}
@@ -274,6 +275,7 @@ func (s *Server) notification(req rpcRequest) {
 		if json.Unmarshal(req.Params, &p) == nil {
 			s.mu.Lock()
 			if cancel, ok := s.running[string(p.RequestID)]; ok {
+				s.cancelled[string(p.RequestID)] = true // a cancelled request is not answered
 				cancel()
 			}
 			s.mu.Unlock()
@@ -331,6 +333,13 @@ func (s *Server) call(ctx context.Context, req rpcRequest) {
 			cancel()
 		}()
 		text, err := tool.Run(cctx, p.Arguments)
+		s.mu.Lock()
+		gone := s.cancelled[key]
+		delete(s.cancelled, key)
+		s.mu.Unlock()
+		if gone {
+			return
+		}
 		isError := err != nil
 		if isError {
 			text = err.Error()

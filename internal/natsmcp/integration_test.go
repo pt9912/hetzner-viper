@@ -63,6 +63,12 @@ func call(t *testing.T, s *natsmcp.Service, tool string, args map[string]any) (s
 
 func setup(t *testing.T, pushFrom map[string][]string) map[string]*machine {
 	t.Helper()
+	return setupWith(t, pushFrom, nil)
+}
+
+// setupWith is setup where the machines in quiet connect without saying anything in the group.
+func setupWith(t *testing.T, pushFrom map[string][]string, quiet map[string]bool) map[string]*machine {
+	t.Helper()
 	dir := t.TempDir()
 	var clients []natsserver.Client
 	seedFile := map[string]string{}
@@ -103,7 +109,7 @@ func setup(t *testing.T, pushFrom map[string][]string) map[string]*machine {
 	for _, name := range []string{"a", "b", "c"} {
 		m := &machine{}
 		cfg := natsmcp.Config{URL: srv.ClientURL(), SeedFile: seedFile[name], Names: natsmcp.Names{Group: "g", Me: name}, PushFrom: map[string]bool{},
-			MaxText: natsmcp.DefaultMaxText, PushPerMin: 3, InboxMax: 200, InboxPerMan: 50}
+			MaxText: natsmcp.DefaultMaxText, PushPerMin: 3, InboxMax: 200, InboxPerMan: 50, Quiet: quiet[name]}
 		for _, f := range pushFrom[name] {
 			cfg.PushFrom[f] = true
 		}
@@ -489,5 +495,42 @@ func TestServeEndsWithTheSignalWhileItWaitsForTheNextLine(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Serve does not end with the context")
+	}
+}
+
+func TestAQuietServerIsNotSeenButSeesTheOthers(t *testing.T) {
+	ms := setupWith(t, nil, map[string]bool{"c": true})
+	eventually(t, "a sees b", func() bool {
+		txt, _ := call(t, ms["a"].svc, "peers", nil)
+		return strings.Contains(txt, "- b ")
+	})
+	time.Sleep(200 * time.Millisecond)
+	if txt, _ := call(t, ms["a"].svc, "peers", nil); strings.Contains(txt, "- c ") {
+		t.Errorf("the quiet machine said it was there:\n%s", txt)
+	}
+	// it can still talk when it is asked to: a message reaches the others
+	if _, err := call(t, ms["c"].svc, "send", map[string]any{"to": "a", "text": "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "a gets it", func() bool {
+		return ms["a"].hasEntry(func(e natsmcp.Entry) bool { return e.From == "c" })
+	})
+}
+
+func TestTheInboxStaysWithinTheLimitAndSaysWhatIsMissing(t *testing.T) {
+	x := newTrio(t, nil)
+	big := strings.Repeat("&", 2400) // 6 bytes each in the JSON of the message, 5 when shown: over 8 KB
+	for i := 0; i < 6; i++ {
+		if _, err := call(t, x.a.svc, "send", map[string]any{"to": "c", "text": big}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	eventually(t, "six entries", func() bool { return len(x.c.svc.Inbox().Since(0)) == 6 })
+	txt, err := call(t, x.c.svc, "inbox", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(txt) > 48<<10 || !strings.Contains(txt, "[text cut") || !strings.Contains(txt, "[more entries: call inbox again with since=") {
+		t.Errorf("%d bytes; cut marker %v; more marker %v", len(txt), strings.Contains(txt, "[text cut"), strings.Contains(txt, "[more entries"))
 	}
 }

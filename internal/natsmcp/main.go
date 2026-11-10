@@ -32,6 +32,7 @@ func Main(version string, args []string, stdin io.Reader, stdout, stderr io.Writ
 		fmt.Fprintln(stderr, "viper-nats-mcp:", err)
 		return 1
 	}
+	cfg.Quiet = os.Getenv("VIPER_NATS_MCP_QUIET") == "1"
 	log := NewFileLogger(stderr, cfg.LogFile, 1<<20)
 	defer log.Close()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

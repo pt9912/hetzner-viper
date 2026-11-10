@@ -1,6 +1,8 @@
 package natsmcp_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -197,5 +199,27 @@ func TestCleanRemovesInvisibleCharactersThatCanHideAnInstruction(t *testing.T) {
 	}
 	if got := natsmcp.Clean("Grüße, 你好, 👍\n\tx"); got != "Grüße, 你好, 👍\n\tx" {
 		t.Errorf("text must stay: %q", got)
+	}
+}
+
+func TestTwoSessionsDoNotRotateTheLogAgainAndAgain(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mcp.log")
+	a := natsmcp.NewFileLogger(nil, path, 200)
+	b := natsmcp.NewFileLogger(nil, path, 200)
+	defer a.Close()
+	defer b.Close()
+	line := strings.Repeat("x", 60)
+	for i := 0; i < 4; i++ {
+		a.Printf("%s", line) // a fills the file and rotates it
+	}
+	b.Printf("from b") // b still has the old file open: it must follow the new one, not rotate it
+	a.Printf("after")
+	cur, _ := os.ReadFile(path)
+	old, _ := os.ReadFile(path + ".1")
+	if !strings.Contains(string(cur), "from b") || !strings.Contains(string(cur), "after") {
+		t.Errorf("the current file lost lines:\n%s", cur)
+	}
+	if strings.Count(string(old), line) < 3 {
+		t.Errorf("the rotated file lost lines:\n%s", old)
 	}
 }

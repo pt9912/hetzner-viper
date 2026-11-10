@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
 )
@@ -48,6 +49,10 @@ func (Files) WriteConfig(c *model.Machine, ip string) error {
 // that a reader never sees it empty or half written: several runs of a group write the config of the
 // server and read it with ssh -F at the same time. An unchanged file is not touched at all.
 func writeAtomic(path string, data []byte) error {
+	if target, err := filepath.EvalSymlinks(path); err == nil {
+		path = target // a link into a dotfiles repository stays a link: the file it points to is replaced
+	}
+	removeOldTemp(path)
 	if old, err := os.ReadFile(path); err == nil && string(old) == string(data) {
 		return os.Chmod(path, 0o600)
 	}
@@ -65,12 +70,35 @@ func writeAtomic(path string, data []byte) error {
 		werr = os.Chmod(tmp, 0o600)
 	}
 	if werr == nil {
-		werr = os.Rename(tmp, path)
+		werr = renameWithRetry(tmp, path)
 	}
 	if werr != nil {
 		_ = os.Remove(tmp) // best effort: the error is the one returned
 	}
 	return werr
+}
+
+// renameWithRetry puts the file in place; Windows refuses it for a moment while another program has the old
+// file open, so it tries a few times.
+func renameWithRetry(from, to string) error {
+	var err error
+	for i := 0; i < 10; i++ {
+		if err = os.Rename(from, to); err == nil {
+			return nil
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return err
+}
+
+// removeOldTemp deletes the temporary files of earlier writes that a crash left behind (older than an hour).
+func removeOldTemp(path string) {
+	old, _ := filepath.Glob(path + ".tmp*")
+	for _, f := range old {
+		if st, err := os.Stat(f); err == nil && time.Since(st.ModTime()) > time.Hour {
+			_ = os.Remove(f) // best effort
+		}
+	}
 }
 
 // ForgetStalePin drops a pinned host key recorded for another server ID: the name was reused by

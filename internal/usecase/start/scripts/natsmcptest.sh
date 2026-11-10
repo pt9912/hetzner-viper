@@ -6,7 +6,8 @@ bin="$1"
 req='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"viper","version":"1"}}}
 {"jsonrpc":"2.0","method":"notifications/initialized"}
 {"jsonrpc":"2.0","id":2,"method":"tools/list"}'
-out=$( { printf '%s\n' "$req"; sleep 3; } | timeout 20 "$bin" 2>&1 )
+# quiet: the test must not make this machine disappear from the list of the others while a session runs
+out=$( { printf '%s\n' "$req"; sleep 3; } | VIPER_NATS_MCP_QUIET=1 timeout 20 "$bin" 2>&1 )
 if echo "$out" | grep -q '"name":"peers"' && echo "$out" | grep -q '"name":"send"'; then
   echo "nats mcp: the server answers over stdio and offers its tools"
 else

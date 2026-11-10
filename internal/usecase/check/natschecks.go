@@ -5,11 +5,13 @@ import (
 	_ "embed"
 	"fmt"
 	"net"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/pt9912/hetzner-viper/internal/mcpbin"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/natsserver"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
@@ -146,13 +148,13 @@ func natsMachineChecks(ctx context.Context, r *report, c *model.Machine, d Deps,
 	if v["server"] == "yes" {
 		natsServerChecks(r, c, v, members, srv)
 	}
-	natsMCPChecks(r, c, v)
+	natsMCPChecks(r, c, v, members)
 	return st
 }
 
 // natsMCPChecks look at the MCP server of the machine (NATS_MCP): that it is there, that Claude Code
 // knows it, and that the push list and the allowed tools are the ones of the settings.
-func natsMCPChecks(r *report, c *model.Machine, v map[string]string) {
+func natsMCPChecks(r *report, c *model.Machine, v map[string]string, members []model.GroupMember) {
 	if !c.NATS.MCP {
 		if v["mcp_bin"] == "ok" {
 			r.warn("the MCP server is installed on the machine, but NATS_MCP is off (viper up does not remove it)")
@@ -168,6 +170,8 @@ func natsMCPChecks(r *report, c *model.Machine, v map[string]string) {
 		return
 	}
 	r.ok("MCP server installed (%s)", v["mcp_version"])
+	natsMCPVersionCheck(r, c, v)
+	natsMCPPushMembers(r, c, members)
 	switch v["mcp_claude"] {
 	case "no-jq":
 		r.warn("jq is missing on the machine: the entry of the MCP server in Claude Code was not checked")
@@ -317,4 +321,40 @@ func natsPortCheck(ctx context.Context, r *report, d Deps, srv *model.Server, st
 	}
 	_ = conn.Close() // only opened to see that it answers
 	r.bad("%s answers from the internet: the NATS port must be private only", addr)
+}
+
+// natsMCPVersionCheck compares the binary on the machine with the one this viper would install: after an
+// update of viper the machines still run the old server until viper up is run for them again.
+func natsMCPVersionCheck(r *report, c *model.Machine, v map[string]string) {
+	var want []byte
+	if f := c.NATS.MCPBinary; f != "" {
+		want, _ = os.ReadFile(f)
+	} else if rel, err := natsserver.ReleaseFor(v["mcp_arch"]); err == nil {
+		want, _ = mcpbin.Binary(rel.Arch)
+	}
+	switch {
+	case len(want) == 0 || v["mcp_sha"] == "":
+		// this viper has no binary to compare with (a build without make): nothing to say
+	case mcpbin.Checksum(want) != v["mcp_sha"]:
+		r.warn("the MCP server on the machine is not the one of this viper (another version): run viper up %s to install it", c.Name)
+	default:
+		r.ok("the MCP server on the machine is the one of this viper")
+	}
+}
+
+// natsMCPPushMembers warns about a machine in NATS_MCP_PUSH_FROM that is not in the group: nothing it sends
+// can ever arrive from there, so the entry is a typo or a machine that is gone.
+func natsMCPPushMembers(r *report, c *model.Machine, members []model.GroupMember) {
+	if len(c.NATS.MCPPushFrom) == 0 || len(members) == 0 {
+		return
+	}
+	in := map[string]bool{}
+	for _, m := range members {
+		in[strings.TrimPrefix(m.Server.Name, c.ServerPrefix+"-")] = true
+	}
+	for _, p := range c.NATS.MCPPushFrom {
+		if !in[p] {
+			r.warn("NATS_MCP_PUSH_FROM names %s, which is no machine of the group %s", p, c.NATS.Group)
+		}
+	}
 }

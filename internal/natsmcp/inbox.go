@@ -127,3 +127,14 @@ func (b *Inbox) Unreply(handle int) {
 		}
 	}
 }
+
+// DroppedTotal is how many messages were pushed out of the inbox since it started.
+func (b *Inbox) DroppedTotal() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n := 0
+	for _, c := range b.droppedBy {
+		n += c
+	}
+	return n
+}

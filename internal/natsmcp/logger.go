@@ -41,17 +41,33 @@ func (l *FileLogger) Printf(format string, args ...any) {
 		}
 		l.f = f
 	}
-	if st, err := l.f.Stat(); err == nil && st.Size() > l.max {
-		_ = l.f.Close()
-		_ = os.Rename(l.path, l.path+".1")
-		l.f = nil
-		f, err := os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-		if err != nil {
-			return
-		}
-		l.f = f
+	l.rotate()
+	if l.f == nil {
+		return
 	}
 	_, _ = io.WriteString(l.f, line)
+}
+
+// rotate keeps the file small. Several sessions of one machine write to the same file: a session that finds
+// the path to be another file than the one it has open (somebody rotated it) opens the new one instead of
+// rotating it again.
+func (l *FileLogger) rotate() {
+	cur, err := l.f.Stat()
+	if err != nil {
+		return
+	}
+	if now, err := os.Stat(l.path); err != nil || !os.SameFile(cur, now) {
+		_ = l.f.Close()
+		l.f = nil
+		l.f, _ = os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) // nil if it fails: the next line tries again
+		return
+	}
+	if cur.Size() <= l.max {
+		return
+	}
+	_ = l.f.Close()
+	_ = os.Rename(l.path, l.path+".1")
+	l.f, _ = os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 }
 
 // Close closes the file.

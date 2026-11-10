@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -64,6 +65,9 @@ func (s *Service) Connect(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reading the key: %w", err)
 	}
+	if st, err := os.Stat(s.cfg.SeedFile); err == nil && runtime.GOOS != "windows" && st.Mode().Perm()&0o077 != 0 {
+		s.log.Printf("warning: %s is readable by other users (%v); chmod 600 it", s.cfg.SeedFile, st.Mode().Perm())
+	}
 	kp, err := nkeys.FromSeed([]byte(strings.TrimSpace(string(seed))))
 	if err != nil {
 		return fmt.Errorf("the key file holds no NKey seed: %w", err)
@@ -78,7 +82,10 @@ func (s *Service) Connect(ctx context.Context) error {
 		nats.IgnoreAuthErrorAbort(), // the server may not know the key yet (viper up of the machine is running): keep trying
 		nats.ErrorHandler(func(_ *nats.Conn, _ *nats.Subscription, err error) { s.logError("server error", err) }),
 		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) { s.logError("disconnected", err) }),
-		nats.ReconnectHandler(func(*nats.Conn) { s.log.Printf("reconnected") }),
+		nats.ReconnectHandler(func(*nats.Conn) {
+			s.log.Printf("reconnected")
+			s.publishPresence("up", true) // the table of the others is empty after a break: ask who is there
+		}),
 	}
 	if s.cfg.CAFile != "" {
 		opts = append(opts, nats.RootCAs(s.cfg.CAFile))
@@ -168,7 +175,7 @@ func (s *Service) presenceLoop(ctx context.Context) {
 }
 
 func (s *Service) publishPresence(state string, query bool) {
-	if s.Connected() {
+	if s.Connected() && !s.cfg.Quiet {
 		_ = s.publish(s.cfg.Names.Presence(), Envelope{V: 1, Kind: "presence", State: state, Query: query})
 	}
 }

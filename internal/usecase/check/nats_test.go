@@ -3,7 +3,10 @@ package check_test
 import (
 	"context"
 	"errors"
+	"github.com/pt9912/hetzner-viper/internal/mcpbin"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -333,5 +336,35 @@ func TestMCPProblemsAreReported(t *testing.T) {
 	out, _ := n.run()
 	if sec := natsSection(out); !strings.Contains(sec, "WARN  the MCP server is installed on the machine, but NATS_MCP is off") {
 		t.Errorf("leftover:\n%s", sec)
+	}
+}
+
+func TestTheMCPServerOnTheMachineIsComparedWithTheOneOfThisViper(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "mcp")
+	if err := os.WriteFile(bin, []byte("the server of this viper"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settings := mcpOn + "NATS_MCP_BINARY=" + bin + "\n"
+	base := healthyClient + "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=/home/builder/.viper-nats/viper-nats-mcp\nmcp_allowed=peers,inbox\nmcp_push=alpha\nmcp_arch=x86_64\n"
+	same := base + "mcp_sha=" + mcpbin.Checksum([]byte("the server of this viper")) + "\n"
+	n := newNATSFixture(t, settings, model.NATSClient, same)
+	out, _ := n.run()
+	if sec := natsSection(out); !strings.Contains(sec, "ok    the MCP server on the machine is the one of this viper") {
+		t.Errorf("same:\n%s", sec)
+	}
+	other := base + "mcp_sha=" + mcpbin.Checksum([]byte("an older server")) + "\n"
+	n = newNATSFixture(t, settings, model.NATSClient, other)
+	out, _ = n.run()
+	if sec := natsSection(out); !strings.Contains(sec, "WARN  the MCP server on the machine is not the one of this viper") {
+		t.Errorf("other:\n%s", sec)
+	}
+}
+
+func TestAPushSourceThatIsNoMachineOfTheGroupIsWarnedAbout(t *testing.T) {
+	st := healthyClient + "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=/home/builder/.viper-nats/viper-nats-mcp\nmcp_allowed=peers,inbox\nmcp_push=ghost\n"
+	n := newNATSFixture(t, "NATS_ENABLED=true\nNATS_GROUP=dev\nNATS_MCP=true\nNATS_MCP_PUSH_FROM=ghost\nNATS_MCP_AUTOALLOW=read\n", model.NATSClient, st)
+	out, _ := n.run()
+	if sec := natsSection(out); !strings.Contains(sec, "WARN  NATS_MCP_PUSH_FROM names ghost, which is no machine of the group dev") {
+		t.Errorf("%s", sec)
 	}
 }

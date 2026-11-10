@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/sshconfig"
@@ -275,5 +276,43 @@ func TestWriteConfigIsAtomicForReadersThatRunAtTheSameTime(t *testing.T) {
 	st, err := os.Stat(c.SSHConfig)
 	if err != nil || (runtime.GOOS != "windows" && st.Mode().Perm() != 0o600) {
 		t.Errorf("mode %v %v", st, err)
+	}
+}
+
+func TestWriteConfigKeepsALinkAndRemovesOldTemporaryFiles(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("links need rights on Windows")
+	}
+	c := testConfig(t)
+	target := filepath.Join(t.TempDir(), "dotfiles-config")
+	if err := os.WriteFile(target, []byte("old\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(c.SSHConfig), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, c.SSHConfig); err != nil {
+		t.Skip("no symlinks here")
+	}
+	// the leftover of a crash, an hour and more old
+	stale := target + ".tmp123"
+	if err := os.WriteFile(stale, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(stale, past, past); err != nil {
+		t.Fatal(err)
+	}
+	if err := files().WriteConfig(c, "203.0.113.9"); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(c.SSHConfig); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the link was replaced: %v", err)
+	}
+	if b, _ := os.ReadFile(target); !strings.Contains(string(b), "203.0.113.9") {
+		t.Errorf("the file the link points to has the new config: %q", b)
+	}
+	if _, err := os.Stat(stale); err == nil {
+		t.Error("the old temporary file is still there")
 	}
 }
