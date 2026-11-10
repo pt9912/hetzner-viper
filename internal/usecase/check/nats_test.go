@@ -344,7 +344,7 @@ func TestTheMCPServerOnTheMachineIsComparedWithTheOneOfThisViper(t *testing.T) {
 	if err := os.WriteFile(bin, []byte("the server of this viper"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	settings := mcpOn + "NATS_MCP_BINARY=" + bin + "\n"
+	settings := mcpOn + "NATS_MCP_BINARY=\"" + filepath.ToSlash(bin) + "\"\n" // slashes: a backslash in a settings file is an escape
 	base := healthyClient + "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=/home/builder/.viper-nats/viper-nats-mcp\nmcp_allowed=peers,inbox\nmcp_push=alpha\nmcp_arch=x86_64\n"
 	same := base + "mcp_sha=" + mcpbin.Checksum([]byte("the server of this viper")) + "\n"
 	n := newNATSFixture(t, settings, model.NATSClient, same)
