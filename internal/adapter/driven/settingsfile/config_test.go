@@ -482,7 +482,6 @@ func TestLoadRefusesBadNATSMCPSettings(t *testing.T) {
 		"bad switch":      {"DNS_DOMAIN=example.com\nNATS_ENABLED=true\nNATS_GROUP=g\nNATS_MCP=maybe\n", "NATS_MCP: true or false"},
 		"push from dots":  {base + "NATS_MCP_PUSH_FROM=a.b\n", "NATS_MCP_PUSH_FROM"},
 		"push from wild":  {base + "NATS_MCP_PUSH_FROM=a,*\n", "NATS_MCP_PUSH_FROM"},
-		"push from self":  {base + "NATS_MCP_PUSH_FROM=web\n", "this machine itself"},
 		"autoallow other": {base + "NATS_MCP_AUTOALLOW=yes\n", "NATS_MCP_AUTOALLOW: off, read or all"},
 	} {
 		_, err := settingsfile.Load(setupDir(t, tc.settings, ""), "web", env, false)
@@ -493,5 +492,14 @@ func TestLoadRefusesBadNATSMCPSettings(t *testing.T) {
 	// NATS_MCP without NATS is not looked at
 	if c, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nNATS_MCP=true\nNATS_MCP_PUSH_FROM=a.b\n", ""), "web", env, false); err != nil || c.NATS.MCP {
 		t.Errorf("without NATS_ENABLED nothing is read: %+v %v", c.NATS, err)
+	}
+}
+
+func TestTheOwnNameInThePushListIsLeftOutSoOneListServesAGroup(t *testing.T) {
+	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
+	dir := setupDir(t, "DNS_DOMAIN=example.com\nNATS_ENABLED=true\nNATS_GROUP=g\nNATS_MCP=true\nNATS_MCP_PUSH_FROM=alpha,web,beta\n", "")
+	c, err := settingsfile.Load(dir, "web", env, false)
+	if err != nil || strings.Join(c.NATS.MCPPushFrom, ",") != "alpha,beta" {
+		t.Fatalf("%v %v", err, c.NATS.MCPPushFrom)
 	}
 }

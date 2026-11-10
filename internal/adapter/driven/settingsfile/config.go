@@ -186,7 +186,7 @@ func applyNATSMCP(c *model.Machine, home string) error {
 			return err
 		}
 		if m == c.Name {
-			return fmt.Errorf("NATS_MCP_PUSH_FROM: %s is this machine itself", m)
+			continue // the same list serves all machines of a group: the machine itself is not a source for itself
 		}
 		seen[m] = true
 		c.NATS.MCPPushFrom = append(c.NATS.MCPPushFrom, m)

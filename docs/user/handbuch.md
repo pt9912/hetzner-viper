@@ -870,7 +870,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `NATS_PORT` | Port des NATS-Servers im privaten Netzwerk (1024 bis 65535) | `4222` |
 | `GROUP_MACHINES` | nur in `groups/<gruppe>.env`: die Rechner der Gruppe, durch Komma getrennt | – |
 | `NATS_MCP` | `true`: `viper up` installiert auf dem Rechner den MCP-Server `viper-nats-mcp` und trägt ihn bei Claude Code ein (Benutzerbereich, Name `nats`); braucht `NATS_ENABLED=true` | `false` |
-| `NATS_MCP_PUSH_FROM` | Maschinennamen, durch Komma getrennt, deren Nachrichten der Server in eine Claude-Code-Sitzung schiebt (nur wenn Sie Claude selbst mit dem Channel-Schalter starten, siehe unten); leer: nichts wird geschoben | leer |
+| `NATS_MCP_PUSH_FROM` | Maschinennamen, durch Komma getrennt (der eigene Name wird übergangen, sodass dieselbe Liste in einer Gruppendatei für alle Rechner gilt), deren Nachrichten der Server in eine Claude-Code-Sitzung schiebt (nur wenn Sie Claude selbst mit dem Channel-Schalter starten, siehe unten); leer: nichts wird geschoben | leer |
 | `NATS_MCP_AUTOALLOW` | Welche Werkzeuge des MCP-Servers Claude Code ohne Nachfrage nutzen darf: `off`, `read` (`peers`, `inbox`) oder `all`; ein früher gesetzter Eintrag wird bei jedem `viper up` ersetzt | `off` |
 | `NATS_MCP_BINARY` | Datei, die statt des in `viper` eingebauten MCP-Servers installiert wird (nötig für ein mit `go build` gebautes `viper` ohne `make`) | leer |
 | `DNS_PROVIDER` | Wer den DNS-Namen anlegt: `cloudflare` oder `none` (kein Eintrag, keine Domain, kein Cloudflare); wird nur aus den Einstellungsdateien gelesen | `cloudflare` |
