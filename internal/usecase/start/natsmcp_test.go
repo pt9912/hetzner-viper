@@ -200,18 +200,18 @@ func TestABinaryThatDoesNotRunDoesNotReplaceTheOneThatWorks(t *testing.T) {
 
 func TestSettingsOfClaudeCodeStayAFileLinkedIntoADotfilesRepository(t *testing.T) {
 	env, home := fakeClaude(t)
-	real := filepath.Join(home, "dotfiles", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(real), 0o755); err != nil {
+	target := filepath.Join(home, "dotfiles", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(real, []byte(`{"permissions":{"allow":["Bash(ls)"]}}`), 0o640); err != nil {
+	if err := os.WriteFile(target, []byte(`{"permissions":{"allow":["Bash(ls)"]}}`), 0o640); err != nil {
 		t.Fatal(err)
 	}
 	link := filepath.Join(home, ".claude", "settings.json")
 	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(real, link); err != nil {
+	if err := os.Symlink(target, link); err != nil {
 		t.Skip("no symlinks here")
 	}
 	if out, err := runScript(t, env, "", start.NatsMCPClaudeScript(), "/b", "peers"); err != nil {
@@ -220,14 +220,14 @@ func TestSettingsOfClaudeCodeStayAFileLinkedIntoADotfilesRepository(t *testing.T
 	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
 		t.Errorf("the link was replaced by a file: %v", err)
 	}
-	got, _ := os.ReadFile(real)
+	got, _ := os.ReadFile(target)
 	if !strings.Contains(string(got), "mcp__nats__peers") || !strings.Contains(string(got), "Bash(ls)") {
 		t.Errorf("%s", got)
 	}
-	if fi, _ := os.Stat(real); fi.Mode().Perm() != 0o640 {
+	if fi, _ := os.Stat(target); fi.Mode().Perm() != 0o640 {
 		t.Errorf("the rights of the file changed: %v", fi.Mode())
 	}
-	left, _ := filepath.Glob(real + ".*")
+	left, _ := filepath.Glob(target + ".*")
 	if len(left) != 0 {
 		t.Errorf("temporary files are left: %v", left)
 	}
