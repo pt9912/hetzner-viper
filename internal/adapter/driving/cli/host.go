@@ -27,6 +27,8 @@ type Services struct {
 	// OpenLog starts the log of a run, ShowLog shows the log of a server (viper log).
 	OpenLog runlog.Opener
 	ShowLog runlog.Viewer
+	// MCPBinary is the viper-nats-mcp program built into viper for a Linux architecture ("amd64" or "arm64").
+	MCPBinary func(goarch string) ([]byte, error)
 	// LaunchVSCode opens VS Code on a machine (viper vscode).
 	LaunchVSCode func(alias, workdir string) error
 }

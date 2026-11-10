@@ -635,3 +635,40 @@ func TestSSHForAGroupShowsWhatSSHSaysAndStopsWithTheContext(t *testing.T) {
 		t.Errorf("stdout:\n%s\nstderr:\n%s", out.String(), errb.String())
 	}
 }
+
+func TestMCPBinaryWritesTheProgramOfTheArchitectureAndRefusesATerminal(t *testing.T) {
+	_, h := fakeTools(t)
+	var asked []string
+	h.Services.MCPBinary = func(arch string) ([]byte, error) {
+		asked = append(asked, arch)
+		if arch == "arm64" {
+			return []byte("\x7fELF-arm"), nil
+		}
+		return nil, errors.New("this viper was built without the NATS MCP server")
+	}
+	var out bytes.Buffer
+	h.Stdout = &out
+	for in, want := range map[string]string{"arm64": "arm64", "aarch64": "arm64", "arm": "arm64"} {
+		out.Reset()
+		if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h, Arch: in}); err != nil || out.String() != "\x7fELF-arm" || asked[len(asked)-1] != want {
+			t.Errorf("%s: %v %q %v", in, err, out.String(), asked)
+		}
+	}
+	if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h, Arch: "amd64"}); err == nil || !strings.Contains(err.Error(), "built without") {
+		t.Errorf("a viper without the program says so: %v", err)
+	}
+	if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h, Arch: "riscv"}); err == nil || !strings.Contains(err.Error(), "amd64 or arm64") {
+		t.Errorf("%v", err)
+	}
+	if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h}); err == nil {
+		t.Error("--arch is required")
+	}
+	h.IsTerminal = func() bool { return true }
+	out.Reset()
+	if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h, Arch: "arm64"}); err == nil || out.Len() != 0 || !strings.Contains(err.Error(), "redirect") {
+		t.Errorf("a terminal must not get the bytes: %v %q", err, out.String())
+	}
+	if _, o, err := cli.Parse([]string{"mcp-binary", "--arch", "arm64"}); err != nil || o.Arch != "arm64" {
+		t.Errorf("%v %+v", err, o)
+	}
+}

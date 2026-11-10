@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.81  
+Version: 1.82  
 Software-Version: v0.16.0  
 Stand: 10.11.2026  
 
@@ -52,6 +52,7 @@ Bei den Anbietern:
 | `viper find` | Sucht bei allen Anbietern Server-Typen, die mindestens die gewünschten CPUs, den RAM und die Platte haben, und zeigt die günstigsten mit Preis. Liest nur und braucht keinen Rechner. |
 | `viper log [<rechner>]` | Zeigt die lokalen Protokolle: Ereignisse aller Rechner, eines Rechners oder mit `--full` dessen vollständige Ausgabe. |
 | `viper up --group <gruppe>`, `viper down --group <gruppe>`, `viper check --group <gruppe>`, `viper ssh --group <gruppe> --cmd …` | Dieselben Befehle für alle Rechner einer Gruppe aus `groups/<gruppe>.env`, gleichzeitig (siehe „Eine Gruppe von Rechnern gemeinsam starten und beenden“). |
+| `viper mcp-binary --arch amd64\|arm64` | Schreibt den in `viper` eingebauten MCP-Server `viper-nats-mcp` für die Architektur nach stdout (`> datei`), zum Ansehen, Prüfen oder als `NATS_MCP_BINARY`. Zeigt nichts auf dem Terminal. |
 | `viper help`, `viper version` | Zeigt alle Befehle bzw. die Version. |
 
 ### Wie ein Rechner benannt wird
@@ -485,7 +486,7 @@ Mit `NATS_MCP=true` installiert `viper up` auf dem Rechner einen eigenen MCP-Ser
 #### Voraussetzung
 
 * Eine NATS-Gruppe (Kapitel „Rechner über NATS verbinden“), `NATS_ENABLED=true`.
-* Claude Code ist auf dem Rechner installiert (`viper up` richtet es ein). Ein mit `go build` gebautes `viper` enthält die Binary des MCP-Servers nicht; dann nennt `NATS_MCP_BINARY` eine Datei (`make mcp` baut sie), oder bauen Sie `viper` mit `make build`.
+* Claude Code ist auf dem Rechner installiert (`viper up` richtet es ein). Ein mit `go build` gebautes `viper` enthält die Binary des MCP-Servers nicht; dann nennt `NATS_MCP_BINARY` eine Datei (`make mcp` baut sie; ein `viper` mit eingebautem Server schreibt sie mit `viper mcp-binary --arch arm64 > datei`), oder bauen Sie `viper` mit `make build`.
 
 #### Vorgehen
 
@@ -1263,3 +1264,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.79 | nach v0.15.1 | Neu: Gruppendateien `groups/<gruppe>.env` mit `GROUP_MACHINES`. `viper up --group`, `down --group`, `check --group` und `ssh --group … --cmd` arbeiten für alle Rechner der Gruppe gleichzeitig (`--parallel N`, Ausgabe mit `[rechner]`-Präfix, Ergebnistabelle). Der Start legt zuerst den NATS-Server an, die übrigen Rechner folgen gleichzeitig; das Beenden löscht zuerst die Clients, zuletzt den Server. `viper setup` legt `groups/example.env.example` an. Korrigiert: Zwei Rechner, die gleichzeitig einer NATS-Gruppe beitraten, konnten sich die Serverkonfiguration gegenseitig überschreiben (`natsconfig.sh`). |
 | 1.80 | nach v0.15.1 | Die Kapitel zu Gruppendateien und `NATS_MCP` folgen dem Aufbau der anderen Aufgaben (Voraussetzung, Vorgehen, Ergebnis, Hinweise); die Befehlsübersicht, das Kapitel zu mehreren Rechnern und das NATS-Kapitel verweisen auf `--group`. Neu in der Fehlerbehebung: Meldungen zu Gruppen, zum Gruppenstart und -ende und zur Prüfung des MCP-Servers. Der MCP-Server verwirft Nachrichten mit unbekannten oder doppelten Feldern, kennzeichnet jede Textzeile in `inbox` und entfernt unsichtbare Zeichen; `viper check` vergleicht die Binary auf dem Rechner mit der dieses `viper`. |
 | 1.81 | v0.16.0 | Release v0.16.0: die Änderungen 1.77 bis 1.80 (Gruppendateien `groups/` und `--group`, MCP-Server `viper-nats-mcp` mit `NATS_MCP`, Korrektur der gleichzeitigen Beitritte zu einer NATS-Gruppe). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.16.0`. |
+| 1.82 | v0.16.0 | Neu: `viper mcp-binary --arch amd64\|arm64` schreibt den eingebauten MCP-Server als Datei nach stdout. |
