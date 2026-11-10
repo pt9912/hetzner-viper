@@ -10,8 +10,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 image=viper-devcontainer
 docker build -t "$image" .devcontainer
-# the user of the image (vscode, UID 1000) is not the owner of the checkout, but must write to it
-chmod -R a+rwX .
+# the user of the image (vscode, UID 1000) is not the owner of the checkout, but must write to it. Only what
+# this user owns can be changed: a second call (make check, then make dist) finds files that the first call made
+# as vscode (the built MCP server, .git/index), which belong to vscode and are writable for it anyway.
+find . -user "$(id -u)" -exec chmod a+rwX {} +
 sock=/var/run/docker.sock
 docker run --rm --user vscode \
   -v "$PWD:$PWD" -w "$PWD" \
