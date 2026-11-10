@@ -245,6 +245,7 @@ func TestWriteConfigIsAtomicForReadersThatRunAtTheSameTime(t *testing.T) {
 				return
 			default:
 			}
+			time.Sleep(100 * time.Microsecond) // a reader that never lets go would keep Windows from replacing the file
 			b, err := os.ReadFile(c.SSHConfig)
 			if err != nil {
 				continue // Windows refuses to open a file in the moment it is replaced; a half file is what matters

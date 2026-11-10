@@ -79,10 +79,10 @@ func writeAtomic(path string, data []byte) error {
 }
 
 // renameWithRetry puts the file in place; Windows refuses it for a moment while another program has the old
-// file open, so it tries a few times.
+// file open, so it tries for about a second.
 func renameWithRetry(from, to string) error {
 	var err error
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 50; i++ {
 		if err = os.Rename(from, to); err == nil {
 			return nil
 		}

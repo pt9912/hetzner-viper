@@ -33,7 +33,7 @@ func TestAMachineInAGroupFileGetsTheGroupAndItsSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Group != "entwicklung" || !c.NATS.Enabled || c.NATS.Group != "entwicklung" || c.ServerType != "cpx32" || !strings.HasSuffix(c.GroupFile, "groups/entwicklung.env") {
+	if c.Group != "entwicklung" || !c.NATS.Enabled || c.NATS.Group != "entwicklung" || c.ServerType != "cpx32" || !strings.HasSuffix(filepath.ToSlash(c.GroupFile), "groups/entwicklung.env") {
 		t.Fatalf("%+v group=%q file=%q type=%s", c.NATS, c.Group, c.GroupFile, c.ServerType)
 	}
 	// the machine's own file wins over the group, and a machine without a file is fine
