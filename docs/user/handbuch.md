@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.86  
+Version: 1.87  
 Software-Version: v0.17.0  
 Stand: 11.11.2026  
 
@@ -468,6 +468,8 @@ Statt jeden Rechner einzeln zu starten, legen Sie eine Gruppendatei an. Sie nenn
 #### Ergebnis
 
 Jede Ausgabezeile trägt den Namen des Rechners (`[alpha] …`), am Ende steht eine Tabelle mit dem Ergebnis je Rechner. Der Exit-Status ist 0, wenn alle in Ordnung sind, 1 bei einem Fehler und 130 bei einem Abbruch mit Strg-C. VS Code wird bei `up --group` nicht geöffnet (`viper vscode <rechner>` einzeln).
+
+Bei `down --group` fragt `viper` die Rechner nacheinander (`DISCARD`, `DELETE`). Damit die Frage nicht zwischen den Zeilen anderer Rechner untergeht, zeigt `viper` die Ausgabe eines Rechners erst, wenn er fragt oder fertig ist, dann am Stück direkt über der Frage. Deshalb erscheinen die Zeilen eines Rechners bei `down --group` nicht laufend, sondern in Blöcken.
 
 #### Hinweise
 
@@ -1272,3 +1274,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.84 | nach v0.16.0 | Neu: `NATS_MCP_TOPICS`. Themen, die der MCP-Server auf jedem Rechner beim Start abonniert (in einer Gruppendatei für alle Rechner der Gruppe); `unsubscribe` lehnt sie ab. `viper check` vergleicht die Liste mit `mcp.env`. |
 | 1.85 | v0.17.0 | Release v0.17.0: die Änderungen 1.83 und 1.84 (Google Cloud und Azure nicht mehr als „nicht erprobt“, `NATS_MCP_TOPICS`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.17.0`. |
 | 1.86 | nach v0.17.0 | Neu: `viper preflight --group <gruppe>` prüft vorab alle Rechner einer Gruppe, nur lesend. |
+| 1.87 | nach v0.17.0 | `down --group`: Die Ausgabe eines Rechners erscheint als Block direkt über seiner Frage (`DISCARD`/`DELETE`) und nicht mehr zwischen den Zeilen der anderen. |

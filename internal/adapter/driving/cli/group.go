@@ -46,6 +46,48 @@ func runGroup(ctx context.Context, o *options, env settings.Env, stdout, stderr 
 type groupWriters struct {
 	mu       sync.Mutex
 	out, err map[string]*prefixWriter
+	// turn is held by the machine that has the terminal for a block of its output and its question
+	// (only in the buffered mode of down, where a machine's lines are kept until it asks or is done).
+	turn sync.Mutex
+	bufs map[string]*machineBuf // nil unless buffered
+}
+
+// newBufferedGroupWriters is newGroupWriters, but what a machine says is kept until the machine asks
+// a question or is done (see release): then the whole block is shown at once, so a question stands
+// right below the lines it is about and the lines of other machines do not cut in.
+func newBufferedGroupWriters(machines []string, stdout, stderr io.Writer) *groupWriters {
+	ws := &groupWriters{out: map[string]*prefixWriter{}, err: map[string]*prefixWriter{}, bufs: map[string]*machineBuf{}}
+	width := 0
+	for _, m := range machines {
+		width = max(width, len(m))
+	}
+	for _, m := range machines {
+		b := &machineBuf{}
+		ws.bufs[m] = b
+		var own sync.Mutex // the lines of one machine come from two writers; the terminal lock is taken in release
+		ws.out[m] = newPrefixWriter(&own, b.stream(stdout), m, width)
+		ws.err[m] = newPrefixWriter(&own, b.stream(stderr), m, width)
+	}
+	return ws
+}
+
+// release shows what the machine said so far. The caller holds turn.
+func (ws *groupWriters) release(m string) {
+	if b := ws.bufs[m]; b != nil {
+		ws.mu.Lock()
+		b.writeTo()
+		ws.mu.Unlock()
+	}
+}
+
+// finish shows the rest of a machine's output when its task ends.
+func (ws *groupWriters) finish(m string) {
+	if ws.bufs == nil {
+		return
+	}
+	ws.turn.Lock()
+	defer ws.turn.Unlock()
+	ws.release(m)
 }
 
 func newGroupWriters(machines []string, stdout, stderr io.Writer) *groupWriters {
@@ -64,6 +106,7 @@ func newGroupWriters(machines []string, stdout, stderr io.Writer) *groupWriters 
 func (ws *groupWriters) task(m string, run func(ctx context.Context, out, errOut io.Writer) error) func(context.Context) (int, error) {
 	return func(ctx context.Context) (int, error) {
 		po, pe := ws.out[m], ws.err[m]
+		defer ws.finish(m)
 		defer po.flush()
 		defer pe.flush()
 		err := run(ctx, po, pe)

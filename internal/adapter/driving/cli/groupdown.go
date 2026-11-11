@@ -14,14 +14,16 @@ import (
 
 // groupAsker makes one reader of the answers serve all machines of a group: only one machine asks at a
 // time, and the prompt names the machine it is for. The machines run at the same time, so a machine
-// that asks waits until the one before has its answer.
-func groupAsker(ctx context.Context, in io.Reader, prompts io.Writer) func(machine string) func(string) string {
+// that asks waits until the one before has its answer. Before it asks, the machine shows what it has
+// said so far in one block.
+func groupAsker(ctx context.Context, in io.Reader, ws *groupWriters, prompts io.Writer) func(machine string) func(string) string {
 	read := newAsker(ctx, in, prompts)
-	var mu sync.Mutex
 	return func(machine string) func(string) string {
 		return func(prompt string) string {
-			mu.Lock()
-			defer mu.Unlock()
+			// the machine has the terminal until it has its answer: first the lines it is asking about
+			ws.turn.Lock()
+			defer ws.turn.Unlock()
+			ws.release(machine)
 			return read("[" + machine + "] " + prompt)
 		}
 	}
@@ -37,8 +39,8 @@ func runGroupDown(ctx context.Context, o *options, env settings.Env, in io.Reade
 	}
 	ctx, stop := notifyContext(ctx)
 	defer stop()
-	ws := newGroupWriters(g.Machines, stdout, stderr)
-	askFor := groupAsker(ctx, in, lockedWriter{mu: &ws.mu, w: stderr})
+	ws := newBufferedGroupWriters(g.Machines, stdout, stderr)
+	askFor := groupAsker(ctx, in, ws, lockedWriter{mu: &ws.mu, w: stderr})
 	roles := map[string]model.NATSRole{}
 	for _, m := range g.Machines {
 		c, err := o.host().Services.Settings.Load(settingsDir(o), m, env, true)

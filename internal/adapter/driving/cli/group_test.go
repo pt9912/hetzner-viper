@@ -347,9 +347,13 @@ type downFake struct {
 	role model.NATSRole
 	ask  func(string) string
 	run  func(name string, ask func(string) string) (int, error)
+	say  func(name string, out, errOut io.Writer) // what the machine prints before it asks
 }
 
-func (d downFake) Down(_ context.Context, _ *model.Machine, _ bool, _ runlog.Log, _, _ io.Writer) (int, error) {
+func (d downFake) Down(_ context.Context, _ *model.Machine, _ bool, _ runlog.Log, out, errOut io.Writer) (int, error) {
+	if d.say != nil {
+		d.say(d.name, out, errOut)
+	}
 	return d.run(d.name, d.ask)
 }
 
@@ -714,5 +718,56 @@ func TestPreflightForAGroupChecksEveryMachineAndMakesNothing(t *testing.T) {
 	}
 	if len(f.started) != 0 {
 		t.Errorf("preflight started %v", f.started)
+	}
+}
+
+func TestDownOfAGroupShowsWhatAMachineSaysAsOneBlockWithItsQuestion(t *testing.T) {
+	dir := upGroupDir(t, "alpha,beta,gamma", "")
+	_, h := fakeTools(t)
+	h.Services.Down = func(c *model.Machine, o driving.DownOptions) driving.Down {
+		return downFake{name: c.Name, role: downRoles()[c.Name], ask: o.Ask,
+			say: func(name string, out, errOut io.Writer) {
+				for i := 1; i <= 3; i++ {
+					fmt.Fprintf(errOut, "report %d of %s\n", i, name)
+					fmt.Fprintf(out, "info %d of %s\n", i, name)
+					time.Sleep(time.Millisecond)
+				}
+			},
+			run: func(name string, ask func(string) string) (int, error) {
+				if ask("Type DELETE to continue: ") != "DELETE" {
+					return 1, nil
+				}
+				return 0, nil
+			}}
+	}
+	var out, errb bytes.Buffer
+	err := cli.RunGroupDown(context.Background(), &cli.Opts{Host: h, Dir: dir, Group: "dev"}, upEnv(t), strings.NewReader("DELETE\nDELETE\nDELETE\n"), &out, &errb)
+	if err != nil {
+		t.Fatalf("%v\n%s\n%s", err, out.String(), errb.String())
+	}
+	// the stream with the questions: for each machine its report lines come in one piece, right before its question
+	lines := strings.Split(strings.TrimRight(errb.String(), "\n"), "\n")
+	for _, m := range []string{"beta", "gamma"} {
+		at := -1
+		for i, l := range lines {
+			if strings.Contains(l, "report 1 of "+m) {
+				at = i
+			}
+		}
+		if at < 0 || at+3 >= len(lines) {
+			t.Fatalf("no block for %s in\n%s", m, errb.String())
+		}
+		for k := 1; k <= 3; k++ {
+			if !strings.Contains(lines[at+k-1], fmt.Sprintf("report %d of %s", k, m)) {
+				t.Errorf("the lines of %s are cut by others:\n%s", m, errb.String())
+				break
+			}
+		}
+		if !strings.Contains(lines[at+3], "["+m+"]") || !strings.Contains(lines[at+3], "Type DELETE") {
+			t.Errorf("the question of %s is not right below its report:\n%s", m, errb.String())
+		}
+	}
+	if !strings.Contains(out.String(), "info 3 of alpha") {
+		t.Errorf("the rest of the output is lost:\n%s", out.String())
 	}
 }

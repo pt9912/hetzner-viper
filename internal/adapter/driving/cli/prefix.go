@@ -64,3 +64,40 @@ func (w *prefixWriter) flush() {
 		w.rest = nil
 	}
 }
+
+// machineBuf keeps the lines of one machine, from both of its streams in the order they came, until
+// writeTo shows them.
+type machineBuf struct {
+	mu     sync.Mutex
+	chunks []bufChunk
+}
+
+type bufChunk struct {
+	to   io.Writer
+	text []byte
+}
+
+type bufStream struct {
+	b  *machineBuf
+	to io.Writer
+}
+
+func (b *machineBuf) stream(to io.Writer) io.Writer { return bufStream{b, to} }
+
+func (s bufStream) Write(p []byte) (int, error) {
+	s.b.mu.Lock()
+	defer s.b.mu.Unlock()
+	s.b.chunks = append(s.b.chunks, bufChunk{s.to, append([]byte(nil), p...)})
+	return len(p), nil
+}
+
+// writeTo writes what was kept, each part to its stream, and forgets it.
+func (b *machineBuf) writeTo() {
+	b.mu.Lock()
+	chunks := b.chunks
+	b.chunks = nil
+	b.mu.Unlock()
+	for _, c := range chunks {
+		_, _ = c.to.Write(c.text) // a terminal that cannot be written to has no one to tell
+	}
+}
