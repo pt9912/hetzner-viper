@@ -28,13 +28,13 @@ viper nats listen     <gruppe> [--topic T] [--from-machine M]    [--from M]
 ```
 
 * `<gruppe>` ist der Name einer Gruppe aus `groups/<gruppe>.env`. Welcher Rechner als Zugang dient, regelt §3.
-* `--from` wählt den **Absender** (Stufe 1: eine Maschine der Gruppe; Stufe 2: zusätzlich der Betreiber-Absender, §5). Ohne `--from` nimmt Stufe 1 den ersten erreichbaren Rechner der Gruppe und Stufe 2 den Betreiber-Absender, sobald er eingerichtet ist **(zu bestätigen)**.
+* `--from` wählt den **Absender** (Stufe 1: eine Maschine der Gruppe; Stufe 2: zusätzlich der Betreiber-Absender, §5). Ohne `--from` nimmt Stufe 1 den ersten erreichbaren Rechner der Gruppe und Stufe 2 den Betreiber-Absender, sobald er eingerichtet ist (§8).
 * Der Text kommt als Argument oder, mit `-`, von der Standardeingabe.
 * `request` wartet auf die Antwort-Nachricht (`kind=res`, `re=<id>`) im Bereich des Antwortenden `viper.<g>.<antwortender>.out.<absender>`. **Angenommen wird sie nur, wenn der Absender der Antwort der Befragte (`--to`) ist** und das Subject von `Names.Parse` akzeptiert wird; jede Maschine kann die Anfrage mitlesen und sonst eine Antwort unterschieben *[V, `natsmcp/service.go`: `w.to == in.From`]*. Der Text der Antwort wird ausgegeben. Ohne Antwort endet der Befehl mit Exit-Status 1 nach dem Timeout (Standard 30 Sekunden, höchstens 120, wie im MCP-Server).
 * `listen` gibt eingehende Nachrichten fortlaufend aus, bis Strg-C. Es ist nur lesend; mitlesen darf jeder Rechner in `viper.<g>.>` *[V]*. Ausgegeben wird nur, was `Names.Parse` und `Decode` akzeptieren; Zeilen aus dem offenen `req`-Teilbaum erscheinen nicht oder als „ungeprüft“ gekennzeichnet.
 * `--to` gleich `--from` ist ein Fehler. Ein `broadcast` erreicht nur Maschinen, die das Thema abonniert haben; die Ausgabe sagt „gesendet, Zustellung nicht bestätigt“.
 * Ausgaben an das Terminal laufen durch `natsmcp.Clean` (Steuerzeichen und Bidi-Zeichen), nicht durch `Safe` (das zusätzlich `<`, `>`, `&` maskiert, wie es für Agenten gedacht ist). Das gilt auch für Namen, Themen, `--json` und Fehlertext von der Maschine.
-* Exit-Status: 0 ok, 1 Fehler oder keine Antwort, 130 Abbruch. Die Ausgabe ist Text; mit `--json` jeweils der Umschlag als eine Zeile **(zu bestätigen)**.
+* Exit-Status: 0 ok, 1 Fehler oder keine Antwort, 130 Abbruch. Die Ausgabe ist Text; mit `--json` jeweils eine Zeile je Nachricht (§8, Punkt 4).
 * Alle Namen und Themen werden mit `model.CheckNATSName` geprüft, bevor etwas gesendet wird (keine Punkte, Platzhalter, Leerzeichen).
 
 ## 3 Stufe 1: ein Rechner der Gruppe als Absender (`--from <maschine>`)
@@ -96,7 +96,7 @@ Die Ausgabe von `nats sub` wird **nicht** ausgewertet. Sie enthält die Nutzdate
 
 ### Entwurf
 
-* **Name:** fest `operator` **(zu bestätigen)**. Die Abgrenzung gegen Maschinennamen ist **kein** Eintrag in `model.CheckNATSName`: Diese Funktion dient auch für Gruppen- und Themennamen (`ValidName`) und würde sie mit sperren. Stattdessen: (a) die Prüfung der **Maschinen** (`up`, Gruppendatei) lehnt `operator` ab, (b) `natsRegister` verweigert den Namen, (c) `init` bricht ab, wenn `operator` schon in der Benutzerliste steht (`ParseClients`). Grund: `WithClient` ersetzt den Schlüssel eines vorhandenen Namens *[V, `natsserver.go`]*; ohne (a) bis (c) würde ein Rechner namens `operator` den Schlüssel des Betreibers still übernehmen oder umgekehrt. Ein Test pro Fall.
+* **Name:** `operator`, einstellbar mit `NATS_OPERATOR_NAME` (§8). Die Abgrenzung gegen Maschinennamen ist **kein** Eintrag in `model.CheckNATSName`: Diese Funktion dient auch für Gruppen- und Themennamen (`ValidName`) und würde sie mit sperren. Stattdessen: (a) die Prüfung der **Maschinen** (`up`, Gruppendatei) lehnt `operator` ab, (b) `natsRegister` verweigert den Namen, (c) `init` bricht ab, wenn `operator` schon in der Benutzerliste steht (`ParseClients`). Grund: `WithClient` ersetzt den Schlüssel eines vorhandenen Namens *[V, `natsserver.go`]*; ohne (a) bis (c) würde ein Rechner namens `operator` den Schlüssel des Betreibers still übernehmen oder umgekehrt. Ein Test pro Fall.
 * **Schlüssel:** Ein NKey-Paar pro Betreiber und Gruppe unter `<state>/nats/<gruppe>/operator.nk` (Modus 0600), erzeugt mit `natsserver.NewIdentity` *[V]*. Der Seed verlässt den Rechner nie; der öffentliche Schlüssel geht an den Server.
 * **Rechte (Vorschlag, minimal):** senden nur in `viper.<g>.operator.>`, lesen `viper.<g>.>`. **Ohne** `viper.<g>.*.req.>` und ohne `_INBOX.operator.>`: Der Betreiber braucht beides nicht (Anfragen und Antworten laufen über `…operator.out.<maschine>`), und der `req`-Teilbaum ist der einzige, in dem das Subject den Absender nicht beweist. Dafür bekommt `natsserver` eine eigene Funktion `OperatorPermissions` neben `Permissions`; die Tests für `Permissions` bleiben unverändert.
 * **Registrierung:** `operator` ist ein weiterer Eintrag in der Benutzerliste (`natsserver.authorization` wählt für diesen Namen `OperatorPermissions`). `viper nats init <gruppe>` trägt ihn über `natsgroup.Ops.Update` ein. **Zugang zum Server:** `Ops.Peer` braucht ein `model.Machine` und einen `model.Server` aus der Cloud-Schnittstelle *[V, `natsgroup.go`]*; `init` löst deshalb wie `viper down --group` die Maschinen der Gruppe über ihre Einstellungen auf, liest die Servermaschine aus den Labels (`GroupRole`) und braucht die Anmeldung beim Anbieter. Das ist in Meilenstein 5 zu klären, bevor `init` entworfen wird. Der Eintrag muss **ein weiteres `viper up` auf einem Rechner der Gruppe überleben**: `up` schreibt heute die Konfiguration neu *[V, Handbuch]*, und `Update` behält die Einträge der anderen *[V, Kommentar an `natsRegister`]*. Das wird in Meilenstein 6 durch einen Test belegt.
@@ -117,7 +117,7 @@ viper nats …       --from operator
 ### Fragen der Sicherheit
 
 * **Neue Berechtigung.** Stufe 2 gibt dem Rechner des Betreibers einen Zugang zum NATS-Server. Der Seed liegt nur dort; wer ihn hat, kann als `operator` senden und alles in der Gruppe mitlesen. Das ist dieselbe Vertraulichkeit wie bei jeder Maschine *[V, §7 von `nats-mcp.md`]*.
-* **Täuschung der Agenten.** `operator` ist für Agenten ein neuer Absender, der Anweisungen schickt. Das ist gewollt, aber die Agenten behandeln Nachrichten sonst als Aussagen eines Kollegen. Das Handbuch sagt klar, dass `operator` der Mensch ist. `NATS_MCP_PUSH_FROM` wird gegen Rechnernamen der Gruppe geprüft *[V, `check`]*; für `operator` braucht es eine ausdrückliche Regel (**zu bestätigen**, ob erlaubt).
+* **Täuschung der Agenten.** `operator` ist für Agenten ein neuer Absender, der Anweisungen schickt. Das ist gewollt, aber die Agenten behandeln Nachrichten sonst als Aussagen eines Kollegen. Das Handbuch sagt klar, dass `operator` der Mensch ist. `NATS_MCP_PUSH_FROM` wird gegen Rechnernamen der Gruppe geprüft *[V, `check`]*; für `operator` braucht es eine ausdrückliche Regel (§8, Punkt 3: optional erlaubt).
 * **Eine bestehende Gruppe ohne `init`** ändert sich nicht. Der `operator`-Eintrag entsteht nur auf Befehl.
 * **`natsserver.Permissions` und die Regeln aus `nats.md` §6** bleiben unverändert, weil `operator` nur ein weiterer Benutzer mit demselben Schema ist. Die Tests, die „genau diese Rechte“ prüfen, bekommen einen Fall dazu.
 
@@ -138,13 +138,15 @@ viper nats …       --from operator
 * **Echt (Hetzner, Testprojekt):** drei Maschinen; Stufe 1 mit `--from` auf jeder; Stufe 2 mit Tunnel; ein weiteres `viper up` auf einer Maschine; `viper nats revoke`.
 * **Regression:** Alle bestehenden Tests; die Konfiguration einer Gruppe ohne `init` bleibt byte-identisch (Referenzdatei).
 
-## 8 Offene Entscheidungen
+## 8 Entscheidungen
 
-1. Standard von `--from` ohne Angabe: erste erreichbare Maschine (Stufe 1) und `operator` (Stufe 2) oder immer eine Pflichtangabe?
-2. Name des Betreibers: fest `operator` oder einstellbar (`NATS_OPERATOR_NAME`)?
-3. Soll `operator` in `NATS_MCP_PUSH_FROM` stehen dürfen?
-4. `--json` ja oder nein?
-5. Reicht Stufe 1 für den Anfang, oder wird Stufe 2 sofort gebraucht? Stufe 1 ist unabhängig lieferbar.
+Entschieden am 11.11.2026:
+
+1. **`--from` ist optional und hat einen Standard:** Stufe 1: die erste erreichbare Maschine der Gruppe (Reihenfolge der Gruppendatei, nie `--to`); ab Stufe 2: `operator`, wenn für die Gruppe eingerichtet. Die gewählte Quelle steht in der ersten Ausgabezeile.
+2. **Der Name des Betreibers ist einstellbar** (`NATS_OPERATOR_NAME`, Standard `operator`) *(Auslegung der Antwort „ja“ auf „fest oder einstellbar“; bitte bestätigen)*. Die Prüfungen aus §5 gelten für den eingestellten Namen.
+3. **`operator` in `NATS_MCP_PUSH_FROM` ist optional einstellbar:** erlaubt, wenn der Betreiber es einträgt; Standard bleibt die leere Liste. `check` akzeptiert den Betreiber-Namen dort.
+4. **`--json`:** Vorschlag **ja**, weil es billig ist: eine Zeile pro Nachricht, derselbe Inhalt wie der Text (`from`, `kind`, `id`, `re`, `text`), bereits gesäubert. Es erleichtert Skripte und Tests und braucht keine eigene Logik, da `watch` ohnehin JSON-Zeilen liefert. Noch offen, bis du zustimmst.
+5. **Reihenfolge:** erst Stufe 1 (Meilensteine 0 bis 4), danach Stufe 2 (5 bis 9). Stufe 2 beginnt erst, wenn Stufe 1 abgenommen ist.
 
 ## 9 Bewusst nicht enthalten
 
