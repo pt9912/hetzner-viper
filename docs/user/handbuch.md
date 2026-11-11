@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.85  
+Version: 1.86  
 Software-Version: v0.17.0  
 Stand: 11.11.2026  
 
@@ -51,7 +51,7 @@ Bei den Anbietern:
 | `viper dns <rechner>` | Gibt den DNS-Namen des Rechners aus (`<SERVER_PREFIX>-<rechner>.<DNS_DOMAIN>`), ohne Zugriff auf den Anbieter oder Cloudflare. Mit `DNS_PROVIDER=none` gibt es keinen Namen; der Befehl nennt die zuletzt gespeicherte Adresse. |
 | `viper find` | Sucht bei allen Anbietern Server-Typen, die mindestens die gewünschten CPUs, den RAM und die Platte haben, und zeigt die günstigsten mit Preis. Liest nur und braucht keinen Rechner. |
 | `viper log [<rechner>]` | Zeigt die lokalen Protokolle: Ereignisse aller Rechner, eines Rechners oder mit `--full` dessen vollständige Ausgabe. |
-| `viper up --group <gruppe>`, `viper down --group <gruppe>`, `viper check --group <gruppe>`, `viper ssh --group <gruppe> --cmd …` | Dieselben Befehle für alle Rechner einer Gruppe aus `groups/<gruppe>.env`, gleichzeitig (siehe „Eine Gruppe von Rechnern gemeinsam starten und beenden“). |
+| `viper up --group <gruppe>`, `viper down --group <gruppe>`, `viper check --group <gruppe>`, `viper preflight --group <gruppe>`, `viper ssh --group <gruppe> --cmd …` | Dieselben Befehle für alle Rechner einer Gruppe aus `groups/<gruppe>.env`, gleichzeitig (siehe „Eine Gruppe von Rechnern gemeinsam starten und beenden“). |
 | `viper mcp-binary --arch amd64\|arm64` | Schreibt den in `viper` eingebauten MCP-Server `viper-nats-mcp` für die Architektur nach stdout (`> datei`), zum Ansehen, Prüfen oder als `NATS_MCP_BINARY`. Zeigt nichts auf dem Terminal. |
 | `viper help`, `viper version` | Zeigt alle Befehle bzw. die Version. |
 
@@ -460,6 +460,7 @@ Statt jeden Rechner einzeln zu starten, legen Sie eine Gruppendatei an. Sie nenn
 | `viper up --group g [--repo URL]` | startet alle Rechner der Gruppe |
 | `viper down --group g [--force]` | beendet alle Rechner der Gruppe |
 | `viper check --group g` | prüft alle Rechner |
+| `viper preflight --group g [--repo URL]` | prüft vorab alle Rechner, nur lesend; legt nichts an |
 | `viper ssh --group g --cmd 'befehl'` | führt einen Befehl auf allen Rechnern aus (ohne `--cmd` nicht möglich) |
 
 `--parallel N` begrenzt, wie viele Rechner gleichzeitig laufen (Standard 8). `--group` und ein Rechnername zusammen sind ein Fehler.
@@ -1270,3 +1271,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.83 | nach v0.16.0 | Google Cloud und Azure gelten nicht mehr als „nicht in einem echten Konto getestet“, sondern als „nur gegen nachgebildete Schnittstellen getestet, ein Lauf in einem echten Konto ist nicht belegt“ (README, Handbuch, Vorlage); ob sie in der Praxis laufen, ist offen. |
 | 1.84 | nach v0.16.0 | Neu: `NATS_MCP_TOPICS`. Themen, die der MCP-Server auf jedem Rechner beim Start abonniert (in einer Gruppendatei für alle Rechner der Gruppe); `unsubscribe` lehnt sie ab. `viper check` vergleicht die Liste mit `mcp.env`. |
 | 1.85 | v0.17.0 | Release v0.17.0: die Änderungen 1.83 und 1.84 (Google Cloud und Azure nicht mehr als „nicht erprobt“, `NATS_MCP_TOPICS`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.17.0`. |
+| 1.86 | nach v0.17.0 | Neu: `viper preflight --group <gruppe>` prüft vorab alle Rechner einer Gruppe, nur lesend. |

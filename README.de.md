@@ -34,7 +34,7 @@ viper mcp-binary --arch arm64 > f  # der eingebaute MCP-Server für NATS-Gruppen
 
 | Funktion | Einstellung | Wirkung |
 |---|---|---|
-| Prüfung nur lesend | `viper preflight <name>` | Prüft vorab, bevor etwas angelegt wird: Einstellungen, lokales Setup, Cloud-Anmeldung (Hetzner-Token, AWS-Anmeldung, ...), Bestellbarkeit des Servertyps am Standort, Image, Cloudflare-Zone und -Eintrag, GitHub-Token und Repo-Zugriff. `viper up` führt es zuerst aus. |
+| Prüfung nur lesend | `viper preflight <name>` | Prüft vorab, bevor etwas angelegt wird: Einstellungen, lokales Setup, Cloud-Anmeldung (Hetzner-Token, AWS-Anmeldung, ...), Bestellbarkeit des Servertyps am Standort, Image, Cloudflare-Zone und -Eintrag, GitHub-Token und Repo-Zugriff. `viper up` führt es zuerst aus. Für eine Gruppe: `viper preflight --group <gruppe>`. |
 | Cloud-Anbieter | `PROVIDER=hetzner` (Standard), `aws`, `gcp`, `azure` | Wo die Rechner laufen. Zugangsdaten, Servertyp, Standort und Image haben Standardwerte je Anbieter; AWS und Hetzner sind erprobt, `gcp` und `azure` nur gegen nachgebildete Schnittstellen getestet (ein Lauf in einem echten Konto ist nicht belegt). |
 | Ohne Cloudflare (optional) | `DNS_PROVIDER=none` | Kein DNS-Eintrag, keine Domain, kein Cloudflare-Konto: Ein Rechner ist mit `viper ssh <name>` oder über seine Adresse erreichbar (bei AWS zeigt `viper up` auch den Namen, den EC2 vergibt). |
 | Eigene AWS-Tags (optional) | `AWS_TAGS`, `AWS_TAGS_SHARED` | Tags für Instanz und Systemplatte (`AWS_TAGS`) sowie für Schlüsselpaar und Security Group (`AWS_TAGS_SHARED`), gesetzt beim Anlegen, sodass auch Tag-Richtlinien (`aws:RequestTag`) den Start zulassen. Der Preflight prüft sie. |

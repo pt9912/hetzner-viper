@@ -64,7 +64,7 @@ func isValueFlag(n string) bool {
 func commands() map[string]command {
 	return map[string]command{
 		"setup":      {usage: "", machine: noMachine, run: nativeSetup},
-		"preflight":  {usage: "<machine> [--repo URL]", machine: needMachine, flags: []string{"repo"}, run: nativePreflight},
+		"preflight":  {usage: "<machine> [--repo URL] | --group G [--repo URL] [--parallel N]", machine: needMachine, flags: []string{"repo", "group", "parallel"}, run: nativePreflight},
 		"up":         {usage: "<machine> [--repo URL] [--no-code] | --group G [--repo URL] [--parallel N]", machine: needMachine, flags: []string{"repo", "no-code", "group", "parallel"}, run: nativeUp},
 		"check":      {usage: "<machine> | --group G [--parallel N]", machine: needMachine, flags: []string{"group", "parallel"}, run: nativeCheck},
 		"ssh":        {usage: "<machine> [--cmd COMMAND | --tmux] | --group G --cmd COMMAND [--parallel N]", machine: needMachine, flags: []string{"cmd", "tmux", "group", "parallel"}, run: nativeSSH},

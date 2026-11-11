@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -670,5 +671,48 @@ func TestMCPBinaryWritesTheProgramOfTheArchitectureAndRefusesATerminal(t *testin
 	}
 	if _, o, err := cli.Parse([]string{"mcp-binary", "--arch", "arm64"}); err != nil || o.Arch != "arm64" {
 		t.Errorf("%v %+v", err, o)
+	}
+}
+
+func TestPreflightForAGroupChecksEveryMachineAndMakesNothing(t *testing.T) {
+	dir := upGroupDir(t, "alpha,beta", "")
+	_, h := fakeTools(t)
+	f := &upFake{script: func(string, driving.UpOptions) (int, error) { return 0, nil }}
+	f.services(h)
+	env := upEnv(t)
+	h.Env = func() (settings.Env, error) { return env, nil }
+	var mu sync.Mutex
+	var checked []string
+	failing := ""
+	h.Services.Preflight = func(c *model.Machine) driving.Preflight {
+		return preflightFunc(func() int {
+			mu.Lock()
+			checked = append(checked, c.Name)
+			mu.Unlock()
+			if c.Name == failing {
+				return 1
+			}
+			return 0
+		})
+	}
+	var out bytes.Buffer
+	h.Stdout = &out
+	run := func() error {
+		checked = nil
+		return cli.RunCommand("preflight", &cli.Opts{Host: h, Dir: dir, Group: "dev"})
+	}
+	if err := run(); err != nil {
+		t.Fatalf("all fine: %v", err)
+	}
+	sort.Strings(checked)
+	if !slices.Equal(checked, []string{"alpha", "beta"}) {
+		t.Errorf("checked %v", checked)
+	}
+	failing = "beta"
+	if err := run(); cli.ExitCode(err) != 1 {
+		t.Errorf("a failed check: exit status 1, got %v", err)
+	}
+	if len(f.started) != 0 {
+		t.Errorf("preflight started %v", f.started)
 	}
 }
