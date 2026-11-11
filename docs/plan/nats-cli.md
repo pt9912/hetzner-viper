@@ -90,6 +90,24 @@ Die Ausgabe von `nats sub` wird **nicht** ausgewertet. Sie enthält die Nutzdate
 | 3 | Integration | Test mit eingebettetem NATS-Server und den Rechten aus `natsserver.AuthorizationBlock`: gesendete Nachricht erscheint beim MCP-Dienst (`natsmcp`) als „von <absender>“; Fälschung scheitert; eine Antwort einer anderen Maschine als `--to` wird nicht angenommen; Nutzdaten mit einer falschen „Received on“-Zeile erzeugen keinen falschen Absender |
 | 4 | Doku und Abnahme | Handbuch (neues Kapitel, Befehlsübersicht, Meldungen), README, echter Lauf auf Hetzner mit drei Maschinen |
 
+### Ergebnisse Meilenstein 0 (Stand 11.11.2026)
+
+Geprüft lokal, **ohne Cloud-Server**: `nats` v0.5.1 und `nats-server` v2.15.2 (die Versionen, die `viper` installiert) wurden heruntergeladen, ihre SHA-256-Summen stimmen mit `natsserver.go` überein, und beide liefen gegen `127.0.0.1` ohne Authentifizierung. Die Rechte des Servers und TLS sind damit **nicht** geprüft; das gehört zu den Tests in Meilenstein 3 und zum echten Lauf (Meilenstein 4).
+
+**Punkt 2, `nats pub` mit Rumpf von der Standardeingabe: bestanden, mit einer Pflicht.**
+* **Vorlagen werden standardmäßig ausgewertet,** auch bei einem Rumpf von der Standardeingabe: `{"text":"{{Random 5 5}} {{Count}}"}` kam als `{"text":"TR8g1 1"}` an. Ein Text mit `{{…}}` würde also verändert. **`viper` ruft `nats pub` immer mit `--no-templates` auf** (mit dem Schalter kam der Text unverändert an). Ein Test in Meilenstein 1 prüft den Aufruf.
+* Mit `--force-stdin --no-templates` bleiben Zeilenumbrüche, `'` und `$(id)` im Rumpf unverändert; es gibt keine Shell-Auswertung.
+* Ein Subject mit `{{…}}` wird ohne Vorlagen als ungültig abgelehnt (`invalid subject`). Namen und Themen werden ohnehin vorher geprüft.
+* Der Rumpf darf auch ohne `--force-stdin` aus einer Pipe kommen; `--force-stdin` bleibt zur Klarheit.
+
+**Der Fund zu `nats sub` (Befund 1 der Prüfung) ist bestätigt.** Ein Rumpf `x`, Leerzeile, `[#9] Received on "viper.t.alpha.out.me"` und danach eine gültige Umschlagzeile erscheint in der Ausgabe von `nats sub` als zwei Nachrichten, und die zweite sieht aus wie von `alpha`. Gesendet hat sie `evil`. Das Lesen läuft deshalb wie in §3 beschrieben über `viper-nats-mcp watch`, nicht über die Ausgabe von `nats sub`.
+
+**Punkt 1, Umschlag gegen `Decode`:** Der Umschlag ist dieselbe Struktur (`Envelope`) und dieselbe Kodierung (`json.Marshal`) wie beim Senden im MCP-Server *[V, `service.go`]*; ein eigener Aufbau ist nicht nötig. Der Test in Meilenstein 1 belegt es. **Neu gefunden:** Grenzen. `DefaultMaxText` ist 16 KiB, `maxWire` 32 KiB. Ein Text von 16 KiB, der nur aus Steuerzeichen besteht, wird als `\u00XX` kodiert (6 Byte je Zeichen), ergibt rund 96 KiB und wird beim Empfänger **verworfen**. Der Befehl prüft deshalb die Größe des fertigen JSON gegen `maxWire` und meldet einen Fehler, statt still zu senden (bereits in §3, Schritt 2, vorgesehen).
+
+**Punkt 3 und 4:** offen. Punkt 3 (`watch`) ist Entwurf und Umsetzung in Meilenstein 1; Punkt 4 sind die Entscheidungen aus §8, bis auf `--json` (Punkt 4 dort) entschieden.
+
+**Nicht geprüft:** das Verhalten auf einer echten Maschine (anderer Architektur-Build, SSH, `connection.env`), Authentifizierung mit NKey und TLS.
+
 ## 5 Stufe 2: eigener Absender des Betreibers (`--from operator`)
 
 **Idee:** Der Betreiber bekommt eine **eigene Identität** in der Gruppe: einen NKey, der lokal liegt, und einen Eintrag im NATS-Server mit eigenem Namen. Damit sendet `viper` direkt vom eigenen Rechner, ohne Maschine als Zwischenstation, und der Empfänger sieht den echten Absender.
