@@ -445,7 +445,7 @@ func TestLoadRefusesBadNATSSettings(t *testing.T) {
 		"group case":  {base + "NATS_GROUP=Dev\n", "", "NATS_GROUP: 1 to 31"},
 		"bad port":    {base + "NATS_GROUP=g\nNATS_PORT=22\n", "", "NATS_PORT"},
 		"bad switch":  {"DNS_DOMAIN=example.com\nNATS_ENABLED=maybe\n", "", "NATS_ENABLED: true or false"},
-		"other cloud": {base + "NATS_GROUP=g\nPROVIDER=azure\n", "", "need PROVIDER=aws or hetzner"},
+		"other cloud": {base + "NATS_GROUP=g\nPROVIDER=azure\n", "", "need PROVIDER=aws or gcp or hetzner"},
 	} {
 		_, err := settingsfile.Load(setupDir(t, tc.global, tc.machine), "web", env, false)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
