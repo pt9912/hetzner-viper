@@ -33,6 +33,8 @@ type Service struct {
 	// notify pushes a message into the session (nil: no channel); jitter waits before an answer to a presence query.
 	notify func(content string, meta map[string]string) error
 	jitter func() time.Duration
+	// tap sees every message that passed the checks, also those for topics nobody subscribed to (viper-nats-mcp watch).
+	tap func(Seen)
 
 	nc *nats.Conn
 
@@ -101,6 +103,11 @@ func (s *Service) Connect(ctx context.Context) error {
 	if _, err := nc.Subscribe(s.cfg.Names.PresenceSub(), s.onPresence); err != nil {
 		return err
 	}
+	if s.tap != nil {
+		if _, err := nc.Subscribe(s.cfg.Names.PubSub(">"), s.onTopic); err != nil {
+			return err
+		}
+	}
 	for _, t := range s.cfg.Topics {
 		sub, err := nc.Subscribe(s.cfg.Names.PubSub(t), s.onTopic)
 		if err != nil {
@@ -148,6 +155,9 @@ func (s *Service) logLimited(format string, a ...any) {
 }
 
 func (s *Service) logError(what string, err error) {
+	if err == nil {
+		return // a disconnect that was asked for
+	}
 	s.mu.Lock()
 	s.errs++
 	n := s.errs
@@ -197,6 +207,9 @@ func (s *Service) publish(subject string, e Envelope) error {
 	if err != nil {
 		return err
 	}
+	if len(b) > maxWire { // the others refuse it: control characters are longer once encoded (6 bytes for one)
+		return fmt.Errorf("the message has %d bytes once encoded, at most %d are allowed (control characters count 6 bytes each)", len(b), maxWire)
+	}
 	return s.nc.Publish(subject, b)
 }
 
@@ -212,6 +225,7 @@ func (s *Service) onOut(m *nats.Msg) {
 		return
 	}
 	s.logLimited("message from %s: kind=%s bytes=%d", in.From, e.Kind, len(m.Data))
+	s.seen(in, e)
 	switch e.Kind {
 	case "msg", "req":
 		s.receive(Entry{From: in.From, Kind: e.Kind, ID: e.ID, Text: e.Text, TS: s.now()})
@@ -244,6 +258,10 @@ func (s *Service) onTopic(m *nats.Msg) {
 		return
 	}
 	s.logLimited("topic message from %s: topic=%s bytes=%d", in.From, in.Arg, len(m.Data))
+	s.seen(in, e)
+	if s.tap != nil {
+		return // the tap's wildcard also delivers topics nobody subscribed to: the inbox is not its business
+	}
 	s.receive(Entry{From: in.From, Kind: "msg", Topic: in.Arg, Text: e.Text, TS: s.now()})
 }
 
@@ -256,6 +274,7 @@ func (s *Service) onPresence(m *nats.Msg) {
 	if err != nil || e.Kind != "presence" {
 		return
 	}
+	s.seen(in, e)
 	if e.State == "bye" {
 		s.peers.Gone(in.From)
 		return
@@ -313,5 +332,17 @@ func (s *Service) maybePush(e Entry) {
 	}
 	if err := s.notify(Safe(e.Text), meta); err != nil {
 		s.log.Printf("push failed: %v", err)
+	}
+}
+
+// Seen is a message that passed the checks, with the sender as the subject proves it.
+type Seen struct {
+	In Inbound
+	E  Envelope
+}
+
+func (s *Service) seen(in Inbound, e Envelope) {
+	if s.tap != nil {
+		s.tap(Seen{In: in, E: e})
 	}
 }

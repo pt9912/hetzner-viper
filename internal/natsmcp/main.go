@@ -32,6 +32,9 @@ func Main(version string, args []string, stdin io.Reader, stdout, stderr io.Writ
 		fmt.Fprintln(stderr, "viper-nats-mcp:", err)
 		return 1
 	}
+	if len(args) > 0 && IsCLICommand(args[0]) {
+		return cliMain(args[0], cfg, args[1:], stdin, stdout, stderr)
+	}
 	cfg.Quiet = os.Getenv("VIPER_NATS_MCP_QUIET") == "1"
 	log := NewFileLogger(stderr, cfg.LogFile, 1<<20)
 	defer log.Close()

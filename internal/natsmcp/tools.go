@@ -115,6 +115,28 @@ func (s *Service) toolSend(_ context.Context, args json.RawMessage) (string, err
 	return "sent to " + a.To + " (not confirmed: the machine may be offline)", nil
 }
 
+// SendText sends a message to a machine; the checks are those of the tool send.
+func (s *Service) SendText(to, text string) error {
+	if err := s.checkPeer(to); err != nil {
+		return err
+	}
+	if err := s.checkText(text); err != nil {
+		return err
+	}
+	return s.publish(s.cfg.Names.Out(to), Envelope{V: 1, Kind: "msg", Text: text})
+}
+
+// BroadcastText sends a message to a topic; the checks are those of the tool broadcast.
+func (s *Service) BroadcastText(topic, text string) error {
+	if !ValidName(topic) {
+		return fmt.Errorf("%q is not a topic name (lowercase letters, digits, hyphens)", topic)
+	}
+	if err := s.checkText(text); err != nil {
+		return err
+	}
+	return s.publish(s.cfg.Names.Pub(topic), Envelope{V: 1, Kind: "msg", Text: text})
+}
+
 func (s *Service) toolBroadcast(_ context.Context, args json.RawMessage) (string, error) {
 	var a struct{ Topic, Text string }
 	if err := json.Unmarshal(args, &a); err != nil {
@@ -140,21 +162,30 @@ func (s *Service) toolRequest(ctx context.Context, args json.RawMessage) (string
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", argError("request", err)
 	}
-	if err := s.checkPeer(a.To); err != nil {
-		return "", err
-	}
-	if err := s.checkText(a.Text); err != nil {
-		return "", err
-	}
 	timeout := 30 * time.Second
 	if a.Timeout != 0 {
 		timeout = time.Duration(a.Timeout * float64(time.Second))
 	}
+	e, err := s.Ask(ctx, a.To, a.Text, timeout)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("answer from %s (untrusted text):\n%s", a.To, Safe(e.Text)), nil
+}
+
+// Ask sends a request and waits for the answer of that machine (and nobody else): 1 to 120 seconds.
+func (s *Service) Ask(ctx context.Context, to, text string, timeout time.Duration) (Envelope, error) {
+	if err := s.checkPeer(to); err != nil {
+		return Envelope{}, err
+	}
+	if err := s.checkText(text); err != nil {
+		return Envelope{}, err
+	}
 	if timeout < time.Second || timeout > 120*time.Second {
-		return "", errors.New("timeout_seconds must be between 1 and 120")
+		return Envelope{}, errors.New("timeout_seconds must be between 1 and 120")
 	}
 	id := newID()
-	w := &waiter{to: a.To, ch: make(chan Envelope, 1)}
+	w := &waiter{to: to, ch: make(chan Envelope, 1)}
 	s.mu.Lock()
 	s.waiters[id] = w
 	s.mu.Unlock()
@@ -163,16 +194,16 @@ func (s *Service) toolRequest(ctx context.Context, args json.RawMessage) (string
 		delete(s.waiters, id)
 		s.mu.Unlock()
 	}()
-	if err := s.publish(s.cfg.Names.Out(a.To), Envelope{V: 1, Kind: "req", ID: id, Text: a.Text}); err != nil {
-		return "", err
+	if err := s.publish(s.cfg.Names.Out(to), Envelope{V: 1, Kind: "req", ID: id, Text: text}); err != nil {
+		return Envelope{}, err
 	}
 	select {
 	case e := <-w.ch:
-		return fmt.Sprintf("answer from %s (untrusted text):\n%s", a.To, Safe(e.Text)), nil
+		return e, nil
 	case <-time.After(timeout):
-		return "", fmt.Errorf("no answer from %s within %d seconds", a.To, int(timeout.Seconds()))
+		return Envelope{}, fmt.Errorf("no answer from %s within %d seconds", to, int(timeout.Seconds()))
 	case <-ctx.Done():
-		return "", errors.New("cancelled")
+		return Envelope{}, errors.New("cancelled")
 	}
 }
 

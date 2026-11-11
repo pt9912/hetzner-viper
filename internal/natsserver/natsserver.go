@@ -81,7 +81,9 @@ const (
 	CertFile   = Dir + "/server.crt"
 	KeyFile    = Dir + "/server.key"
 	Binary     = "/usr/local/bin/nats-server"
-	Unit       = "viper-nats.service"
+	// MCPBinary is viper-nats-mcp on a machine (the MCP server of Claude Code and the subcommands viper runs over ssh).
+	MCPBinary = Dir + "/viper-nats-mcp"
+	Unit      = "viper-nats.service"
 )
 
 // Client is a machine that may use the server: its public NKey.

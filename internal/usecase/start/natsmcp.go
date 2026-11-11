@@ -15,7 +15,7 @@ import (
 
 // MCP paths on the machine.
 const (
-	natsMCPBinary = natsserver.Dir + "/viper-nats-mcp"
+	natsMCPBinary = natsserver.MCPBinary
 	natsMCPEnv    = "mcp.env"
 )
 

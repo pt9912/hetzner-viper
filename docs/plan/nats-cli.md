@@ -108,6 +108,25 @@ Geprüft lokal, **ohne Cloud-Server**: `nats` v0.5.1 und `nats-server` v2.15.2 (
 
 **Nicht geprüft:** das Verhalten auf einer echten Maschine (anderer Architektur-Build, SSH, `connection.env`), Authentifizierung mit NKey und TLS.
 
+### Ergebnisse Meilenstein 1 (Stand 11.11.2026)
+
+Umgesetzt: `viper-nats-mcp` bekommt die Unterbefehle `watch`, `send`, `broadcast` und `request` (`internal/natsmcp/cli.go`), das Paket `internal/usecase/natscli` (Befehle prüfen, Wörter des Programms bilden, JSON-Zeilen streng lesen, Zugangsmaschine wählen, Ablauf mit einem `Remote`-Port) und `natsserver.MCPBinary`. Die CLI selbst (M2) und der SSH-Adapter für `Remote` fehlen noch.
+
+**Abweichungen vom Plan (bitte prüfen):**
+1. **Senden läuft nicht über `nats pub`, sondern über `viper-nats-mcp send|broadcast|request`.** Grund: Die Unterbefehle nutzen dieselben Prüfungen wie die MCP-Werkzeuge (Name, Text, Größe, Antwort nur vom Befragten), und `request` abonniert und sendet in einem Prozess, ohne Wettrennen. Folge: auch das **Senden setzt `NATS_MCP=true`** auf der Zugangsmaschine voraus (§3 sagte: nur Lesen). `nats pub --no-templates` (M0) bleibt als möglicher Ausweg ohne MCP-Binary, ist aber nicht umgesetzt.
+2. **`peers` hört standardmäßig 35 Sekunden, nicht 8.** Eine Maschine meldet sich alle 30 Sekunden (`presenceEvery`); ein Fenster von 8 Sekunden sähe ohne Anfrage meist niemanden. Mit `--query` (Anfrage an alle, Fenster 8 Sekunden) geht es schnell, dann gilt die Zugangsmaschine bei den anderen für bis zu 90 Sekunden als anwesend, auch wenn ihr Agent nicht läuft. Der Standard ist die langsame, ehrliche Variante.
+
+**Weitere Funde und Änderungen am vorhandenen Code:**
+* `publish` prüft jetzt die Größe des **kodierten** JSON gegen `maxWire` (32 KiB) und meldet einen Fehler (vorher wurde eine Nachricht aus Steuerzeichen gesendet und beim Empfänger still verworfen). Das gilt auch für die MCP-Werkzeuge.
+* `logError` schreibt nichts mehr für ein Trennen ohne Fehler (beim bewussten Schließen der Verbindung).
+* Die Werkzeuge `send`, `broadcast` und `request` rufen jetzt `SendText`, `BroadcastText` und `Ask` auf; die Ausgabe der Werkzeuge ist unverändert.
+* Ein Fehler, den der NATS-Server erst **nach** dem Senden meldet (verweigertes Subject), wird als Fehler des Unterbefehls gemeldet: Der Befehl wartet auf `Flush` und kurz darauf (`settle`).
+* `watch` abonniert zusätzlich `viper.<g>.*.pub.>` (alle Themen), liest aber nichts in den Posteingang. Die Themen aus `mcp.env` werden für die Unterbefehle ignoriert; es wird keine Anwesenheit gesendet (außer `--query`).
+
+**Tests (alle mit `-race`):** Unit-Tests für Prüfung der Befehle (Namen mit Punkt, Platzhalter, Leerzeichen, leerer Text, Selbstsendung, Zeitgrenzen), für die Wörter des Programms (der Text steht nie darin), für das strenge Lesen (unbekannte Felder, Ereignisse, Namen und Wege), für den Ablauf mit einem Fake (Standardeingabe unverändert, einmaliger Aufruf, Fehler der Maschine) und für die Wahl der Zugangsmaschine. Integrationstests mit dem NATS-Server als Bibliothek und den echten Rechten: `send`/`broadcast`/`request` als Maschine, Absender aus dem Subject, Text mit Zeilenumbruch, Anführungszeichen, `$(id)` und `{{…}}` unverändert, `watch` zeigt gefälschte „Received on“-Zeilen und JSON-Zeilen im Text als **eine** Nachricht, nicht lesbare und im offenen `req`-Teilbaum liegende Nachrichten erscheinen nicht, die Unterbefehle melden sich nicht in der Gruppe. Der Linter (`golangci-lint`) meldet für die geänderten Pakete nichts.
+
+**Nicht geprüft:** TLS und NKey mit `viper`-eigenen Dateien (Test läuft ohne TLS auf Loopback), der Betrieb über SSH, mehrere gleichzeitige Verbindungen mit demselben Schlüssel gegen einen echten Server (der Test hat zwei: Dienst und Unterbefehl; es läuft). Der Rest der Suite wurde nicht neu gelaufen.
+
 ## 5 Stufe 2: eigener Absender des Betreibers (`--from operator`)
 
 **Idee:** Der Betreiber bekommt eine **eigene Identität** in der Gruppe: einen NKey, der lokal liegt, und einen Eintrag im NATS-Server mit eigenem Namen. Damit sendet `viper` direkt vom eigenen Rechner, ohne Maschine als Zwischenstation, und der Empfänger sieht den echten Absender.
