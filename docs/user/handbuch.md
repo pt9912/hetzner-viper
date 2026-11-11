@@ -1,8 +1,8 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.84  
-Software-Version: v0.16.0  
-Stand: 10.11.2026  
+Version: 1.85  
+Software-Version: v0.17.0  
+Stand: 11.11.2026  
 
 ## 1. Einleitung
 
@@ -82,12 +82,12 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 
 **Mit Homebrew** (Linux und macOS): `brew install pt9912/viper/viper`, dann `viper version` (Update: `brew upgrade viper`). Sonst von Hand:
 
-1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.16.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.16.0_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
+1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.17.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.17.0_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
 2. Prüfen Sie die Datei und machen Sie sie ausführbar:
    ```bash
-   grep viper_v0.16.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
-   chmod +x viper_v0.16.0_linux_amd64
-   mv viper_v0.16.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
+   grep viper_v0.17.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
+   chmod +x viper_v0.17.0_linux_amd64
+   mv viper_v0.17.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
    ```
 3. Prüfen Sie die Installation: `viper version`.
 
@@ -1269,3 +1269,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.82 | v0.16.0 | Neu: `viper mcp-binary --arch amd64\|arm64` schreibt den eingebauten MCP-Server als Datei nach stdout. |
 | 1.83 | nach v0.16.0 | Google Cloud und Azure gelten nicht mehr als „nicht in einem echten Konto getestet“, sondern als „nur gegen nachgebildete Schnittstellen getestet, ein Lauf in einem echten Konto ist nicht belegt“ (README, Handbuch, Vorlage); ob sie in der Praxis laufen, ist offen. |
 | 1.84 | nach v0.16.0 | Neu: `NATS_MCP_TOPICS`. Themen, die der MCP-Server auf jedem Rechner beim Start abonniert (in einer Gruppendatei für alle Rechner der Gruppe); `unsubscribe` lehnt sie ab. `viper check` vergleicht die Liste mit `mcp.env`. |
+| 1.85 | v0.17.0 | Release v0.17.0: die Änderungen 1.83 und 1.84 (Google Cloud und Azure nicht mehr als „nicht erprobt“, `NATS_MCP_TOPICS`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.17.0`. |
