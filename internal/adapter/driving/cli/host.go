@@ -16,7 +16,9 @@ type Services struct {
 	// Settings reads the settings of the machines.
 	Settings settings.Store
 	// Groups runs a command for the machines of a group at the same time (--group).
-	Groups    driving.GroupRunner
+	Groups driving.GroupRunner
+	// NATS speaks to a NATS group as one of its machines (viper nats).
+	NATS      driving.NATSCLI
 	Up        func(c *model.Machine, o driving.UpOptions) driving.Up
 	Down      func(c *model.Machine, o driving.DownOptions) driving.Down
 	Check     func(c *model.Machine) driving.Check

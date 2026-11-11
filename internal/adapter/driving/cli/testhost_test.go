@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"github.com/pt9912/hetzner-viper/internal/usecase/groupops"
+	"github.com/pt9912/hetzner-viper/internal/usecase/natscli"
 	"io"
 	"os"
 	"strings"
@@ -34,6 +35,7 @@ func testHost() *cli.Host {
 		Services: cli.Services{
 			Settings: settingsfile.Files{},
 			Groups:   groupops.Runner{},
+			NATS:     natscli.Service{},
 			OpenLog: func(m *model.Machine, action string, stdout, stderr io.Writer) (runlog.Run, error) {
 				l, err := runlogfile.Open(m.StateDir, m.ServerName, action, stdout, stderr)
 				if err != nil {

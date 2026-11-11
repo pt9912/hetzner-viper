@@ -14,6 +14,11 @@ import (
 type options struct {
 	machine, repo, cmd, dir string
 	group                   string // run for all machines of groups/<group>.env
+	// viper nats
+	args               []string // the words after the command: the subcommand, the group, the text
+	to, topic, from    string
+	timeout            time.Duration
+	query, asJSON, yes bool
 	// set by the group commands for the run of one machine, not by the command line
 	onServerCreated           func()
 	skipPreflight             bool
@@ -40,6 +45,7 @@ const (
 	noMachine machineMode = iota
 	needMachine
 	maybeMachine
+	restArgs // no machine: the words after the command are kept in options.args (viper nats)
 )
 
 type command struct {
@@ -54,7 +60,7 @@ var errHelp = errors.New("help")
 // isValueFlag reports whether the option takes a value.
 func isValueFlag(n string) bool {
 	switch n {
-	case "repo", "cmd", "dir", "group", "parallel", "cpu", "ram", "disk", "arch", "location", "provider", "vat":
+	case "repo", "cmd", "dir", "group", "parallel", "cpu", "ram", "disk", "arch", "location", "provider", "vat", "to", "topic", "from", "timeout":
 		return true
 	}
 	return false
@@ -73,6 +79,7 @@ func commands() map[string]command {
 		"dns":        {usage: "<machine>", machine: needMachine, run: nativeDNS},
 		"find":       {usage: "[--cpu N] [--ram GB] [--disk GB] [--arch x86|arm] [--location L] [--provider P] [--vat PERCENT]", machine: noMachine, flags: []string{"cpu", "ram", "disk", "arch", "location", "provider", "vat"}, run: nativeFind},
 		"log":        {usage: "[<machine>] [--full]", machine: maybeMachine, flags: []string{"full"}, run: nativeLog},
+		"nats":       {usage: "peers|listen|send|broadcast|request GROUP [TEXT|-] [--from MACHINE] [--to MACHINE] [--topic T] [--timeout S] [--query] [--json] [--yes]", machine: restArgs, flags: []string{"to", "topic", "from", "timeout", "query", "json", "yes"}, run: nativeNats},
 		"mcp-binary": {usage: "--arch amd64|arm64", machine: noMachine, flags: []string{"arch"}, run: nativeMCPBinary},
 		"version":    {usage: "", machine: noMachine},
 	}
@@ -126,6 +133,10 @@ func lookupCommand(args []string) (string, command, error) {
 
 // setMachine takes the machine name from the positional arguments, as the command requires.
 func setMachine(o *options, name string, c command, positional []string) error {
+	if c.machine == restArgs {
+		o.args = positional
+		return nil
+	}
 	if len(positional) > 0 {
 		if c.machine == noMachine || len(positional) > 1 {
 			return fmt.Errorf("viper %s: unexpected argument %q\n%s", name, positional[len(positional)-1], usageLine(name))
@@ -209,6 +220,12 @@ func parseFlag(o *options, name string, args []string, i *int, allowed map[strin
 		o.noCode = true
 	case "tmux":
 		o.tmux = true
+	case "query":
+		o.query = true
+	case "json":
+		o.asJSON = true
+	case "yes":
+		o.yes = true
 	}
 	return nil
 }
@@ -253,6 +270,8 @@ func setValue(o *options, name, flag, v string) error {
 		return setVAT(o, name, v)
 	case "group":
 		o.group = v
+	case "to", "topic", "from", "timeout":
+		return setNatsValue(o, name, flag, v)
 	case "parallel":
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 || n > 64 {
@@ -262,6 +281,38 @@ func setValue(o *options, name, flag, v string) error {
 	default:
 		return setNumber(o, name, flag, v)
 	}
+	return nil
+}
+
+// setNatsValue stores the value of an option of viper nats.
+func setNatsValue(o *options, name, flag, v string) error {
+	switch flag {
+	case "to":
+		o.to = v
+	case "topic":
+		o.topic = v
+	case "from":
+		o.from = v
+	default:
+		return setTimeout(o, name, v)
+	}
+	return nil
+}
+
+// setTimeout reads --timeout: seconds ("30") or a duration ("30s", "2m").
+func setTimeout(o *options, name, v string) error {
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		n, nerr := strconv.Atoi(v)
+		if nerr != nil {
+			return fmt.Errorf("viper %s: --timeout needs seconds or a duration such as 30s: %s", name, v)
+		}
+		d = time.Duration(n) * time.Second
+	}
+	if d <= 0 {
+		return fmt.Errorf("viper %s: --timeout must be positive: %s", name, v)
+	}
+	o.timeout = d
 	return nil
 }
 

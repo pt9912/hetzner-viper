@@ -6,6 +6,7 @@ import (
 	"context"
 	"github.com/pt9912/hetzner-viper/internal/mcpbin"
 	"github.com/pt9912/hetzner-viper/internal/usecase/groupops"
+	"github.com/pt9912/hetzner-viper/internal/usecase/natscli"
 	"io"
 	"os"
 	"path/filepath"
@@ -61,6 +62,7 @@ func Run(version string, args []string, stdin io.Reader, stdout, stderr io.Write
 		Services: cli.Services{
 			Settings:  settingsfile.Files{},
 			Groups:    groupops.Runner{},
+			NATS:      natscli.Service{},
 			MCPBinary: mcpbin.Binary,
 			Up:        func(c *model.Machine, o driving.UpOptions) driving.Up { return Up(c, o) },
 			Down:      func(c *model.Machine, o driving.DownOptions) driving.Down { return Down(c, o) },

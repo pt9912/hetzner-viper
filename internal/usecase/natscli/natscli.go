@@ -18,25 +18,11 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/natsmcp"
 	"github.com/pt9912/hetzner-viper/internal/natsserver"
+	"github.com/pt9912/hetzner-viper/internal/port/driving"
 )
 
 // MaxTimeout is the longest time a request waits (as in the tool request).
 const MaxTimeout = 120 * time.Second
-
-// Remote runs a program on a machine of the group and passes its stdout and stderr on. stdin is
-// the text of the message. It must not repeat the program after a lost connection: a send would
-// then arrive twice. The program is given as words; the implementation quotes them for the shell.
-type Remote func(ctx context.Context, machine, stdin string, stdout, stderr io.Writer, words ...string) error
-
-// Command is what the user asked for.
-type Command struct {
-	Name    string        // peers, send, broadcast, request, listen
-	To      string        // send, request
-	Topic   string        // broadcast; listen (a filter, optional)
-	Text    string        // send, broadcast, request
-	Timeout time.Duration // request (default 30 seconds); peers and listen: how long to listen (0: peers 35 s, listen until interrupted)
-	Query   bool          // peers: ask the others to say that they are there
-}
 
 // PeersWindow is how long peers listens by default: a machine says that it is there every 30 seconds.
 const PeersWindow = 35 * time.Second
@@ -45,8 +31,8 @@ const PeersWindow = 35 * time.Second
 const QueryWindow = 8 * time.Second
 
 // Validate checks a command before anything is run. The names are those of the machines and topics of the group.
-func (c Command) Validate(from string) error {
-	if err := c.validateTarget(from); err != nil {
+func Validate(c driving.NATSCommand, from string) error {
+	if err := validateTarget(c, from); err != nil {
 		return err
 	}
 	if (c.Name == "send" || c.Name == "broadcast" || c.Name == "request") && c.Text == "" {
@@ -59,7 +45,7 @@ func (c Command) Validate(from string) error {
 }
 
 // validateTarget checks the names the command is about.
-func (c Command) validateTarget(from string) error {
+func validateTarget(c driving.NATSCommand, from string) error {
 	switch c.Name {
 	case "peers":
 		return nil
@@ -86,7 +72,7 @@ func checkName(what, s string) error { return model.CheckNATSName(what, s) }
 
 // Words are the words of the program that runs on the machine for the command. They contain only
 // validated names and numbers; the text is not among them.
-func (c Command) Words() []string {
+func Words(c driving.NATSCommand) []string {
 	w := []string{natsserver.MCPBinary}
 	switch c.Name {
 	case "send":
@@ -117,7 +103,7 @@ func (c Command) Words() []string {
 }
 
 // Event is one line the machine printed, checked.
-type Event = natsmcp.Line
+type Event = model.NATSLine
 
 // ReadEvents reads the JSON lines of a subcommand. A line that is not valid JSON, has an unknown
 // event or an invalid name is an error: the machine does not print such lines, so something else
@@ -171,7 +157,7 @@ func checkEvent(e Event) error {
 // ChooseAccess is the machine that speaks for the user: from if given (it must be a machine of the
 // group), else the first machine of the group, in the order of the group, that is not to and that
 // reachable accepts.
-func ChooseAccess(machines []string, from, to string, reachable func(string) bool) (string, error) {
+func (Service) ChooseAccess(machines []string, from, to string, reachable func(string) bool) (string, error) {
 	if from != "" {
 		for _, m := range machines {
 			if m == from {
@@ -188,28 +174,20 @@ func ChooseAccess(machines []string, from, to string, reachable func(string) boo
 	return "", errors.New("no machine of the group can be reached")
 }
 
-// Result is what a command produced.
-type Result struct {
-	Sender string // the machine that spoke
-	Peers  []Peer // peers
-	Answer *Event // request
-	Sent   bool   // send, broadcast
-}
-
-// Peer is a machine that said that it is there.
-type Peer struct{ Name string }
+// Service is the use case viper nats; it implements driving.NATSCLI.
+type Service struct{}
 
 // Run runs the command on the machine and calls show for every message (listen) or collects the result.
 // stderr gets what the machine prints to its own.
-func Run(ctx context.Context, remote Remote, machine string, c Command, stderr io.Writer, show func(Event)) (Result, error) {
-	if err := c.Validate(machine); err != nil {
-		return Result{}, err
+func (Service) Run(ctx context.Context, remote driving.NATSRemote, machine string, c driving.NATSCommand, stderr io.Writer, show func(model.NATSLine)) (driving.NATSResult, error) {
+	if err := Validate(c, machine); err != nil {
+		return driving.NATSResult{}, err
 	}
-	res := Result{Sender: machine}
+	res := driving.NATSResult{Sender: machine}
 	pr, pw := io.Pipe()
 	errc := make(chan error, 1)
 	go func() {
-		err := remote(ctx, machine, c.Text, pw, stderr, c.Words()...)
+		err := remote(ctx, machine, c.Text, pw, stderr, Words(c)...)
 		_ = pw.CloseWithError(err) // ends the reader with the error of the program, if any
 		errc <- err
 	}()
@@ -228,8 +206,8 @@ func Run(ctx context.Context, remote Remote, machine string, c Command, stderr i
 
 // collector files the events of a run into its result.
 type collector struct {
-	c    Command
-	res  *Result
+	c    driving.NATSCommand
+	res  *driving.NATSResult
 	show func(Event)
 	seen map[string]bool
 }
@@ -243,7 +221,7 @@ func (k *collector) add(e Event) error {
 	case e.Event != "message":
 	case k.c.Name == "peers" && e.Via == "presence" && e.State != "bye" && !k.seen[e.From]:
 		k.seen[e.From] = true
-		k.res.Peers = append(k.res.Peers, Peer{Name: e.From})
+		k.res.Peers = append(k.res.Peers, driving.NATSPeer{Name: e.From})
 	case k.c.Name == "listen" && k.show != nil && (k.c.Topic == "" || e.Topic == k.c.Topic):
 		k.show(e)
 	}

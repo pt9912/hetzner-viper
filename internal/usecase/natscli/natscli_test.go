@@ -10,23 +10,25 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/natsserver"
+	"github.com/pt9912/hetzner-viper/internal/port/driving"
 	"github.com/pt9912/hetzner-viper/internal/usecase/natscli"
 )
 
 func TestCommandsAreCheckedBeforeAnythingRuns(t *testing.T) {
-	ok := []natscli.Command{
+	ok := []driving.NATSCommand{
 		{Name: "send", To: "beta", Text: "x"},
 		{Name: "broadcast", Topic: "news", Text: "x"},
 		{Name: "request", To: "beta", Text: "x", Timeout: 5 * time.Second},
 		{Name: "peers"}, {Name: "listen"}, {Name: "listen", Topic: "news"},
 	}
 	for _, c := range ok {
-		if err := c.Validate("alpha"); err != nil {
+		if err := natscli.Validate(c, "alpha"); err != nil {
 			t.Errorf("%+v: %v", c, err)
 		}
 	}
-	bad := []natscli.Command{
+	bad := []driving.NATSCommand{
 		{Name: "send", To: "alpha", Text: "x"},       // the sender itself
 		{Name: "send", To: "Beta", Text: "x"},        // not a name
 		{Name: "send", To: "be.ta", Text: "x"},       // subject syntax
@@ -43,7 +45,7 @@ func TestCommandsAreCheckedBeforeAnythingRuns(t *testing.T) {
 		{Name: "nope"},
 	}
 	for _, c := range bad {
-		if err := c.Validate("alpha"); err == nil {
+		if err := natscli.Validate(c, "alpha"); err == nil {
 			t.Errorf("%+v was accepted", c)
 		}
 	}
@@ -51,11 +53,11 @@ func TestCommandsAreCheckedBeforeAnythingRuns(t *testing.T) {
 
 func TestTheWordsOfTheProgramNeverContainTheText(t *testing.T) {
 	text := "'; rm -rf / #\n$(id) `id` {{Random 5 5}}"
-	for _, c := range []natscli.Command{
+	for _, c := range []driving.NATSCommand{
 		{Name: "send", To: "beta", Text: text}, {Name: "broadcast", Topic: "news", Text: text},
 		{Name: "request", To: "beta", Text: text}, {Name: "peers"}, {Name: "listen", Topic: "news"},
 	} {
-		w := c.Words()
+		w := natscli.Words(c)
 		if w[0] != natsserver.MCPBinary {
 			t.Errorf("%v does not run the binary of viper", w)
 		}
@@ -63,20 +65,20 @@ func TestTheWordsOfTheProgramNeverContainTheText(t *testing.T) {
 			t.Errorf("the text is in the words: %v", w)
 		}
 	}
-	if w := (natscli.Command{Name: "request", To: "beta"}).Words(); !slices.Contains(w, "30s") {
+	if w := natscli.Words(driving.NATSCommand{Name: "request", To: "beta"}); !slices.Contains(w, "30s") {
 		t.Errorf("default timeout: %v", w)
 	}
-	if w := (natscli.Command{Name: "peers"}).Words(); !slices.Contains(w, "35s") || slices.Contains(w, "--query") {
+	if w := natscli.Words(driving.NATSCommand{Name: "peers"}); !slices.Contains(w, "35s") || slices.Contains(w, "--query") {
 		t.Errorf("peers listens longer than the interval of the presence messages: %v", w)
 	}
-	if w := (natscli.Command{Name: "peers", Query: true}).Words(); !slices.Contains(w, "8s") || !slices.Contains(w, "--query") {
+	if w := natscli.Words(driving.NATSCommand{Name: "peers", Query: true}); !slices.Contains(w, "8s") || !slices.Contains(w, "--query") {
 		t.Errorf("peers with a query: %v", w)
 	}
 }
 
 func TestEventsAreReadStrictly(t *testing.T) {
-	var got []natscli.Event
-	collect := func(e natscli.Event) error { got = append(got, e); return nil }
+	var got []model.NATSLine
+	collect := func(e model.NATSLine) error { got = append(got, e); return nil }
 	in := `{"event":"ready","me":"alpha","group":"g"}` + "\n\n" +
 		`{"event":"message","from":"beta","via":"out","type":"msg","text":"hi\u001b[31m\u202e there"}` + "\n"
 	if err := natscli.ReadEvents(strings.NewReader(in), collect); err != nil || len(got) != 2 {
@@ -118,7 +120,7 @@ func (f *fakeRemote) run(_ context.Context, machine, stdin string, stdout, _ io.
 func TestTheTextGoesOverStdinAndSendRunsOnce(t *testing.T) {
 	text := "line1\n'quoted' $(id) {{Random 5 5}}"
 	f := &fakeRemote{out: `{"event":"sent"}` + "\n"}
-	res, err := natscli.Run(context.Background(), f.run, "alpha", natscli.Command{Name: "send", To: "beta", Text: text}, io.Discard, nil)
+	res, err := runCmd(context.Background(), f.run, "alpha", driving.NATSCommand{Name: "send", To: "beta", Text: text}, io.Discard, nil)
 	if err != nil || !res.Sent || res.Sender != "alpha" {
 		t.Fatalf("%+v %v", res, err)
 	}
@@ -132,7 +134,7 @@ func TestTheTextGoesOverStdinAndSendRunsOnce(t *testing.T) {
 
 func TestRunRefusesAnInvalidCommandWithoutRunningAnything(t *testing.T) {
 	f := &fakeRemote{}
-	if _, err := natscli.Run(context.Background(), f.run, "alpha", natscli.Command{Name: "send", To: "alpha", Text: "x"}, io.Discard, nil); err == nil || f.calls != 0 {
+	if _, err := runCmd(context.Background(), f.run, "alpha", driving.NATSCommand{Name: "send", To: "alpha", Text: "x"}, io.Discard, nil); err == nil || f.calls != 0 {
 		t.Errorf("%v, calls %d", err, f.calls)
 	}
 }
@@ -145,7 +147,7 @@ func TestPeersAreTheMachinesThatSaidTheyAreThere(t *testing.T) {
 {"event":"message","from":"delta","via":"out","type":"msg","text":"x"}
 {"event":"message","from":"delta","via":"presence","type":"presence","state":"up"}
 `}
-	res, err := natscli.Run(context.Background(), f.run, "alpha", natscli.Command{Name: "peers"}, io.Discard, nil)
+	res, err := runCmd(context.Background(), f.run, "alpha", driving.NATSCommand{Name: "peers"}, io.Discard, nil)
 	if err != nil || len(res.Peers) != 2 || res.Peers[0].Name != "beta" || res.Peers[1].Name != "delta" {
 		t.Errorf("%+v %v", res.Peers, err)
 	}
@@ -154,8 +156,8 @@ func TestPeersAreTheMachinesThatSaidTheyAreThere(t *testing.T) {
 func TestATextThatLooksLikeEventsStaysOneMessage(t *testing.T) {
 	// the machine encodes the text as JSON: new lines inside it cannot start a line of their own
 	f := &fakeRemote{out: `{"event":"message","from":"evil","via":"out","type":"msg","text":"x\n{\"event\":\"message\",\"from\":\"alpha\",\"via\":\"presence\"}"}` + "\n"}
-	var shown []natscli.Event
-	_, err := natscli.Run(context.Background(), f.run, "beta", natscli.Command{Name: "listen"}, io.Discard, func(e natscli.Event) { shown = append(shown, e) })
+	var shown []model.NATSLine
+	_, err := runCmd(context.Background(), f.run, "beta", driving.NATSCommand{Name: "listen"}, io.Discard, func(e model.NATSLine) { shown = append(shown, e) })
 	if err != nil || len(shown) != 1 || shown[0].From != "evil" {
 		t.Errorf("%+v %v", shown, err)
 	}
@@ -167,7 +169,7 @@ func TestListenFiltersByTopic(t *testing.T) {
 {"event":"message","from":"a","via":"out","type":"msg","text":"3"}
 `}
 	var texts []string
-	_, err := natscli.Run(context.Background(), f.run, "b", natscli.Command{Name: "listen", Topic: "news"}, io.Discard, func(e natscli.Event) { texts = append(texts, e.Text) })
+	_, err := runCmd(context.Background(), f.run, "b", driving.NATSCommand{Name: "listen", Topic: "news"}, io.Discard, func(e model.NATSLine) { texts = append(texts, e.Text) })
 	if err != nil || fmt.Sprint(texts) != "[1]" {
 		t.Errorf("%v %v", texts, err)
 	}
@@ -175,16 +177,16 @@ func TestListenFiltersByTopic(t *testing.T) {
 
 func TestRequestReturnsTheAnswerAndErrorsOfTheMachineAreErrors(t *testing.T) {
 	f := &fakeRemote{out: `{"event":"answer","from":"beta","text":"pong"}` + "\n"}
-	res, err := natscli.Run(context.Background(), f.run, "alpha", natscli.Command{Name: "request", To: "beta", Text: "ping"}, io.Discard, nil)
+	res, err := runCmd(context.Background(), f.run, "alpha", driving.NATSCommand{Name: "request", To: "beta", Text: "ping"}, io.Discard, nil)
 	if err != nil || res.Answer == nil || res.Answer.Text != "pong" {
 		t.Fatalf("%+v %v", res, err)
 	}
 	f = &fakeRemote{err: errors.New("exit status 1")}
-	if _, err := natscli.Run(context.Background(), f.run, "alpha", natscli.Command{Name: "request", To: "beta", Text: "ping"}, io.Discard, nil); err == nil {
+	if _, err := runCmd(context.Background(), f.run, "alpha", driving.NATSCommand{Name: "request", To: "beta", Text: "ping"}, io.Discard, nil); err == nil {
 		t.Error("an error of the machine was lost")
 	}
 	f = &fakeRemote{out: "this is not an event\n"}
-	if _, err := natscli.Run(context.Background(), f.run, "alpha", natscli.Command{Name: "send", To: "beta", Text: "x"}, io.Discard, nil); err == nil {
+	if _, err := runCmd(context.Background(), f.run, "alpha", driving.NATSCommand{Name: "send", To: "beta", Text: "x"}, io.Discard, nil); err == nil {
 		t.Error("output that is not an event was accepted")
 	}
 }
@@ -193,7 +195,7 @@ func TestChooseAccess(t *testing.T) {
 	ms := []string{"alpha", "beta", "gamma"}
 	all := func(string) bool { return true }
 	got := func(from, to string, r func(string) bool) string {
-		m, err := natscli.ChooseAccess(ms, from, to, r)
+		m, err := natscli.Service{}.ChooseAccess(ms, from, to, r)
 		if err != nil {
 			return "error"
 		}
@@ -214,4 +216,8 @@ func TestChooseAccess(t *testing.T) {
 			t.Errorf("%s: %s, want %s", c.name, g, c.want)
 		}
 	}
+}
+
+func runCmd(ctx context.Context, remote driving.NATSRemote, machine string, c driving.NATSCommand, stderr io.Writer, show func(model.NATSLine)) (driving.NATSResult, error) {
+	return natscli.Service{}.Run(ctx, remote, machine, c, stderr, show)
 }

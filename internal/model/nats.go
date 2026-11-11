@@ -200,3 +200,20 @@ type Group struct {
 	File     string
 	Machines []string
 }
+
+// NATSLine is one line of the output of the subcommands of viper-nats-mcp (watch, send, broadcast,
+// request): one JSON object per event.
+type NATSLine struct {
+	Event string `json:"event"`           // ready, message, sent, answer
+	Me    string `json:"me,omitempty"`    // ready: this machine
+	Group string `json:"group,omitempty"` // ready
+	From  string `json:"from,omitempty"`  // message, answer: the sender, as the subject proves it
+	Via   string `json:"via,omitempty"`   // message: out, pub or presence
+	Topic string `json:"topic,omitempty"` // message via pub
+	Type  string `json:"type,omitempty"`  // message: the kind of the envelope (msg, req, res, presence)
+	ID    string `json:"id,omitempty"`
+	Re    string `json:"re,omitempty"`
+	State string `json:"state,omitempty"` // presence
+	Query bool   `json:"query,omitempty"` // presence
+	Text  string `json:"text,omitempty"`  // always cleaned
+}

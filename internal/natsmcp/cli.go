@@ -12,6 +12,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/pt9912/hetzner-viper/internal/model"
 )
 
 // The subcommands of viper-nats-mcp that viper runs over ssh: watch, send, broadcast and request.
@@ -20,20 +22,7 @@ import (
 // where the text of a message can look like a line of its own. The text of a message comes from stdin.
 
 // Line is one line of the output of a subcommand.
-type Line struct {
-	Event string `json:"event"`           // ready, message, sent, answer
-	Me    string `json:"me,omitempty"`    // ready: this machine
-	Group string `json:"group,omitempty"` // ready
-	From  string `json:"from,omitempty"`  // message, answer: the sender, as the subject proves it
-	Via   string `json:"via,omitempty"`   // message: out, pub or presence
-	Topic string `json:"topic,omitempty"` // message via pub
-	Type  string `json:"type,omitempty"`  // message: the kind of the envelope (msg, req, res, presence)
-	ID    string `json:"id,omitempty"`
-	Re    string `json:"re,omitempty"`
-	State string `json:"state,omitempty"` // presence
-	Query bool   `json:"query,omitempty"` // presence
-	Text  string `json:"text,omitempty"`  // always cleaned (Clean)
-}
+type Line = model.NATSLine
 
 // IsCLICommand tells whether the first argument names a subcommand: watch, send, broadcast or request.
 func IsCLICommand(name string) bool {
@@ -142,9 +131,10 @@ func readText(in io.Reader, limit int) (string, error) {
 	return string(b), nil
 }
 
-func writeLine(w io.Writer, l Line) {
+func writeLine(w io.Writer, l Line) error {
 	b, _ := json.Marshal(l) // strings and booleans only
-	fmt.Fprintf(w, "%s\n", b)
+	_, err := fmt.Fprintf(w, "%s\n", b)
+	return err
 }
 
 func runCLI(ctx context.Context, cfg Config, name string, a cliArgs, text string, stdout, stderr io.Writer) error {
@@ -164,12 +154,12 @@ func runCLI(ctx context.Context, cfg Config, name string, a cliArgs, text string
 	case "request":
 		var e Envelope
 		if e, err = s.Ask(ctx, a.to, text, a.timeout); err == nil {
-			writeLine(stdout, Line{Event: "answer", From: a.to, Re: e.Re, Text: Clean(e.Text)})
+			_ = writeLine(stdout, Line{Event: "answer", From: a.to, Re: e.Re, Text: Clean(e.Text)})
 		}
 		return s.settle(err)
 	}
 	if err == nil {
-		writeLine(stdout, Line{Event: "sent"})
+		_ = writeLine(stdout, Line{Event: "sent"})
 	}
 	return s.settle(err)
 }
@@ -202,10 +192,15 @@ func watch(ctx context.Context, cfg Config, a cliArgs, stdout, stderr io.Writer)
 		ctx, cancel = context.WithTimeout(ctx, a.forTime)
 		defer cancel()
 	}
+	// whoever reads the lines is gone (the ssh connection broke): stop, so the program does not stay on the machine
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	out := &lockedLines{w: stdout}
 	tap := func(m Seen) {
-		out.write(Line{Event: "message", From: m.In.From, Via: m.In.Kind, Topic: m.In.Arg, Type: m.E.Kind, ID: m.E.ID,
-			Re: m.E.Re, State: m.E.State, Query: m.E.Query, Text: Clean(m.E.Text)})
+		if out.write(Line{Event: "message", From: m.In.From, Via: m.In.Kind, Topic: m.In.Arg, Type: m.E.Kind, ID: m.E.ID,
+			Re: m.E.Re, State: m.E.State, Query: m.E.Query, Text: Clean(m.E.Text)}) != nil {
+			cancel()
+		}
 	}
 	s, err := connectOnce(ctx, cfg, stderr, tap)
 	if err != nil {
@@ -217,7 +212,9 @@ func watch(ctx context.Context, cfg Config, a cliArgs, stdout, stderr io.Writer)
 			return err
 		}
 	}
-	out.write(Line{Event: "ready", Me: cfg.Names.Me, Group: cfg.Names.Group})
+	if out.write(Line{Event: "ready", Me: cfg.Names.Me, Group: cfg.Names.Group}) != nil {
+		return nil
+	}
 	<-ctx.Done()
 	return nil
 }
@@ -235,10 +232,10 @@ type lockedLines struct {
 	w  io.Writer
 }
 
-func (l *lockedLines) write(x Line) {
+func (l *lockedLines) write(x Line) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	writeLine(l.w, x)
+	return writeLine(l.w, x)
 }
 
 type lockedWriter struct {
