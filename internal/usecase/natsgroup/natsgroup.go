@@ -25,6 +25,8 @@ var (
 	readScript string
 	//go:embed scripts/natsconfig.sh
 	configScript string
+	//go:embed scripts/natscert.sh
+	certScript string
 )
 
 // ErrNoChange is returned by the change function of Update when there is nothing to write.
@@ -194,4 +196,21 @@ func RandomJitter(limit time.Duration) time.Duration {
 		return 0
 	}
 	return time.Duration(rand.Int64N(int64(limit))) //nolint:gosec // only spreads out retries
+}
+
+// Registry reads the list of the registered machines and the address of the server from the machine; ok
+// is false if it is not the server of a group (it has no configuration).
+func (o Ops) Registry(ctx context.Context, server Target) (clients []natsserver.Client, end natsserver.Endpoint, ok bool, err error) {
+	out, err := o.On(ctx, server, true, "", readScript, natsserver.Dir)
+	if err != nil {
+		return nil, natsserver.Endpoint{}, false, err
+	}
+	_, conf, _ := strings.Cut(out, "\n")
+	end, ok = natsserver.ParseEndpoint(conf)
+	return natsserver.ParseClients(conf), end, ok, nil
+}
+
+// Certificate reads the certificate of the server from the machine.
+func (o Ops) Certificate(ctx context.Context, server Target) (string, error) {
+	return o.On(ctx, server, true, "", certScript, natsserver.Dir)
 }

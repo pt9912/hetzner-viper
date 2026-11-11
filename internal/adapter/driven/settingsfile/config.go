@@ -165,7 +165,17 @@ func applyNATS(c *model.Machine, home string) error {
 	if err != nil {
 		return err
 	}
-	c.NATS = model.NATSConfig{Enabled: true, Group: group, Port: port, MCPAutoAllow: model.AutoAllowOff}
+	operator := model.DefaultNATSOperator
+	if v := strings.TrimSpace(c.Get("NATS_OPERATOR_NAME")); v != "" {
+		operator = v
+	}
+	if err := model.CheckNATSName("NATS_OPERATOR_NAME", operator); err != nil {
+		return err
+	}
+	if operator == c.Name {
+		return fmt.Errorf("Machine name %q is the name of the operator of the group (NATS_OPERATOR_NAME): use another machine name or another operator name", c.Name)
+	}
+	c.NATS = model.NATSConfig{Enabled: true, Group: group, Port: port, Operator: operator, MCPAutoAllow: model.AutoAllowOff}
 	return applyNATSMCP(c, home)
 }
 

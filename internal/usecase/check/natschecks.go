@@ -356,7 +356,7 @@ func natsMCPPushMembers(r *report, c *model.Machine, members []model.GroupMember
 		in[strings.TrimPrefix(m.Server.Name, c.ServerPrefix+"-")] = true
 	}
 	for _, p := range c.NATS.MCPPushFrom {
-		if !in[p] {
+		if !in[p] && p != c.NATS.Operator {
 			r.warn("NATS_MCP_PUSH_FROM names %s, which is no machine of the group %s", p, c.NATS.Group)
 		}
 	}

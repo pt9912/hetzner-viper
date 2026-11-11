@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strings"
 
@@ -47,6 +48,10 @@ func parseNatsArgs(o *options, stdin io.Reader) (natsArgs, error) {
 			return natsArgs{}, err
 		}
 		c.Text = text
+	case "init", "revoke":
+		if len(rest) > 0 {
+			return natsArgs{}, fmt.Errorf("viper nats %s takes no text: %q\n%s", sub, rest[0], usage)
+		}
 	case "peers", "listen":
 		if len(rest) > 0 {
 			return natsArgs{}, fmt.Errorf("viper nats %s takes no text: %q\n%s", sub, rest[0], usage)
@@ -65,6 +70,8 @@ func checkNatsOptions(o *options, sub string) error {
 		"broadcast": {"topic"},
 		"peers":     {"timeout", "query"},
 		"listen":    {"topic"},
+		"init":      {},
+		"revoke":    {},
 	}[sub]
 	given := map[string]bool{"to": o.to != "", "topic": o.topic != "", "timeout": o.timeout != 0, "query": o.query}
 	for opt, set := range given {
@@ -121,33 +128,47 @@ func runNats(ctx context.Context, o *options, env settings.Env, in io.Reader, st
 	if err != nil {
 		return err
 	}
-	o.group = args.group
-	g, err := groupMachines(o, env)
+	switch args.cmd.Name {
+	case "init":
+		return runNatsInit(ctx, o, env, args.group, stdout)
+	case "revoke":
+		return runNatsRevoke(ctx, o, env, args.group, stdout)
+	}
+	g, err := loadNatsGroup(o, env, args.group)
 	if err != nil {
 		return err
 	}
-	ms := map[string]natsMachine{}
-	for _, name := range g.Machines {
-		c, err := o.host().Services.Settings.Load(settingsDir(o), name, env, false)
-		if err != nil {
-			return fmt.Errorf("%s: %w", name, err)
-		}
-		ms[name] = natsMachine{name, c}
-	}
-	sender, err := natsSender(o, g.Machines, ms, args.cmd.To)
-	if err != nil {
-		return err
-	}
-	if args.cmd.To != "" && ms[args.cmd.To].cfg == nil {
+	if args.cmd.To != "" && g.ms[args.cmd.To].cfg == nil {
 		return fmt.Errorf("%s is not a machine of the group %s", args.cmd.To, args.group)
 	}
-	if err := natsPushCheck(o, args.cmd, sender, g.Machines, ms, stderr); err != nil {
+	ctx, stop := notifyContext(ctx)
+	defer stop()
+	if o.from == g.operator || (o.from == "" && exists(g.keyFile())) {
+		return runNatsAsOperator(ctx, o, g, args.cmd, stdout, stderr)
+	}
+	sender, err := natsSender(o, g.order, g.ms, args.cmd.To)
+	if err != nil {
+		return err
+	}
+	if err := natsPushCheck(o, args.cmd, sender, g.order, g.ms, stderr); err != nil {
 		return err
 	}
 	fmt.Fprintf(stderr, "Sender: %s (a machine of the group %s; the others see it as the sender)\n", sender, args.group)
-	ctx, stop := notifyContext(ctx)
-	defer stop()
-	return natsRun(ctx, o, args.cmd, ms[sender], stdout, stderr)
+	return natsRun(ctx, o, args.cmd, sender, sshRemote(o, g.ms[sender]), stdout, stderr)
+}
+
+// runNatsAsOperator speaks under the name of the operator, from this computer.
+func runNatsAsOperator(ctx context.Context, o *options, g *natsGroup, c driving.NATSCommand, stdout, stderr io.Writer) error {
+	if _, err := os.Stat(g.keyFile()); err != nil {
+		return fmt.Errorf("the operator %s has no key here (%s): run viper nats init %s", g.operator, g.keyFile(), g.name)
+	}
+	sess, err := openOperator(ctx, o, g)
+	if err != nil {
+		return err
+	}
+	defer sess.close()
+	fmt.Fprintf(stderr, "Sender: %s (the operator of the group %s, from this computer)\n", g.operator, g.name)
+	return natsRun(ctx, o, c, g.operator, sess.remote, stdout, stderr)
 }
 
 // natsSender is the machine that speaks: --from, else the first usable one that is not the receiver.
@@ -212,7 +233,7 @@ func sshRemote(o *options, m natsMachine) driving.NATSRemote {
 	}
 }
 
-func natsRun(ctx context.Context, o *options, c driving.NATSCommand, m natsMachine, stdout, stderr io.Writer) error {
+func natsRun(ctx context.Context, o *options, c driving.NATSCommand, sender string, remote driving.NATSRemote, stdout, stderr io.Writer) error {
 	show := func(e model.NATSLine) {
 		if o.asJSON {
 			writeJSONLine(stdout, e)
@@ -220,7 +241,7 @@ func natsRun(ctx context.Context, o *options, c driving.NATSCommand, m natsMachi
 			fmt.Fprintln(stdout, natsLine(e))
 		}
 	}
-	res, err := o.host().Services.NATS.Run(ctx, sshRemote(o, m), m.name, c, stderr, show)
+	res, err := o.host().Services.NATS.Run(ctx, remote, sender, c, stderr, show)
 	if err != nil {
 		return exitOrError(err)
 	}

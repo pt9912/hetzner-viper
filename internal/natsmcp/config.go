@@ -14,12 +14,15 @@ import (
 // machine of a group) and mcp.env (the settings of this server). The files are read as plain
 // KEY=VALUE lines, never run by a shell. The seed stays in its file.
 type Config struct {
-	URL      string
-	CAFile   string
-	SeedFile string
-	Names    Names
-	PushFrom map[string]bool
-	Topics   []string // subscribed at the start and not to be unsubscribed (VIPER_NATS_MCP_TOPICS)
+	URL    string
+	CAFile string
+	// TLSServerName is the name the certificate of the server is checked for when it is not the host of URL:
+	// viper nats reaches the server through an ssh tunnel on 127.0.0.1, and the certificate is for its private IP.
+	TLSServerName string
+	SeedFile      string
+	Names         Names
+	PushFrom      map[string]bool
+	Topics        []string // subscribed at the start and not to be unsubscribed (VIPER_NATS_MCP_TOPICS)
 
 	MaxText     int // the longest text of a message in bytes
 	PushPerMin  int // messages per sender and minute that are pushed; more go only to the inbox

@@ -245,7 +245,7 @@ func (r *runner) natsIdentity(ctx context.Context) (string, error) {
 func (r *runner) natsRegister(ctx context.Context, server natsgroup.Target, serverIP, pub string) error {
 	c := r.c
 	add := func(l []natsserver.Client) ([]natsserver.Client, error) {
-		return natsserver.WithClient(l, natsserver.Client{Machine: c.Name, PublicKey: pub}), nil
+		return natsserver.WithEntry(l, natsserver.Client{Machine: c.Name, PublicKey: pub})
 	}
 	return r.ops().Update(ctx, server, c.NATS.Group, natsserver.Endpoint{Host: serverIP, Port: c.NATS.Port}, add)
 }

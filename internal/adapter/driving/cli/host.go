@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/system"
 	"io"
 
@@ -18,7 +19,9 @@ type Services struct {
 	// Groups runs a command for the machines of a group at the same time (--group).
 	Groups driving.GroupRunner
 	// NATS speaks to a NATS group as one of its machines (viper nats).
-	NATS      driving.NATSCLI
+	NATS driving.NATSCLI
+	// NATSOp registers the operator of a NATS group at its server (viper nats init).
+	NATSOp    driving.NATSOperator
 	Up        func(c *model.Machine, o driving.UpOptions) driving.Up
 	Down      func(c *model.Machine, o driving.DownOptions) driving.Down
 	Check     func(c *model.Machine) driving.Check
@@ -47,6 +50,10 @@ type Host struct {
 	// StreamTool runs a program with its output going to the writers as it comes; it ends with ctx
 	// (the group commands use it; without it they fall back to OutputTool).
 	StreamTool system.Streamer
+	// OpenTunnel makes host:port of the NATS server reachable on this computer through ssh to the machine
+	// and returns the local address and a function that closes it (viper nats as the operator). nil: the
+	// default over ssh -L with StreamTool.
+	OpenTunnel func(ctx context.Context, via driving.NATSTarget, host string, port int) (addr string, stop func(), err error)
 	LookPath   func(file string) (string, error)
 	// Env is the home directory and the environment.
 	Env func() (settings.Env, error)

@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.90  
+Version: 1.91  
 Software-Version: v0.17.0  
 Stand: 11.11.2026  
 
@@ -572,7 +572,7 @@ viper nats listen    entwicklung [--topic news]           # bis Strg-C
 echo "langer Text" | viper nats send entwicklung - --to beta   # Text von der Standardeingabe
 ```
 
-* **Absender:** Ihre Nachricht kommt von einer **Maschine der Gruppe** an, mit deren Schlüssel und Rechten; `viper` nimmt ohne `--from` die erste Maschine der Gruppe, die startklar ist und nicht der Empfänger ist. Mit `--from <maschine>` wählen Sie sie selbst. Die erste Ausgabezeile nennt sie („Sender: alpha …“).
+* **Absender:** Ohne eigenen Schlüssel (siehe „Als Betreiber senden“ unten) kommt Ihre Nachricht von einer **Maschine der Gruppe** an, mit deren Schlüssel und Rechten; `viper` nimmt ohne `--from` die erste Maschine der Gruppe, die startklar ist und nicht der Empfänger ist. Mit `--from <maschine>` wählen Sie sie selbst. Die erste Ausgabezeile nennt den Absender („Sender: alpha …“).
 * `--json` gibt je Ereignis eine JSON-Zeile aus.
 * `--timeout` bei `request` (Standard 30 Sekunden, 1 bis 120) und bei `peers` (wie lange zugehört wird).
 
@@ -582,10 +582,13 @@ echo "langer Text" | viper nats send entwicklung - --to beta   # Text von der St
 
 #### Hinweise und Warnungen
 
-* **Der Empfänger sieht die Maschine als Absender, nicht Sie.** Der Absender folgt aus dem Schlüssel; einen eigenen Absender gibt es in dieser Stufe nicht. Steht die Absender-Maschine in `NATS_MCP_PUSH_FROM` einer Empfänger-Maschine, schiebt deren MCP-Server Ihren Text als Nachricht dieser Maschine in die Sitzung des Agenten. `viper` verweigert das ohne `--yes` und nennt die betroffenen Rechner. Wählen Sie dann eine andere Maschine mit `--from` oder bestätigen Sie mit `--yes`.
+* **Als Maschine gesendet, sieht der Empfänger die Maschine als Absender, nicht Sie.** Der Absender folgt aus dem Schlüssel; mit einem eigenen Schlüssel (`viper nats init`) sendet `viper` dagegen als „operator“. Steht die Absender-Maschine in `NATS_MCP_PUSH_FROM` einer Empfänger-Maschine, schiebt deren MCP-Server Ihren Text als Nachricht dieser Maschine in die Sitzung des Agenten. `viper` verweigert das ohne `--yes` und nennt die betroffenen Rechner. Wählen Sie dann eine andere Maschine mit `--from` oder bestätigen Sie mit `--yes`.
 * **Der Text ist nicht vertrauenswürdig und nichts ist privat.** Antworten und mitgelesene Nachrichten stammen von Agenten und können Anweisungen enthalten; `viper` entfernt Steuerzeichen, mehr nicht. Senden Sie nichts Vertrauliches.
 * **`peers` ohne `--query`** hört 35 Sekunden, weil sich jede Maschine nur alle 30 Sekunden meldet. Mit `--query` bitten Sie alle um eine Meldung (8 Sekunden); dann gilt die gewählte Maschine bei den anderen bis zu 90 Sekunden als anwesend, auch wenn dort kein Agent läuft.
 * **Größe:** Ein Text darf höchstens 16 KiB haben, und die kodierte Nachricht höchstens 32 KiB (Steuerzeichen werden länger); sonst meldet `viper` einen Fehler und sendet nichts.
+* **Als Betreiber senden (`viper nats init <gruppe>`).** Der Betreiber ist ein eigener Eintrag am NATS-Server mit dem Namen `operator` (einstellbar mit `NATS_OPERATOR_NAME` in der Gruppen- oder Rechnerdatei). `viper nats init entwicklung` erzeugt einen Schlüssel **auf Ihrem Rechner** (`~/.local/state/hetzner-claude/nats/<gruppe>/operator.nk`, nur für Sie lesbar) und trägt den öffentlichen Teil am Server ein (der Server liest die Konfiguration neu; die Rechner der Gruppe bleiben eingetragen). Danach sendet `viper nats` ohne `--from` als `operator`: es baut einen SSH-Tunnel zum Server auf (über die Servermaschine) und verbindet sich von Ihrem Rechner aus; das Zertifikat holt es bei jedem Aufruf frisch vom Server. Ein Rechner der Gruppe wird nicht mehr als Absender gebraucht. `--from <maschine>` sendet weiter als diese Maschine. Der Empfänger sieht `operator` als Absender. `viper nats revoke <gruppe>` trägt den Betreiber wieder aus und löscht den Schlüssel.
+* **Was der Betreiber darf:** senden nur in seinem eigenen Bereich `viper.<gruppe>.operator.>` und alles in der Gruppe mitlesen. Die Anfragebereiche der anderen Rechner (`…req.>`) und den Posteingang `_INBOX` hat er nicht; Antworten auf seine Anfragen kommen als normale Nachrichten an `viper.<gruppe>.<antwortender>.out.operator`. Wer den Schlüssel hat, kann als `operator` senden und alles in der Gruppe lesen (dieselbe Vertraulichkeit wie bei jedem Rechner). **Kein Rechner der Gruppe darf `operator` heißen** (und umgekehrt): `viper up` verweigert ihn, und ein Eintrag überschreibt nie den Schlüssel des anderen Typs.
+* **Agenten und der Betreiber:** Für die Agenten ist `operator` ein weiterer Absender, der Anweisungen schickt. `NATS_MCP_PUSH_FROM` darf `operator` nennen, dann schiebt der MCP-Server die Nachrichten des Betreibers von selbst in die Sitzung; Standard ist die leere Liste. Das ist Ihre Entscheidung über das Vertrauen, `viper` warnt dabei nicht.
 * **`listen`** beendet das Programm auf der Maschine, wenn die Verbindung abbricht; es kann bis zur nächsten Nachricht der Gruppe (spätestens 30 Sekunden) weiterlaufen.
 
 ### Ein privates Repository per SSH klonen
@@ -1318,3 +1321,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.88 | nach v0.17.0 | Neu: `viper nats` (`peers`, `listen`, `send`, `broadcast`, `request`) spricht eine NATS-Gruppe von Ihrem Rechner aus an, als eine Maschine der Gruppe; Berichtigung des Beispiels für Antworten (`…out.<anfragender>`). |
 | 1.89 | nach v0.17.0 | NATS-Gruppen auch bei AWS (gegen nachgebildete Schnittstellen getestet, echter Lauf offen). |
 | 1.90 | nach v0.17.0 | NATS-Gruppen auch bei Google Cloud (gegen nachgebildete Schnittstellen getestet, echter Lauf offen). |
+| 1.91 | nach v0.17.0 | `viper nats init`/`revoke`: eigener Absender „operator“ mit eigenem Schlüssel auf Ihrem Rechner, SSH-Tunnel zum NATS-Server; `NATS_OPERATOR_NAME`. |

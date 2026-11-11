@@ -2,6 +2,8 @@ package natsmcp
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -90,7 +92,11 @@ func (s *Service) Connect(ctx context.Context) error {
 		}),
 	}
 	if s.cfg.CAFile != "" {
-		opts = append(opts, nats.RootCAs(s.cfg.CAFile))
+		o, err := tlsOption(s.cfg)
+		if err != nil {
+			return err
+		}
+		opts = append(opts, o)
 	}
 	nc, err := nats.Connect(s.cfg.URL, opts...)
 	if err != nil {
@@ -103,19 +109,8 @@ func (s *Service) Connect(ctx context.Context) error {
 	if _, err := nc.Subscribe(s.cfg.Names.PresenceSub(), s.onPresence); err != nil {
 		return err
 	}
-	if s.tap != nil {
-		if _, err := nc.Subscribe(s.cfg.Names.PubSub(">"), s.onTopic); err != nil {
-			return err
-		}
-	}
-	for _, t := range s.cfg.Topics {
-		sub, err := nc.Subscribe(s.cfg.Names.PubSub(t), s.onTopic)
-		if err != nil {
-			return err
-		}
-		s.mu.Lock()
-		s.topics[t] = sub
-		s.mu.Unlock()
+	if err := s.subscribeTopics(nc); err != nil {
+		return err
 	}
 	// when this returns, the server has the subscriptions: a message sent at once by another machine is not
 	// missed (if the server cannot be reached yet, this gives up after a moment and the retries go on)
@@ -345,4 +340,39 @@ func (s *Service) seen(in Inbound, e Envelope) {
 	if s.tap != nil {
 		s.tap(Seen{In: in, E: e})
 	}
+}
+
+// tlsOption makes the server's certificate the only one that is trusted, for the name of the server.
+func tlsOption(cfg Config) (nats.Option, error) {
+	if cfg.TLSServerName == "" {
+		return nats.RootCAs(cfg.CAFile), nil
+	}
+	pem, err := os.ReadFile(cfg.CAFile)
+	if err != nil {
+		return nil, fmt.Errorf("reading the certificate: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pem) {
+		return nil, fmt.Errorf("%s holds no certificate", cfg.CAFile)
+	}
+	return nats.Secure(&tls.Config{RootCAs: pool, ServerName: cfg.TLSServerName, MinVersion: tls.VersionTLS12}), nil
+}
+
+// subscribeTopics subscribes to the topics of the configuration and, for the tap, to all of them.
+func (s *Service) subscribeTopics(nc *nats.Conn) error {
+	if s.tap != nil {
+		if _, err := nc.Subscribe(s.cfg.Names.PubSub(">"), s.onTopic); err != nil {
+			return err
+		}
+	}
+	for _, t := range s.cfg.Topics {
+		sub, err := nc.Subscribe(s.cfg.Names.PubSub(t), s.onTopic)
+		if err != nil {
+			return err
+		}
+		s.mu.Lock()
+		s.topics[t] = sub
+		s.mu.Unlock()
+	}
+	return nil
 }

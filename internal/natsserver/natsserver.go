@@ -88,8 +88,11 @@ const (
 
 // Client is a machine that may use the server: its public NKey.
 type Client struct {
-	Machine   string
+	Machine   string // the name; for an operator the name it sends under
 	PublicKey string // starts with "U"
+	// Operator marks the entry of the person who runs viper (viper nats init), not of a machine. It gets
+	// the rights of OperatorPermissions and is kept when machines join or leave.
+	Operator bool
 }
 
 // Config is the configuration of the server.
@@ -123,6 +126,14 @@ func Permissions(group, machine string) (publish, subscribe []string) {
 	return publish, subscribe
 }
 
+// OperatorPermissions are the subjects the operator may use: it publishes only to its own subtree and
+// listens to the group. Unlike a machine it gets no right to the request subjects of the others (the one
+// subtree where the subject does not prove the sender) and no inbox: the answer to a request is a plain
+// message to viper.<g>.<answerer>.out.<operator>, which is inside the group subtree.
+func OperatorPermissions(group, name string) (publish, subscribe []string) {
+	return []string{fmt.Sprintf("viper.%s.%s.>", group, name)}, []string{fmt.Sprintf("viper.%s.>", group)}
+}
+
 func quoteList(l []string) string {
 	q := make([]string, len(l))
 	for i, s := range l {
@@ -144,7 +155,7 @@ func checkedClients(group string, in []Client) ([]Client, error) {
 			return nil, err
 		}
 		if seen[cl.Machine] {
-			return nil, fmt.Errorf("the machine %s is registered twice", cl.Machine)
+			return nil, fmt.Errorf("the name %s is registered twice (a machine and the operator cannot share a name)", cl.Machine)
 		}
 		seen[cl.Machine] = true
 		if !validUserKey(cl.PublicKey) {
@@ -164,6 +175,9 @@ func authorization(group string, clients []Client) string {
 	b.WriteString("authorization {\n  timeout: 5\n  users = [\n")
 	for _, cl := range clients {
 		pub, sub := Permissions(group, cl.Machine)
+		if cl.Operator {
+			pub, sub = OperatorPermissions(group, cl.Machine)
+		}
 		fmt.Fprintf(&b, "    {\n      # %s\n      nkey: %s\n      permissions: {\n        publish: { allow: [%s] }\n        subscribe: { allow: [%s] }\n      }\n    }\n",
 			cl.Machine, cl.PublicKey, quoteList(pub), quoteList(sub))
 	}
@@ -200,7 +214,11 @@ func (c Config) Render() (string, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# written by viper; changes are overwritten\n")
 	for _, cl := range clients {
-		fmt.Fprintf(&b, "%s%s %s\n", registryPrefix, cl.Machine, cl.PublicKey) // read back by ParseClients
+		prefix := registryPrefix
+		if cl.Operator {
+			prefix = operatorPrefix
+		}
+		fmt.Fprintf(&b, "%s%s %s\n", prefix, cl.Machine, cl.PublicKey) // read back by ParseClients
 	}
 	fmt.Fprintf(&b, "server_name: \"viper-%s\"\nhost: \"%s\"\nport: %d\n\n", c.Group, c.Host, c.Port)
 	fmt.Fprintf(&b, "tls {\n  cert_file: \"%s\"\n  key_file: \"%s\"\n  min_version: \"1.2\"\n  timeout: 5\n}\n\n", CertFile, KeyFile)
@@ -255,6 +273,16 @@ type Identity struct {
 	PublicKey string // starts with "U"
 }
 
+// PublicKeyOf is the public key of a seed.
+func PublicKeyOf(seed string) (string, error) {
+	kp, err := nkeys.FromSeed([]byte(strings.TrimSpace(seed)))
+	if err != nil {
+		return "", fmt.Errorf("not an NKey seed: %w", err)
+	}
+	defer kp.Wipe()
+	return kp.PublicKey()
+}
+
 // NewIdentity creates a new identity in memory.
 func NewIdentity() (Identity, error) {
 	kp, err := nkeys.CreateUser()
@@ -273,7 +301,10 @@ func NewIdentity() (Identity, error) {
 	return Identity{Seed: string(seed), PublicKey: pub}, nil
 }
 
-const registryPrefix = "# viper-client "
+const (
+	registryPrefix = "# viper-client "
+	operatorPrefix = "# viper-operator "
+)
 
 // ParseClients reads the machines out of a configuration Render wrote: the lines at its top that
 // say which machine has which key. Lines it does not know are ignored.
@@ -281,14 +312,32 @@ func ParseClients(conf string) []Client {
 	var out []Client
 	for _, l := range strings.Split(conf, "\n") {
 		rest, ok := strings.CutPrefix(l, registryPrefix)
+		operator := false
 		if !ok {
-			continue
+			if rest, ok = strings.CutPrefix(l, operatorPrefix); !ok {
+				continue
+			}
+			operator = true
 		}
 		if f := strings.Fields(rest); len(f) == 2 {
-			out = append(out, Client{Machine: f[0], PublicKey: f[1]})
+			out = append(out, Client{Machine: f[0], PublicKey: f[1], Operator: operator})
 		}
 	}
 	return out
+}
+
+// ErrNameTaken is returned by WithEntry for a name that belongs to an entry of the other kind.
+var ErrNameTaken = errors.New("the name belongs to another entry (a machine and the operator cannot share a name)")
+
+// WithEntry is WithClient that refuses to replace the entry of the other kind: a machine does not take
+// the key of the operator and the operator not that of a machine.
+func WithEntry(clients []Client, c Client) ([]Client, error) {
+	for _, o := range clients {
+		if o.Machine == c.Machine && o.Operator != c.Operator {
+			return nil, fmt.Errorf("%s: %w", c.Machine, ErrNameTaken)
+		}
+	}
+	return WithClient(clients, c), nil
 }
 
 // WithClient returns the clients with this one added, or its key replaced if the machine is there.
@@ -302,11 +351,22 @@ func WithClient(clients []Client, c Client) []Client {
 	return append(out, c)
 }
 
-// WithoutClient returns the clients without the machine.
+// WithoutOperator returns the clients without the operator of that name (a machine of that name stays).
+func WithoutOperator(clients []Client, name string) []Client {
+	out := make([]Client, 0, len(clients))
+	for _, o := range clients {
+		if o.Machine != name || !o.Operator {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// WithoutClient returns the clients without the machine (an operator of that name stays).
 func WithoutClient(clients []Client, machine string) []Client {
 	out := make([]Client, 0, len(clients))
 	for _, o := range clients {
-		if o.Machine != machine {
+		if o.Machine != machine || o.Operator {
 			out = append(out, o)
 		}
 	}

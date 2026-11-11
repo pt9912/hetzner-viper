@@ -7,6 +7,8 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/mcpbin"
 	"github.com/pt9912/hetzner-viper/internal/usecase/groupops"
 	"github.com/pt9912/hetzner-viper/internal/usecase/natscli"
+	"github.com/pt9912/hetzner-viper/internal/usecase/natsgroup"
+	"github.com/pt9912/hetzner-viper/internal/usecase/natsop"
 	"io"
 	"os"
 	"path/filepath"
@@ -63,6 +65,7 @@ func Run(version string, args []string, stdin io.Reader, stdout, stderr io.Write
 			Settings:  settingsfile.Files{},
 			Groups:    groupops.Runner{},
 			NATS:      natscli.Service{},
+			NATSOp:    natsop.Service{Ops: natsgroup.Ops{Run: system.Run, SSH: sshconfig.Files{}, Out: io.Discard, Jitter: natsgroup.RandomJitter}},
 			MCPBinary: mcpbin.Binary,
 			Up:        func(c *model.Machine, o driving.UpOptions) driving.Up { return Up(c, o) },
 			Down:      func(c *model.Machine, o driving.DownOptions) driving.Down { return Down(c, o) },

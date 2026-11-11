@@ -427,7 +427,7 @@ func TestLoadReadsNATSOnlyWhenEnabled(t *testing.T) {
 		t.Fatalf("NATS off: %+v %v", c.NATS, err)
 	}
 	c, err = settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nNATS_ENABLED=true\nNATS_GROUP=entwicklung\n", ""), "web", env, false)
-	if err != nil || !reflect.DeepEqual(c.NATS, model.NATSConfig{Enabled: true, Group: "entwicklung", Port: 4222, MCPAutoAllow: "off"}) {
+	if err != nil || !reflect.DeepEqual(c.NATS, model.NATSConfig{Enabled: true, Group: "entwicklung", Port: 4222, Operator: "operator", MCPAutoAllow: "off"}) {
 		t.Fatalf("NATS on: %+v %v", c.NATS, err)
 	}
 	c, err = settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nNATS_ENABLED=1\nNATS_GROUP=g\n", "NATS_PORT=4333\n"), "web", env, false)

@@ -135,6 +135,16 @@ Tests: Unit- und Integrationstests der Befehlszeile (Text über Standardeingabe 
 
 Meilenstein 3 ist damit bis auf den **echten Lauf auf Hetzner** erledigt. Der echte Lauf braucht Server und Kosten und gehört zur Abnahme (Meilenstein 4).
 
+### Ergebnisse Stufe 2 (Stand 11.11.2026)
+
+Umgesetzt: `viper nats init|revoke <gruppe>`, der Betreiber-Eintrag am Server (`natsserver.Client.Operator`, `OperatorPermissions` ohne `req`-Bereiche und ohne `_INBOX`, eigene Registerzeile `# viper-operator`), Schutz des Namens (`WithEntry`, `WithoutClient` lässt den Betreiber stehen, `NATS_OPERATOR_NAME` mit Prüfung gegen den Rechnernamen, `Render` lehnt doppelte Namen ab), das Paket `usecase/natsop` mit dem Port `driving.NATSOperator` (Server finden, eintragen, austragen), der SSH-Tunnel (`ssh -N -L`, `ExitOnForwardFailure`, freier lokaler Port, Host-Hook `OpenTunnel` für Tests) und das Senden aus dem eigenen Prozess (`natsmcp.RunCLI` mit `TLSServerName` = private IP des Servers, Zertifikat bei jedem Aufruf frisch). Die Standardwahl ohne `--from`: Betreiber, wenn der Schlüssel da ist, sonst eine Maschine (§8).
+
+Abweichungen: Die Rechte des Betreibers sind enger als in §5 zuerst beschrieben (keine `req`-Bereiche, kein `_INBOX`; Prüfung Nr. 13). Zum Finden des Servers fragt `viper` die Maschinen der Gruppe der Reihe nach, welche die Konfiguration des Servers hat; es braucht dafür weder Anbieterzugang noch die Cloud-Schnittstelle. `viper check` meldet den Betreiber-Eintrag **nicht**, es nimmt den Namen nur in `NATS_MCP_PUSH_FROM` als gültig an. `down --group` weist nicht auf einen zurückbleibenden lokalen Schlüssel hin.
+
+Tests: Server (Rechte, Register, Namenskonflikte, Erhalt beim Neuschreiben), `natsop` mit einem nachgebildeten Server, die Befehlszeile (Schlüssel einmal erzeugt, mit 0600/0700, `init` ändert bei Fehlern nichts, Name eines Rechners abgelehnt) und ein Test mit einem echten NATS-Server als Bibliothek und den Rechten aus `AuthorizationBlock`: Der Betreiber sendet über `viper nats`, die Maschine sieht `operator` als Absender.
+
+**Nicht geprüft:** der SSH-Tunnel gegen einen echten Server, TLS mit `ServerName` = private IP über den Tunnel (Go prüft bei einer IP die IP-Einträge des Zertifikats *[?]*), das Verhalten bei einem neu angelegten Server (Schlüssel veraltet: der Server kennt ihn nicht, die Meldung wäre dann ein Anmeldefehler), die Rechteprüfung gegen den echten Server.
+
 ## 5 Stufe 2: eigener Absender des Betreibers (`--from operator`)
 
 **Idee:** Der Betreiber bekommt eine **eigene Identität** in der Gruppe: einen NKey, der lokal liegt, und einen Eintrag im NATS-Server mit eigenem Namen. Damit sendet `viper` direkt vom eigenen Rechner, ohne Maschine als Zwischenstation, und der Empfänger sieht den echten Absender.

@@ -27,6 +27,9 @@ const (
 	NATSFailed       NATSState = "failed"
 )
 
+// DefaultNATSOperator is the name of the operator in a NATS group unless NATS_OPERATOR_NAME says otherwise.
+const DefaultNATSOperator = "operator"
+
 // DefaultNATSPort is the port of the NATS server when NATS_PORT is not set.
 const DefaultNATSPort = 4222
 
@@ -53,6 +56,9 @@ type NATSConfig struct {
 	Enabled bool
 	Group   string
 	Port    int
+	// Operator is the name the person who runs viper sends under (NATS_OPERATOR_NAME, default "operator";
+	// viper nats init). No machine of the group may have it.
+	Operator string
 
 	// MCP: install the NATS MCP server (viper-nats-mcp) on the machine and register it with Claude
 	// Code (NATS_MCP). It needs Enabled.
