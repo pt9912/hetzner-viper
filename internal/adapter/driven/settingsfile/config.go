@@ -169,6 +169,26 @@ func applyNATS(c *model.Machine, home string) error {
 	return applyNATSMCP(c, home)
 }
 
+// mcpTopics reads NATS_MCP_TOPICS: names separated by commas, without duplicates, at most model.MaxMCPTopics.
+func mcpTopics(list string) ([]string, error) {
+	var topics []string
+	seen := map[string]bool{}
+	for _, t := range strings.Split(list, ",") {
+		if t = strings.TrimSpace(t); t == "" || seen[t] {
+			continue
+		}
+		if err := model.CheckNATSName("NATS_MCP_TOPICS", t); err != nil {
+			return nil, err
+		}
+		seen[t] = true
+		topics = append(topics, t)
+	}
+	if len(topics) > model.MaxMCPTopics {
+		return nil, fmt.Errorf("NATS_MCP_TOPICS: at most %d topics", model.MaxMCPTopics)
+	}
+	return topics, nil
+}
+
 // applyNATSMCP reads NATS_MCP and its settings. They are looked at only if NATS_MCP is on, like the
 // settings of every other feature that is off.
 func applyNATSMCP(c *model.Machine, home string) error {
@@ -191,19 +211,8 @@ func applyNATSMCP(c *model.Machine, home string) error {
 		seen[m] = true
 		c.NATS.MCPPushFrom = append(c.NATS.MCPPushFrom, m)
 	}
-	seen = map[string]bool{}
-	for _, t := range strings.Split(c.Get("NATS_MCP_TOPICS"), ",") {
-		if t = strings.TrimSpace(t); t == "" || seen[t] {
-			continue
-		}
-		if err := model.CheckNATSName("NATS_MCP_TOPICS", t); err != nil {
-			return err
-		}
-		seen[t] = true
-		c.NATS.MCPTopics = append(c.NATS.MCPTopics, t)
-	}
-	if len(c.NATS.MCPTopics) > model.MaxMCPTopics {
-		return fmt.Errorf("NATS_MCP_TOPICS: at most %d topics", model.MaxMCPTopics)
+	if c.NATS.MCPTopics, err = mcpTopics(c.Get("NATS_MCP_TOPICS")); err != nil {
+		return err
 	}
 	mode := strings.ToLower(strings.TrimSpace(c.Get("NATS_MCP_AUTOALLOW")))
 	switch mode {

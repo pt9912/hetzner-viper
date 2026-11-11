@@ -69,6 +69,12 @@ func setup(t *testing.T, pushFrom map[string][]string) map[string]*machine {
 // setupWith is setup where the machines in quiet connect without saying anything in the group.
 func setupWith(t *testing.T, pushFrom map[string][]string, quiet map[string]bool) map[string]*machine {
 	t.Helper()
+	return setupTopics(t, pushFrom, quiet, nil)
+}
+
+// setupTopics is setupWith where the machines subscribe to default topics (NATS_MCP_TOPICS) at the start.
+func setupTopics(t *testing.T, pushFrom map[string][]string, quiet map[string]bool, topics map[string][]string) map[string]*machine {
+	t.Helper()
 	dir := t.TempDir()
 	var clients []natsserver.Client
 	seedFile := map[string]string{}
@@ -109,7 +115,7 @@ func setupWith(t *testing.T, pushFrom map[string][]string, quiet map[string]bool
 	for _, name := range []string{"a", "b", "c"} {
 		m := &machine{}
 		cfg := natsmcp.Config{URL: srv.ClientURL(), SeedFile: seedFile[name], Names: natsmcp.Names{Group: "g", Me: name}, PushFrom: map[string]bool{},
-			MaxText: natsmcp.DefaultMaxText, PushPerMin: 3, InboxMax: 200, InboxPerMan: 50, Quiet: quiet[name], Topics: defaultTopics[name]}
+			MaxText: natsmcp.DefaultMaxText, PushPerMin: 3, InboxMax: 200, InboxPerMan: 50, Quiet: quiet[name], Topics: topics[name]}
 		for _, f := range pushFrom[name] {
 			cfg.PushFrom[f] = true
 		}
@@ -293,13 +299,9 @@ func TestTopicsReachOnlySubscribers(t *testing.T) {
 	}
 }
 
-// defaultTopics are the topics (NATS_MCP_TOPICS) per machine that setupWith configures; a test sets it.
-var defaultTopics map[string][]string
-
 func TestDefaultTopicsAreSubscribedAtTheStartAndStay(t *testing.T) {
-	defaultTopics = map[string][]string{"b": {"build"}}
-	t.Cleanup(func() { defaultTopics = nil })
-	x := newTrio(t, nil)
+	ms := setupTopics(t, nil, nil, map[string][]string{"b": {"build"}})
+	x := trio{ms["a"], ms["b"], ms["c"]}
 	if _, err := call(t, x.a.svc, "broadcast", map[string]any{"topic": "build", "text": "build done"}); err != nil {
 		t.Fatal(err)
 	}
