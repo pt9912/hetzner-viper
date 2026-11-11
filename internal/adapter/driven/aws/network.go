@@ -13,7 +13,7 @@ import (
 )
 
 // network is where the server goes.
-type network struct{ subnet, vpc, zone string }
+type network struct{ subnet, vpc, zone, cidr string }
 
 // network finds the subnet: AWS_SUBNET_ID, else a default subnet (of the zone, if SERVER_LOCATION
 // names one; of AWS_VPC_ID, if that is set). nil if there is none.
@@ -59,7 +59,7 @@ func (c *Client) network(ctx context.Context) (*network, error) {
 		return str(out.Subnets[i].AvailabilityZone) < str(out.Subnets[j].AvailabilityZone)
 	})
 	s := out.Subnets[0]
-	n := &network{subnet: str(s.SubnetId), vpc: str(s.VpcId), zone: str(s.AvailabilityZone)}
+	n := &network{subnet: str(s.SubnetId), vpc: str(s.VpcId), zone: str(s.AvailabilityZone), cidr: str(s.CidrBlock)}
 	c.mu.Lock()
 	c.net = n
 	c.mu.Unlock()

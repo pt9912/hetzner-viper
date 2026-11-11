@@ -13,6 +13,8 @@ type ProviderInfo struct {
 	// DiskSetting is the setting for the size of the system disk, for a provider that lets it be
 	// chosen apart from the server type ("" if the disk comes with the type).
 	DiskSetting string
+	// NATS is whether the provider can hold NATS groups (it has the capability cloud.NATSProvider).
+	NATS bool
 }
 
 // DefaultProvider is the provider when PROVIDER is not set.
@@ -25,7 +27,7 @@ func ProviderNames() []string { return []string{"aws", "azure", "gcp", "hetzner"
 func LookupProvider(name string) (info ProviderInfo, ok bool) {
 	switch name {
 	case "hetzner":
-		return ProviderInfo{Credentials: []string{"HCLOUD_TOKEN"}, Secrets: []string{"HCLOUD_TOKEN"}, Size: "cpx32", Region: "fsn1", Image: "ubuntu-26.04"}, true
+		return ProviderInfo{Credentials: []string{"HCLOUD_TOKEN"}, Secrets: []string{"HCLOUD_TOKEN"}, Size: "cpx32", Region: "fsn1", Image: "ubuntu-26.04", NATS: true}, true
 	case "azure":
 		// the credentials come from the default Azure credentials (az login, environment, managed identity); the subscription is a setting
 		return ProviderInfo{DiskSetting: "AZURE_ROOT_GB", Credentials: []string{"AZURE_SUBSCRIPTION_ID"}, Secrets: []string{"AZURE_CLIENT_SECRET", "AZURE_CLIENT_CERTIFICATE_PASSWORD", "AZURE_PASSWORD"}, Size: "Standard_D2s_v5", Region: "germanywestcentral", Image: "ubuntu-24.04"}, true
@@ -34,7 +36,18 @@ func LookupProvider(name string) (info ProviderInfo, ok bool) {
 		return ProviderInfo{DiskSetting: "GCP_ROOT_GB", Credentials: []string{"GCP_PROJECT"}, Secrets: []string{"GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_OAUTH_ACCESS_TOKEN"}, Size: "e2-standard-2", Region: "europe-west3-b", Image: "ubuntu-24.04"}, true
 	case "aws":
 		// the credentials come from the AWS credentials chain (aws login, SSO, keys): none is required
-		return ProviderInfo{DiskSetting: "AWS_ROOT_GB", Secrets: []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"}, Size: "t3.large", Region: "eu-central-1", Image: "ubuntu-24.04"}, true
+		return ProviderInfo{DiskSetting: "AWS_ROOT_GB", Secrets: []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"}, Size: "t3.large", Region: "eu-central-1", Image: "ubuntu-24.04", NATS: true}, true
 	}
 	return ProviderInfo{}, false
+}
+
+// NATSProviderNames are the providers that can hold NATS groups, by name.
+func NATSProviderNames() []string {
+	var out []string
+	for _, n := range ProviderNames() {
+		if info, _ := LookupProvider(n); info.NATS {
+			out = append(out, n)
+		}
+	}
+	return out
 }

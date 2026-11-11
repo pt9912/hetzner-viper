@@ -33,7 +33,7 @@ Der Login-Schlüssel muss kein Objekt beim Anbieter sein: `LoginKey.Ref` ist der
 
 ## NATS-Gruppen
 
-Optional (`NATS_ENABLED`), nur Hetzner. Der Plan mit allen Entscheidungen und den Ergebnissen der Tests gegen Hetzner steht in `docs/plan/nats.md`; hier die Bausteine.
+Optional (`NATS_ENABLED`), Hetzner und AWS (die Anbietertabelle `model/provider.go` führt das Feld `NATS`; der Plan für weitere Anbieter ist `docs/plan/nats-anbieter.md`). Bei AWS ist das „private Netzwerk“ eine Security Group `viper-nats-<gruppe>` im VPC des Subnetzes; ihr Anlegen ist die Sperre des ersten Starts. Der Plan mit allen Entscheidungen und den Ergebnissen der Tests gegen Hetzner steht in `docs/plan/nats.md`; hier die Bausteine.
 
 | Baustein | Aufgabe |
 |---|---|

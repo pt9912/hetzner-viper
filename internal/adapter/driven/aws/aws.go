@@ -28,6 +28,9 @@ type Instances interface {
 	TerminateInstances(ctx context.Context, in *ec2.TerminateInstancesInput, opts ...func(*ec2.Options)) (*ec2.TerminateInstancesOutput, error)
 	DescribeInstanceTypes(ctx context.Context, in *ec2.DescribeInstanceTypesInput, opts ...func(*ec2.Options)) (*ec2.DescribeInstanceTypesOutput, error)
 	DescribeImages(ctx context.Context, in *ec2.DescribeImagesInput, opts ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error)
+	// ModifyInstanceAttribute and CreateTags serve NATS groups: the security groups of an instance and its tags.
+	ModifyInstanceAttribute(ctx context.Context, in *ec2.ModifyInstanceAttributeInput, opts ...func(*ec2.Options)) (*ec2.ModifyInstanceAttributeOutput, error)
+	CreateTags(ctx context.Context, in *ec2.CreateTagsInput, opts ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error)
 }
 
 // Networking is the part of the EC2 API for the subnets and security groups.
@@ -36,6 +39,7 @@ type Networking interface {
 	DescribeSecurityGroups(ctx context.Context, in *ec2.DescribeSecurityGroupsInput, opts ...func(*ec2.Options)) (*ec2.DescribeSecurityGroupsOutput, error)
 	CreateSecurityGroup(ctx context.Context, in *ec2.CreateSecurityGroupInput, opts ...func(*ec2.Options)) (*ec2.CreateSecurityGroupOutput, error)
 	AuthorizeSecurityGroupIngress(ctx context.Context, in *ec2.AuthorizeSecurityGroupIngressInput, opts ...func(*ec2.Options)) (*ec2.AuthorizeSecurityGroupIngressOutput, error)
+	DeleteSecurityGroup(ctx context.Context, in *ec2.DeleteSecurityGroupInput, opts ...func(*ec2.Options)) (*ec2.DeleteSecurityGroupOutput, error)
 }
 
 // KeyPairs is the part of the EC2 API for the key pairs.
@@ -71,6 +75,9 @@ type Options struct {
 	SharedTags string
 	// Poll is how long to wait between two looks at an instance (default 3 s).
 	Poll time.Duration
+	// NATSPort is the port the NATS server of a group listens on (NATS_PORT); the security group of the
+	// group lets it in from the group. 0: 4222.
+	NATSPort int
 }
 
 // Client talks to EC2 with the credentials of the AWS credentials chain (aws login, SSO, keys).

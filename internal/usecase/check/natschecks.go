@@ -107,7 +107,7 @@ func natsNetworkChecks(ctx context.Context, r *report, c *model.Machine, api clo
 	} else {
 		r.ok("private network %s (%s, zone %s)", net.Name, net.IPRange, net.Zone)
 	}
-	if srv.PrivateIP == "" {
+	if !srv.InNetwork() {
 		r.bad("%s has no address in the private network", c.ServerName)
 	} else {
 		r.ok("private address %s", srv.PrivateIP)

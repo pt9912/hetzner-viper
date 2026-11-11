@@ -170,7 +170,7 @@ func (r *runner) natsSetup(ctx context.Context, srv *model.Server) (int, error) 
 
 	// a machine that exists without NATS joins now: network and labels
 	ip := srv.PrivateIP
-	if ip == "" {
+	if !srv.InNetwork() {
 		var err error
 		if ip, err = st.api.AttachPrivateNetwork(ctx, srv.ID, st.network.ID); err != nil {
 			return r.fail("Attaching %s to the private network: %s", c.ServerName, r.d.Cloud.Describe(err))

@@ -4,7 +4,7 @@
 
 Grundlage ist [`nats.md`](nats.md) (Gruppe, Rechte, Server-Bootstrap). Dieser Plan ändert an der Gruppenlogik nichts, er ergänzt nur, was ein Anbieter dafür können muss. Die Fortsetzung für die Kommandozeile ist [`nats-cli.md`](nats-cli.md).
 
-**Stand:** Entwurf, einmal unabhängig geprüft; die Befunde sind eingearbeitet (§11) und ändern den Plan an mehreren Stellen (Anbinden, AWS-Sperre, Sicherheitsaussage, Azure). Entschieden ist die Reihenfolge (§9). Umgesetzt: noch nichts.
+**Stand:** Entwurf, einmal unabhängig geprüft; die Befunde sind eingearbeitet (§11) und ändern den Plan an mehreren Stellen (Anbinden, AWS-Sperre, Sicherheitsaussage, Azure). Entschieden ist die Reihenfolge (§9). Umgesetzt: Meilenstein 1 und 2 (AWS, gegen den Fake getestet; **echter Lauf offen**).
 
 **Kennzeichnung:** *[V]* heißt, im Code oder in einem Plan bestätigt. *[?]* heißt Vermutung; jede solche Stelle wird in Meilenstein 0 geprüft, bevor etwas darauf gebaut wird. **(zu bestätigen)** markiert Arbeitsannahmen, die eine Entscheidung brauchen.
 

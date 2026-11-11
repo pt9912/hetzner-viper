@@ -27,7 +27,8 @@ func apiCode(err error) string {
 }
 
 func serverFrom(i types.Instance, name string) *model.Server {
-	s := &model.Server{ID: str(i.InstanceId), Name: name, IPv4: str(i.PublicIpAddress), Hostname: str(i.PublicDnsName)}
+	s := &model.Server{ID: str(i.InstanceId), Name: name, IPv4: str(i.PublicIpAddress), Hostname: str(i.PublicDnsName),
+		PrivateIP: str(i.PrivateIpAddress), GroupRuleMissing: !inNATSGroup(i)}
 	if i.LaunchTime != nil {
 		s.Created = *i.LaunchTime
 	}
@@ -154,7 +155,7 @@ func (c *Client) runInput(s model.ServerSpec, l *launch) *ec2.RunInstancesInput 
 		KeyName:  ptr(s.SSHKey),
 		UserData: ptr(base64.StdEncoding.EncodeToString([]byte(s.UserData))),
 		NetworkInterfaces: []types.InstanceNetworkInterfaceSpecification{{
-			DeviceIndex: ptr(int32(0)), SubnetId: ptr(l.subnet), AssociatePublicIpAddress: ptr(true), Groups: []string{l.group},
+			DeviceIndex: ptr(int32(0)), SubnetId: ptr(l.subnet), AssociatePublicIpAddress: ptr(true), Groups: groups(l.group, s.Network),
 		}},
 		BlockDeviceMappings: []types.BlockDeviceMapping{{
 			DeviceName: ptr(l.image.rootDevice),
@@ -163,7 +164,7 @@ func (c *Client) runInput(s model.ServerSpec, l *launch) *ec2.RunInstancesInput 
 		// the instance metadata only with a session token: a server-side request forgery cannot read it
 		MetadataOptions: &types.InstanceMetadataOptionsRequest{HttpTokens: types.HttpTokensStateRequired, HttpEndpoint: types.InstanceMetadataEndpointStateEnabled},
 		TagSpecifications: []types.TagSpecification{
-			{ResourceType: types.ResourceTypeInstance, Tags: append(tags(s.Name), l.tags...)},
+			{ResourceType: types.ResourceTypeInstance, Tags: append(append(tags(s.Name), l.tags...), labelTags(s.Labels)...)},
 			{ResourceType: types.ResourceTypeVolume, Tags: append(tags(s.Name), l.tags...)},
 		},
 	}

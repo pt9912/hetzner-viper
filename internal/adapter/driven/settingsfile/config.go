@@ -148,8 +148,8 @@ func applyNATS(c *model.Machine, home string) error {
 	if err != nil || !on {
 		return err
 	}
-	if c.Provider != "hetzner" {
-		return fmt.Errorf("NATS_ENABLED: NATS groups need PROVIDER=hetzner for now, not %s", c.Provider)
+	if info, _ := model.LookupProvider(c.Provider); !info.NATS {
+		return fmt.Errorf("NATS_ENABLED: NATS groups need PROVIDER=%s for now, not %s", strings.Join(model.NATSProviderNames(), " or "), c.Provider)
 	}
 	group := strings.TrimSpace(c.Get("NATS_GROUP"))
 	if group == "" {

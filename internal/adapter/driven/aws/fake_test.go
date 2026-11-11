@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -28,6 +29,9 @@ type fakeAWS struct {
 	imported      []*ec2.ImportKeyPairInput
 	created       []*ec2.CreateSecurityGroupInput
 	terminated    []string
+	modified      []*ec2.ModifyInstanceAttributeInput
+	deleted       []string
+	busyDeletes   int // DeleteSecurityGroup says DependencyViolation this many times first
 	paramsAsked   []string
 	subnetFilters [][]types.Filter
 	describes     map[string]int // looks at an instance by ID, to let it take its time
@@ -38,6 +42,7 @@ type fakeAWS struct {
 type group struct {
 	name, vpc string
 	perms     []types.IpPermission
+	tags      []types.Tag
 }
 
 func apiError(code, msg string) error { return &smithy.GenericAPIError{Code: code, Message: msg} }
@@ -125,12 +130,99 @@ func (f *fakeAWS) DescribeInstances(_ context.Context, in *ec2.DescribeInstances
 				}
 			}()
 		}
-		if !hasFilter(in.Filters, "tag:viper", tagOf(i, "viper")) || !hasFilter(in.Filters, "instance-state-name", string(i.State.Name)) {
+		if !tagFilters(in.Filters, i.Tags) || !hasFilter(in.Filters, "instance-state-name", string(i.State.Name)) {
 			continue
 		}
 		out = append(out, *i)
 	}
 	return &ec2.DescribeInstancesOutput{Reservations: []types.Reservation{{Instances: out}}}, nil
+}
+
+// tagFilters applies the filters named tag:KEY to the tags.
+func tagFilters(fs []types.Filter, tags []types.Tag) bool {
+	for _, f := range fs {
+		key, ok := strings.CutPrefix(*f.Name, "tag:")
+		if !ok {
+			continue
+		}
+		found := false
+		for _, t := range tags {
+			for _, v := range f.Values {
+				found = found || (*t.Key == key && *t.Value == v)
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+func (f *fakeAWS) ModifyInstanceAttribute(_ context.Context, in *ec2.ModifyInstanceAttributeInput, _ ...func(*ec2.Options)) (*ec2.ModifyInstanceAttributeOutput, error) {
+	f.modified = append(f.modified, in)
+	i, ok := f.instances[*in.InstanceId]
+	if !ok {
+		return nil, apiError("InvalidInstanceID.NotFound", "no such instance")
+	}
+	i.SecurityGroups = f.identifiers(in.Groups)
+	return &ec2.ModifyInstanceAttributeOutput{}, nil
+}
+
+func (f *fakeAWS) identifiers(ids []string) []types.GroupIdentifier {
+	var out []types.GroupIdentifier
+	for _, id := range ids {
+		name := ""
+		if g := f.groups[id]; g != nil {
+			name = g.name
+		}
+		out = append(out, types.GroupIdentifier{GroupId: ptr(id), GroupName: ptr(name)})
+	}
+	return out
+}
+
+func (f *fakeAWS) CreateTags(_ context.Context, in *ec2.CreateTagsInput, _ ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error) {
+	for _, id := range in.Resources {
+		i, ok := f.instances[id]
+		if !ok {
+			return nil, apiError("InvalidInstanceID.NotFound", "no such instance")
+		}
+		for _, t := range in.Tags {
+			replaced := false
+			for k := range i.Tags {
+				if *i.Tags[k].Key == *t.Key {
+					i.Tags[k], replaced = t, true
+				}
+			}
+			if !replaced {
+				i.Tags = append(i.Tags, t)
+			}
+		}
+	}
+	return &ec2.CreateTagsOutput{}, nil
+}
+
+func (f *fakeAWS) DeleteSecurityGroup(_ context.Context, in *ec2.DeleteSecurityGroupInput, _ ...func(*ec2.Options)) (*ec2.DeleteSecurityGroupOutput, error) {
+	id := *in.GroupId
+	if _, ok := f.groups[id]; !ok {
+		return nil, apiError("InvalidGroup.NotFound", "no such group")
+	}
+	if f.busyDeletes > 0 {
+		f.busyDeletes--
+		return nil, apiError("DependencyViolation", "resource sg has a dependent object")
+	}
+	for _, i := range f.instances {
+		if i.State.Name == types.InstanceStateNameTerminated {
+			continue
+		}
+		for _, g := range i.SecurityGroups {
+			if *g.GroupId == id {
+				return nil, apiError("DependencyViolation", "resource sg has a dependent object")
+			}
+		}
+	}
+	delete(f.groups, id)
+	f.deleted = append(f.deleted, id)
+	return &ec2.DeleteSecurityGroupOutput{}, nil
 }
 
 func (f *fakeAWS) RunInstances(_ context.Context, in *ec2.RunInstancesInput, _ ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
@@ -142,6 +234,10 @@ func (f *fakeAWS) RunInstances(_ context.Context, in *ec2.RunInstancesInput, _ .
 		if ts.ResourceType == types.ResourceTypeInstance {
 			inst.Tags = ts.Tags
 		}
+	}
+	inst.PrivateIpAddress = ptr(fmt.Sprintf("10.0.0.%d", f.nextID+10))
+	for _, ni := range in.NetworkInterfaces {
+		inst.SecurityGroups = f.identifiers(ni.Groups)
 	}
 	f.instances[id] = inst
 	return &ec2.RunInstancesOutput{Instances: []types.Instance{*inst}}, nil
@@ -191,24 +287,52 @@ func (f *fakeAWS) DescribeSubnets(_ context.Context, in *ec2.DescribeSubnetsInpu
 
 func (f *fakeAWS) DescribeSecurityGroups(_ context.Context, in *ec2.DescribeSecurityGroupsInput, _ ...func(*ec2.Options)) (*ec2.DescribeSecurityGroupsOutput, error) {
 	var out []types.SecurityGroup
-	for id, g := range f.groups {
-		if hasFilter(in.Filters, "group-name", g.name) && hasFilter(in.Filters, "vpc-id", g.vpc) {
-			out = append(out, types.SecurityGroup{GroupId: ptr(id), IpPermissions: g.perms})
+	var ids []string
+	for id := range f.groups {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		g := f.groups[id]
+		if len(in.GroupIds) > 0 && !contains(in.GroupIds, id) {
+			continue
 		}
+		if hasFilter(in.Filters, "group-name", g.name) && hasFilter(in.Filters, "vpc-id", g.vpc) && tagFilters(in.Filters, g.tags) {
+			out = append(out, types.SecurityGroup{GroupId: ptr(id), GroupName: ptr(g.name), VpcId: ptr(g.vpc), IpPermissions: g.perms, Tags: g.tags})
+		}
+	}
+	if len(in.GroupIds) > 0 && len(out) == 0 {
+		return nil, apiError("InvalidGroup.NotFound", "no such group")
 	}
 	return &ec2.DescribeSecurityGroupsOutput{SecurityGroups: out}, nil
 }
 
 func (f *fakeAWS) CreateSecurityGroup(_ context.Context, in *ec2.CreateSecurityGroupInput, _ ...func(*ec2.Options)) (*ec2.CreateSecurityGroupOutput, error) {
 	f.created = append(f.created, in)
-	id := fmt.Sprintf("sg-%04d", len(f.groups)+1)
-	f.groups[id] = &group{name: *in.GroupName, vpc: *in.VpcId}
+	for _, g := range f.groups {
+		if g.name == *in.GroupName && g.vpc == *in.VpcId {
+			return nil, apiError("InvalidGroup.Duplicate", "the security group already exists")
+		}
+	}
+	id := fmt.Sprintf("sg-%04d", len(f.groups)+len(f.deleted)+1)
+	var tags []types.Tag
+	for _, ts := range in.TagSpecifications {
+		tags = append(tags, ts.Tags...)
+	}
+	f.groups[id] = &group{name: *in.GroupName, vpc: *in.VpcId, tags: tags}
 	return &ec2.CreateSecurityGroupOutput{GroupId: ptr(id)}, nil
 }
 
 func (f *fakeAWS) AuthorizeSecurityGroupIngress(_ context.Context, in *ec2.AuthorizeSecurityGroupIngressInput, _ ...func(*ec2.Options)) (*ec2.AuthorizeSecurityGroupIngressOutput, error) {
 	f.authorized = append(f.authorized, in)
 	g := f.groups[*in.GroupId]
+	for _, p := range in.IpPermissions { // the same rule twice is refused, as EC2 does
+		for _, have := range g.perms {
+			if len(p.UserIdGroupPairs) > 0 && permKey(p) == permKey(have) {
+				return nil, apiError("InvalidPermission.Duplicate", "the rule exists")
+			}
+		}
+	}
 	g.perms = append(g.perms, in.IpPermissions...)
 	return &ec2.AuthorizeSecurityGroupIngressOutput{}, nil
 }
@@ -229,4 +353,17 @@ func (f *fakeAWS) GetParameter(_ context.Context, in *ssm.GetParameterInput, _ .
 		return nil, apiError("ParameterNotFound", "no such parameter")
 	}
 	return &ssm.GetParameterOutput{Parameter: &ssmtypes.Parameter{Value: ptr(v)}}, nil
+}
+
+func contains(l []string, s string) bool {
+	for _, x := range l {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+func permKey(p types.IpPermission) string {
+	return fmt.Sprint(*p.IpProtocol, *p.FromPort, *p.ToPort, len(p.UserIdGroupPairs))
 }

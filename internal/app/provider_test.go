@@ -22,12 +22,13 @@ func TestEveryConfiguredProviderHasAnAdapter(t *testing.T) {
 	}
 }
 
-func TestOnlyHetznerCanHoldNATSGroupsForNow(t *testing.T) {
+// The table says which providers hold NATS groups (the settings are checked against it); the adapters must agree.
+func TestTheProviderTableAndTheAdaptersAgreeOnNATSGroups(t *testing.T) {
 	for _, name := range model.ProviderNames() {
 		var n cloud.NATSProvider
 		ok := cloud.AsNATS(app.NewProvider(&model.Machine{Provider: name}), &n)
-		if ok != (name == "hetzner") {
-			t.Errorf("%s: NATS capability %v", name, ok)
+		if info, _ := model.LookupProvider(name); ok != info.NATS {
+			t.Errorf("%s: NATS capability %v, table says %v", name, ok, info.NATS)
 		}
 	}
 }

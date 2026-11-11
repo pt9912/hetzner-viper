@@ -19,11 +19,18 @@ type Server struct {
 	IPv4 string
 	// PrivateIP is the address in the private network the server is attached to, "" if none.
 	PrivateIP string
+	// GroupRuleMissing is set by a provider whose servers always have a private address: the server
+	// has one, but the rule of its NATS group does not apply to it yet (Hetzner leaves it false: no
+	// address means not attached). Use InNetwork, not PrivateIP, to ask whether the server is attached.
+	GroupRuleMissing bool
 	// Hostname is the public name the cloud gives the server, "" if it gives none.
 	Hostname string
 	// Created is when the server was created.
 	Created time.Time
 }
+
+// InNetwork tells whether the server is attached to the private network of its NATS group.
+func (s Server) InNetwork() bool { return s.PrivateIP != "" && !s.GroupRuleMissing }
 
 // ServerSpec is what a new server is made from. Size, Region and Image are the provider's own
 // names (Hetzner: server type, location, image; AWS: instance type, region, AMI; ...).
