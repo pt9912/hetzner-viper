@@ -4,7 +4,7 @@
 
 Grundlage ist [`nats.md`](nats.md) (Gruppe, Rechte, Server-Bootstrap). Dieser Plan ändert an der Gruppenlogik nichts, er ergänzt nur, was ein Anbieter dafür können muss. Die Fortsetzung für die Kommandozeile ist [`nats-cli.md`](nats-cli.md).
 
-**Stand:** Entwurf, einmal unabhängig geprüft; die Befunde sind eingearbeitet (§11) und ändern den Plan an mehreren Stellen (Anbinden, AWS-Sperre, Sicherheitsaussage, Azure). Entschieden ist die Reihenfolge (§9). Umgesetzt: Meilenstein 1 und 2 (AWS, gegen den Fake getestet; **echter Lauf offen**).
+**Stand:** Entwurf, einmal unabhängig geprüft; die Befunde sind eingearbeitet (§11) und ändern den Plan an mehreren Stellen (Anbinden, AWS-Sperre, Sicherheitsaussage, Azure). Entschieden ist die Reihenfolge (§9). Umgesetzt: Meilenstein 1, 2 (AWS) und 3 (Google Cloud), gegen Fakes getestet; **echte Läufe offen**. Abweichung bei GCP: Die VMs einer Gruppe müssen in **einer Zone** liegen (nicht einer Region), weil die Labels je Zone gelesen werden; `NetworkZone` gibt die Zone zurück. Azure: nicht umgesetzt (M0 ohne Konto nicht möglich, §3.4).
 
 **Kennzeichnung:** *[V]* heißt, im Code oder in einem Plan bestätigt. *[?]* heißt Vermutung; jede solche Stelle wird in Meilenstein 0 geprüft, bevor etwas darauf gebaut wird. **(zu bestätigen)** markiert Arbeitsannahmen, die eine Entscheidung brauchen.
 

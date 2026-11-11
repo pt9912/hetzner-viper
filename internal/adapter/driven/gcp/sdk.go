@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -74,18 +75,28 @@ func (s *sdk) Instance(ctx context.Context, name string) (*Instance, error) {
 		}
 		return nil, err
 	}
-	out := &Instance{Name: i.Name, Status: i.Status}
+	return instanceFrom(i), nil
+}
+
+func instanceFrom(i *compute.Instance) *Instance {
+	out := &Instance{Name: i.Name, Status: i.Status, Labels: i.Labels}
+	if i.Tags != nil {
+		out.Tags = i.Tags.Items
+	}
 	if t, err := time.Parse(time.RFC3339, i.CreationTimestamp); err == nil {
 		out.Created = t
 	}
 	for _, n := range i.NetworkInterfaces {
+		if out.PrivateIP == "" {
+			out.PrivateIP = n.NetworkIP
+		}
 		for _, a := range n.AccessConfigs {
 			if a.NatIP != "" && out.IP == "" {
 				out.IP = a.NatIP
 			}
 		}
 	}
-	return out, nil
+	return out
 }
 
 // diskType is the boot disk type the machine type takes: the newer series (C4, N4, C4A, N4A) have
@@ -103,8 +114,8 @@ func (s *sdk) CreateInstance(ctx context.Context, l Launch) error {
 	inst := &compute.Instance{
 		Name:        l.Name,
 		MachineType: fmt.Sprintf("zones/%s/machineTypes/%s", s.zone, l.MachineType),
-		Tags:        &compute.Tags{Items: []string{l.Tag}},
-		Labels:      map[string]string{"viper": l.Name},
+		Tags:        &compute.Tags{Items: append([]string{l.Tag}, l.ExtraTags...)},
+		Labels:      launchLabels(l),
 		Disks: []*compute.AttachedDisk{{
 			Boot: true, AutoDelete: true,
 			InitializeParams: &compute.AttachedDiskInitializeParams{
@@ -233,4 +244,147 @@ func (s *sdk) NetworkExists(ctx context.Context, name string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// launchLabels are the labels of a new VM: viper=<name> and the labels of the launch.
+func launchLabels(l Launch) map[string]string {
+	m := map[string]string{}
+	for k, v := range l.Labels {
+		m[k] = v
+	}
+	m["viper"] = l.Name
+	return m
+}
+
+// updateTries is how often SetLabels and AddTag try again when somebody changed the VM meanwhile.
+const updateTries = 8
+
+func preconditionFailed(err error) bool {
+	var ge *googleapi.Error
+	return errors.As(err, &ge) && ge.Code == http.StatusPreconditionFailed
+}
+
+func (s *sdk) ListInstances(ctx context.Context, labels map[string]string) ([]*Instance, error) {
+	keys := make([]string, 0, len(labels))
+	for k := range labels {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	var parts []string
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("labels.%s = %q", k, labels[k]))
+	}
+	var out []*Instance
+	err := s.svc.Instances.List(s.project, s.zone).Filter(strings.Join(parts, " AND ")).Pages(ctx, func(p *compute.InstanceList) error {
+		for _, i := range p.Items {
+			out = append(out, instanceFrom(i))
+		}
+		return nil
+	})
+	return out, err
+}
+
+func (s *sdk) SetLabels(ctx context.Context, name string, labels map[string]string) error {
+	for try := 0; try < updateTries; try++ {
+		i, err := s.svc.Instances.Get(s.project, s.zone, name).Context(ctx).Do()
+		if err != nil {
+			return err
+		}
+		merged := map[string]string{}
+		for k, v := range i.Labels {
+			merged[k] = v
+		}
+		for k, v := range labels {
+			merged[k] = v
+		}
+		op, err := s.svc.Instances.SetLabels(s.project, s.zone, name, &compute.InstancesSetLabelsRequest{Labels: merged, LabelFingerprint: i.LabelFingerprint}).Context(ctx).Do()
+		if preconditionFailed(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		return s.waitZone(ctx, op)
+	}
+	return fmt.Errorf("the labels of %s kept changing: try again", name)
+}
+
+func (s *sdk) AddTag(ctx context.Context, name, tag string) error {
+	for try := 0; try < updateTries; try++ {
+		i, err := s.svc.Instances.Get(s.project, s.zone, name).Context(ctx).Do()
+		if err != nil {
+			return err
+		}
+		tags := &compute.Tags{Fingerprint: ""}
+		if i.Tags != nil {
+			tags.Items, tags.Fingerprint = i.Tags.Items, i.Tags.Fingerprint
+		}
+		if slices.Contains(tags.Items, tag) {
+			return nil
+		}
+		tags.Items = append(tags.Items, tag)
+		op, err := s.svc.Instances.SetTags(s.project, s.zone, name, tags).Context(ctx).Do()
+		if preconditionFailed(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		return s.waitZone(ctx, op)
+	}
+	return fmt.Errorf("the network tags of %s kept changing: try again", name)
+}
+
+func (s *sdk) NATSFirewall(ctx context.Context, name string) (*NATSRule, error) {
+	r, err := s.svc.Firewalls.Get(s.project, name).Context(ctx).Do()
+	if err != nil {
+		if notFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	out := &NATSRule{Name: r.Name, Description: r.Description}
+	if i := strings.LastIndex(r.Network, "/"); i >= 0 {
+		out.Network = r.Network[i+1:]
+	}
+	if len(r.TargetTags) == 1 {
+		out.Tag = r.TargetTags[0]
+	}
+	if len(r.Allowed) == 1 && len(r.Allowed[0].Ports) == 1 {
+		out.Port, _ = strconv.Atoi(r.Allowed[0].Ports[0]) // 0 for a port range: not ours
+	}
+	return out, nil
+}
+
+func (s *sdk) CreateNATSFirewall(ctx context.Context, r NATSRule) error {
+	fw := &compute.Firewall{
+		Name: r.Name, Description: r.Description, Network: "global/networks/" + r.Network, Direction: "INGRESS",
+		SourceTags: []string{r.Tag}, TargetTags: []string{r.Tag},
+		Allowed: []*compute.FirewallAllowed{{IPProtocol: "tcp", Ports: []string{fmt.Sprint(r.Port)}}},
+	}
+	op, err := s.svc.Firewalls.Insert(s.project, fw).Context(ctx).Do()
+	var ge *googleapi.Error
+	if errors.As(err, &ge) && ge.Code == http.StatusConflict {
+		return ErrExists
+	}
+	if err != nil {
+		return err
+	}
+	if err := s.waitGlobal(ctx, op); err != nil && strings.Contains(err.Error(), "alreadyExists") {
+		return ErrExists
+	} else if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *sdk) DeleteFirewall(ctx context.Context, name string) error {
+	op, err := s.svc.Firewalls.Delete(s.project, name).Context(ctx).Do()
+	if notFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return s.waitGlobal(ctx, op)
 }

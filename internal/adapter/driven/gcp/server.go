@@ -47,7 +47,7 @@ func image(ctx context.Context, api API, setting string, arm bool) (string, erro
 }
 
 func serverFrom(i *Instance) *model.Server {
-	return &model.Server{ID: i.Name, Name: i.Name, IPv4: i.IP, Created: i.Created}
+	return &model.Server{ID: i.Name, Name: i.Name, IPv4: i.IP, Created: i.Created, PrivateIP: i.PrivateIP, GroupRuleMissing: !inNATSGroup(i)}
 }
 
 // ServerByName returns the VM of that name in the zone, nil if there is none.
@@ -90,7 +90,7 @@ func (c *Client) CreateServer(ctx context.Context, s model.ServerSpec) (*model.S
 	}
 	err = api.CreateInstance(ctx, Launch{
 		Name: s.Name, MachineType: s.Size, Image: img, Network: c.opts.network(), Subnet: c.opts.Subnet, Tag: s.Firewall,
-		UserData: s.UserData, DiskGB: c.opts.diskGB(),
+		UserData: s.UserData, DiskGB: c.opts.diskGB(), Labels: s.Labels, ExtraTags: networkTags(s.Network),
 	})
 	if err != nil {
 		return nil, err

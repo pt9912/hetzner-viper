@@ -3,6 +3,8 @@ package gcp_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +19,9 @@ import (
 type fake struct {
 	instances map[string]*gcp.Instance
 	rules     map[string]*gcp.Rule
+	natsRules map[string]*gcp.NATSRule
+	labelSets int
+	tagAdds   int
 	machines  map[string]gcp.MachineType
 	families  map[string]string // "project/family" -> link
 	networks  map[string]bool
@@ -33,6 +38,7 @@ func newFake() *fake {
 	return &fake{
 		instances: map[string]*gcp.Instance{},
 		rules:     map[string]*gcp.Rule{},
+		natsRules: map[string]*gcp.NATSRule{},
 		machines: map[string]gcp.MachineType{
 			"e2-standard-2":  {VCPUs: 2, MemoryMB: 8192},
 			"t2a-standard-1": {VCPUs: 1, MemoryMB: 4096},
@@ -65,7 +71,12 @@ func (f *fake) Instance(_ context.Context, name string) (*gcp.Instance, error) {
 
 func (f *fake) CreateInstance(_ context.Context, l gcp.Launch) error {
 	f.launches = append(f.launches, l)
-	f.instances[l.Name] = &gcp.Instance{Name: l.Name, Status: "STAGING", Created: time.Date(2026, 10, 27, 9, 0, 0, 0, time.UTC)}
+	labels := map[string]string{"viper": l.Name}
+	for k, v := range l.Labels {
+		labels[k] = v
+	}
+	f.instances[l.Name] = &gcp.Instance{Name: l.Name, Status: "STAGING", Created: time.Date(2026, 10, 27, 9, 0, 0, 0, time.UTC),
+		Labels: labels, Tags: append([]string{l.Tag}, l.ExtraTags...), PrivateIP: fmt.Sprintf("10.128.0.%d", len(f.instances)+2)}
 	return nil
 }
 
@@ -318,4 +329,68 @@ func TestOperationsThatFailAreReportedAsOpErrors(t *testing.T) {
 	if c.Name() != "Google Cloud" || c.Title() != "Google Compute Engine" || !strings.Contains(c.Hint(), "GCP_PROJECT") {
 		t.Error("names")
 	}
+}
+
+func (f *fake) ListInstances(_ context.Context, labels map[string]string) ([]*gcp.Instance, error) {
+	var out []*gcp.Instance
+	for _, i := range f.instances {
+		match := true
+		for k, v := range labels {
+			match = match && i.Labels[k] == v
+		}
+		if match {
+			cp := *i
+			out = append(out, &cp)
+		}
+	}
+	sort.Slice(out, func(a, b int) bool { return out[a].Name < out[b].Name })
+	return out, nil
+}
+
+func (f *fake) SetLabels(_ context.Context, name string, labels map[string]string) error {
+	i, ok := f.instances[name]
+	if !ok {
+		return &googleapi.Error{Code: 404, Message: "not found"}
+	}
+	f.labelSets++
+	merged := map[string]string{}
+	for k, v := range i.Labels {
+		merged[k] = v
+	}
+	for k, v := range labels {
+		merged[k] = v
+	}
+	i.Labels = merged
+	return nil
+}
+
+func (f *fake) AddTag(_ context.Context, name, tag string) error {
+	i, ok := f.instances[name]
+	if !ok {
+		return &googleapi.Error{Code: 404, Message: "not found"}
+	}
+	f.tagAdds++
+	i.Tags = append(i.Tags, tag)
+	return nil
+}
+
+func (f *fake) NATSFirewall(_ context.Context, name string) (*gcp.NATSRule, error) {
+	if r, ok := f.natsRules[name]; ok {
+		cp := *r
+		return &cp, nil
+	}
+	return nil, nil
+}
+
+func (f *fake) CreateNATSFirewall(_ context.Context, r gcp.NATSRule) error {
+	if _, ok := f.natsRules[r.Name]; ok {
+		return gcp.ErrExists
+	}
+	f.natsRules[r.Name] = &r
+	return nil
+}
+
+func (f *fake) DeleteFirewall(_ context.Context, name string) error {
+	delete(f.natsRules, name)
+	return nil
 }

@@ -33,7 +33,7 @@ func LookupProvider(name string) (info ProviderInfo, ok bool) {
 		return ProviderInfo{DiskSetting: "AZURE_ROOT_GB", Credentials: []string{"AZURE_SUBSCRIPTION_ID"}, Secrets: []string{"AZURE_CLIENT_SECRET", "AZURE_CLIENT_CERTIFICATE_PASSWORD", "AZURE_PASSWORD"}, Size: "Standard_D2s_v5", Region: "germanywestcentral", Image: "ubuntu-24.04"}, true
 	case "gcp":
 		// the credentials come from Google's application default credentials; the project is a setting
-		return ProviderInfo{DiskSetting: "GCP_ROOT_GB", Credentials: []string{"GCP_PROJECT"}, Secrets: []string{"GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_OAUTH_ACCESS_TOKEN"}, Size: "e2-standard-2", Region: "europe-west3-b", Image: "ubuntu-24.04"}, true
+		return ProviderInfo{DiskSetting: "GCP_ROOT_GB", Credentials: []string{"GCP_PROJECT"}, Secrets: []string{"GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_OAUTH_ACCESS_TOKEN"}, Size: "e2-standard-2", Region: "europe-west3-b", Image: "ubuntu-24.04", NATS: true}, true
 	case "aws":
 		// the credentials come from the AWS credentials chain (aws login, SSO, keys): none is required
 		return ProviderInfo{DiskSetting: "AWS_ROOT_GB", Secrets: []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"}, Size: "t3.large", Region: "eu-central-1", Image: "ubuntu-24.04", NATS: true}, true

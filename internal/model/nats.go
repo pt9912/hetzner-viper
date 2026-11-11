@@ -217,3 +217,12 @@ type NATSLine struct {
 	Query bool   `json:"query,omitempty"` // presence
 	Text  string `json:"text,omitempty"`  // always cleaned
 }
+
+// Detail is the address range and zone of the network for a message; a provider that has no range of
+// its own for the group leaves it out.
+func (n PrivateNetwork) Detail() string {
+	if n.IPRange == "" {
+		return "zone " + n.Zone
+	}
+	return n.IPRange + ", zone " + n.Zone
+}

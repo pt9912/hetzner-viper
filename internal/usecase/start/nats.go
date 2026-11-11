@@ -59,7 +59,7 @@ func (r *runner) natsPrepare(ctx context.Context) (int, error) {
 	}
 	st.network, st.createdNetwork = net, created
 	if created {
-		r.printf("Private network %s (%s) created for the NATS group %s.\n", net.Name, net.IPRange, group)
+		r.printf("Private network %s (%s) created for the NATS group %s.\n", net.Name, rangeOrZone(net), group)
 	}
 	members, err := api.ListGroupMachines(ctx, group)
 	if err != nil {
@@ -402,4 +402,12 @@ func (r *runner) natsJoin(ctx context.Context, srv *model.Server) (int, error) {
 		return 0, nil
 	}
 	return r.natsSetup(ctx, srv)
+}
+
+// rangeOrZone describes a new network in the message: its address range, or the zone where the provider has none.
+func rangeOrZone(n model.PrivateNetwork) string {
+	if n.IPRange == "" {
+		return "zone " + n.Zone
+	}
+	return n.IPRange
 }

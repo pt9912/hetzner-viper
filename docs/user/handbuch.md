@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.89  
+Version: 1.90  
 Software-Version: v0.17.0  
 Stand: 11.11.2026  
 
@@ -361,7 +361,8 @@ NATS ist ein schlankes Nachrichtensystem. Mit einer NATS-Gruppe verbinden Sie me
 
 #### Voraussetzung
 
-* Der Anbieter ist Hetzner Cloud (`PROVIDER=hetzner`) oder AWS (`PROVIDER=aws`). Google Cloud und Azure unterstützen NATS-Gruppen noch nicht. **Hetzner ist in echten Läufen getestet. AWS ist gebaut und gegen nachgebildete Schnittstellen getestet; ein Lauf in einem echten Konto ist noch nicht belegt.**
+* Der Anbieter ist Hetzner Cloud (`PROVIDER=hetzner`), AWS (`PROVIDER=aws`) oder Google Cloud (`PROVIDER=gcp`). Azure unterstützt NATS-Gruppen noch nicht. **Hetzner ist in echten Läufen getestet. AWS und Google Cloud sind gebaut und gegen nachgebildete Schnittstellen getestet; ein Lauf in einem echten Konto ist dort noch nicht belegt.**
+* **Google Cloud:** Alle Rechner der Gruppe müssen im selben Netzwerk (`GCP_NETWORK`) und in **derselben Zone** liegen (die Labels der Rechner werden je Zone gelesen). `viper` legt kein Netzwerk an, sondern nur eine Firewall-Regel `viper-nats-<gruppe>` (der NATS-Port von und zu Rechnern mit dem Netzwerk-Tag `viper-nats-<gruppe>`) und setzt dieses Tag an die Rechner der Gruppe. Rolle und Zustand stehen als Labels `viper-nats-*` an der VM. **Die Regel macht nichts enger:** Netzwerke, die allen Verkehr im Inneren erlauben (das Netzwerk `default` mit `default-allow-internal`), erreichen den Port auch ohne sie; geschützt ist er durch den NATS-Server selbst (nur auf der privaten Adresse, nur registrierte Schlüssel, das Zertifikat). Das Konto braucht zusätzlich `compute.firewalls.create/delete/get` und `compute.instances.setTags/setLabels`.
 * **AWS:** Alle Rechner der Gruppe müssen im selben VPC liegen (`AWS_SUBNET_ID`, `AWS_VPC_ID`) und sich über private Adressen erreichen. `viper` legt kein Netzwerk an und ändert keines, sondern nur eine Security Group `viper-nats-<gruppe>`, die den NATS-Port nur von Mitgliedern dieser Gruppe zulässt (zusätzlich zu den Schutzschichten, die auch bei Hetzner gelten: Server nur auf der privaten Adresse, `ufw`, registrierte Schlüssel, Zertifikat). Die Rolle und der Zustand stehen als Tags `viper-nats-*` an der Instanz. Dazu braucht das Konto zusätzlich die Rechte `ec2:CreateSecurityGroup`, `AuthorizeSecurityGroupIngress`, `DeleteSecurityGroup`, `ModifyInstanceAttribute` und `CreateTags`. Verkehr zwischen Availability Zones kostet bei AWS etwas.
 * Alle Rechner einer Gruppe liegen im selben Hetzner-Projekt und in derselben Netzwerkzone (zum Beispiel `fsn1`, `nbg1` und `hel1` gehören zu `eu-central`, `ash` zu `us-east`).
 * Rechnernamen und Gruppenname bestehen aus 1 bis 31 Kleinbuchstaben, Ziffern und Bindestrichen und beginnen und enden mit Buchstabe oder Ziffer. Ein vorhandener Rechner mit anderem Namen (etwa mit Unterstrich) kann nicht aufgenommen werden.
@@ -557,7 +558,7 @@ Mit `viper nats` sprechen Sie die Rechner einer NATS-Gruppe von Ihrem eigenen Re
 #### Voraussetzung
 
 * Die Gruppe hat eine Datei `groups/<gruppe>.env`, die Rechner sind mit `viper up` gestartet (jeder hat eine SSH-Konfiguration), und mindestens einer hat `NATS_ENABLED=true` **und `NATS_MCP=true`** (siehe „Claude Code mit den anderen Rechnern der Gruppe sprechen lassen“). `viper nats` führt dessen MCP-Server `viper-nats-mcp` per SSH auf dem Rechner aus.
-* NATS-Gruppen gibt es bei Hetzner und AWS.
+* NATS-Gruppen gibt es bei Hetzner, AWS und Google Cloud.
 
 #### Vorgehen
 
@@ -1316,3 +1317,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.87 | nach v0.17.0 | `down --group`: Die Ausgabe eines Rechners erscheint als Block direkt über seiner Frage (`DISCARD`/`DELETE`) und nicht mehr zwischen den Zeilen der anderen. |
 | 1.88 | nach v0.17.0 | Neu: `viper nats` (`peers`, `listen`, `send`, `broadcast`, `request`) spricht eine NATS-Gruppe von Ihrem Rechner aus an, als eine Maschine der Gruppe; Berichtigung des Beispiels für Antworten (`…out.<anfragender>`). |
 | 1.89 | nach v0.17.0 | NATS-Gruppen auch bei AWS (gegen nachgebildete Schnittstellen getestet, echter Lauf offen). |
+| 1.90 | nach v0.17.0 | NATS-Gruppen auch bei Google Cloud (gegen nachgebildete Schnittstellen getestet, echter Lauf offen). |

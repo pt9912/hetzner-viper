@@ -18,18 +18,48 @@ import (
 // API is what the adapter needs of Compute Engine, in its own terms. The adapter's logic runs
 // against it; sdk.go makes it out of the compute/v1 client.
 type API interface {
+	Instances
+	Firewalls
+	Lookups
+}
+
+// Instances is the part of the API for VMs, with their labels and network tags (the labels and tags
+// serve NATS groups).
+type Instances interface {
 	// Instance returns the VM of that name, nil if there is none.
 	Instance(ctx context.Context, name string) (*Instance, error)
 	// CreateInstance starts a VM and waits until the operation is done.
 	CreateInstance(ctx context.Context, l Launch) error
 	// DeleteInstance deletes a VM and waits until the operation is done.
 	DeleteInstance(ctx context.Context, name string) error
+	// ListInstances returns the VMs of the zone that carry all these labels.
+	ListInstances(ctx context.Context, labels map[string]string) ([]*Instance, error)
+	// SetLabels puts the labels on the VM and keeps the ones it has (setLabels replaces them all and
+	// wants the fingerprint: the call reads, merges and tries again when somebody was faster).
+	SetLabels(ctx context.Context, name string, labels map[string]string) error
+	// AddTag adds a network tag to the VM and keeps the others (setTags replaces them all, among them the
+	// tag of the SSH firewall).
+	AddTag(ctx context.Context, name, tag string) error
+}
+
+// Firewalls is the part of the API for the firewall rules: the SSH rules and the rule of a NATS group.
+type Firewalls interface {
 	// Firewall returns the rule of that name, nil if there is none.
 	Firewall(ctx context.Context, name string) (*Rule, error)
 	// CreateFirewall creates an ingress rule for SSH and ICMP.
 	CreateFirewall(ctx context.Context, r Rule) error
 	// AddFirewallAllowed adds SSH and/or ICMP to a rule, keeping what else it allows.
 	AddFirewallAllowed(ctx context.Context, name string, ssh, icmp bool) error
+	// NATSFirewall returns the rule of that name, nil if there is none.
+	NATSFirewall(ctx context.Context, name string) (*NATSRule, error)
+	// CreateNATSFirewall creates the rule; ErrExists if the name is taken (names are unique in a project).
+	CreateNATSFirewall(ctx context.Context, r NATSRule) error
+	// DeleteFirewall deletes a rule; one that is gone is no error.
+	DeleteFirewall(ctx context.Context, name string) error
+}
+
+// Lookups is the part of the API for what a VM is made from.
+type Lookups interface {
 	// MachineType returns the machine type in the zone, nil if there is none.
 	MachineType(ctx context.Context, name string) (*MachineType, error)
 	// ImageFamily returns the newest image of a family of a project, "" if there is none.
@@ -38,16 +68,32 @@ type API interface {
 	NetworkExists(ctx context.Context, name string) (bool, error)
 }
 
+// ErrExists is returned by CreateNATSFirewall for a name that is taken.
+var ErrExists = errors.New("already exists")
+
+// NATSRule is the ingress rule of a NATS group: the port, from and to the VMs with the tag.
+type NATSRule struct {
+	Name, Network, Tag, Description string
+	Port                            int
+}
+
 // Instance is a VM as the adapter needs it.
 type Instance struct {
 	Name, Status, IP string
 	Created          time.Time
+	// PrivateIP is the address in the VPC; Labels and Tags are the labels and network tags of the VM.
+	PrivateIP string
+	Labels    map[string]string
+	Tags      []string
 }
 
 // Launch is what a new VM is made from.
 type Launch struct {
 	Name, MachineType, Image, Network, Subnet, Tag, UserData string
 	DiskGB                                                   int64
+	// Labels are put on the VM besides viper=<name>; ExtraTags are network tags besides Tag.
+	Labels    map[string]string
+	ExtraTags []string
 }
 
 // Rule is an ingress firewall rule for SSH and ICMP.
@@ -69,6 +115,8 @@ type Options struct {
 	Network string // GCP_NETWORK, "" for default
 	Subnet  string // GCP_SUBNET: the subnet of a custom-mode network, "" for an auto-mode one
 	RootGB  int64  // size of the boot disk
+	// NATSPort is the port of the NATS server of a group (NATS_PORT); the rule of the group lets it in. 0: 4222.
+	NATSPort int
 	// Poll is how long to wait between two looks at a VM (default 3 s).
 	Poll time.Duration
 }

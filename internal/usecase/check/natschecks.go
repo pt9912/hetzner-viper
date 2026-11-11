@@ -105,7 +105,7 @@ func natsNetworkChecks(ctx context.Context, r *report, c *model.Machine, api clo
 	} else if net == nil {
 		r.bad("the private network viper-nats-%s does not exist (the group cannot talk; NATS is not moved to a public port)", group)
 	} else {
-		r.ok("private network %s (%s, zone %s)", net.Name, net.IPRange, net.Zone)
+		r.ok("private network %s (%s)", net.Name, net.Detail())
 	}
 	if !srv.InNetwork() {
 		r.bad("%s has no address in the private network", c.ServerName)
