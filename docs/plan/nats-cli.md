@@ -127,6 +127,14 @@ Umgesetzt: `viper-nats-mcp` bekommt die Unterbefehle `watch`, `send`, `broadcast
 
 **Nicht geprüft:** TLS und NKey mit `viper`-eigenen Dateien (Test läuft ohne TLS auf Loopback), der Betrieb über SSH, mehrere gleichzeitige Verbindungen mit demselben Schlüssel gegen einen echten Server (der Test hat zwei: Dienst und Unterbefehl; es läuft). Der Rest der Suite wurde nicht neu gelaufen.
 
+### Ergebnisse Meilenstein 2 und 3 (Stand 11.11.2026)
+
+Umgesetzt: `viper nats peers|listen|send|broadcast|request <gruppe> [text|-]` mit `--to`, `--topic`, `--from`, `--timeout`, `--query`, `--json`, `--yes` (`adapter/driving/cli/nats.go`), der Port `driving.NATSCLI` (die Befehlszeile ruft das Paket `usecase/natscli` nur über ihn auf, wie der Linter es verlangt) und der SSH-Weg (`StreamTool`, ohne `-n` wenn Text da ist, ohne Neuversuch). `watch` beendet sich, wenn die Ausgabe nicht mehr lesbar ist (die SSH-Verbindung brach ab). `--json` ist eingebaut (Entscheidung §8, Punkt 4: ja).
+
+Tests: Unit- und Integrationstests der Befehlszeile (Text über Standardeingabe unverändert, nie in der Befehlszeile; der Absender ist nie der Empfänger; `--from`; Verweigerung ohne `--yes` bei Push-Liste; Optionsprüfung; JSON). Im Paket `natsmcp` zusätzlich: eine Antwort einer anderen Maschine als der gefragten wird nicht angenommen. Die ganze Suite läuft mit `-race` grün, der Linter meldet nichts.
+
+Meilenstein 3 ist damit bis auf den **echten Lauf auf Hetzner** erledigt. Der echte Lauf braucht Server und Kosten und gehört zur Abnahme (Meilenstein 4).
+
 ## 5 Stufe 2: eigener Absender des Betreibers (`--from operator`)
 
 **Idee:** Der Betreiber bekommt eine **eigene Identität** in der Gruppe: einen NKey, der lokal liegt, und einen Eintrag im NATS-Server mit eigenem Namen. Damit sendet `viper` direkt vom eigenen Rechner, ohne Maschine als Zwischenstation, und der Empfänger sieht den echten Absender.

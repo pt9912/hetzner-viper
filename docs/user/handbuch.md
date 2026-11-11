@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.87  
+Version: 1.88  
 Software-Version: v0.17.0  
 Stand: 11.11.2026  
 
@@ -53,6 +53,7 @@ Bei den Anbietern:
 | `viper log [<rechner>]` | Zeigt die lokalen Protokolle: Ereignisse aller Rechner, eines Rechners oder mit `--full` dessen vollständige Ausgabe. |
 | `viper up --group <gruppe>`, `viper down --group <gruppe>`, `viper check --group <gruppe>`, `viper preflight --group <gruppe>`, `viper ssh --group <gruppe> --cmd …` | Dieselben Befehle für alle Rechner einer Gruppe aus `groups/<gruppe>.env`, gleichzeitig (siehe „Eine Gruppe von Rechnern gemeinsam starten und beenden“). |
 | `viper mcp-binary --arch amd64\|arm64` | Schreibt den in `viper` eingebauten MCP-Server `viper-nats-mcp` für die Architektur nach stdout (`> datei`), zum Ansehen, Prüfen oder als `NATS_MCP_BINARY`. Zeigt nichts auf dem Terminal. |
+| `viper nats peers\|listen\|send\|broadcast\|request <gruppe> …` | Sendet Nachrichten an die Rechner einer NATS-Gruppe und liest mit, als einer der Rechner der Gruppe (siehe „Nachrichten an eine NATS-Gruppe senden“). |
 | `viper help`, `viper version` | Zeigt alle Befehle bzw. die Version. |
 
 ### Wie ein Rechner benannt wird
@@ -404,7 +405,7 @@ Auf allen Rechnern ist außerdem das Programm `nats` installiert. Beispiel auf `
 nats --server $NATS_URL --tlsca $NATS_CA_FILE --nkey $NATS_NKEY_SEED_FILE pub viper.entwicklung.beta.status "bereit"
 ```
 
-**Wer darf was?** Jeder Rechner darf nur in seinen eigenen Bereich `viper.<gruppe>.<rechner>.>` senden und Anfragen an `viper.<gruppe>.<empfänger>.req.>` schicken. Mitlesen darf er alles in `viper.<gruppe>.>`. Alles andere, auch andere Gruppen, wird abgelehnt. **Antworten sind normale Nachrichten:** Wer antwortet, veröffentlicht sie in seinem eigenen Bereich, zum Beispiel `viper.<gruppe>.<antwortender>.res.<anfragender>`; das Antwort-Verfahren von NATS über ein Reply-Subject (`nats request`) funktioniert zwischen den Rechnern seit v0.15.1 nicht mehr. In `viper.<gruppe>.<rechner>.>` steht verlässlich, wer gesendet hat; in `viper.<gruppe>.<empfänger>.req.>` nicht, diesen Bereich darf jede Maschine beschreiben. **Alle Rechner der Gruppe können alles mitlesen**, nichts ist privat. Gruppen aus v0.15.0 hatten eine Lücke (Rechner konnten über die Antwort-Funktion `allow_responses` auch in fremde Bereiche senden); ein weiteres `viper up` auf einem Rechner der Gruppe schreibt die Konfiguration neu und schließt sie.
+**Wer darf was?** Jeder Rechner darf nur in seinen eigenen Bereich `viper.<gruppe>.<rechner>.>` senden und Anfragen an `viper.<gruppe>.<empfänger>.req.>` schicken. Mitlesen darf er alles in `viper.<gruppe>.>`. Alles andere, auch andere Gruppen, wird abgelehnt. **Antworten sind normale Nachrichten:** Wer antwortet, veröffentlicht sie in seinem eigenen Bereich, zum Beispiel `viper.<gruppe>.<antwortender>.out.<anfragender>`; das Antwort-Verfahren von NATS über ein Reply-Subject (`nats request`) funktioniert zwischen den Rechnern seit v0.15.1 nicht mehr. In `viper.<gruppe>.<rechner>.>` steht verlässlich, wer gesendet hat; in `viper.<gruppe>.<empfänger>.req.>` nicht, diesen Bereich darf jede Maschine beschreiben. **Alle Rechner der Gruppe können alles mitlesen**, nichts ist privat. Gruppen aus v0.15.0 hatten eine Lücke (Rechner konnten über die Antwort-Funktion `allow_responses` auch in fremde Bereiche senden); ein weiteres `viper up` auf einem Rechner der Gruppe schreibt die Konfiguration neu und schließt sie.
 
 #### Hinweise
 
@@ -547,6 +548,43 @@ Claude Code fragt standardmäßig bei jedem Aufruf eines Werkzeugs. `viper` änd
 * **Keine Nachverfolgung und keine Signaturen.** Der NATS-Server führt keine Konten und merkt sich nichts; der Rechner schreibt nur ein lokales Protokoll `~/.viper-nats/mcp.log` (mit Rotation, ohne Nachrichtentexte). Alte Nachrichten lassen sich nicht als alt erkennen.
 * **`NATS_MCP_AUTOALLOW=all` und Push** vergrößern, was ein unterschobener Text anrichten kann. Beginnen Sie mit `off` oder `read`.
 * **Nach einem Update von `viper`** laufen die Rechner mit dem alten MCP-Server weiter, bis Sie `viper up` für sie wiederholen; `viper check` warnt davor.
+
+### Nachrichten an eine NATS-Gruppe senden und mitlesen (`viper nats`)
+
+Mit `viper nats` sprechen Sie die Rechner einer NATS-Gruppe von Ihrem eigenen Rechner aus an, ohne eine Claude-Code-Sitzung zu öffnen: eine Nachricht an eine Maschine, ein Rundruf an ein Thema, eine Anfrage mit Antwort, die Anwesenheit der Gruppe, Mitlesen.
+
+#### Voraussetzung
+
+* Die Gruppe hat eine Datei `groups/<gruppe>.env`, die Rechner sind mit `viper up` gestartet (jeder hat eine SSH-Konfiguration), und mindestens einer hat `NATS_ENABLED=true` **und `NATS_MCP=true`** (siehe „Claude Code mit den anderen Rechnern der Gruppe sprechen lassen“). `viper nats` führt dessen MCP-Server `viper-nats-mcp` per SSH auf dem Rechner aus.
+* NATS-Gruppen gibt es nur bei Hetzner.
+
+#### Vorgehen
+
+```bash
+viper nats peers     entwicklung                          # wer hat sich gemeldet (hört 35 Sekunden)
+viper nats peers     entwicklung --query                  # schneller (8 Sekunden), siehe Hinweise
+viper nats send      entwicklung "Bitte pushen" --to beta
+viper nats broadcast entwicklung "Release um 15 Uhr" --topic news
+viper nats request   entwicklung "Wie ist der Stand?" --to beta --timeout 60
+viper nats listen    entwicklung [--topic news]           # bis Strg-C
+echo "langer Text" | viper nats send entwicklung - --to beta   # Text von der Standardeingabe
+```
+
+* **Absender:** Ihre Nachricht kommt von einer **Maschine der Gruppe** an, mit deren Schlüssel und Rechten; `viper` nimmt ohne `--from` die erste Maschine der Gruppe, die startklar ist und nicht der Empfänger ist. Mit `--from <maschine>` wählen Sie sie selbst. Die erste Ausgabezeile nennt sie („Sender: alpha …“).
+* `--json` gibt je Ereignis eine JSON-Zeile aus.
+* `--timeout` bei `request` (Standard 30 Sekunden, 1 bis 120) und bei `peers` (wie lange zugehört wird).
+
+#### Ergebnis
+
+`send` und `broadcast` melden „sent as <maschine> …“. Das heißt nicht, dass jemand die Nachricht erhalten hat: Es gibt keine Zwischenspeicherung, eine Maschine ohne laufende Claude-Code-Sitzung verpasst sie. `request` gibt den Text der Antwort aus oder endet mit Fehler, wenn nach dem Timeout keine Antwort der **gefragten** Maschine da ist (eine Antwort einer anderen Maschine zählt nicht).
+
+#### Hinweise und Warnungen
+
+* **Der Empfänger sieht die Maschine als Absender, nicht Sie.** Der Absender folgt aus dem Schlüssel; einen eigenen Absender gibt es in dieser Stufe nicht. Steht die Absender-Maschine in `NATS_MCP_PUSH_FROM` einer Empfänger-Maschine, schiebt deren MCP-Server Ihren Text als Nachricht dieser Maschine in die Sitzung des Agenten. `viper` verweigert das ohne `--yes` und nennt die betroffenen Rechner. Wählen Sie dann eine andere Maschine mit `--from` oder bestätigen Sie mit `--yes`.
+* **Der Text ist nicht vertrauenswürdig und nichts ist privat.** Antworten und mitgelesene Nachrichten stammen von Agenten und können Anweisungen enthalten; `viper` entfernt Steuerzeichen, mehr nicht. Senden Sie nichts Vertrauliches.
+* **`peers` ohne `--query`** hört 35 Sekunden, weil sich jede Maschine nur alle 30 Sekunden meldet. Mit `--query` bitten Sie alle um eine Meldung (8 Sekunden); dann gilt die gewählte Maschine bei den anderen bis zu 90 Sekunden als anwesend, auch wenn dort kein Agent läuft.
+* **Größe:** Ein Text darf höchstens 16 KiB haben, und die kodierte Nachricht höchstens 32 KiB (Steuerzeichen werden länger); sonst meldet `viper` einen Fehler und sendet nichts.
+* **`listen`** beendet das Programm auf der Maschine, wenn die Verbindung abbricht; es kann bis zur nächsten Nachricht der Gruppe (spätestens 30 Sekunden) weiterlaufen.
 
 ### Ein privates Repository per SSH klonen
 
@@ -1275,3 +1313,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.85 | v0.17.0 | Release v0.17.0: die Änderungen 1.83 und 1.84 (Google Cloud und Azure nicht mehr als „nicht erprobt“, `NATS_MCP_TOPICS`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.17.0`. |
 | 1.86 | nach v0.17.0 | Neu: `viper preflight --group <gruppe>` prüft vorab alle Rechner einer Gruppe, nur lesend. |
 | 1.87 | nach v0.17.0 | `down --group`: Die Ausgabe eines Rechners erscheint als Block direkt über seiner Frage (`DISCARD`/`DELETE`) und nicht mehr zwischen den Zeilen der anderen. |
+| 1.88 | nach v0.17.0 | Neu: `viper nats` (`peers`, `listen`, `send`, `broadcast`, `request`) spricht eine NATS-Gruppe von Ihrem Rechner aus an, als eine Maschine der Gruppe; Berichtigung des Beispiels für Antworten (`…out.<anfragender>`). |

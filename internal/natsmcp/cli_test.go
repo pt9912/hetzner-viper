@@ -193,3 +193,27 @@ func (w *syncWriter) Write(p []byte) (int, error) {
 	defer w.mu.Unlock()
 	return w.b.Write(p)
 }
+
+func TestTheRequestSubcommandIgnoresAnAnswerOfAnotherMachine(t *testing.T) {
+	x := newTrio(t, nil)
+	go func() {
+		for i := 0; i < 100; i++ {
+			for _, e := range x.b.svc.Inbox().Since(0) {
+				if e.Kind != "req" {
+					continue
+				}
+				// c answers in its own tree with the ID of the request; only then the one that was asked
+				_ = x.c.svc.PublishEnvelope("viper.g.c.out.a", natsmcp.Envelope{V: 1, Kind: "res", Re: e.ID, Text: "forged by c"})
+				_ = x.c.svc.FlushRaw()
+				time.Sleep(200 * time.Millisecond)
+				_, _ = call(t, x.b.svc, "reply", map[string]any{"handle": e.Handle, "text": "from b"})
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}()
+	lines, errs, code := runCLI(t, x.a, "request", "ping", "--to", "b", "--timeout", "10s")
+	if code != 0 || len(lines) != 1 || lines[0].Text != "from b" {
+		t.Fatalf("%v %q %d", lines, errs, code)
+	}
+}
