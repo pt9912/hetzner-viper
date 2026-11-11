@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -18,6 +19,7 @@ type Config struct {
 	SeedFile string
 	Names    Names
 	PushFrom map[string]bool
+	Topics   []string // subscribed at the start and not to be unsubscribed (VIPER_NATS_MCP_TOPICS)
 
 	MaxText     int // the longest text of a message in bytes
 	PushPerMin  int // messages per sender and minute that are pushed; more go only to the inbox
@@ -88,6 +90,17 @@ func LoadConfig(dir string) (Config, error) {
 			}
 			c.PushFrom[m] = true
 		}
+	}
+	for _, t := range strings.Split(mcp["VIPER_NATS_MCP_TOPICS"], ",") {
+		if t = strings.TrimSpace(t); t != "" && !slices.Contains(c.Topics, t) {
+			if !ValidName(t) {
+				return Config{}, fmt.Errorf("mcp.env: %q in VIPER_NATS_MCP_TOPICS is not a topic name", t)
+			}
+			c.Topics = append(c.Topics, t)
+		}
+	}
+	if len(c.Topics) > maxTopics {
+		return Config{}, fmt.Errorf("mcp.env: at most %d topics in VIPER_NATS_MCP_TOPICS", maxTopics)
 	}
 	return c, nil
 }

@@ -38,7 +38,8 @@ func (r *runner) natsMCP(ctx context.Context) (int, error) {
 	if _, err := r.remote(ctx, string(bin), natsMCPInstallScript, natsserver.Dir, mcpbin.Checksum(bin)); err != nil {
 		return fail("installing the server", err)
 	}
-	env := "VIPER_NATS_MCP_PUSH_FROM=" + strings.Join(c.NATS.MCPPushFrom, ",") + "\n"
+	env := "VIPER_NATS_MCP_PUSH_FROM=" + strings.Join(c.NATS.MCPPushFrom, ",") + "\n" +
+		"VIPER_NATS_MCP_TOPICS=" + strings.Join(c.NATS.MCPTopics, ",") + "\n"
 	if _, err := r.remote(ctx, env, natsFileScript, natsserver.Dir, natsMCPEnv, "600"); err != nil {
 		return fail("writing mcp.env", err)
 	}

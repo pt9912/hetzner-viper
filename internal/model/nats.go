@@ -44,6 +44,9 @@ func CheckNATSName(what, name string) error {
 	return nil
 }
 
+// MaxMCPTopics is how many topics an MCP server holds (the default ones included).
+const MaxMCPTopics = 16
+
 // NATSConfig is the NATS group a machine belongs to, as the settings describe it. The zero value
 // means NATS is off: the machine behaves as it did before.
 type NATSConfig struct {
@@ -57,6 +60,9 @@ type NATSConfig struct {
 	// MCPPushFrom are the machines whose messages the MCP server pushes into the session of the agent
 	// (NATS_MCP_PUSH_FROM); empty: none.
 	MCPPushFrom []string
+	// MCPTopics are the topics the MCP server subscribes to when it starts, on every machine
+	// (NATS_MCP_TOPICS); they cannot be unsubscribed at run time. At most MaxMCPTopics.
+	MCPTopics []string
 	// MCPAutoAllow is whether viper allows the tools of the MCP server in the settings of Claude Code
 	// without asking each time: "off" (default), "read" (peers, inbox) or "all".
 	MCPAutoAllow string

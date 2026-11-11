@@ -101,6 +101,15 @@ func (s *Service) Connect(ctx context.Context) error {
 	if _, err := nc.Subscribe(s.cfg.Names.PresenceSub(), s.onPresence); err != nil {
 		return err
 	}
+	for _, t := range s.cfg.Topics {
+		sub, err := nc.Subscribe(s.cfg.Names.PubSub(t), s.onTopic)
+		if err != nil {
+			return err
+		}
+		s.mu.Lock()
+		s.topics[t] = sub
+		s.mu.Unlock()
+	}
 	// when this returns, the server has the subscriptions: a message sent at once by another machine is not
 	// missed (if the server cannot be reached yet, this gives up after a moment and the retries go on)
 	_ = nc.FlushTimeout(2 * time.Second)

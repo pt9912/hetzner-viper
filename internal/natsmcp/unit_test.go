@@ -244,3 +244,27 @@ func TestDecodeIsStrictAboutKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadConfigReadsTheDefaultTopics(t *testing.T) {
+	write := func(topics string) string {
+		dir := t.TempDir()
+		conn := "NATS_URL=tls://h:4222\nNATS_NKEY_SEED_FILE=/s\nVIPER_NATS_SUBJECT_PREFIX=viper.g.a\n"
+		if err := os.WriteFile(filepath.Join(dir, "connection.env"), []byte(conn), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "mcp.env"), []byte("VIPER_NATS_MCP_TOPICS="+topics+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	c, err := natsmcp.LoadConfig(write("build, alerts,build"))
+	if err != nil || strings.Join(c.Topics, ",") != "build,alerts" {
+		t.Fatalf("%v %v", err, c.Topics)
+	}
+	if c, err = natsmcp.LoadConfig(write("")); err != nil || len(c.Topics) != 0 {
+		t.Fatalf("%v %v", err, c.Topics)
+	}
+	if _, err = natsmcp.LoadConfig(write("a.b")); err == nil {
+		t.Error("a topic name with a dot was accepted")
+	}
+}

@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.83  
+Version: 1.84  
 Software-Version: v0.16.0  
 Stand: 10.11.2026  
 
@@ -872,6 +872,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `GROUP_MACHINES` | nur in `groups/<gruppe>.env`: die Rechner der Gruppe, durch Komma getrennt | – |
 | `NATS_MCP` | `true`: `viper up` installiert auf dem Rechner den MCP-Server `viper-nats-mcp` und trägt ihn bei Claude Code ein (Benutzerbereich, Name `nats`); braucht `NATS_ENABLED=true` | `false` |
 | `NATS_MCP_PUSH_FROM` | Maschinennamen, durch Komma getrennt (der eigene Name wird übergangen, sodass dieselbe Liste in einer Gruppendatei für alle Rechner gilt), deren Nachrichten der Server in eine Claude-Code-Sitzung schiebt (nur wenn Sie Claude selbst mit dem Channel-Schalter starten, siehe unten); leer: nichts wird geschoben | leer |
+| `NATS_MCP_TOPICS` | Topics, durch Komma getrennt (höchstens 16, Namen wie bei `subscribe`), die der MCP-Server beim Start abonniert, wie mit dem Werkzeug `subscribe`, nur fest: `unsubscribe` lehnt sie ab. In einer Gruppendatei (`groups/<gruppe>.env`) gilt die Liste für alle Rechner der Gruppe; eine Änderung wirkt nach `viper up` und dem nächsten Start des Servers (neue Claude-Code-Sitzung) | leer |
 | `NATS_MCP_AUTOALLOW` | Welche Werkzeuge des MCP-Servers Claude Code ohne Nachfrage nutzen darf: `off`, `read` (`peers`, `inbox`) oder `all`; ein früher gesetzter Eintrag wird bei jedem `viper up` ersetzt | `off` |
 | `NATS_MCP_BINARY` | Datei, die statt des in `viper` eingebauten MCP-Servers installiert wird (nötig für ein mit `go build` gebautes `viper` ohne `make`) | leer |
 | `DNS_PROVIDER` | Wer den DNS-Namen anlegt: `cloudflare` oder `none` (kein Eintrag, keine Domain, kein Cloudflare); wird nur aus den Einstellungsdateien gelesen | `cloudflare` |
@@ -1266,3 +1267,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.81 | v0.16.0 | Release v0.16.0: die Änderungen 1.77 bis 1.80 (Gruppendateien `groups/` und `--group`, MCP-Server `viper-nats-mcp` mit `NATS_MCP`, Korrektur der gleichzeitigen Beitritte zu einer NATS-Gruppe). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.16.0`. |
 | 1.82 | v0.16.0 | Neu: `viper mcp-binary --arch amd64\|arm64` schreibt den eingebauten MCP-Server als Datei nach stdout. |
 | 1.83 | nach v0.16.0 | Google Cloud und Azure gelten nicht mehr als „nicht in einem echten Konto getestet“, sondern als „nur gegen nachgebildete Schnittstellen getestet, ein Lauf in einem echten Konto ist nicht belegt“ (README, Handbuch, Vorlage); ob sie in der Praxis laufen, ist offen. |
+| 1.84 | nach v0.16.0 | Neu: `NATS_MCP_TOPICS`. Topics, die der MCP-Server auf jedem Rechner beim Start abonniert (in einer Gruppendatei für alle Rechner der Gruppe); `unsubscribe` lehnt sie ab. `viper check` vergleicht die Liste mit `mcp.env`. |

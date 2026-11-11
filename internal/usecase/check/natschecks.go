@@ -189,6 +189,9 @@ func natsMCPChecks(r *report, c *model.Machine, v map[string]string, members []m
 	} else {
 		r.ok("messages of %s are pushed into a session with the channel flag", want)
 	}
+	if want := strings.Join(c.NATS.MCPTopics, ","); v["mcp_topics"] != want {
+		r.warn("the topics the MCP server subscribes to are %q on the machine, NATS_MCP_TOPICS says %q: run viper up %s", v["mcp_topics"], want, c.Name)
+	}
 	if want := strings.Join(model.MCPAllowedTools(c.NATS.MCPAutoAllow), ","); v["mcp_claude"] != "no-jq" && v["mcp_allowed"] != want {
 		r.warn("the tools of the MCP server allowed without asking are %q, NATS_MCP_AUTOALLOW=%s says %q: run viper up %s", v["mcp_allowed"], c.NATS.MCPAutoAllow, want, c.Name)
 	}

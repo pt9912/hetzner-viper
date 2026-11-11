@@ -109,7 +109,7 @@ func setupWith(t *testing.T, pushFrom map[string][]string, quiet map[string]bool
 	for _, name := range []string{"a", "b", "c"} {
 		m := &machine{}
 		cfg := natsmcp.Config{URL: srv.ClientURL(), SeedFile: seedFile[name], Names: natsmcp.Names{Group: "g", Me: name}, PushFrom: map[string]bool{},
-			MaxText: natsmcp.DefaultMaxText, PushPerMin: 3, InboxMax: 200, InboxPerMan: 50, Quiet: quiet[name]}
+			MaxText: natsmcp.DefaultMaxText, PushPerMin: 3, InboxMax: 200, InboxPerMan: 50, Quiet: quiet[name], Topics: defaultTopics[name]}
 		for _, f := range pushFrom[name] {
 			cfg.PushFrom[f] = true
 		}
@@ -290,6 +290,27 @@ func TestTopicsReachOnlySubscribers(t *testing.T) {
 	}
 	if _, err := call(t, x.b.svc, "unsubscribe", map[string]any{"topic": "build"}); err != nil {
 		t.Error(err)
+	}
+}
+
+// defaultTopics are the topics (NATS_MCP_TOPICS) per machine that setupWith configures; a test sets it.
+var defaultTopics map[string][]string
+
+func TestDefaultTopicsAreSubscribedAtTheStartAndStay(t *testing.T) {
+	defaultTopics = map[string][]string{"b": {"build"}}
+	t.Cleanup(func() { defaultTopics = nil })
+	x := newTrio(t, nil)
+	if _, err := call(t, x.a.svc, "broadcast", map[string]any{"topic": "build", "text": "build done"}); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "b has the topic message without having subscribed", func() bool {
+		return x.b.hasEntry(func(e natsmcp.Entry) bool { return e.Topic == "build" && e.From == "a" })
+	})
+	if _, err := call(t, x.b.svc, "unsubscribe", map[string]any{"topic": "build"}); err == nil || !strings.Contains(err.Error(), "NATS_MCP_TOPICS") {
+		t.Errorf("a default topic was unsubscribed: %v", err)
+	}
+	if txt, err := call(t, x.b.svc, "subscribe", map[string]any{"topic": "build"}); err != nil || !strings.Contains(txt, "already") {
+		t.Errorf("%q %v", txt, err)
 	}
 }
 

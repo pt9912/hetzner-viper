@@ -483,6 +483,9 @@ func TestLoadRefusesBadNATSMCPSettings(t *testing.T) {
 		"push from dots":  {base + "NATS_MCP_PUSH_FROM=a.b\n", "NATS_MCP_PUSH_FROM"},
 		"push from wild":  {base + "NATS_MCP_PUSH_FROM=a,*\n", "NATS_MCP_PUSH_FROM"},
 		"autoallow other": {base + "NATS_MCP_AUTOALLOW=yes\n", "NATS_MCP_AUTOALLOW: off, read or all"},
+		"topic dots":      {base + "NATS_MCP_TOPICS=a.b\n", "NATS_MCP_TOPICS"},
+		"topic wild":      {base + "NATS_MCP_TOPICS=\"a,>\"\n", "NATS_MCP_TOPICS"},
+		"too many topics": {base + "NATS_MCP_TOPICS=t1,t2,t3,t4,t5,t6,t7,t8,t9,t10,t11,t12,t13,t14,t15,t16,t17\n", "at most 16 topics"},
 	} {
 		_, err := settingsfile.Load(setupDir(t, tc.settings, ""), "web", env, false)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -501,5 +504,18 @@ func TestTheOwnNameInThePushListIsLeftOutSoOneListServesAGroup(t *testing.T) {
 	c, err := settingsfile.Load(dir, "web", env, false)
 	if err != nil || strings.Join(c.NATS.MCPPushFrom, ",") != "alpha,beta" {
 		t.Fatalf("%v %v", err, c.NATS.MCPPushFrom)
+	}
+}
+
+func TestLoadReadsTheDefaultTopicsOfTheMCPServer(t *testing.T) {
+	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
+	base := "DNS_DOMAIN=example.com\nNATS_ENABLED=true\nNATS_GROUP=g\nNATS_MCP=true\n"
+	c, err := settingsfile.Load(setupDir(t, base+"NATS_MCP_TOPICS=\" build, alerts ,build,\"\n", ""), "web", env, false)
+	if err != nil || strings.Join(c.NATS.MCPTopics, ",") != "build,alerts" {
+		t.Fatalf("%v %v", err, c.NATS.MCPTopics)
+	}
+	c, err = settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nNATS_MCP_TOPICS=build\n", ""), "web", env, false)
+	if err != nil || c.NATS.MCPTopics != nil {
+		t.Fatalf("NATS off: %v %v", err, c.NATS.MCPTopics)
 	}
 }

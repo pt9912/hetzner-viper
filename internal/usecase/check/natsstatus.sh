@@ -50,3 +50,4 @@ else
   echo "mcp_claude=no-jq"
 fi
 echo "mcp_push=$(sed -n 's/^VIPER_NATS_MCP_PUSH_FROM=//p' "$dir/mcp.env" 2>/dev/null | head -n 1)"
+echo "mcp_topics=$(sed -n 's/^VIPER_NATS_MCP_TOPICS=//p' "$dir/mcp.env" 2>/dev/null | head -n 1)"

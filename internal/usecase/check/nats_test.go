@@ -368,3 +368,17 @@ func TestAPushSourceThatIsNoMachineOfTheGroupIsWarnedAbout(t *testing.T) {
 		t.Errorf("%s", sec)
 	}
 }
+
+func TestTheDefaultTopicsOfTheMCPServerAreCompared(t *testing.T) {
+	base := healthyClient + "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=/home/builder/.viper-nats/viper-nats-mcp\nmcp_allowed=peers,inbox\nmcp_push=alpha\n"
+	cfg := mcpOn + "NATS_MCP_TOPICS=build,alerts\n"
+	n := newNATSFixture(t, cfg, model.NATSClient, base+"mcp_topics=build,alerts\n")
+	if sec := natsSection(func() string { o, _ := n.run(); return o }()); strings.Contains(sec, "NATS_MCP_TOPICS") {
+		t.Errorf("matching topics were warned about:\n%s", sec)
+	}
+	n = newNATSFixture(t, cfg, model.NATSClient, base+"mcp_topics=build\n")
+	out, _ := n.run()
+	if sec := natsSection(out); !strings.Contains(sec, `WARN  the topics the MCP server subscribes to are "build" on the machine, NATS_MCP_TOPICS says "build,alerts"`) {
+		t.Errorf("%s", sec)
+	}
+}

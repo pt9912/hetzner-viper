@@ -191,6 +191,20 @@ func applyNATSMCP(c *model.Machine, home string) error {
 		seen[m] = true
 		c.NATS.MCPPushFrom = append(c.NATS.MCPPushFrom, m)
 	}
+	seen = map[string]bool{}
+	for _, t := range strings.Split(c.Get("NATS_MCP_TOPICS"), ",") {
+		if t = strings.TrimSpace(t); t == "" || seen[t] {
+			continue
+		}
+		if err := model.CheckNATSName("NATS_MCP_TOPICS", t); err != nil {
+			return err
+		}
+		seen[t] = true
+		c.NATS.MCPTopics = append(c.NATS.MCPTopics, t)
+	}
+	if len(c.NATS.MCPTopics) > model.MaxMCPTopics {
+		return fmt.Errorf("NATS_MCP_TOPICS: at most %d topics", model.MaxMCPTopics)
+	}
 	mode := strings.ToLower(strings.TrimSpace(c.Get("NATS_MCP_AUTOALLOW")))
 	switch mode {
 	case "":

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 )
@@ -309,6 +310,9 @@ func (s *Service) toolUnsubscribe(_ context.Context, args json.RawMessage) (stri
 	var a struct{ Topic string }
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", argError("unsubscribe", err)
+	}
+	if slices.Contains(s.cfg.Topics, a.Topic) {
+		return "", fmt.Errorf("%q is a default topic of the group (NATS_MCP_TOPICS) and stays subscribed", a.Topic)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
