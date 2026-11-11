@@ -123,3 +123,41 @@ func TestE2E(t *testing.T) {
 		t.Errorf("after the delete: %+v %v", got, err)
 	}
 }
+
+// TestE2ENATSNetwork makes the security group of a NATS group in a real account, makes it a second
+// time (the lock of the first start), and deletes it. It costs nothing. Run it with
+//
+//	VIPER_E2E_AWS=<profile> go test -tags e2e -run TestE2ENATSNetwork -v ./internal/adapter/driven/aws/
+func TestE2ENATSNetwork(t *testing.T) {
+	profile := os.Getenv("VIPER_E2E_AWS")
+	if profile == "" {
+		t.Skip("set VIPER_E2E_AWS=<profile> to run against a real account")
+	}
+	region := os.Getenv("VIPER_E2E_REGION")
+	if region == "" {
+		region = "eu-central-1"
+	}
+	ctx := context.Background()
+	group := fmt.Sprintf("e2e%d", time.Now().Unix())
+	c := aws.New(aws.Options{Location: region, Profile: profile, Poll: 3 * time.Second, NATSPort: 4222})
+	n, created, err := c.EnsurePrivateNetwork(ctx, group, region)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := c.DeletePrivateNetwork(ctx, n.ID); err != nil {
+			t.Errorf("deleting %s: %v", n.ID, err)
+		}
+	}()
+	if !created || n.Name != aws.GroupName(group) {
+		t.Errorf("%+v created %v", n, created)
+	}
+	again, created2, err := c.EnsurePrivateNetwork(ctx, group, region)
+	if err != nil || created2 || again.ID != n.ID {
+		t.Errorf("the second caller must find the group: %+v %v %v", again, created2, err)
+	}
+	found, err := c.FindPrivateNetwork(ctx, group)
+	if err != nil || found == nil || found.ID != n.ID {
+		t.Errorf("%+v %v", found, err)
+	}
+}
