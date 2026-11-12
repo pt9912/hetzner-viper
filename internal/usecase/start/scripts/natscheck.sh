@@ -2,7 +2,13 @@ set -uo pipefail
 export LC_ALL=C
 ip="$1"; port="$2"
 # the server speaks first: INFO with the flags that say it wants TLS and a login
-exec 3<>"/dev/tcp/$ip/$port" 2>/dev/null || { echo "nats check: cannot connect to $ip:$port"; exit 1; }
+# a Service name answers a moment after the pod is ready: try for a while
+ok=''
+for _ in $(seq 1 30); do
+  if exec 3<>"/dev/tcp/$ip/$port" 2>/dev/null; then ok=1; break; fi
+  sleep 1
+done
+[ -n "$ok" ] || { echo "nats check: cannot connect to $ip:$port"; exit 1; }
 IFS= read -r -t 5 -u 3 line || { echo "nats check: no answer from $ip:$port"; exit 1; }
 case "$line" in INFO\ *) ;; *) echo "nats check: not a NATS server: ${line:0:40}"; exit 1 ;; esac
 case "$line" in *'"tls_required":true'*) ;; *) echo "nats check: the server does not require TLS"; exit 1 ;; esac

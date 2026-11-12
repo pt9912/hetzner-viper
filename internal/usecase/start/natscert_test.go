@@ -103,3 +103,32 @@ func TestAnExistingCertificateIsKeptAndNeverReplacedBehindTheClientsBack(t *test
 		t.Errorf("another address must be refused: %v\n%s", err, out)
 	}
 }
+
+func TestTheCertificateOfAServerInAPodIsForTheNameOfItsService(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the script runs on the server, in bash with openssl")
+	}
+	if _, err := exec.LookPath("openssl"); err != nil {
+		t.Skip("no openssl")
+	}
+	dir := filepath.Join(t.TempDir(), "nats")
+	const name = "viper-nats-dev.viper.svc"
+	out, err := runCert(t, dir, name)
+	if err != nil || !strings.Contains(out, "nats cert: created") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	crt := loadCert(t, filepath.Join(dir, "server.crt"))
+	if len(crt.DNSNames) != 1 || crt.DNSNames[0] != name || len(crt.IPAddresses) != 0 || crt.IsCA {
+		t.Errorf("a leaf for the Service name, with no address: %v %v", crt.DNSNames, crt.IPAddresses)
+	}
+	if err := crt.VerifyHostname(name); err != nil {
+		t.Errorf("clients connect by the name: %v", err)
+	}
+	// kept as long as the name is the same; another name means another group
+	if out, err := runCert(t, dir, name); err != nil || !strings.Contains(out, "nats cert: kept") {
+		t.Errorf("%v\n%s", err, out)
+	}
+	if out, err := runCert(t, dir, "viper-nats-other.viper.svc"); err == nil || !strings.Contains(out, "is not for") {
+		t.Errorf("another name must not keep the certificate: %v\n%s", err, out)
+	}
+}

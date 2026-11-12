@@ -22,7 +22,7 @@ ARG NATS_CLI_SHA256_ARM64=91c661f1173ee9bfe07514eef55a29d25ac7757a0868c179e825eb
 # the packages of cloud-init.yaml (without the ones only a VM needs), tini as PID 1, python3-yaml for image/seed.py
 RUN apt-get update && apt-get install -y --no-install-recommends \
       gnupg git gh make build-essential curl ca-certificates tmux jq openssh-server psmisc procps file \
-      tini python3 python3-yaml \
+      iproute2 tini python3 python3-yaml \
  && rm -rf /var/lib/apt/lists/*
 
 # the Docker client and its plugins from Docker's repository (the daemon is the sidecar or a remote one, K8S_DOCKER);
@@ -94,6 +94,7 @@ RUN mkdir -p /opt/viper/home-seed && cp -a /home/builder/. /opt/viper/home-seed/
 # last, so that a change of the entrypoint does not make the long steps above run again
 COPY image/sshd_config /opt/viper/sshd_config
 COPY --chmod=0755 image/entry.sh /opt/viper/entry.sh
+COPY --chmod=0755 image/nats-supervisor.sh /opt/viper/nats-supervisor.sh
 
 USER 1000
 ENV PATH=/home/linuxbrew/.linuxbrew/bin:/home/builder/.local/bin:$PATH

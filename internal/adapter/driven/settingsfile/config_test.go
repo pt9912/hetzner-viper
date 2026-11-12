@@ -542,9 +542,9 @@ func TestLoadReadsTheSettingsOfTheKubernetesProvider(t *testing.T) {
 			t.Errorf("%s: got %v, want %q", name, err, tc.want)
 		}
 	}
-	// NATS is not available for a pod yet
-	_, err = settingsfile.Load(setupDir(t, base+"SERVER_LOCATION=x\nK8S_IMAGE=i\nNATS_ENABLED=true\nNATS_GROUP=g\n", ""), "web", env, false)
-	if err == nil || !strings.Contains(err.Error(), "NATS groups need PROVIDER=") {
-		t.Errorf("NATS: %v", err)
+	// NATS groups work with pods (the Service of the group is the address of the server)
+	c, err = settingsfile.Load(setupDir(t, base+"SERVER_LOCATION=x\nK8S_IMAGE=i\nNATS_ENABLED=true\nNATS_GROUP=g\n", ""), "web", env, false)
+	if err != nil || !c.NATS.Enabled || c.NATS.Group != "g" {
+		t.Errorf("NATS: %+v %v", c.NATS, err)
 	}
 }

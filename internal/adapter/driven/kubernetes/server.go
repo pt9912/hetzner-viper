@@ -81,7 +81,8 @@ func podReady(p *corev1.Pod) bool {
 }
 
 func serverOf(sts *appsv1.StatefulSet, pod *corev1.Pod) *model.Server {
-	s := &model.Server{ID: idOf(sts), Name: sts.Name, Created: sts.CreationTimestamp.Time, SSHPort: SSHPort, ViaAPI: true}
+	s := &model.Server{ID: idOf(sts), Name: sts.Name, Created: sts.CreationTimestamp.Time, SSHPort: SSHPort, ViaAPI: true,
+		GroupRuleMissing: sts.Spec.Template.Labels[model.LabelNATSGroup] == ""} // the NetworkPolicy of the group selects by this label
 	if pod != nil {
 		s.PrivateIP = pod.Status.PodIP
 	}

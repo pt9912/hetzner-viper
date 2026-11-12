@@ -147,5 +147,26 @@ func statefulSetFor(ns string, s model.ServerSpec, o Options, res corev1.Resourc
 	for k, v := range s.Labels { // the NATS labels
 		sts.Labels[k] = v
 	}
+	natsPod(sts, s.Labels)
 	return sts
+}
+
+// natsPod puts what a member of a NATS group needs on the pod: the labels the NetworkPolicy and the Service select by
+// (group and role, which do not change; the state is on the StatefulSet only, a change of the template would restart the
+// pod), and for the server the variable POD_IP (the address it listens on) and the switch that makes the container run
+// nats-server.
+func natsPod(sts *appsv1.StatefulSet, labels map[string]string) {
+	group, role := labels[model.LabelNATSGroup], labels[model.LabelNATSRole]
+	if group == "" {
+		return
+	}
+	sts.Spec.Template.Labels[model.LabelNATSGroup] = group
+	sts.Spec.Template.Labels[model.LabelNATSRole] = role
+	if role != string(model.NATSServer) {
+		return
+	}
+	m := &sts.Spec.Template.Spec.Containers[0]
+	m.Env = append(m.Env,
+		corev1.EnvVar{Name: "VIPER_NATS_SERVER", Value: "1"},
+		corev1.EnvVar{Name: "POD_IP", ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "status.podIP"}}})
 }

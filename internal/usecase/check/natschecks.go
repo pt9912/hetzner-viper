@@ -219,8 +219,13 @@ func natsCertChecks(r *report, v map[string]string, members []model.GroupMember,
 			return
 		}
 	}
-	if v["cert_ip"] != "" && host != "" && v["cert_ip"] != host {
-		r.bad("the certificate is for %s, but connection.env points to %s", v["cert_ip"], host)
+	// the certificate is for what the clients connect to: the address of the server (a VM) or the name of its Service (a pod)
+	forWhat := v["cert_ip"]
+	if forWhat == "" {
+		forWhat = v["cert_dns"]
+	}
+	if forWhat != "" && host != "" && forWhat != host {
+		r.bad("the certificate is for %s, but connection.env points to %s", forWhat, host)
 	}
 }
 

@@ -26,6 +26,8 @@ var (
 	natsIdentityScript string
 	//go:embed scripts/natsunit.sh
 	natsUnitScript string
+	//go:embed scripts/natsproc.sh
+	natsProcScript string
 	//go:embed scripts/natscheck.sh
 	natsCheckScript string
 	//go:embed scripts/natscli.sh

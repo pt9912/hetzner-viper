@@ -19,7 +19,12 @@ if ! out=$("$bin" -t -c "$new" 2>&1); then
   echo "nats config: the new configuration is not valid, the old one stays:"; echo "$out" | tail -n 5; rm -f "$new"; exit 1
 fi
 mv "$new" "$conf" || exit 1
-if systemctl is-active --quiet "$unit"; then
+pidfile="$dir/nats-server.pid"
+if [ -s "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+  # a pod: nats-server is a process of the container (no systemd), the signal makes it read the file again
+  kill -HUP "$(cat "$pidfile")" || { echo "nats config: reload failed"; exit 1; }
+  echo "nats config: written, server reloaded"
+elif command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet "$unit"; then
   sudo systemctl reload "$unit" || { echo "nats config: reload failed"; exit 1; }
   echo "nats config: written, server reloaded"
 else

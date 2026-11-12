@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -98,11 +99,26 @@ type Client struct {
 // Config is the configuration of the server.
 type Config struct {
 	Group string
-	// Host is the private IP the server listens on, never "0.0.0.0".
-	Host    string
+	// Host is the private IP the server listens on, never "0.0.0.0". For a server in a pod (Listen is set) it is the
+	// name the clients connect to: the address of the pod changes, the name of the Service does not.
+	Host string
+	// Listen is ListenPodIP for a server in a pod: it listens on the address of its pod, which nats-server reads from
+	// the environment of the pod. Empty: it listens on Host.
+	Listen  string
 	Port    int
 	Clients []Client
 }
+
+// ListenPodIP is what a server in a pod puts as its listen address: nats-server takes the value of the variable
+// POD_IP (the address of the pod, from the Downward API) when it reads the configuration.
+const ListenPodIP = "$POD_IP"
+
+// advertisePrefix is the line of server.conf that holds the name the clients connect to, for a server that listens on
+// the address of its pod (read back by ParseEndpoint).
+const advertisePrefix = "# viper-advertise "
+
+// dnsNameRe is the name of a Service in a cluster, with its namespace.
+var dnsNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
 
 // Permissions are the subjects a machine may use (the default policy, §6 of the plan): it
 // publishes to its own subtree and to the request subjects of the others, and listens to the
@@ -204,8 +220,13 @@ func (c Config) Render() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	ip := net.ParseIP(c.Host)
-	if ip == nil || ip.To4() == nil || !ip.IsPrivate() {
+	listen := fmt.Sprintf("%q", c.Host)
+	if c.Listen != "" {
+		if c.Listen != ListenPodIP || !dnsNameRe.MatchString(c.Host) || net.ParseIP(c.Host) != nil {
+			return "", fmt.Errorf("nats-server in a pod listens on %s and is reached by the name of a Service, not %q (%q)", ListenPodIP, c.Listen, c.Host)
+		}
+		listen = ListenPodIP
+	} else if ip := net.ParseIP(c.Host); ip == nil || ip.To4() == nil || !ip.IsPrivate() {
 		return "", fmt.Errorf("nats-server listens on a private IPv4 address, not %q", c.Host)
 	}
 	if c.Port < 1024 || c.Port > 65535 {
@@ -213,6 +234,9 @@ func (c Config) Render() (string, error) {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "# written by viper; changes are overwritten\n")
+	if c.Listen != "" {
+		fmt.Fprintf(&b, "%s%s\n", advertisePrefix, c.Host)
+	}
 	for _, cl := range clients {
 		prefix := registryPrefix
 		if cl.Operator {
@@ -220,7 +244,7 @@ func (c Config) Render() (string, error) {
 		}
 		fmt.Fprintf(&b, "%s%s %s\n", prefix, cl.Machine, cl.PublicKey) // read back by ParseClients
 	}
-	fmt.Fprintf(&b, "server_name: \"viper-%s\"\nhost: \"%s\"\nport: %d\n\n", c.Group, c.Host, c.Port)
+	fmt.Fprintf(&b, "server_name: \"viper-%s\"\nhost: %s\nport: %d\n\n", c.Group, listen, c.Port)
 	fmt.Fprintf(&b, "tls {\n  cert_file: \"%s\"\n  key_file: \"%s\"\n  min_version: \"1.2\"\n  timeout: 5\n}\n\n", CertFile, KeyFile)
 	b.WriteString(authorization(c.Group, clients))
 	return b.String(), nil
@@ -388,13 +412,19 @@ VIPER_NATS_SUBJECT_PREFIX=viper.%s.%s
 // Endpoint is where the server listens.
 type Endpoint struct {
 	Host string
-	Port int
+	// Listen is ListenPodIP for a server in a pod (Host is then its Service name), else empty.
+	Listen string
+	Port   int
 }
 
 // ParseEndpoint reads host and port out of a configuration Render wrote.
 func ParseEndpoint(conf string) (Endpoint, bool) {
 	var e Endpoint
+	advertised := ""
 	for _, l := range strings.Split(conf, "\n") {
+		if v, ok := strings.CutPrefix(l, advertisePrefix); ok {
+			advertised = strings.TrimSpace(v)
+		}
 		if v, ok := strings.CutPrefix(l, "host: "); ok {
 			e.Host = strings.Trim(strings.TrimSpace(v), `"`)
 		}
@@ -403,6 +433,9 @@ func ParseEndpoint(conf string) (Endpoint, bool) {
 				return Endpoint{}, false
 			}
 		}
+	}
+	if e.Host == ListenPodIP { // a server in a pod: the name the clients use is the advertised one
+		e.Listen, e.Host = ListenPodIP, advertised
 	}
 	return e, e.Host != "" && e.Port != 0
 }

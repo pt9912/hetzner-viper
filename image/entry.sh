@@ -32,12 +32,22 @@ install -m 644 "$secret/host_key.pub" "$home/.viper/sshd/host_key.pub"
 install -m 644 "$secret/host_key-cert.pub" "$home/.viper/sshd/host_key-cert.pub"
 
 # The environment of the container does not reach the sessions of sshd. What the sessions need of it is handed over by
-# SetEnv: where the Docker daemon is (the sidecar or a remote one).
+# SetEnv: where the Docker daemon is (the sidecar or a remote one), and the address of the pod (the NATS server reads it
+# when viper tests its configuration over ssh).
 cfg="$home/.viper/sshd/config"
 cp /opt/viper/sshd_config "$cfg"
-if [ -n "${DOCKER_HOST:-}" ]; then
-  case "$DOCKER_HOST" in *[[:space:]]*) fail "DOCKER_HOST has a blank in it" ;; esac
-  echo "SetEnv DOCKER_HOST=$DOCKER_HOST" >> "$cfg"
+setenv=""
+for name in DOCKER_HOST POD_IP; do
+  value="${!name:-}"
+  [ -n "$value" ] || continue
+  case "$value" in *[[:space:]\"]*) fail "$name has a blank or a quote in it" ;; esac
+  setenv="$setenv $name=$value"
+done
+[ -z "$setenv" ] || echo "SetEnv$setenv" >> "$cfg"
+
+# the pod is the NATS server of its group: nats-server runs here as a process, without systemd
+if [ "${VIPER_NATS_SERVER:-}" = 1 ]; then
+  /opt/viper/nats-supervisor.sh &
 fi
 
 : > "$ready"

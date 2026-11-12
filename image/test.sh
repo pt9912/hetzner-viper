@@ -8,7 +8,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 srv_version=$(sed -n 's/^ARG NATS_SERVER_VERSION=//p' "$here/Dockerfile")
 cli_version=$(sed -n 's/^ARG NATS_CLI_VERSION=//p' "$here/Dockerfile")
 t=$(mktemp -d); export t; name="viper-machine-test-$$"
-trap 'docker rm -f "$name" "$name-2" >/dev/null 2>&1 || true; docker run --rm --user 0 --entrypoint chown -v "$t/home:/h" "$image" -R 1000:1000 /h >/dev/null 2>&1 || true; rm -rf "$t"' EXIT
+trap 'docker rm -f "$name" "$name-2" "$name-3" >/dev/null 2>&1 || true; docker run --rm --user 0 --entrypoint chown -v "$t/home:/h" "$image" -R 1000:1000 /h >/dev/null 2>&1 || true; rm -rf "$t"' EXIT
 ok=0; bad=0
 check() { # check "what" command...
   local what="$1"; shift
@@ -70,6 +70,27 @@ check "starts with an empty volume over the home directory" wait_ssh 2223
 check "an empty volume is seeded" sshc 2223 'test -f ~/.tmux.conf && test -x ~/.local/bin/claude && test -f ~/.viper-seeded'
 check "claude runs from the seeded home" sshc 2223 "bash -lc 'claude --version'"
 check "a change in the volume survives a restart" bash -c "$(declare -f sshc); sshc 2223 'echo mine > ~/keep.txt' && docker restart $name-2 >/dev/null && $(declare -f wait_ssh) && wait_ssh 2223 && sshc 2223 'cat ~/keep.txt' | grep -qx mine"
+
+docker rm -f "$name-2" >/dev/null
+
+# 3: the pod is the NATS server of a group: nats-server runs as a process (no systemd), reads the address of the pod from the
+# environment, is reloaded by a signal and started again when it ends
+docker run -d --name "$name-3" --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges -e VIPER_NATS_SERVER=1 -e POD_IP=127.0.0.1 \
+  -p 127.0.0.1:2224:2222 -v "$t/secret:/run/viper/secret:ro" "$image" >/dev/null
+check "a server pod starts" wait_ssh 2224
+check "POD_IP reaches the sessions of sshd" sshc 2224 '[ "$POD_IP" = 127.0.0.1 ]'
+check "nats-server starts when the configuration is there and listens on the address of the pod" sshc 2224 '
+  d=~/.viper-nats; mkdir -p $d; chmod 700 $d
+  printf "host: \$POD_IP\nport: 14223\n" > $d/server.conf
+  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout $d/server.key -out $d/server.crt -days 1 -subj /CN=t >/dev/null 2>&1
+  for _ in $(seq 1 20); do [ -s $d/nats-server.pid ] && ss -ltn "sport = :14223" | grep -qF 127.0.0.1:14223 && exit 0; sleep 1; done; exit 1'
+check "a signal makes it read the configuration again (the process stays)" sshc 2224 '
+  d=~/.viper-nats; p=$(cat $d/nats-server.pid); kill -HUP $p; sleep 1; kill -0 $p && [ "$(cat $d/nats-server.pid)" = "$p" ]'
+check "nats-server is started again after it ended" sshc 2224 '
+  d=~/.viper-nats; p=$(cat $d/nats-server.pid); kill -9 $p; for _ in $(seq 1 20); do n=$(cat $d/nats-server.pid 2>/dev/null); [ -n "$n" ] && [ "$n" != "$p" ] && kill -0 $n && exit 0; sleep 1; done; exit 1'
+check "viper's natsconfig.sh reloads it through the pid file" bash -c "$(declare -f sshc)
+  script=\$(cat $here/../internal/usecase/natsgroup/scripts/natsconfig.sh)
+  printf 'host: \$POD_IP\nport: 14223\n' | sshc 2224 \"bash -c \$(printf %q \"\$script\") -- /home/builder/.viper-nats viper-nats\" | grep -q 'server reloaded'"
 
 echo "--- $ok ok, $bad failed"
 [ "$bad" -eq 0 ]

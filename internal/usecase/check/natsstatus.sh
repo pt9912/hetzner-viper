@@ -11,6 +11,7 @@ if [ -s "$crt" ]; then
   end=$(openssl x509 -in "$crt" -noout -enddate 2>/dev/null | cut -d= -f2)
   if [ -n "$end" ] && epoch=$(date -d "$end" +%s 2>/dev/null); then echo "cert_days=$(( (epoch - $(date +%s)) / 86400 ))"; else echo "cert_days=unreadable"; fi
   echo "cert_ip=$(openssl x509 -in "$crt" -noout -ext subjectAltName 2>/dev/null | grep -o 'IP Address:[0-9.]*' | head -n 1 | cut -d: -f2)"
+  echo "cert_dns=$(openssl x509 -in "$crt" -noout -ext subjectAltName 2>/dev/null | grep -o 'DNS:[^, ]*' | head -n 1 | cut -d: -f2)"
 else
   echo "cert_days=missing"
 fi
@@ -28,7 +29,12 @@ fi
 if [ -s "$dir/server.conf" ]; then
   echo "server=yes"
   port="${NATS_URL##*:}"
-  echo "unit=$(systemctl is-active viper-nats 2>/dev/null || true)"
+  # a pod has no systemd: its server is a process of the container, with a pid file
+  if [ -s "$dir/nats-server.pid" ]; then
+    if kill -0 "$(cat "$dir/nats-server.pid")" 2>/dev/null; then echo "unit=active"; else echo "unit=inactive"; fi
+  else
+    echo "unit=$(systemctl is-active viper-nats 2>/dev/null || true)"
+  fi
   echo "listen=$(ss -ltn "sport = :$port" 2>/dev/null | awk 'NR > 1 {print $4}' | paste -sd, -)"
   # v0.15.0 wrote allow_responses, which lets any machine publish anywhere in the group
   echo "allow_responses=$(grep -c allow_responses "$dir/server.conf")"

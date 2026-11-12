@@ -240,6 +240,25 @@ func (r *runner) natsIdentity(ctx context.Context) (string, error) {
 	return lastNonEmpty(out), nil
 }
 
+// natsHost is what the clients connect to, and what the certificate of the server is for: the private address of the
+// server on a VM, the name of the Service of the group in a cluster (the address of a pod changes).
+func (r *runner) natsHost(serverIP string) string {
+	if r.c.IsContainer() {
+		return model.NATSServiceHost(r.c.NATS.Group, r.c.Setting("K8S_NAMESPACE", "viper"))
+	}
+	return serverIP
+}
+
+// natsEndpoint is where the server of the group listens and is reached: on a VM its private address; a server in a pod
+// listens on the address of its pod and is reached by the name of the Service.
+func (r *runner) natsEndpoint(serverIP string) natsserver.Endpoint {
+	e := natsserver.Endpoint{Host: r.natsHost(serverIP), Port: r.c.NATS.Port}
+	if r.c.IsContainer() {
+		e.Listen = natsserver.ListenPodIP
+	}
+	return e
+}
+
 // natsRegister enters the machine and its key in the configuration of the server and has the
 // server read it (natsgroup.Ops.Update keeps the entries of the others).
 func (r *runner) natsRegister(ctx context.Context, server natsgroup.Target, serverIP, pub string) error {
@@ -247,7 +266,7 @@ func (r *runner) natsRegister(ctx context.Context, server natsgroup.Target, serv
 	add := func(l []natsserver.Client) ([]natsserver.Client, error) {
 		return natsserver.WithEntry(l, natsserver.Client{Machine: c.Name, PublicKey: pub})
 	}
-	return r.ops().Update(ctx, server, c.NATS.Group, natsserver.Endpoint{Host: serverIP, Port: c.NATS.Port}, add)
+	return r.ops().Update(ctx, server, c.NATS.Group, r.natsEndpoint(serverIP), add)
 }
 
 // natsFinish writes the connection file, then logs in once with the nats tool to see that it all
@@ -270,7 +289,8 @@ func (r *runner) natsServer(ctx context.Context, ip string) (int, error) {
 	if code, err := r.natsTools(ctx, true); code != 0 || err != nil {
 		return code, err
 	}
-	if _, err := r.remote(ctx, "", natsCertScript, natsserver.Dir, ip, "viper-nats-"+c.NATS.Group); err != nil {
+	host := r.natsHost(ip)
+	if _, err := r.remote(ctx, "", natsCertScript, natsserver.Dir, host, "viper-nats-"+c.NATS.Group); err != nil {
 		return fail("creating the certificate", err)
 	}
 	pub, err := r.natsIdentity(ctx)
@@ -280,17 +300,29 @@ func (r *runner) natsServer(ctx context.Context, ip string) (int, error) {
 	if err := r.natsRegister(ctx, natsgroup.Self(c), ip, pub); err != nil {
 		return fail("writing the configuration", err)
 	}
-	if _, err := r.remote(ctx, natsserver.UnitFile(), natsUnitScript, strings.TrimSuffix(natsserver.Unit, ".service"), ip, fmt.Sprint(c.NATS.Port)); err != nil {
+	if err := r.natsStartServer(ctx, ip); err != nil {
 		return fail("starting the service", err)
 	}
-	if _, err := r.remote(ctx, "", natsCheckScript, ip, fmt.Sprint(c.NATS.Port)); err != nil {
+	if _, err := r.remote(ctx, "", natsCheckScript, host, fmt.Sprint(c.NATS.Port)); err != nil {
 		return fail("checking the server", err)
 	}
-	if err := r.natsFinish(ctx, ip); err != nil {
+	if err := r.natsFinish(ctx, host); err != nil {
 		return fail("logging in", err)
 	}
-	r.printf("NATS server of the group %s is ready at %s:%d.\n", c.NATS.Group, ip, c.NATS.Port)
+	r.printf("NATS server of the group %s is ready at %s:%d.\n", c.NATS.Group, host, c.NATS.Port)
 	return 0, nil
+}
+
+// natsStartServer starts nats-server: as a systemd service on a VM; in a pod there is no systemd, the entrypoint of the
+// container runs it as soon as its configuration is there, and this waits until it listens on the address of the pod.
+func (r *runner) natsStartServer(ctx context.Context, ip string) error {
+	c := r.c
+	if c.IsContainer() {
+		_, err := r.remote(ctx, "", natsProcScript, natsserver.Dir, ip, fmt.Sprint(c.NATS.Port))
+		return err
+	}
+	_, err := r.remote(ctx, natsserver.UnitFile(), natsUnitScript, strings.TrimSuffix(natsserver.Unit, ".service"), ip, fmt.Sprint(c.NATS.Port))
+	return err
 }
 
 // natsWaitForServer waits until the server of the group is ready and returns it. A server that
@@ -354,6 +386,7 @@ func (r *runner) natsClient(ctx context.Context) (int, error) {
 	if err != nil {
 		return fail("storing the identity", err)
 	}
+	host := r.natsHost(server.Server.PrivateIP)
 	if err := r.natsRegister(ctx, target, server.Server.PrivateIP, pub); err != nil {
 		return fail("registering at the server", err)
 	}
@@ -364,10 +397,10 @@ func (r *runner) natsClient(ctx context.Context) (int, error) {
 	if _, err := r.remote(ctx, cert, natsFileScript, natsserver.Dir, "server.crt", "644"); err != nil {
 		return fail("storing the certificate", err)
 	}
-	if err := r.natsFinish(ctx, server.Server.PrivateIP); err != nil {
+	if err := r.natsFinish(ctx, host); err != nil {
 		return fail("logging in", err)
 	}
-	r.printf("NATS client %s of the group %s is ready (server %s:%d).\n", c.Name, c.NATS.Group, server.Server.PrivateIP, c.NATS.Port)
+	r.printf("NATS client %s of the group %s is ready (server %s:%d).\n", c.Name, c.NATS.Group, host, c.NATS.Port)
 	return 0, nil
 }
 

@@ -193,3 +193,38 @@ func TestParseEndpointReadsWhatRenderWrote(t *testing.T) {
 		t.Error("no endpoint in there")
 	}
 }
+
+func TestAServerInAPodListensOnThePodAddressAndIsReachedByTheServiceName(t *testing.T) {
+	cfg := natsserver.Config{Group: "dev", Host: "viper-nats-dev.viper.svc", Listen: natsserver.ListenPodIP, Port: 4222,
+		Clients: []natsserver.Client{{Machine: "alpha", PublicKey: keyA}}}
+	out, err := cfg.Render()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "\nhost: $POD_IP\n") || strings.Contains(out, `host: "`) {
+		t.Errorf("the address of the pod comes from the environment, unquoted:\n%s", out)
+	}
+	end, ok := natsserver.ParseEndpoint(out)
+	if !ok || end.Host != "viper-nats-dev.viper.svc" || end.Listen != natsserver.ListenPodIP || end.Port != 4222 {
+		t.Errorf("%+v %v", end, ok)
+	}
+	// the clients are read back as before, the line with the name is not one of them
+	if got := natsserver.ParseClients(out); len(got) != 1 || got[0].Machine != "alpha" {
+		t.Errorf("%+v", got)
+	}
+	// a VM keeps its quoted private address and has no Listen
+	vm, _ := natsserver.Config{Group: "dev", Host: "10.130.0.2", Port: 4222, Clients: cfg.Clients}.Render()
+	if e, _ := natsserver.ParseEndpoint(vm); e.Host != "10.130.0.2" || e.Listen != "" {
+		t.Errorf("%+v", e)
+	}
+	for name, bad := range map[string]natsserver.Config{
+		"another listen address": {Group: "dev", Host: "viper-nats-dev.viper.svc", Listen: "0.0.0.0", Port: 4222, Clients: cfg.Clients},
+		"a host that is no name": {Group: "dev", Host: "10.0.0.1", Listen: natsserver.ListenPodIP, Port: 4222, Clients: cfg.Clients},
+		"a name with a quote":    {Group: "dev", Host: "a.b\"c", Listen: natsserver.ListenPodIP, Port: 4222, Clients: cfg.Clients},
+		"a name with a newline":  {Group: "dev", Host: "a.b\nc.d", Listen: natsserver.ListenPodIP, Port: 4222, Clients: cfg.Clients},
+	} {
+		if _, err := bad.Render(); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+}

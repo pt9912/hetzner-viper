@@ -77,7 +77,7 @@ func (o Ops) Peer(c *model.Machine, s model.Server) (Target, error) {
 	cc.DNSHost = s.Name + "." + c.DNSDomain
 	cc.KnownPin = filepath.Join(c.SSHDir, "known_hosts_hetzner_"+s.Name)
 	cc.SSHConfig = filepath.Join(c.SSHDir, "config_hetzner_"+s.Name)
-	if s.IPv4 == "" {
+	if s.IPv4 == "" && !s.ViaAPI { // a pod is reached through the API of the cluster
 		return Target{}, fmt.Errorf("the server %s has no public address", s.Name)
 	}
 	if err := o.SSH.WriteConfig(&cc, s.IPv4); err != nil {
@@ -159,7 +159,7 @@ func (o Ops) Update(ctx context.Context, server Target, group string, first nats
 		if err != nil {
 			return err
 		}
-		cfg, err := natsserver.Config{Group: group, Host: end.Host, Port: end.Port, Clients: clients}.Render()
+		cfg, err := natsserver.Config{Group: group, Host: end.Host, Listen: end.Listen, Port: end.Port, Clients: clients}.Render()
 		if err != nil {
 			return err
 		}

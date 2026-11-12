@@ -9,6 +9,12 @@ import (
 	"time"
 )
 
+// NATSServiceHost is the name the clients of a NATS group in a Kubernetes cluster connect to: the headless Service
+// of the group in its namespace. The address of the pod of the server changes with every new pod, the name does not.
+func NATSServiceHost(group, namespace string) string {
+	return "viper-nats-" + group + "." + namespace + ".svc"
+}
+
 // OperatorKeyFile is where the seed of the operator of a NATS group is kept on this computer.
 func OperatorKeyFile(stateDir, group string) string {
 	return filepath.Join(stateDir, "nats", group, "operator.nk")
