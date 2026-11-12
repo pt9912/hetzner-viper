@@ -275,24 +275,99 @@ func TestSomethingViperDidNotMakeIsLeftAlone(t *testing.T) {
 	}
 }
 
-func TestAVolumeLeftByAHalfDoneDownIsNotInheritedByTheNextServer(t *testing.T) {
-	c := newCluster()
+func TestAVolumeMarkedByAnInterruptedDownIsReplacedButOneWithoutTheMarkKeepsItsData(t *testing.T) {
 	ctx := context.Background()
-	for _, o := range []metav1.ObjectMeta{{Name: "claude-a-home", Namespace: "w", Labels: map[string]string{"viper-managed": "true"}, UID: "old"}} {
-		_, _ = c.cs.CoreV1().PersistentVolumeClaims("w").Create(ctx, &corev1.PersistentVolumeClaim{ObjectMeta: o}, metav1.CreateOptions{})
-	}
-	k := client(c, kubernetes.Options{Namespace: "w"})
-	if _, err := k.CreateServer(ctx, spec("claude-a")); err != nil {
+	// a down was interrupted after it had marked the volume: the next up makes a new one
+	c := newCluster()
+	_, _ = c.cs.CoreV1().PersistentVolumeClaims("w").Create(ctx, &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
+		Name: "claude-a-home", Namespace: "w", Labels: map[string]string{"viper-managed": "true"}, Annotations: map[string]string{"viper-deleting": "true"}, UID: "old"}}, metav1.CreateOptions{})
+	if _, err := client(c, kubernetes.Options{Namespace: "w"}).CreateServer(ctx, spec("claude-a")); err != nil {
 		t.Fatal(err)
 	}
-	p, err := c.cs.CoreV1().PersistentVolumeClaims("w").Get(ctx, "claude-a-home", metav1.GetOptions{})
-	if err != nil || p.UID == "old" {
+	if p, err := c.cs.CoreV1().PersistentVolumeClaims("w").Get(ctx, "claude-a-home", metav1.GetOptions{}); err != nil || p.UID == "old" {
 		t.Errorf("a new volume, not the old one: %+v %v", p, err)
 	}
-	// a volume of that name that is not ours is never deleted
+	// somebody removed the StatefulSet (not viper down): the data on the volume is not destroyed, the new machine uses it
+	c = newCluster()
+	_, _ = c.cs.CoreV1().PersistentVolumeClaims("w").Create(ctx, &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
+		Name: "claude-a-home", Namespace: "w", Labels: map[string]string{"viper-managed": "true"}, UID: "old"}}, metav1.CreateOptions{})
+	if _, err := client(c, kubernetes.Options{Namespace: "w"}).CreateServer(ctx, spec("claude-a")); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := c.cs.CoreV1().PersistentVolumeClaims("w").Get(ctx, "claude-a-home", metav1.GetOptions{}); err != nil || p.UID != "old" {
+		t.Errorf("the volume of the machine stays: %+v %v", p, err)
+	}
+	// a volume of that name that is not ours is never touched
 	c2 := newCluster()
 	_, _ = c2.cs.CoreV1().PersistentVolumeClaims("w").Create(ctx, &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "claude-a-home", Namespace: "w"}}, metav1.CreateOptions{})
 	if _, err := client(c2, kubernetes.Options{Namespace: "w"}).CreateServer(ctx, spec("claude-a")); !errors.Is(err, kubernetes.ErrNotOurs) {
+		t.Errorf("%v", err)
+	}
+}
+
+func TestDeleteMarksTheVolumesBeforeItDeletesAnythingAndLeavesASecretThatIsNotOurs(t *testing.T) {
+	c := newCluster()
+	var marked []string
+	c.cs.PrependReactor("delete", "statefulsets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		for _, v := range []string{"claude-a-home", "claude-a-brew"} {
+			// the tracker, not the clientset: a reactor that calls the clientset waits for itself
+			if o, err := c.cs.Tracker().Get(corev1.SchemeGroupVersion.WithResource("persistentvolumeclaims"), "w", v); err == nil && o.(*corev1.PersistentVolumeClaim).Annotations["viper-deleting"] == "true" {
+				marked = append(marked, v)
+			}
+		}
+		return false, nil, nil
+	})
+	k := client(c, kubernetes.Options{Namespace: "w"})
+	srv, err := k.CreateServer(context.Background(), spec("claude-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := k.DeleteServer(context.Background(), srv.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(marked) != 2 {
+		t.Errorf("both volumes were marked when the StatefulSet was deleted: %v", marked)
+	}
+}
+
+func TestTheDockerDaemonListensOnTheLoopbackOfThePodOnly(t *testing.T) {
+	c := newCluster()
+	k := client(c, kubernetes.Options{Namespace: "w"})
+	if _, err := k.CreateServer(context.Background(), spec("claude-a")); err != nil {
+		t.Fatal(err)
+	}
+	sts, _ := c.cs.AppsV1().StatefulSets("w").Get(context.Background(), "claude-a", metav1.GetOptions{})
+	d := sts.Spec.Template.Spec.Containers[1]
+	args := strings.Join(d.Args, " ")
+	if !strings.Contains(args, "--host=tcp://127.0.0.1:2375") || strings.Contains(args, "0.0.0.0") {
+		t.Errorf("the daemon is privileged and has no login: only the pod itself may reach it: %v", d.Args)
+	}
+	if d.ReadinessProbe.Exec == nil || d.ReadinessProbe.TCPSocket != nil {
+		t.Errorf("the probe runs inside the container (the kubelet's probes go to the address of the pod): %+v", d.ReadinessProbe)
+	}
+	sec := sts.Spec.Template.Spec.Volumes[0].Secret
+	if sec == nil || *sec.DefaultMode != 0o440 {
+		t.Errorf("the keys are readable for the group of the pod only: %+v", sec)
+	}
+}
+
+func TestAnImagePullThatIsOnlyStartingDoesNotEndTheWait(t *testing.T) {
+	c := newCluster()
+	c.pullErr = true
+	c.cs.PrependReactor("create", "statefulsets", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		sts := a.(k8stesting.CreateAction).GetObject().(*appsv1.StatefulSet)
+		pod, err := c.cs.Tracker().Get(corev1.SchemeGroupVersion.WithResource("pods"), sts.Namespace, sts.Name+"-0")
+		if err == nil {
+			pod.(*corev1.Pod).Status.ContainerStatuses = []corev1.ContainerStatus{{Name: "machine", State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ErrImagePull"}}}}
+		}
+		return false, nil, nil
+	})
+	// with only ErrImagePull (the pull is tried again) the wait ends by the timeout, not by an abort with the reason
+	c2 := newCluster()
+	c2.notReady = true
+	c2.cs.PrependReactor("create", "statefulsets", func(a k8stesting.Action) (bool, runtime.Object, error) { return false, nil, nil })
+	_, err := client(c2, kubernetes.Options{Namespace: "w"}).CreateServer(context.Background(), spec("claude-a"))
+	if err == nil || strings.Contains(err.Error(), "cannot start") {
 		t.Errorf("%v", err)
 	}
 }
@@ -337,7 +412,7 @@ func TestValidateReadsTheClusterAndNamesWhatIsWrong(t *testing.T) {
 		return true, r, nil
 	})
 	bad := texts(client(c2, kubernetes.Options{Namespace: "w"}).Validate(context.Background(), model.Check{ServerName: "claude-a", Spec: model.ServerSpec{Size: "huge"}}))
-	for _, want := range []string{`FAIL namespace w enforces Pod Security "restricted"`, "FAIL the login may not, in namespace w: [create secrets delete secrets]", "FAIL the cluster has no default storage class", "FAIL SERVER_TYPE for Kubernetes is <cpus>x<GiB"} {
+	for _, want := range []string{`FAIL namespace w enforces Pod Security "restricted"`, "FAIL the login may not, in namespace w: [create secrets delete secrets get secrets]", "FAIL the cluster has no default storage class", "FAIL SERVER_TYPE for Kubernetes is <cpus>x<GiB"} {
 		if !strings.Contains(bad, want) {
 			t.Errorf("missing %q in\n%s", want, bad)
 		}

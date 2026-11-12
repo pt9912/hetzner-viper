@@ -113,15 +113,22 @@ func tcpProbe(port int) *corev1.Probe {
 }
 
 // dockerSpec is the Docker daemon next to the machine in the same pod (K8S_DOCKER=dind). It is privileged: that is
-// what a Docker daemon needs in a pod (docs/plan/kubernetes.md §15), and why the namespace must allow it. The pod is
-// ready only when the daemon answers.
+// what a Docker daemon needs in a pod (docs/plan/kubernetes.md §15), and why the namespace must allow it. It listens on
+// the loopback address of the pod only: without TLS and without a login, anything that reached it on the address of the
+// pod would be root on the node. (The image would listen on all addresses by default.) The pod is ready only when the
+// daemon answers; the probe runs inside the container, as the kubelet's own probes go to the address of the pod.
 func dockerSpec(o Options) corev1.Container {
+	addr := fmt.Sprintf("tcp://127.0.0.1:%d", DockerPort)
 	return corev1.Container{
 		Name: dockerContainer, Image: o.dockerImage(), ImagePullPolicy: corev1.PullIfNotPresent,
+		Args:            []string{"dockerd", "--host=unix:///var/run/docker.sock", "--host=" + addr},
 		Env:             []corev1.EnvVar{{Name: "DOCKER_TLS_CERTDIR", Value: ""}},
 		SecurityContext: &corev1.SecurityContext{Privileged: ptr(true)},
 		VolumeMounts:    []corev1.VolumeMount{{Name: "docker", MountPath: "/var/lib/docker"}},
-		ReadinessProbe:  &corev1.Probe{ProbeHandler: tcpProbe(DockerPort).ProbeHandler, PeriodSeconds: 2, FailureThreshold: 30},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler:  corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{"docker", "-H", addr, "version"}}},
+			PeriodSeconds: 2, FailureThreshold: 30, TimeoutSeconds: 5,
+		},
 	}
 }
 
@@ -129,7 +136,7 @@ func statefulSetFor(ns string, s model.ServerSpec, o Options, res corev1.Resourc
 	labels := labelsOf(s.Name)
 	containers := []corev1.Container{machineSpec(o, res)}
 	volumes := []corev1.Volume{
-		{Name: "secret", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: secretName(s.Name), DefaultMode: ptr(int32(0o444))}}},
+		{Name: "secret", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: secretName(s.Name), DefaultMode: ptr(int32(0o440))}}},
 		{Name: "home", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: pvcName(s.Name)}}},
 		{Name: "brew", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: brewName(s.Name)}}},
 	}

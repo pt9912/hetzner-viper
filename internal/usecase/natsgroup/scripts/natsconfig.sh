@@ -20,9 +20,11 @@ if ! out=$("$bin" -t -c "$new" 2>&1); then
 fi
 mv "$new" "$conf" || exit 1
 pidfile="$dir/nats-server.pid"
-if [ -s "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+# the pid is nats-server (a pid file that survived a restart of the container may name another process now)
+pid=$(cat "$pidfile" 2>/dev/null || true)
+if [ -n "$pid" ] && tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q nats-server; then
   # a pod: nats-server is a process of the container (no systemd), the signal makes it read the file again
-  kill -HUP "$(cat "$pidfile")" || { echo "nats config: reload failed"; exit 1; }
+  kill -HUP "$pid" || { echo "nats config: reload failed"; exit 1; }
   echo "nats config: written, server reloaded"
 elif command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet "$unit"; then
   sudo systemctl reload "$unit" || { echo "nats config: reload failed"; exit 1; }

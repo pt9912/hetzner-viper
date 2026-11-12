@@ -20,7 +20,9 @@ done
 # the entries are copied one by one, not "." itself.
 if [ ! -e "$home/.viper-seeded" ]; then
   shopt -s dotglob nullglob
-  cp -r --update=none --preserve=mode,timestamps,links /opt/viper/home-seed/* "$home/"
+  # the marker is written last, so a start that comes here again was interrupted or is the first: nothing of the user
+  # is there yet, and what a cut-off copy left is overwritten
+  cp -r --preserve=mode,timestamps,links /opt/viper/home-seed/* "$home/"
   : > "$home/.viper-seeded"
 fi
 # Homebrew lives in /home/linuxbrew, which is a volume of its own in a pod (what brew installs must survive a new pod):
@@ -28,7 +30,10 @@ fi
 brewdir=/home/linuxbrew
 if [ ! -e "$brewdir/.viper-seeded" ] && [ -d /opt/viper/brew-seed ]; then
   echo "viper-machine: putting Homebrew on its volume (first start) ..." >&2
-  cp -r --update=none --preserve=mode,timestamps,links /opt/viper/brew-seed "$brewdir/.linuxbrew" ||
+  # into a place of its own, then renamed: a copy that is cut off never looks like a Homebrew
+  rm -rf "$brewdir/.linuxbrew.partial" "$brewdir/.linuxbrew"
+  cp -r --preserve=mode,timestamps,links /opt/viper/brew-seed "$brewdir/.linuxbrew.partial" &&
+    mv "$brewdir/.linuxbrew.partial" "$brewdir/.linuxbrew" ||
     fail "cannot put Homebrew on $brewdir (is the volume writable for group 1000?)"
   : > "$brewdir/.viper-seeded"
 fi

@@ -374,3 +374,13 @@ func TestTheProxyCommandCannotCarryAnythingIntoTheFile(t *testing.T) {
 		t.Errorf("ssh expands a percent sign in a ProxyCommand: it is doubled\n%s", b)
 	}
 }
+
+func TestTheProxyCommandRefusesWhatTheShellOfSshWouldRun(t *testing.T) {
+	for _, bad := range []string{"/a$(id)b", "/a`id`b", "/a$HOMEb"} {
+		c := podConfig(t, "web")
+		c.Dir = c.Dir + bad
+		if err := files().WriteConfig(c, ""); err == nil || !strings.Contains(err.Error(), "ProxyCommand") {
+			t.Errorf("%q was accepted: %v", bad, err)
+		}
+	}
+}

@@ -6,6 +6,7 @@
 set -u
 dir=/home/builder/.viper-nats
 umask 077
+rm -f "$dir/nats-server.pid" # a pid file that survived a restart of the container names a process that is gone
 while true; do
   if [ -s "$dir/server.conf" ] && [ -s "$dir/server.crt" ] && [ -s "$dir/server.key" ]; then
     # POD_IP, the address of the pod, is in the environment of the container: the configuration says "host: $POD_IP"

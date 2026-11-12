@@ -13,7 +13,7 @@ import (
 
 // imageTagRe is a Docker image reference as viper writes it into a command: a repository and a tag, nothing that a
 // shell or docker would read as an option.
-var imageTagRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]*(:[A-Za-z0-9_][A-Za-z0-9_.-]*)?$`)
+var imageTagRe = regexp.MustCompile(`^([a-z0-9][a-z0-9.-]*(:[0-9]{1,5})?/)?[a-z0-9][a-z0-9._/-]*(:[A-Za-z0-9_][A-Za-z0-9_.-]*)?$`)
 
 // k3dClusterRe is the name of a k3d cluster.
 var k3dClusterRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]*$`)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -55,16 +56,35 @@ func (Files) WriteConfig(c *model.Machine, ip string) error {
 	return writeAtomic(c.SSHConfig, []byte(body))
 }
 
-// proxyCommand is the ProxyCommand of a container: this program, k8s-proxy, the settings directory and the machine.
-// ssh expands % in it and splits it like a shell would, so the parts are quoted and % is doubled; names with a quote or
-// a line break are refused (they could add directives to the file).
-func proxyCommand(c *model.Machine) (string, error) {
+// viperPath is where the ssh config finds this program. A package manager keeps the program in a versioned directory
+// and links it into a stable place (Homebrew: Cellar and bin): the link is used if it leads to this program, so the
+// config does not point to a directory that the next upgrade removes.
+func viperPath() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("the path of viper (for the ProxyCommand): %w", err)
 	}
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		exe = resolved
+	resolved, err := filepath.EvalSymlinks(exe)
+	if err != nil {
+		return exe, nil
+	}
+	if onPath, err := exec.LookPath("viper"); err == nil {
+		if abs, err := filepath.Abs(onPath); err == nil {
+			if r, err := filepath.EvalSymlinks(abs); err == nil && r == resolved {
+				return abs, nil
+			}
+		}
+	}
+	return resolved, nil
+}
+
+// proxyCommand is the ProxyCommand of a container: this program, k8s-proxy, the settings directory and the machine.
+// ssh expands % in it and splits it like a shell would, so the parts are quoted and % is doubled; names with a quote or
+// a line break are refused (they could add directives to the file).
+func proxyCommand(c *model.Machine) (string, error) {
+	exe, err := viperPath()
+	if err != nil {
+		return "", err
 	}
 	dir, err := filepath.Abs(c.Dir)
 	if err != nil {
@@ -73,8 +93,8 @@ func proxyCommand(c *model.Machine) (string, error) {
 	// on Windows the paths have backslashes, which the quoting below would have to refuse; Windows takes slashes too
 	parts := []string{filepath.ToSlash(exe), "k8s-proxy", "--dir", filepath.ToSlash(dir), c.Name}
 	for i, p := range parts {
-		if strings.ContainsAny(p, "\"\n\r\\'") {
-			return "", fmt.Errorf("the ProxyCommand cannot hold %q (a quote, a backslash or a line break)", p)
+		if strings.ContainsAny(p, "\"\n\r\\'$`") {
+			return "", fmt.Errorf("the ProxyCommand cannot hold %q (a quote, a backslash, a dollar sign, a backtick or a line break)", p)
 		}
 		p = strings.ReplaceAll(p, "%", "%%")
 		parts[i] = `"` + p + `"`

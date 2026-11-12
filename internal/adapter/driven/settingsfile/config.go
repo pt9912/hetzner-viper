@@ -361,11 +361,31 @@ func imageAndWorkspace(c *model.Machine, prov model.ProviderInfo) (image, worksp
 // secretNameRe is the name of a Kubernetes Secret.
 var secretNameRe = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$`)
 
+var (
+	namespaceRe  = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
+	imageRefRe   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/:@-]*$`)
+	dockerHostRe = regexp.MustCompile(`^(tcp://[A-Za-z0-9._-]+:[0-9]{1,5}|unix:///[A-Za-z0-9._/-]+|ssh://[A-Za-z0-9._@-]+(:[0-9]{1,5})?)$`)
+)
+
 // ContainerWorkspace is WORKSPACE_DIR of a machine that is a container, when it is not set: on its volume.
 const ContainerWorkspace = "/home/builder/work"
 
 // checkKubernetesValues checks the settings of a pod that are a name or a number.
 func checkKubernetesValues(c *model.Machine) error {
+	for _, v := range []struct {
+		name string
+		re   *regexp.Regexp
+		what string
+	}{
+		{"K8S_NAMESPACE", namespaceRe, "the name of a namespace (lowercase letters, digits and -, at most 63)"},
+		{"K8S_STORAGE_CLASS", secretNameRe, "the name of a storage class (lowercase letters, digits, - and .)"},
+		{"K8S_DOCKER_IMAGE", imageRefRe, "an image reference without blanks or quotes"},
+		{"K8S_DOCKER_HOST", dockerHostRe, "tcp://host:port, unix:///path or ssh://host"},
+	} {
+		if val := c.Get(v.name); val != "" && !v.re.MatchString(val) {
+			return fmt.Errorf("%s: %s: %s", v.name, v.what, val)
+		}
+	}
 	if v := c.Get("K8S_IMAGE_PULL_SECRET"); v != "" && !secretNameRe.MatchString(v) {
 		return fmt.Errorf("K8S_IMAGE_PULL_SECRET: the name of a Secret (lowercase letters, digits, - and .): %s", v)
 	}
@@ -406,7 +426,7 @@ func checkKubernetes(c *model.Machine) error {
 	default:
 		return fmt.Errorf("K8S_DOCKER: dind, remote or none: %s", c.Get("K8S_DOCKER"))
 	}
-	if ws := c.Setting("WORKSPACE_DIR", ContainerWorkspace); !strings.HasPrefix(ws, "/home/builder/") {
+	if ws := c.Setting("WORKSPACE_DIR", ContainerWorkspace); !strings.HasPrefix(ws, "/home/builder/") || strings.Contains(ws, "..") {
 		return fmt.Errorf("WORKSPACE_DIR: for PROVIDER=kubernetes a directory below /home/builder, which is the volume of the pod (default %s); a WORKSPACE_DIR in .env.local is for the VMs: set it for this machine in machines/%s.env.local or in its group file: %s", ContainerWorkspace, c.Name, ws)
 	}
 	return nil

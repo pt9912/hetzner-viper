@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
@@ -176,25 +177,42 @@ func (c *Client) createObjects(ctx context.Context, cs *session, s model.ServerS
 	if _, err := cs.CoreV1().Secrets(ns).Create(ctx, secretFor(ns, s), metav1.CreateOptions{}); err != nil {
 		return nil, &cloud.OpError{Op: "creating the secret " + secretName(s.Name), Write: true, Err: err}
 	}
-	pvc, err := pvcFor(ns, s, c.opts)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := cs.CoreV1().PersistentVolumeClaims(ns).Create(ctx, pvc, metav1.CreateOptions{}); err != nil {
-		return nil, &cloud.OpError{Op: "creating the volume " + pvcName(s.Name), Write: true, Err: err}
-	}
-	brew, err := brewPVCFor(ns, s, c.opts)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := cs.CoreV1().PersistentVolumeClaims(ns).Create(ctx, brew, metav1.CreateOptions{}); err != nil {
-		return nil, &cloud.OpError{Op: "creating the volume " + brewName(s.Name), Write: true, Err: err}
+	for _, mk := range []func(string, model.ServerSpec, Options) (*corev1.PersistentVolumeClaim, error){pvcFor, brewPVCFor} {
+		pvc, err := mk(ns, s, c.opts)
+		if err != nil {
+			return nil, err
+		}
+		if err := c.createVolume(ctx, cs, pvc); err != nil {
+			return nil, err
+		}
 	}
 	sts, err := cs.AppsV1().StatefulSets(ns).Create(ctx, statefulSetFor(ns, s, c.opts, res), metav1.CreateOptions{})
 	if err != nil {
 		return nil, &cloud.OpError{Op: "creating the StatefulSet " + s.Name, Write: true, Err: err}
 	}
 	return sts, nil
+}
+
+// createVolume makes the volume claim. One that is there already and that viper made is used again: it holds the data of
+// a machine of that name whose StatefulSet was removed by hand (or by something else than viper down), and that data is
+// not destroyed without being asked (dropStale only removes volumes that a down marked as being deleted).
+func (c *Client) createVolume(ctx context.Context, cs *session, pvc *corev1.PersistentVolumeClaim) error {
+	ns := c.opts.namespace()
+	_, err := cs.CoreV1().PersistentVolumeClaims(ns).Create(ctx, pvc, metav1.CreateOptions{})
+	if apierrors.IsAlreadyExists(err) {
+		have, gerr := cs.CoreV1().PersistentVolumeClaims(ns).Get(ctx, pvc.Name, metav1.GetOptions{})
+		if gerr != nil {
+			return gerr
+		}
+		if !ours(have.ObjectMeta) {
+			return fmt.Errorf("%w: volume %s in %s", ErrNotOurs, pvc.Name, ns)
+		}
+		return nil
+	}
+	if err != nil {
+		return &cloud.OpError{Op: "creating the volume " + pvc.Name, Write: true, Err: err}
+	}
+	return nil
 }
 
 // podFailure says why a pod will not start, for the reasons that do not pass by waiting ("" if there is none).
@@ -205,7 +223,7 @@ func podFailure(p *corev1.Pod) string {
 	for _, cs := range p.Status.ContainerStatuses {
 		if w := cs.State.Waiting; w != nil {
 			switch w.Reason {
-			case "ErrImagePull", "ImagePullBackOff", "InvalidImageName", "CreateContainerConfigError":
+			case "ImagePullBackOff", "InvalidImageName", "CreateContainerConfigError": // ErrImagePull comes first and passes: the pull of a big image is tried again
 				return cs.Name + ": " + w.Reason + " " + w.Message
 			}
 		}
@@ -231,25 +249,33 @@ func (c *Client) dropStale(ctx context.Context, name string) error {
 		return err
 	}
 	if sec, err := cs.CoreV1().Secrets(ns).Get(ctx, secretName(name), metav1.GetOptions{}); err == nil && ours(sec.ObjectMeta) {
+		// the keys of a new machine are new ones
 		if err := cs.CoreV1().Secrets(ns).Delete(ctx, sec.Name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 			return err
 		}
 	}
-	return c.deleteVolumes(ctx, name)
-}
-
-// deleteVolumes deletes the volumes of the server (home directory and Homebrew).
-func (c *Client) deleteVolumes(ctx context.Context, name string) error {
 	for _, v := range []string{pvcName(name), brewName(name)} {
-		if err := c.deleteVolume(ctx, v); err != nil {
+		if err := c.deleteVolume(ctx, v, true); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// deleteVolume deletes the volume claim of that name if viper made it, and waits until it is gone.
-func (c *Client) deleteVolume(ctx context.Context, claimName string) error {
+// deleteVolumes deletes the volumes of the server (home directory and Homebrew).
+func (c *Client) deleteVolumes(ctx context.Context, name string) error {
+	for _, v := range []string{pvcName(name), brewName(name)} {
+		if err := c.deleteVolume(ctx, v, false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// deleteVolume deletes the volume claim of that name if viper made it, and waits until it is gone. With onlyMarked it
+// deletes it only if a viper down had marked it as being deleted (what an interrupted down left); a volume that is not
+// marked keeps its data.
+func (c *Client) deleteVolume(ctx context.Context, claimName string, onlyMarked bool) error {
 	cs, err := c.client()
 	if err != nil {
 		return err
@@ -265,6 +291,9 @@ func (c *Client) deleteVolume(ctx context.Context, claimName string) error {
 	if !ours(p.ObjectMeta) {
 		return fmt.Errorf("%w: volume %s in %s", ErrNotOurs, p.Name, ns)
 	}
+	if onlyMarked && p.Annotations[annotationDeleting] != "true" {
+		return nil
+	}
 	if err := cs.CoreV1().PersistentVolumeClaims(ns).Delete(ctx, p.Name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
@@ -275,6 +304,32 @@ func (c *Client) deleteVolume(ctx context.Context, claimName string) error {
 		}
 		return false, err
 	})
+}
+
+// annotationDeleting marks the volumes of a machine that a viper down is deleting. If the down is interrupted, the next
+// viper up removes what carries the mark; a volume without it holds the data of a machine that nobody asked to delete.
+const annotationDeleting = "viper-deleting"
+
+// markDeleting marks the volumes of the machine before anything is deleted.
+func (c *Client) markDeleting(ctx context.Context, name string) error {
+	cs, err := c.client()
+	if err != nil {
+		return err
+	}
+	patch := []byte(`{"metadata":{"annotations":{"` + annotationDeleting + `":"true"}}}`)
+	for _, v := range []string{pvcName(name), brewName(name)} {
+		p, err := cs.CoreV1().PersistentVolumeClaims(c.opts.namespace()).Get(ctx, v, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) || (err == nil && !ours(p.ObjectMeta)) {
+			continue
+		}
+		if err == nil {
+			_, err = cs.CoreV1().PersistentVolumeClaims(c.opts.namespace()).Patch(ctx, v, types.MergePatchType, patch, metav1.PatchOptions{})
+		}
+		if err != nil {
+			return &cloud.OpError{Op: "marking the volume " + v + " as being deleted", Write: true, Err: err}
+		}
+	}
+	return nil
 }
 
 // find returns the StatefulSet with that ID (its UID), or with that name if no UID matches; nil if there is none.
@@ -307,6 +362,9 @@ func (c *Client) DeleteServer(ctx context.Context, id string) error {
 		return err // nothing of that ID: a server that is gone is no error
 	}
 	ns, name := c.opts.namespace(), sts.Name
+	if err := c.markDeleting(ctx, name); err != nil {
+		return err
+	}
 	fg := metav1.DeletePropagationForeground
 	if err := cs.AppsV1().StatefulSets(ns).Delete(ctx, name, metav1.DeleteOptions{PropagationPolicy: &fg}); err != nil && !apierrors.IsNotFound(err) {
 		return &cloud.OpError{Op: "deleting the StatefulSet " + name, Write: true, Err: err}
@@ -321,8 +379,10 @@ func (c *Client) DeleteServer(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	if err := cs.CoreV1().Secrets(ns).Delete(ctx, secretName(name), metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
-		return &cloud.OpError{Op: "deleting the secret " + secretName(name), Write: true, Err: err}
+	if sec, err := cs.CoreV1().Secrets(ns).Get(ctx, secretName(name), metav1.GetOptions{}); err == nil && ours(sec.ObjectMeta) {
+		if err := cs.CoreV1().Secrets(ns).Delete(ctx, secretName(name), metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+			return &cloud.OpError{Op: "deleting the secret " + secretName(name), Write: true, Err: err}
+		}
 	}
 	return c.deleteVolumes(ctx, name)
 }

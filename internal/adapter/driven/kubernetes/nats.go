@@ -114,10 +114,30 @@ func (c *Client) EnsurePrivateNetwork(ctx context.Context, group, location strin
 	}
 	// the Service is made by whoever comes: it is not an error if it is there, and a first start that stopped between
 	// the two calls is repaired by the next
-	if _, err := cs.CoreV1().Services(ns).Create(ctx, c.serviceFor(group), metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
-		return model.PrivateNetwork{}, false, &cloud.OpError{Op: "creating the Service " + NetworkName(group), Write: true, Err: err}
+	if err := c.ensureService(ctx, cs, group); err != nil {
+		return model.PrivateNetwork{}, false, err
 	}
 	return *c.networkOf(pol), created, nil
+}
+
+// ensureService makes the Service of the group; one that is there must be viper's.
+func (c *Client) ensureService(ctx context.Context, cs *session, group string) error {
+	ns := c.opts.namespace()
+	_, err := cs.CoreV1().Services(ns).Create(ctx, c.serviceFor(group), metav1.CreateOptions{})
+	if apierrors.IsAlreadyExists(err) {
+		have, gerr := cs.CoreV1().Services(ns).Get(ctx, NetworkName(group), metav1.GetOptions{})
+		if gerr != nil {
+			return gerr
+		}
+		if !ours(have.ObjectMeta) {
+			return fmt.Errorf("%w: Service %s in %s (for the NATS group %s)", ErrNotOurs, have.Name, ns, group)
+		}
+		return nil
+	}
+	if err != nil {
+		return &cloud.OpError{Op: "creating the Service " + NetworkName(group), Write: true, Err: err}
+	}
+	return nil
 }
 
 // FindPrivateNetwork returns the policy of the group, nil if there is none; its Problems say how it differs from what

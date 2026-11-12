@@ -5,7 +5,8 @@ export LC_ALL=C
 dir="$1"; ip="$2"; port="$3"
 pidfile="$dir/nats-server.pid"
 for _ in $(seq 1 40); do
-  if [ -s "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null && ss -ltn "sport = :$port" 2>/dev/null | grep -qF "$ip:$port"; then
+  pid=$(cat "$pidfile" 2>/dev/null || true)
+  if [ -n "$pid" ] && tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q nats-server && ss -ltn "sport = :$port" 2>/dev/null | grep -qF "$ip:$port"; then
     echo "nats process: running, listening on $ip:$port"; exit 0
   fi
   sleep 1

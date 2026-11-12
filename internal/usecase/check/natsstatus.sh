@@ -31,7 +31,8 @@ if [ -s "$dir/server.conf" ]; then
   port="${NATS_URL##*:}"
   # a pod has no systemd: its server is a process of the container, with a pid file
   if [ -s "$dir/nats-server.pid" ]; then
-    if kill -0 "$(cat "$dir/nats-server.pid")" 2>/dev/null; then echo "unit=active"; else echo "unit=inactive"; fi
+    pid=$(cat "$dir/nats-server.pid")
+    if tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q nats-server; then echo "unit=active"; else echo "unit=inactive"; fi
   else
     echo "unit=$(systemctl is-active viper-nats 2>/dev/null || true)"
   fi

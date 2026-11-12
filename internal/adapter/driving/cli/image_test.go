@@ -66,6 +66,9 @@ func TestImageBuildCanPutTheImageIntoAK3dClusterAndRefusesWhatItDoesNotUnderstan
 	if calls, _, _, _ = imageRun(t, "v1.2.3-4-gabc-dirty", "build"); calls[0][5] != "viper-machine:v1.2.3-4-gabc-dirty" {
 		t.Errorf("a version with a build suffix is a valid tag: %v", calls[0])
 	}
+	if calls, _, code, _ = imageRun(t, "v1", "build", "--tag", "localhost:5000/team/viper-machine:v1"); code != 0 || calls[0][5] != "localhost:5000/team/viper-machine:v1" {
+		t.Errorf("a registry with a port: %d %v", code, calls)
+	}
 	for name, args := range map[string][]string{
 		"a tag docker would read as an option": {"build", "--tag", "-v/x:1"},
 		"a tag with a blank":                   {"build", "--tag", "a b"},

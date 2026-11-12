@@ -47,7 +47,7 @@ func (c *Client) Validate(ctx context.Context, ch model.Check) []model.Finding {
 	}
 	c.checkNamespace(ctx, cs, &f)
 	c.checkPullSecret(ctx, cs, &f)
-	c.checkRights(ctx, cs, &f)
+	c.checkRights(ctx, cs, &f, ch.NATS)
 	c.checkStorage(ctx, cs, &f)
 	c.checkDocker(&f)
 	switch srv, err := c.ServerByName(ctx, ch.ServerName); {
@@ -68,6 +68,10 @@ func (c *Client) checkNamespace(ctx context.Context, cs kubernetes.Interface, f 
 	switch {
 	case apierrors.IsNotFound(err):
 		f.add(model.Info, "namespace %s will be made (viper never deletes it)", ns)
+		ra := authv1.ResourceAttributes{Verb: "create", Resource: "namespaces"}
+		if r, err := cs.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, &authv1.SelfSubjectAccessReview{Spec: authv1.SelfSubjectAccessReviewSpec{ResourceAttributes: &ra}}, metav1.CreateOptions{}); err == nil && !r.Status.Allowed {
+			f.add(model.Fail, "the login may not make the namespace %s: ask for it, or name another one (K8S_NAMESPACE)", ns)
+		}
 	case err != nil:
 		f.add(model.Warn, "namespace %s could not be read: %s", ns, c.Describe(err))
 	default:
@@ -79,24 +83,37 @@ func (c *Client) checkNamespace(ctx context.Context, cs kubernetes.Interface, f 
 }
 
 // rights are what viper does in the cluster, as the questions asked of it.
-func (c *Client) rights() []authv1.ResourceAttributes {
+func (c *Client) rights(nats bool) []authv1.ResourceAttributes {
 	ns := c.opts.namespace()
-	return []authv1.ResourceAttributes{
+	rs := []authv1.ResourceAttributes{
 		{Namespace: ns, Verb: "create", Group: "apps", Resource: "statefulsets"},
 		{Namespace: ns, Verb: "delete", Group: "apps", Resource: "statefulsets"},
 		{Namespace: ns, Verb: "create", Resource: "secrets"},
 		{Namespace: ns, Verb: "delete", Resource: "secrets"},
 		{Namespace: ns, Verb: "create", Resource: "persistentvolumeclaims"},
 		{Namespace: ns, Verb: "delete", Resource: "persistentvolumeclaims"},
+		{Namespace: ns, Verb: "list", Group: "apps", Resource: "statefulsets"},
+		{Namespace: ns, Verb: "patch", Group: "apps", Resource: "statefulsets"},
+		{Namespace: ns, Verb: "get", Resource: "secrets"},
+		{Namespace: ns, Verb: "get", Resource: "persistentvolumeclaims"},
+		{Namespace: ns, Verb: "patch", Resource: "persistentvolumeclaims"},
 		{Namespace: ns, Verb: "get", Resource: "pods"},
 		{Namespace: ns, Verb: "create", Resource: "pods", Subresource: "portforward"},
 	}
+	if nats { // the group network of a NATS group
+		rs = append(rs,
+			authv1.ResourceAttributes{Namespace: ns, Verb: "create", Group: "networking.k8s.io", Resource: "networkpolicies"},
+			authv1.ResourceAttributes{Namespace: ns, Verb: "delete", Group: "networking.k8s.io", Resource: "networkpolicies"},
+			authv1.ResourceAttributes{Namespace: ns, Verb: "create", Resource: "services"},
+			authv1.ResourceAttributes{Namespace: ns, Verb: "delete", Resource: "services"})
+	}
+	return rs
 }
 
 // checkRights asks the cluster, with a SelfSubjectAccessReview for each thing viper does, whether the login may do it.
-func (c *Client) checkRights(ctx context.Context, cs kubernetes.Interface, f *findings) {
+func (c *Client) checkRights(ctx context.Context, cs kubernetes.Interface, f *findings, nats bool) {
 	var denied []string
-	for _, ra := range c.rights() {
+	for _, ra := range c.rights(nats) {
 		ra := ra
 		r, err := cs.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, &authv1.SelfSubjectAccessReview{Spec: authv1.SelfSubjectAccessReviewSpec{ResourceAttributes: &ra}}, metav1.CreateOptions{})
 		if err != nil {

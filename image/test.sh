@@ -65,10 +65,13 @@ check "brew installs a package without root" sshc 2222 "bash -lc 'HOMEBREW_NO_AU
 docker rm -f "$name" >/dev/null
 
 # 2: a volume over the home directory (world-writable and empty, as a cluster makes it): the entrypoint brings the files
+# a first start that was cut off left half a Homebrew and a copy in progress on the volume
+mkdir -p "$t/brew/.linuxbrew/bin" "$t/brew/.linuxbrew.partial" && touch "$t/brew/.linuxbrew/junk" "$t/brew/.linuxbrew.partial/junk"
 run "$name-2" 2223 "$t/home" "$t/brew"
 check "starts with an empty volume over the home directory" wait_ssh 2223
 check "an empty volume is seeded" sshc 2223 'test -f ~/.tmux.conf && test -x ~/.local/bin/claude && test -f ~/.viper-seeded'
 check "claude runs from the seeded home" sshc 2223 "bash -lc 'claude --version'"
+check "a cut-off seed of Homebrew is replaced, not built on" sshc 2223 'test ! -e /home/linuxbrew/.linuxbrew/junk && test ! -e /home/linuxbrew/.linuxbrew.partial && bash -lc "brew --version"'
 check "Homebrew was put on its volume, and what brew installs there survives a new container" bash -c "$(declare -f sshc)
   sshc 2223 'bash -lc \"HOMEBREW_NO_AUTO_UPDATE=1 brew install hello >/dev/null 2>&1 && hello | head -n 1\"' | grep -q Hello &&
   docker rm -f $name-2 >/dev/null && docker run -d --name $name-2 --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges -p 127.0.0.1:2223:2222 \
