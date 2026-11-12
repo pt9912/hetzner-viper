@@ -17,7 +17,7 @@ type NATSRemote func(ctx context.Context, machine, stdin string, stdout, stderr 
 type NATSCommand struct {
 	Name    string        // peers, send, broadcast, request, listen
 	To      string        // send, request
-	Topic   string        // broadcast; listen (a filter, optional)
+	Topic   string        // broadcast: one topic; listen: a filter, optional, several separated by commas
 	Text    string        // send, broadcast, request
 	Timeout time.Duration // request (default 30 seconds); peers: how long to listen
 	Query   bool          // peers: ask the others to say that they are there

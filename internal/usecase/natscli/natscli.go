@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -50,10 +51,12 @@ func validateTarget(c driving.NATSCommand, from string) error {
 	case "peers":
 		return nil
 	case "listen":
-		if c.Topic == "" {
-			return nil
+		for _, t := range topicList(c.Topic) {
+			if err := checkName("topic", t); err != nil {
+				return err
+			}
 		}
-		return checkName("topic", c.Topic)
+		return nil
 	case "send", "request":
 		if err := checkName("machine", c.To); err != nil {
 			return err
@@ -63,9 +66,23 @@ func validateTarget(c driving.NATSCommand, from string) error {
 		}
 		return nil
 	case "broadcast":
+		if len(topicList(c.Topic)) > 1 {
+			return errors.New("broadcast takes one topic: a message goes to exactly one")
+		}
 		return checkName("topic", c.Topic)
 	}
 	return fmt.Errorf("unknown command %q", c.Name)
+}
+
+// topicList splits the topics of listen (--topic given more than once, or a list with commas); none: all.
+func topicList(s string) []string {
+	var out []string
+	for _, t := range strings.Split(s, ",") {
+		if t = strings.TrimSpace(t); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func checkName(what, s string) error { return model.CheckNATSName(what, s) }
@@ -222,7 +239,7 @@ func (k *collector) add(e Event) error {
 	case k.c.Name == "peers" && e.Via == "presence" && e.State != "bye" && !k.seen[e.From]:
 		k.seen[e.From] = true
 		k.res.Peers = append(k.res.Peers, driving.NATSPeer{Name: e.From})
-	case k.c.Name == "listen" && k.show != nil && (k.c.Topic == "" || e.Topic == k.c.Topic):
+	case k.c.Name == "listen" && k.show != nil && (k.c.Topic == "" || slices.Contains(topicList(k.c.Topic), e.Topic)):
 		k.show(e)
 	}
 	return nil

@@ -569,7 +569,7 @@ viper nats peers     entwicklung --query                  # schneller (8 Sekunde
 viper nats send      entwicklung "Bitte pushen" --to beta
 viper nats broadcast entwicklung "Release um 15 Uhr" --topic news
 viper nats request   entwicklung "Wie ist der Stand?" --to beta --timeout 60
-viper nats listen    entwicklung [--topic news]           # bis Strg-C
+viper nats listen    entwicklung [--topic news]           # bis Strg-C; --topic mehrfach oder mit Komma: --topic news,build
 echo "langer Text" | viper nats send entwicklung - --to beta   # Text von der Standardeingabe
 ```
 

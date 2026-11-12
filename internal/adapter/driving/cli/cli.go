@@ -289,7 +289,10 @@ func setNatsValue(o *options, name, flag, v string) error {
 	switch flag {
 	case "to":
 		o.to = v
-	case "topic":
+	case "topic": // more than once, or a list with commas: viper nats listen --topic build --topic news
+		if o.topic != "" {
+			v = o.topic + "," + v
+		}
 		o.topic = v
 	case "from":
 		o.from = v

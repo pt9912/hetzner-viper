@@ -175,6 +175,24 @@ func TestListenFiltersByTopic(t *testing.T) {
 	}
 }
 
+func TestListenTakesSeveralTopicsAndBroadcastOnlyOne(t *testing.T) {
+	f := &fakeRemote{out: `{"event":"message","from":"a","via":"pub","topic":"news","type":"msg","text":"1"}
+{"event":"message","from":"a","via":"pub","topic":"build","type":"msg","text":"2"}
+{"event":"message","from":"a","via":"pub","topic":"other","type":"msg","text":"3"}
+`}
+	var texts []string
+	_, err := runCmd(context.Background(), f.run, "b", driving.NATSCommand{Name: "listen", Topic: "news,build"}, io.Discard, func(e model.NATSLine) { texts = append(texts, e.Text) })
+	if err != nil || fmt.Sprint(texts) != "[1 2]" {
+		t.Errorf("%v %v", texts, err)
+	}
+	if err := natscli.Validate(driving.NATSCommand{Name: "broadcast", Topic: "a,b", Text: "x"}, "alpha"); err == nil {
+		t.Error("broadcast to two topics")
+	}
+	if err := natscli.Validate(driving.NATSCommand{Name: "listen", Topic: "news,a b"}, "alpha"); err == nil {
+		t.Error("a bad name in the list")
+	}
+}
+
 func TestRequestReturnsTheAnswerAndErrorsOfTheMachineAreErrors(t *testing.T) {
 	f := &fakeRemote{out: `{"event":"answer","from":"beta","text":"pong"}` + "\n"}
 	res, err := runCmd(context.Background(), f.run, "alpha", driving.NATSCommand{Name: "request", To: "beta", Text: "ping"}, io.Discard, nil)
