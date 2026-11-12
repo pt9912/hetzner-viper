@@ -508,14 +508,15 @@ func (s *sdk) fillNIC(ctx context.Context, v *VM) error {
 }
 
 func (s *sdk) CreateGroupASG(ctx context.Context, name string, t map[string]string) error {
-	ctx = policy.WithHTTPHeader(ctx, http.Header{"If-None-Match": []string{"*"}})
 	tg := map[string]*string{}
 	for k, v := range t {
 		tg[k] = to.Ptr(v)
 	}
-	poller, err := s.asgs.BeginCreateOrUpdate(ctx, s.o.group(), name, armnetwork.ApplicationSecurityGroup{Location: to.Ptr(s.o.Location), Tags: tg}, nil)
+	// the header only goes with the PUT that makes the group: a GET that polls for it would be refused
+	put := policy.WithHTTPHeader(ctx, http.Header{"If-None-Match": []string{"*"}})
+	poller, err := s.asgs.BeginCreateOrUpdate(put, s.o.group(), name, armnetwork.ApplicationSecurityGroup{Location: to.Ptr(s.o.Location), Tags: tg}, nil)
 	var re *azcore.ResponseError
-	if errors.As(err, &re) && (re.StatusCode == http.StatusPreconditionFailed || re.StatusCode == http.StatusConflict) {
+	if errors.As(err, &re) && (re.StatusCode == http.StatusPreconditionFailed || (re.StatusCode == http.StatusConflict && re.ErrorCode != "AnotherOperationInProgress")) {
 		return ErrExists
 	}
 	if err != nil {

@@ -33,7 +33,7 @@ if [ -s "$dir/server.conf" ]; then
   # v0.15.0 wrote allow_responses, which lets any machine publish anywhere in the group
   echo "allow_responses=$(grep -c allow_responses "$dir/server.conf")"
   echo "registered=$(grep '^# viper-client ' "$dir/server.conf" | awk '{print $3}' | paste -sd, -)"
-  echo "operators=$(grep '^# viper-operator ' "$dir/server.conf" | awk '{print $3}' | paste -sd, -)"
+  echo "operators=$(grep '^# viper-operator ' "$dir/server.conf" | awk '{print $3 ":" $4}' | paste -sd, -)"
 fi
 # the MCP server (NATS_MCP): the binary, its entry with Claude Code, the push list and the allowed tools
 if [ -x "$dir/viper-nats-mcp" ]; then

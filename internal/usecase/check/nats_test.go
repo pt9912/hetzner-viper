@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
+	"github.com/pt9912/hetzner-viper/internal/natsserver"
 	"github.com/pt9912/hetzner-viper/internal/servertest"
 	"github.com/pt9912/hetzner-viper/internal/usecase/check"
 )
@@ -402,26 +403,36 @@ func TestTheOperatorKeyIsComparedWithTheRegistrationAtTheServer(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(key), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if out, _ := n.run(); strings.Contains(natsSection(out), "operator") {
-		t.Errorf("no key and not registered: nothing to say:\n%s", natsSection(out))
-	}
-	if err := os.WriteFile(key, []byte("SU\n"), 0o600); err != nil {
+	mine, err := natsserver.NewIdentity()
+	if err != nil {
 		t.Fatal(err)
 	}
-	out, _ := n.run()
-	if !strings.Contains(natsSection(out), "WARN  this computer has a key for the operator operator, but the server does not know it") {
-		t.Errorf("a key the server does not know:\n%s", natsSection(out))
+	other, err := natsserver.NewIdentity()
+	if err != nil {
+		t.Fatal(err)
 	}
-	n.status = st + "operators=operator\n"
-	out, _ = n.run()
-	if !strings.Contains(natsSection(out), "ok    operator operator is registered at the server, its key is on this computer") {
-		t.Errorf("registered with a key:\n%s", natsSection(out))
+	section := func() string { out, _ := n.run(); return natsSection(out) }
+	if sec := section(); strings.Contains(sec, "operator") {
+		t.Errorf("no key and not registered: nothing to say:\n%s", sec)
+	}
+	if err := os.WriteFile(key, []byte(mine.Seed+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if sec := section(); !strings.Contains(sec, "WARN  this computer has a key for the operator operator, but the server does not know it") {
+		t.Errorf("a key the server does not know:\n%s", sec)
+	}
+	n.status = st + "operators=operator:" + mine.PublicKey + "\n"
+	if sec := section(); !strings.Contains(sec, "ok    operator operator is registered at the server, with the key on this computer") {
+		t.Errorf("registered with this key:\n%s", sec)
+	}
+	n.status = st + "operators=operator:" + other.PublicKey + "\n"
+	if sec := section(); !strings.Contains(sec, "FAIL  the key of the operator operator on this computer is not the one the server has") {
+		t.Errorf("registered with another key:\n%s", sec)
 	}
 	if err := os.Remove(key); err != nil {
 		t.Fatal(err)
 	}
-	out, _ = n.run()
-	if !strings.Contains(natsSection(out), "info  operator operator is registered at the server; this computer has no key") {
-		t.Errorf("registered without a key:\n%s", natsSection(out))
+	if sec := section(); !strings.Contains(sec, "info  operator operator is registered at the server; this computer has no key") {
+		t.Errorf("registered without a key:\n%s", sec)
 	}
 }

@@ -271,17 +271,23 @@ func natsOperatorChecks(r *report, c *model.Machine, list string, members []mode
 	if operator == "" {
 		operator = model.DefaultNATSOperator
 	}
-	registered := false
-	for _, n := range strings.Split(list, ",") {
-		if n != "" && n == operator {
-			registered = true
+	registeredKey, registered := "", false // the public key the server has for the operator
+	for _, e := range strings.Split(list, ",") {
+		if name, key, _ := strings.Cut(e, ":"); name != "" && name == operator {
+			registered, registeredKey = true, key
 		}
 	}
-	_, err := os.Stat(model.OperatorKeyFile(c.StateDir, group))
+	seed, err := os.ReadFile(model.OperatorKeyFile(c.StateDir, group))
 	hasKey := err == nil
+	localKey := ""
+	if hasKey {
+		localKey, _ = natsserver.PublicKeyOf(string(seed))
+	}
 	switch {
+	case registered && hasKey && localKey == registeredKey:
+		r.ok("operator %s is registered at the server, with the key on this computer", operator)
 	case registered && hasKey:
-		r.ok("operator %s is registered at the server, its key is on this computer", operator)
+		r.bad("the key of the operator %s on this computer is not the one the server has (another computer ran viper nats init, or the group was made again): viper nats init %s makes this computer's key the operator's", operator, group)
 	case registered:
 		r.info("operator %s is registered at the server; this computer has no key for it (viper nats init %s makes one)", operator, group)
 	case hasKey:

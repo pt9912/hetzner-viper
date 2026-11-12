@@ -82,7 +82,7 @@ func (c *Client) checkMachine(ctx context.Context, api API, f *findings, ch mode
 // natsPermissions are what a NATS group needs besides what a server needs: the rule of the group and the
 // tag and labels of the VMs.
 func natsPermissions() []string {
-	return []string{"compute.firewalls.create", "compute.firewalls.get", "compute.firewalls.delete", "compute.instances.setTags", "compute.instances.setLabels", "compute.instances.list"}
+	return []string{"compute.firewalls.create", "compute.firewalls.get", "compute.firewalls.delete", "compute.networks.updatePolicy", "compute.instances.setTags", "compute.instances.setLabels", "compute.instances.list"}
 }
 
 // checkNATSRights asks Google which of the rights of a NATS group the credentials lack (nothing is changed).

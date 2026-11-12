@@ -26,10 +26,15 @@ const natsPrefix = "viper-nats-"
 // GroupName is the name of the application security group of a NATS group.
 func GroupName(group string) string { return natsPrefix + group }
 
-// inGroup tells whether the network interface of the VM is in an application security group of a NATS group.
+// inGroup tells whether the network interface of the VM is in the application security group of its NATS group
+// (a VM without NATS tags: of any NATS group).
 func inGroup(v *VM) bool {
+	want := ""
+	if g := v.Tags[model.LabelNATSGroup]; g != "" {
+		want = GroupName(g)
+	}
 	for _, g := range v.InGroups {
-		if strings.HasPrefix(g, natsPrefix) {
+		if (want == "" && strings.HasPrefix(g, natsPrefix)) || g == want {
 			return true
 		}
 	}

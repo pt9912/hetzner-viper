@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/api/compute/v1"
+
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/gcp"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
@@ -198,5 +200,29 @@ func TestARuleThatDiffersFromWhatViperMakesIsReported(t *testing.T) {
 	found, err := c.FindPrivateNetwork(ctx, "dev")
 	if err != nil || len(found.Problems) != 3 {
 		t.Errorf("%+v %v", found, err)
+	}
+}
+
+func TestRuleProblemsFindsWhatSomebodyChangedInTheFirewallRule(t *testing.T) {
+	as := func(f *compute.Firewall) *compute.Firewall { return f }
+	good := as(&compute.Firewall{Direction: "INGRESS", SourceTags: []string{"viper-nats-dev"}, TargetTags: []string{"viper-nats-dev"},
+		Allowed: []*compute.FirewallAllowed{{IPProtocol: "tcp", Ports: []string{"4222"}}}})
+	if p := gcp.RuleProblems(good); len(p) != 0 {
+		t.Errorf("as viper makes it: %v", p)
+	}
+	for name, change := range map[string]func(*compute.Firewall){
+		"direction": func(f *compute.Firewall) { f.Direction = "EGRESS" },
+		"disabled":  func(f *compute.Firewall) { f.Disabled = true },
+		"ranges":    func(f *compute.Firewall) { f.SourceRanges = []string{"0.0.0.0/0"} },
+		"tags":      func(f *compute.Firewall) { f.SourceTags = []string{"other"} },
+		"denied":    func(f *compute.Firewall) { f.Denied = []*compute.FirewallDenied{{IPProtocol: "tcp"}} },
+		"protocol":  func(f *compute.Firewall) { f.Allowed[0].IPProtocol = "udp" },
+	} {
+		f := as(&compute.Firewall{Direction: "INGRESS", SourceTags: []string{"viper-nats-dev"}, TargetTags: []string{"viper-nats-dev"},
+			Allowed: []*compute.FirewallAllowed{{IPProtocol: "tcp", Ports: []string{"4222"}}}})
+		change(f)
+		if p := gcp.RuleProblems(f); len(p) == 0 {
+			t.Errorf("%s: not found", name)
+		}
 	}
 }

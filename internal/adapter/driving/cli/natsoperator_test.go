@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -81,10 +82,10 @@ func TestInitMakesTheKeyOnceAndRegistersItAndRevokeRemovesBoth(t *testing.T) {
 	}
 	key := operatorKey(t, dir, env)
 	st, err := os.Stat(key)
-	if err != nil || st.Mode().Perm() != 0o600 {
+	if err != nil || (runtime.GOOS != "windows" && st.Mode().Perm() != 0o600) { // Windows has no permission bits
 		t.Fatalf("the key: %v %v", st, err)
 	}
-	if dst, _ := os.Stat(filepath.Dir(key)); dst.Mode().Perm()&0o077 != 0 {
+	if dst, _ := os.Stat(filepath.Dir(key)); runtime.GOOS != "windows" && dst.Mode().Perm()&0o077 != 0 {
 		t.Errorf("the directory is open to others: %v", dst.Mode())
 	}
 	seed, _ := os.ReadFile(key)
