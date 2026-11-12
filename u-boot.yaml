@@ -12,6 +12,8 @@ devcontainer:
         - shellcheck
         - tmux
         - openssh
+        - kubectl
+        - k3d
     claude-code:
       enabled: true
       version: 1.0.5
