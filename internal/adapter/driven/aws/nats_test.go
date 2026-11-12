@@ -219,3 +219,28 @@ func TestTheZoneOfALocationIsItsRegion(t *testing.T) {
 		}
 	}
 }
+
+func TestARuleThatSomebodyChangedIsReported(t *testing.T) {
+	f := newFakeAWS()
+	c := natsClient(f)
+	ctx := context.Background()
+	n, _, err := c.EnsurePrivateNetwork(ctx, "dev", "eu-central-1a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found, err := c.FindPrivateNetwork(ctx, "dev"); err != nil || len(found.Problems) != 0 {
+		t.Fatalf("as made: %+v %v", found, err)
+	}
+	g := f.groups[n.ID]
+	g.perms = append(g.perms, types.IpPermission{IpProtocol: ptr("tcp"), FromPort: ptr(int32(4222)), ToPort: ptr(int32(4222)), IpRanges: []types.IpRange{{CidrIp: ptr("0.0.0.0/0")}}})
+	g.perms = append(g.perms, types.IpPermission{IpProtocol: ptr("tcp"), FromPort: ptr(int32(22)), ToPort: ptr(int32(22))})
+	found, err := c.FindPrivateNetwork(ctx, "dev")
+	if err != nil || len(found.Problems) != 2 || !strings.Contains(found.Problems[0], "outside the group") {
+		t.Errorf("%+v %v", found, err)
+	}
+	g.perms = nil
+	found, _ = c.FindPrivateNetwork(ctx, "dev")
+	if len(found.Problems) != 1 || !strings.Contains(found.Problems[0], "no rule") {
+		t.Errorf("%+v", found)
+	}
+}

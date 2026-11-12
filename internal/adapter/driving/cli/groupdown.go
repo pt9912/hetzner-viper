@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 
@@ -41,23 +42,9 @@ func runGroupDown(ctx context.Context, o *options, env settings.Env, in io.Reade
 	defer stop()
 	ws := newBufferedGroupWriters(g.Machines, stdout, stderr)
 	askFor := groupAsker(ctx, in, ws, lockedWriter{mu: &ws.mu, w: stderr})
-	roles := map[string]model.NATSRole{}
-	for _, m := range g.Machines {
-		c, err := o.host().Services.Settings.Load(settingsDir(o), m, env, true)
-		if err != nil {
-			return fmt.Errorf("%s: %w", m, err)
-		}
-		r, ok := o.host().Services.Down(c, driving.DownOptions{}).(driving.GroupRoler)
-		if !ok {
-			return fmt.Errorf("%s: cannot tell its role in the NATS group; nothing was deleted", m)
-		}
-		role, _, found, err := r.GroupRole(ctx, c)
-		if err != nil {
-			return fmt.Errorf("%s: reading its role in the NATS group failed (nothing was deleted, the server must go last): %w", m, err)
-		}
-		if found {
-			roles[m] = role
-		}
+	roles, keyFile, err := groupRoles(ctx, o, env, g)
+	if err != nil {
+		return err
 	}
 	taskOf := func(m string) driving.GroupTask {
 		mo := *o
@@ -90,7 +77,57 @@ func runGroupDown(ctx context.Context, o *options, env settings.Env, in io.Reade
 	for _, m := range g.Machines {
 		ordered = append(ordered, byName[m])
 	}
-	return finishGroup(ordered, stdout, ws)
+	err = finishGroup(ordered, stdout, ws)
+	if keyFile != "" && allOK(wave2, byName) {
+		operatorKeyHint(keyFile, stdout)
+	}
+	return err
+}
+
+// allOK tells whether there are tasks and all of them were done.
+func allOK(tasks []driving.GroupTask, results map[string]driving.GroupResult) bool {
+	for _, t := range tasks {
+		if !results[t.Machine].OK() {
+			return false
+		}
+	}
+	return len(tasks) > 0
+}
+
+// operatorKeyHint says that the key of the operator of an ended NATS group is still on this computer: a new
+// group of that name would not know it.
+func operatorKeyHint(keyFile string, out io.Writer) {
+	if _, err := os.Stat(keyFile); err == nil {
+		fmt.Fprintf(out, "The key of the operator of the deleted group is still there: %s (a new group does not know it; viper nats init makes a new one, or delete the file).\n", keyFile)
+	}
+}
+
+// groupRoles reads the role of each machine in its NATS group (the server must go last) and where the key of
+// the operator of the group is on this computer ("" if the machines are in no group).
+func groupRoles(ctx context.Context, o *options, env settings.Env, g *model.Group) (map[string]model.NATSRole, string, error) {
+	roles := map[string]model.NATSRole{}
+	var keyFile string
+	for _, m := range g.Machines {
+		c, err := o.host().Services.Settings.Load(settingsDir(o), m, env, true)
+		if err != nil {
+			return nil, "", fmt.Errorf("%s: %w", m, err)
+		}
+		r, ok := o.host().Services.Down(c, driving.DownOptions{}).(driving.GroupRoler)
+		if !ok {
+			return nil, "", fmt.Errorf("%s: cannot tell its role in the NATS group; nothing was deleted", m)
+		}
+		role, _, found, err := r.GroupRole(ctx, c)
+		if err != nil {
+			return nil, "", fmt.Errorf("%s: reading its role in the NATS group failed (nothing was deleted, the server must go last): %w", m, err)
+		}
+		if found {
+			roles[m] = role
+			if c.NATS.Group != "" {
+				keyFile = model.OperatorKeyFile(c.StateDir, c.NATS.Group)
+			}
+		}
+	}
+	return roles, keyFile, nil
 }
 
 // notDone are the machines whose run was not fine.

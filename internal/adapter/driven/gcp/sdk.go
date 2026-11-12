@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/api/cloudresourcemanager/v3"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 )
@@ -17,6 +18,7 @@ import (
 // sdk is the API over the compute/v1 client of the project and zone.
 type sdk struct {
 	svc           *compute.Service
+	rm            *cloudresourcemanager.Service
 	project, zone string
 	poll          time.Duration
 }
@@ -26,7 +28,11 @@ func newSDK(ctx context.Context, o Options) (*sdk, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &sdk{svc: svc, project: o.Project, zone: o.Zone, poll: o.poll()}, nil
+	rm, err := cloudresourcemanager.NewService(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &sdk{svc: svc, rm: rm, project: o.Project, zone: o.Zone, poll: o.poll()}, nil
 }
 
 func notFound(err error) bool {
@@ -343,7 +349,7 @@ func (s *sdk) NATSFirewall(ctx context.Context, name string) (*NATSRule, error) 
 		}
 		return nil, err
 	}
-	out := &NATSRule{Name: r.Name, Description: r.Description}
+	out := &NATSRule{Name: r.Name, Description: r.Description, Problems: ruleProblems(r)}
 	if i := strings.LastIndex(r.Network, "/"); i >= 0 {
 		out.Network = r.Network[i+1:]
 	}
@@ -354,6 +360,31 @@ func (s *sdk) NATSFirewall(ctx context.Context, name string) (*NATSRule, error) 
 		out.Port, _ = strconv.Atoi(r.Allowed[0].Ports[0]) // 0 for a port range: not ours
 	}
 	return out, nil
+}
+
+// ruleProblems are the ways a firewall rule differs from what viper makes, apart from port and tag (the
+// client compares those): somebody changed it by hand.
+func ruleProblems(r *compute.Firewall) []string {
+	var p []string
+	if r.Direction != "" && r.Direction != "INGRESS" {
+		p = append(p, "direction is "+r.Direction)
+	}
+	if r.Disabled {
+		p = append(p, "the rule is disabled")
+	}
+	if len(r.SourceRanges) > 0 {
+		p = append(p, "it has source ranges "+strings.Join(r.SourceRanges, ","))
+	}
+	if len(r.SourceTags) != 1 || len(r.TargetTags) != 1 || r.SourceTags[0] != r.TargetTags[0] {
+		p = append(p, "source and target are not the one network tag of the group")
+	}
+	if len(r.Denied) > 0 {
+		p = append(p, "it denies traffic")
+	}
+	if len(r.Allowed) != 1 || r.Allowed[0].IPProtocol != "tcp" {
+		p = append(p, "it does not allow exactly TCP")
+	}
+	return p
 }
 
 func (s *sdk) CreateNATSFirewall(ctx context.Context, r NATSRule) error {
@@ -387,4 +418,18 @@ func (s *sdk) DeleteFirewall(ctx context.Context, name string) error {
 		return err
 	}
 	return s.waitGlobal(ctx, op)
+}
+
+func (s *sdk) MissingPermissions(ctx context.Context, permissions []string) ([]string, error) {
+	out, err := s.rm.Projects.TestIamPermissions("projects/"+s.project, &cloudresourcemanager.TestIamPermissionsRequest{Permissions: permissions}).Context(ctx).Do()
+	if err != nil {
+		return nil, err
+	}
+	var missing []string
+	for _, p := range permissions {
+		if !slices.Contains(out.Permissions, p) {
+			missing = append(missing, p)
+		}
+	}
+	return missing, nil
 }

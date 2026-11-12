@@ -200,7 +200,7 @@ Entschieden am 11.11.2026:
 1. **`--from` ist optional und hat einen Standard:** Stufe 1: die erste erreichbare Maschine der Gruppe (Reihenfolge der Gruppendatei, nie `--to`); ab Stufe 2: `operator`, wenn für die Gruppe eingerichtet. Die gewählte Quelle steht in der ersten Ausgabezeile.
 2. **Der Name des Betreibers ist einstellbar** (`NATS_OPERATOR_NAME`, Standard `operator`) *(Auslegung der Antwort „ja“ auf „fest oder einstellbar“; bitte bestätigen)*. Die Prüfungen aus §5 gelten für den eingestellten Namen.
 3. **`operator` in `NATS_MCP_PUSH_FROM` ist optional einstellbar:** erlaubt, wenn der Betreiber es einträgt; Standard bleibt die leere Liste. `check` akzeptiert den Betreiber-Namen dort.
-4. **`--json`:** Vorschlag **ja**, weil es billig ist: eine Zeile pro Nachricht, derselbe Inhalt wie der Text (`from`, `kind`, `id`, `re`, `text`), bereits gesäubert. Es erleichtert Skripte und Tests und braucht keine eigene Logik, da `watch` ohnehin JSON-Zeilen liefert. Noch offen, bis du zustimmst.
+4. **`--json`:** Vorschlag **ja**, weil es billig ist: eine Zeile pro Nachricht, derselbe Inhalt wie der Text (`from`, `kind`, `id`, `re`, `text`), bereits gesäubert. Es erleichtert Skripte und Tests und braucht keine eigene Logik, da `watch` ohnehin JSON-Zeilen liefert. **Entschieden: ja, eingebaut.**
 5. **Reihenfolge:** erst Stufe 1 (Meilensteine 0 bis 4), danach Stufe 2 (5 bis 9). Stufe 2 beginnt erst, wenn Stufe 1 abgenommen ist.
 
 ## 9 Bewusst nicht enthalten

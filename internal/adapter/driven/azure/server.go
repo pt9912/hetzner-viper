@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
 )
 
 var (
@@ -36,7 +37,7 @@ func parseImage(setting string, arm bool) (Image, error) {
 }
 
 func serverFrom(v *VM) *model.Server {
-	return &model.Server{ID: v.Name, Name: v.Name, IPv4: v.IP, Created: v.Created}
+	return &model.Server{ID: v.Name, Name: v.Name, IPv4: v.IP, Created: v.Created, PrivateIP: v.PrivateIP, GroupRuleMissing: !inGroup(v)}
 }
 
 // ServerByName returns the VM of that name in the resource group, nil if there is none.
@@ -58,21 +59,9 @@ func (c *Client) CreateServer(ctx context.Context, s model.ServerSpec) (*model.S
 	if err != nil {
 		return nil, err
 	}
-	size, err := api.VMSize(ctx, s.Size)
+	img, err := c.resolve(ctx, api, s)
 	if err != nil {
 		return nil, err
-	}
-	if size == nil {
-		return nil, fmt.Errorf("VM size %s not found in %s", s.Size, c.opts.Location)
-	}
-	img, err := parseImage(s.Image, armSize(s.Size))
-	if err != nil {
-		return nil, err
-	}
-	if ok, err := api.ImageExists(ctx, img); err != nil {
-		return nil, err
-	} else if !ok {
-		return nil, fmt.Errorf("image %s not found in %s", img, c.opts.Location)
 	}
 	subnet, err := api.Subnet(ctx)
 	if err != nil {
@@ -88,10 +77,14 @@ func (c *Client) CreateServer(ctx context.Context, s model.ServerSpec) (*model.S
 	if nsg == nil {
 		return nil, fmt.Errorf("network security group %s not found", s.Firewall)
 	}
-	err = api.CreateVM(ctx, Launch{
+	l := Launch{
 		Name: s.Name, Size: s.Size, Image: img, SubnetID: subnet, NSG: s.Firewall,
-		UserData: s.UserData, SSHKey: s.SSHKey, DiskGB: c.opts.diskGB(),
-	})
+		UserData: s.UserData, SSHKey: s.SSHKey, DiskGB: c.opts.diskGB(), Tags: s.Labels,
+	}
+	if l.Group, err = c.groupAtStart(ctx, api, s); err != nil {
+		return nil, err
+	}
+	err = api.CreateVM(ctx, l)
 	if err != nil {
 		return nil, err
 	}
@@ -117,4 +110,45 @@ func (c *Client) DeleteServer(ctx context.Context, id string) error {
 		return err
 	}
 	return api.DeleteVM(ctx, id)
+}
+
+// groupAtStart prepares the start of a server of a NATS group: its network security group gets the rule of the
+// group. It returns the ID of the application security group the interface goes into, "" for a server of no group.
+func (c *Client) groupAtStart(ctx context.Context, api *session, s model.ServerSpec) (string, error) {
+	if s.Network == "" {
+		return "", nil
+	}
+	asg, err := api.GroupASG(ctx, s.Network)
+	if err != nil {
+		return "", err
+	}
+	if asg == nil {
+		return "", fmt.Errorf("the application security group %s of the NATS group does not exist", s.Network)
+	}
+	group := strings.TrimPrefix(s.Network, natsPrefix)
+	if err := api.AllowGroup(ctx, s.Firewall, group, asg.ID, c.opts.natsPort()); err != nil {
+		return "", &cloud.OpError{Op: "adding the NATS rule to the network security group " + s.Firewall, Write: true, Err: err}
+	}
+	return asg.ID, nil
+}
+
+// resolve checks that the VM size and the image exist and returns the image.
+func (c *Client) resolve(ctx context.Context, api *session, s model.ServerSpec) (Image, error) {
+	size, err := api.VMSize(ctx, s.Size)
+	if err != nil {
+		return Image{}, err
+	}
+	if size == nil {
+		return Image{}, fmt.Errorf("VM size %s not found in %s", s.Size, c.opts.Location)
+	}
+	img, err := parseImage(s.Image, armSize(s.Size))
+	if err != nil {
+		return Image{}, err
+	}
+	if ok, err := api.ImageExists(ctx, img); err != nil {
+		return Image{}, err
+	} else if !ok {
+		return Image{}, fmt.Errorf("image %s not found in %s", img, c.opts.Location)
+	}
+	return img, nil
 }

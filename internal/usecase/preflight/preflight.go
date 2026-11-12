@@ -245,7 +245,7 @@ func cloudChecks(ctx context.Context, r *report, c *model.Machine, d Deps) {
 	fmt.Fprintln(r.out, "== "+d.Cloud.Title())
 	pub, _ := os.ReadFile(c.SSHKey + ".pub")
 	for _, f := range d.Cloud.Validate(ctx, model.Check{
-		Machine: c.Name, ServerName: c.ServerName, KeyName: c.KeyName, KeyFile: c.SSHKey, PublicKey: string(pub),
+		Machine: c.Name, ServerName: c.ServerName, KeyName: c.KeyName, KeyFile: c.SSHKey, PublicKey: string(pub), NATS: c.NATS.Enabled,
 		Spec: model.ServerSpec{Name: c.ServerName, Size: c.ServerType, Region: c.ServerLocation, Image: c.ServerImage},
 	}) {
 		switch f.Level {

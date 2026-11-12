@@ -219,7 +219,33 @@ func (c *Client) FindPrivateNetwork(ctx context.Context, group string) (*model.P
 	if n, err := c.network(ctx); err == nil && n != nil {
 		cidr = n.cidr
 	}
-	return networkOf(out.SecurityGroups[0], c.opts.region(), cidr), nil
+	n := networkOf(out.SecurityGroups[0], c.opts.region(), cidr)
+	n.Problems = ruleProblems(out.SecurityGroups[0], c.opts.natsPort())
+	return n, nil
+}
+
+// ruleProblems are the ways the ingress rules of the security group differ from what viper makes: one rule,
+// TCP on the NATS port, from the group itself and from nothing else.
+func ruleProblems(g types.SecurityGroup, port int32) []string {
+	var p []string
+	self := false
+	for _, r := range g.IpPermissions {
+		onPort := str(r.IpProtocol) == "tcp" && r.FromPort != nil && r.ToPort != nil && *r.FromPort == port && *r.ToPort == port
+		fromSelf := len(r.UserIdGroupPairs) == 1 && str(r.UserIdGroupPairs[0].GroupId) == str(g.GroupId)
+		open := len(r.IpRanges)+len(r.Ipv6Ranges)+len(r.PrefixListIds) > 0
+		switch {
+		case onPort && fromSelf && !open:
+			self = true
+		case onPort && open:
+			p = append(p, fmt.Sprintf("it lets TCP %d in from addresses outside the group", port))
+		default:
+			p = append(p, fmt.Sprintf("it has a rule that viper did not make (protocol %s)", str(r.IpProtocol)))
+		}
+	}
+	if !self {
+		p = append(p, fmt.Sprintf("it has no rule for TCP %d from the group itself", port))
+	}
+	return p
 }
 
 // AttachPrivateNetwork adds the security group of the group to the instance and returns its private

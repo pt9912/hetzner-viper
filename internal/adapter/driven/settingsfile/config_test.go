@@ -440,12 +440,11 @@ func TestLoadRefusesBadNATSSettings(t *testing.T) {
 	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
 	base := "DNS_DOMAIN=example.com\nNATS_ENABLED=true\n"
 	for name, tc := range map[string]struct{ global, machine, want string }{
-		"no group":    {base, "", "NATS_GROUP: required"},
-		"group dots":  {base + "NATS_GROUP=a.b\n", "", "NATS_GROUP: 1 to 31"},
-		"group case":  {base + "NATS_GROUP=Dev\n", "", "NATS_GROUP: 1 to 31"},
-		"bad port":    {base + "NATS_GROUP=g\nNATS_PORT=22\n", "", "NATS_PORT"},
-		"bad switch":  {"DNS_DOMAIN=example.com\nNATS_ENABLED=maybe\n", "", "NATS_ENABLED: true or false"},
-		"other cloud": {base + "NATS_GROUP=g\nPROVIDER=azure\n", "", "need PROVIDER=aws or gcp or hetzner"},
+		"no group":   {base, "", "NATS_GROUP: required"},
+		"group dots": {base + "NATS_GROUP=a.b\n", "", "NATS_GROUP: 1 to 31"},
+		"group case": {base + "NATS_GROUP=Dev\n", "", "NATS_GROUP: 1 to 31"},
+		"bad port":   {base + "NATS_GROUP=g\nNATS_PORT=22\n", "", "NATS_PORT"},
+		"bad switch": {"DNS_DOMAIN=example.com\nNATS_ENABLED=maybe\n", "", "NATS_ENABLED: true or false"},
 	} {
 		_, err := settingsfile.Load(setupDir(t, tc.global, tc.machine), "web", env, false)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {

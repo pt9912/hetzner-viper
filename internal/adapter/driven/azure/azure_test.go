@@ -3,6 +3,7 @@ package azure_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -27,12 +28,19 @@ type fake struct {
 	created  []string
 	looks    int
 	listErr  error
+
+	asgs    map[string]*azure.GroupASG
+	groupNS map[string]bool // "<nsg> <group>": the rule is there
+	inUse   bool
+	tagSets int
 }
 
 func newFake() *fake {
 	return &fake{
-		vms:  map[string]*azure.VM{},
-		nsgs: map[string]*azure.NSG{},
+		vms:     map[string]*azure.VM{},
+		nsgs:    map[string]*azure.NSG{},
+		asgs:    map[string]*azure.GroupASG{},
+		groupNS: map[string]bool{},
 		sizes: map[string]azure.Size{
 			"Standard_D2s_v5":  {VCPUs: 2, MemoryMB: 8192},
 			"Standard_D2ps_v5": {VCPUs: 2, MemoryMB: 8192},
@@ -64,7 +72,11 @@ func (f *fake) VM(_ context.Context, name string) (*azure.VM, error) {
 
 func (f *fake) CreateVM(_ context.Context, l azure.Launch) error {
 	f.launches = append(f.launches, l)
-	f.vms[l.Name] = &azure.VM{Name: l.Name, Created: time.Date(2026, 10, 27, 9, 0, 0, 0, time.UTC)}
+	v := &azure.VM{Name: l.Name, Created: time.Date(2026, 10, 27, 9, 0, 0, 0, time.UTC), PrivateIP: "10.77.0." + fmt.Sprint(len(f.vms)+4), Tags: l.Tags}
+	if l.Group != "" {
+		v.InGroups = []string{lastOf(l.Group)}
+	}
+	f.vms[l.Name] = v
 	return nil
 }
 
@@ -322,4 +334,78 @@ func TestNames(t *testing.T) {
 	if got := c.Describe(errors.New("DefaultAzureCredential: failed to acquire a token")); !strings.Contains(got, "az login") {
 		t.Error(got)
 	}
+}
+
+func lastOf(id string) string { return id[strings.LastIndex(id, "/")+1:] }
+
+func (f *fake) CreateGroupASG(_ context.Context, name string, tags map[string]string) error {
+	if _, ok := f.asgs[name]; ok {
+		return azure.ErrExists
+	}
+	f.asgs[name] = &azure.GroupASG{ID: "/subscriptions/s/resourceGroups/viper/providers/Microsoft.Network/applicationSecurityGroups/" + name, Name: name, Location: "germanywestcentral", Tags: tags, Created: time.Date(2026, 10, 27, 9, 0, 0, 0, time.UTC)}
+	return nil
+}
+
+func (f *fake) GroupASG(_ context.Context, name string) (*azure.GroupASG, error) {
+	if a, ok := f.asgs[name]; ok {
+		cp := *a
+		return &cp, nil
+	}
+	return nil, nil
+}
+
+func (f *fake) DeleteGroupASG(_ context.Context, name string) error {
+	if f.inUse {
+		return azure.ErrInUse
+	}
+	delete(f.asgs, name)
+	return nil
+}
+
+func (f *fake) AllowGroup(_ context.Context, nsg, group, _ string, _ int) error {
+	f.groupNS[nsg+" "+group] = true
+	return nil
+}
+
+func (f *fake) DropGroupRule(_ context.Context, group string) error {
+	for k := range f.groupNS {
+		if strings.HasSuffix(k, " "+group) {
+			delete(f.groupNS, k)
+		}
+	}
+	return nil
+}
+
+func (f *fake) ListVMs(_ context.Context, tags map[string]string) ([]*azure.VM, error) {
+	var out []*azure.VM
+vms:
+	for _, v := range f.vms {
+		for k, want := range tags {
+			if v.Tags[k] != want {
+				continue vms
+			}
+		}
+		cp := *v
+		out = append(out, &cp)
+	}
+	return out, nil
+}
+
+func (f *fake) SetVMTags(_ context.Context, name string, tags map[string]string) error {
+	v := f.vms[name]
+	if v.Tags == nil {
+		v.Tags = map[string]string{}
+	}
+	for k, x := range tags {
+		v.Tags[k] = x
+	}
+	f.tagSets++
+	return nil
+}
+
+func (f *fake) JoinGroup(_ context.Context, vm, group, asgID string, _ int) error {
+	v := f.vms[vm]
+	f.groupNS["claude-ssh "+group] = true
+	v.InGroups = append(v.InGroups, lastOf(asgID))
+	return nil
 }

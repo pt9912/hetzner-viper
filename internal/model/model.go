@@ -87,6 +87,8 @@ type Check struct {
 	KeyName    string // name the login key gets
 	KeyFile    string // path of the login key (without .pub), for messages
 	PublicKey  string // the login key's public key line, "" if it cannot be read
+	// NATS: the machine goes into a NATS group, so the provider also checks the rights that needs.
+	NATS bool
 }
 
 // FingerprintMD5 is the colon-separated MD5 fingerprint of an OpenSSH public key line, "" if it

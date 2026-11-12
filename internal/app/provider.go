@@ -34,7 +34,7 @@ func NewProvider(m *model.Machine) Provider {
 		root, _ := strconv.Atoi(m.Get("AZURE_ROOT_GB"))
 		return Provider{azure.New(azure.Options{
 			SubscriptionID: m.Get("AZURE_SUBSCRIPTION_ID"), ResourceGroup: m.Get("AZURE_RESOURCE_GROUP"), Location: m.ServerLocation,
-			SubnetID: m.Get("AZURE_SUBNET_ID"), RootGB: int32(root),
+			SubnetID: m.Get("AZURE_SUBNET_ID"), RootGB: int32(root), NATSPort: m.NATS.Port,
 		})}
 	case "gcp":
 		root, _ := strconv.Atoi(m.Get("GCP_ROOT_GB"))

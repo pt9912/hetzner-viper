@@ -66,6 +66,9 @@ type Lookups interface {
 	ImageFamily(ctx context.Context, project, family string) (string, error)
 	// NetworkExists reports whether the VPC network exists in the project.
 	NetworkExists(ctx context.Context, name string) (bool, error)
+	// MissingPermissions returns those of the permissions that the credentials do not have in the project
+	// (testIamPermissions: nothing is changed).
+	MissingPermissions(ctx context.Context, permissions []string) ([]string, error)
 }
 
 // ErrExists is returned by CreateNATSFirewall for a name that is taken.
@@ -75,6 +78,8 @@ var ErrExists = errors.New("already exists")
 type NATSRule struct {
 	Name, Network, Tag, Description string
 	Port                            int
+	// Problems: how the rule read from the project differs from what viper makes (set by the reading side).
+	Problems []string
 }
 
 // Instance is a VM as the adapter needs it.

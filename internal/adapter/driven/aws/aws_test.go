@@ -455,3 +455,22 @@ func TestDescribeKeepsTheCodeAndHidesTheRest(t *testing.T) {
 		t.Error("names")
 	}
 }
+
+func TestValidateTestsTheRightsOfANATSGroupWithADryRun(t *testing.T) {
+	line, _ := edKey(1)
+	f := newFakeAWS()
+	c := aws.NewWith(aws.Options{Location: "eu-central-1"}, f, f)
+	check := model.Check{Machine: "web", ServerName: "claude-web", KeyName: "claude-login", KeyFile: "/k", PublicKey: line,
+		Spec: model.ServerSpec{Name: "claude-web", Size: "t3.large", Region: "eu-central-1", Image: "ubuntu-24.04"}}
+	if got := texts(c.Validate(context.Background(), check)); strings.Contains(got, "security group") {
+		t.Errorf("without NATS nothing is tested: %s", got)
+	}
+	check.NATS = true
+	if got := texts(c.Validate(context.Background(), check)); !strings.Contains(got, "ok the credentials may create the security group of a NATS group") || len(f.created) != 0 {
+		t.Errorf("%s (created %d)", got, len(f.created))
+	}
+	f.dryRunDenied = true
+	if got := texts(c.Validate(context.Background(), check)); !strings.Contains(got, "FAIL the credentials may not create security groups") {
+		t.Errorf("%s", got)
+	}
+}

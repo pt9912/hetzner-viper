@@ -181,3 +181,22 @@ func TestDeletingTheRuleKeepsWhatIsInUseAndWhatViperDidNotMake(t *testing.T) {
 		}
 	}
 }
+
+func TestARuleThatDiffersFromWhatViperMakesIsReported(t *testing.T) {
+	f := newFake()
+	c := natsClient(f)
+	ctx := context.Background()
+	if _, _, err := c.EnsurePrivateNetwork(ctx, "dev", zone); err != nil {
+		t.Fatal(err)
+	}
+	if found, err := c.FindPrivateNetwork(ctx, "dev"); err != nil || len(found.Problems) != 0 {
+		t.Fatalf("as made: %+v %v", found, err)
+	}
+	f.natsRules["viper-nats-dev"].Port = 9999
+	f.natsRules["viper-nats-dev"].Tag = "other"
+	f.natsRules["viper-nats-dev"].Problems = []string{"it has source ranges 0.0.0.0/0"}
+	found, err := c.FindPrivateNetwork(ctx, "dev")
+	if err != nil || len(found.Problems) != 3 {
+		t.Errorf("%+v %v", found, err)
+	}
+}

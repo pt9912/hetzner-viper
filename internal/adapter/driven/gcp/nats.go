@@ -79,8 +79,15 @@ func (*Client) NetworkZone(_ context.Context, location string) (string, error) {
 	return location, nil
 }
 
-func networkOf(r *NATSRule, zone string, created time.Time) *model.PrivateNetwork {
-	return &model.PrivateNetwork{ID: r.Name, Name: r.Name, IPRange: "", Zone: zone, Created: created}
+func (c *Client) networkOf(r *NATSRule, zone string, created time.Time) *model.PrivateNetwork {
+	n := &model.PrivateNetwork{ID: r.Name, Name: r.Name, IPRange: "", Zone: zone, Created: created, Problems: r.Problems}
+	if r.Port != c.opts.natsPort() {
+		n.Problems = append(n.Problems, fmt.Sprintf("it allows port %d, NATS_PORT is %d", r.Port, c.opts.natsPort()))
+	}
+	if r.Tag != r.Name {
+		n.Problems = append(n.Problems, fmt.Sprintf("it applies to the network tag %q, not %s", r.Tag, r.Name))
+	}
+	return n
 }
 
 // EnsurePrivateNetwork creates the rule of the group, or finds it; see cloud.NATSProvider.
@@ -101,7 +108,7 @@ func (c *Client) EnsurePrivateNetwork(ctx context.Context, group, location strin
 	err = api.CreateNATSFirewall(ctx, want)
 	switch {
 	case err == nil:
-		return *networkOf(&want, zone, now), true, nil
+		return *c.networkOf(&want, zone, now), true, nil
 	case !errors.Is(err, ErrExists):
 		return model.PrivateNetwork{}, false, &cloud.OpError{Op: fmt.Sprintf("creating the firewall rule %s", want.Name), Write: true, Err: err}
 	}
@@ -120,7 +127,7 @@ func (c *Client) EnsurePrivateNetwork(ctx context.Context, group, location strin
 	if have.Network != want.Network || z != zone {
 		return model.PrivateNetwork{}, false, fmt.Errorf("the NATS group %s exists in the network %s, zone %s; this machine goes to %s, %s: all machines of a group must be in one network and zone", group, have.Network, z, want.Network, zone)
 	}
-	return *networkOf(have, z, created), false, nil
+	return *c.networkOf(have, z, created), false, nil
 }
 
 // FindPrivateNetwork returns the rule of the group, nil if there is none.
@@ -140,7 +147,7 @@ func (c *Client) FindPrivateNetwork(ctx context.Context, group string) (*model.P
 	if !ok || g != group {
 		return nil, nil
 	}
-	return networkOf(r, zone, created), nil
+	return c.networkOf(r, zone, created), nil
 }
 
 // AttachPrivateNetwork adds the network tag of the group to the VM and returns its private address.

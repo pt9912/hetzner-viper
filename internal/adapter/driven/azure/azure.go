@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/pt9912/hetzner-viper/internal/model"
 )
 
 // API is what the adapter needs of Azure, in its own terms. The adapter's logic runs against it;
@@ -35,16 +36,64 @@ type API interface {
 	CreateNSG(ctx context.Context, name string, sources []string) error
 	// AddNSGRules adds the rule for SSH and/or ping to an existing group.
 	AddNSGRules(ctx context.Context, name string, ssh, icmp bool, sources []string) error
+	Lookups
+	Groups
+}
+
+// Lookups is the part of the API for what a VM is made from.
+type Lookups interface {
 	// VMSize returns the VM size in the location, nil if there is none.
 	VMSize(ctx context.Context, name string) (*Size, error)
 	// ImageExists reports whether the marketplace image exists in the location.
 	ImageExists(ctx context.Context, img Image) (bool, error)
 }
 
+// Groups is the part of the API for NATS groups (nats.go).
+type Groups interface {
+	// CreateGroupASG makes the application security group of a NATS group, in the location of the
+	// options. It must refuse a name that exists with ErrExists and not replace it: that is the lock of the
+	// first start (the sdk asks for If-None-Match: * on the PUT).
+	CreateGroupASG(ctx context.Context, name string, tags map[string]string) error
+	// GroupASG returns the application security group of that name, nil if there is none.
+	GroupASG(ctx context.Context, name string) (*GroupASG, error)
+	// DeleteGroupASG deletes it; ErrInUse if a network interface or a rule still uses it.
+	DeleteGroupASG(ctx context.Context, name string) error
+	// AllowGroup puts the rule viper-nats-<group> into the network security group: TCP on the port from the
+	// application security group to itself. It is no error if it is there.
+	AllowGroup(ctx context.Context, nsg, group, asgID string, port int) error
+	// DropGroupRule removes the rule of the group from every network security group of the resource group.
+	DropGroupRule(ctx context.Context, group string) error
+	// ListVMs returns the VMs of the resource group that carry all these tags.
+	ListVMs(ctx context.Context, tags map[string]string) ([]*VM, error)
+	// SetVMTags puts the tags on the VM and keeps the ones it has.
+	SetVMTags(ctx context.Context, name string, tags map[string]string) error
+	// JoinGroup puts the network interface of the VM into the application security group, and its network
+	// security group gets the rule of the group.
+	JoinGroup(ctx context.Context, vm, group, asgID string, port int) error
+}
+
+// GroupASG is the application security group of a NATS group.
+type GroupASG struct {
+	ID, Name, Location string
+	Tags               map[string]string
+	Created            time.Time
+}
+
+// ErrExists is returned by CreateGroupASG for a name that is taken, ErrInUse by DeleteGroupASG.
+var (
+	ErrExists = errors.New("already exists")
+	ErrInUse  = errors.New("still in use")
+)
+
 // VM is a VM as the adapter needs it.
 type VM struct {
 	Name, IP string
 	Created  time.Time
+	// PrivateIP is the address in the virtual network; Tags are the tags of the VM; InGroups are the
+	// application security groups of its network interface (the names).
+	PrivateIP string
+	Tags      map[string]string
+	InGroups  []string
 }
 
 // Image is a marketplace image.
@@ -57,6 +106,10 @@ type Launch struct {
 	Name, Size, SubnetID, NSG, UserData, SSHKey string
 	Image                                       Image
 	DiskGB                                      int32
+	// Tags are the extra tags of the VM (its NATS labels); Group is the application security group of the NATS
+	// group the interface is in ("" for none).
+	Tags  map[string]string
+	Group string
 }
 
 // NSG says what a network security group lets in.
@@ -72,6 +125,7 @@ type Options struct {
 	Location       string // SERVER_LOCATION, e.g. germanywestcentral
 	SubnetID       string // AZURE_SUBNET_ID, "" for a network of viper's own
 	RootGB         int32  // size of the OS disk
+	NATSPort       int    // NATS_PORT, 0 for the default
 	// Poll is how long to wait between two looks at a VM (default 3 s).
 	Poll time.Duration
 }
@@ -88,6 +142,13 @@ func (o Options) diskGB() int32 {
 		return o.RootGB
 	}
 	return 64
+}
+
+func (o Options) natsPort() int {
+	if o.NATSPort > 0 {
+		return o.NATSPort
+	}
+	return model.DefaultNATSPort
 }
 
 func (o Options) poll() time.Duration {

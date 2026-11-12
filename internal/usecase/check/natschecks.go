@@ -106,6 +106,9 @@ func natsNetworkChecks(ctx context.Context, r *report, c *model.Machine, api clo
 		r.bad("the private network viper-nats-%s does not exist (the group cannot talk; NATS is not moved to a public port)", group)
 	} else {
 		r.ok("private network %s (%s)", net.Name, net.Detail())
+		for _, p := range net.Problems {
+			r.bad("the rule of %s is not as viper makes it: %s", net.Name, p)
+		}
 	}
 	if !srv.InNetwork() {
 		r.bad("%s has no address in the private network", c.ServerName)
@@ -255,6 +258,35 @@ func natsServerChecks(r *report, c *model.Machine, v map[string]string, members 
 	}
 	natsListenCheck(r, v["listen"], srv.PrivateIP)
 	natsRegistrationChecks(r, c, v["registered"], members)
+	natsOperatorChecks(r, c, v["operators"], members)
+}
+
+// natsOperatorChecks compare the operator at the server (viper nats init) with the key on this computer: a
+// key the server does not know is left over from an earlier group, and the login with it would fail.
+func natsOperatorChecks(r *report, c *model.Machine, list string, members []model.GroupMember) {
+	group, operator := c.NATS.Group, c.NATS.Operator
+	if group == "" && len(members) > 0 {
+		group = members[0].NATS.Group // NATS_ENABLED may be off on this computer: the labels say the group
+	}
+	if operator == "" {
+		operator = model.DefaultNATSOperator
+	}
+	registered := false
+	for _, n := range strings.Split(list, ",") {
+		if n != "" && n == operator {
+			registered = true
+		}
+	}
+	_, err := os.Stat(model.OperatorKeyFile(c.StateDir, group))
+	hasKey := err == nil
+	switch {
+	case registered && hasKey:
+		r.ok("operator %s is registered at the server, its key is on this computer", operator)
+	case registered:
+		r.info("operator %s is registered at the server; this computer has no key for it (viper nats init %s makes one)", operator, group)
+	case hasKey:
+		r.warn("this computer has a key for the operator %s, but the server does not know it (left over from an earlier group): viper nats revoke %s, then viper nats init %s", operator, group, group)
+	}
 }
 
 // natsListenCheck: the server listens on the private address and on nothing else.

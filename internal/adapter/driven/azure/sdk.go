@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -33,6 +35,7 @@ type sdk struct {
 	images  *armcompute.VirtualMachineImagesClient
 	pips    *armnetwork.PublicIPAddressesClient
 	nics    *armnetwork.InterfacesClient
+	asgs    *armnetwork.ApplicationSecurityGroupsClient
 	nsgs    *armnetwork.SecurityGroupsClient
 	rules   *armnetwork.SecurityRulesClient
 	vnets   *armnetwork.VirtualNetworksClient
@@ -62,6 +65,9 @@ func newSDK(_ context.Context, o Options) (*sdk, error) {
 		return nil, err
 	}
 	if s.nics, err = armnetwork.NewInterfacesClient(sub, cred, nil); err != nil {
+		return nil, err
+	}
+	if s.asgs, err = armnetwork.NewApplicationSecurityGroupsClient(sub, cred, nil); err != nil {
 		return nil, err
 	}
 	if s.nsgs, err = armnetwork.NewSecurityGroupsClient(sub, cred, nil); err != nil {
@@ -108,9 +114,12 @@ func (s *sdk) VM(ctx context.Context, name string) (*VM, error) {
 		}
 		return nil, err
 	}
-	out := &VM{Name: name}
+	out := &VM{Name: name, Tags: fromTags(r.Tags)}
 	if r.Properties != nil && r.Properties.TimeCreated != nil {
 		out.Created = *r.Properties.TimeCreated
+	}
+	if err := s.fillNIC(ctx, out); err != nil {
+		return nil, err
 	}
 	pip, err := s.pips.Get(ctx, s.o.group(), name+"-ip", nil)
 	if err != nil && !notFound(err) {
@@ -174,8 +183,9 @@ func (s *sdk) createVM(ctx context.Context, l Launch) error {
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{{
 				Name: to.Ptr("ipconfig1"),
 				Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-					Subnet:          &armnetwork.Subnet{ID: to.Ptr(l.SubnetID)},
-					PublicIPAddress: &armnetwork.PublicIPAddress{ID: pip.ID},
+					Subnet:                    &armnetwork.Subnet{ID: to.Ptr(l.SubnetID)},
+					PublicIPAddress:           &armnetwork.PublicIPAddress{ID: pip.ID},
+					ApplicationSecurityGroups: groupRefs(l.Group),
 				},
 			}},
 		},
@@ -188,7 +198,7 @@ func (s *sdk) createVM(ctx context.Context, l Launch) error {
 		return err
 	}
 	vmPoller, err := s.vms.BeginCreateOrUpdate(ctx, rg, l.Name, armcompute.VirtualMachine{
-		Location: to.Ptr(loc), Tags: tags(l.Name),
+		Location: to.Ptr(loc), Tags: launchTags(l),
 		Properties: &armcompute.VirtualMachineProperties{
 			HardwareProfile: &armcompute.HardwareProfile{VMSize: to.Ptr(armcompute.VirtualMachineSizeTypes(l.Size))},
 			StorageProfile: &armcompute.StorageProfile{
@@ -438,4 +448,255 @@ func (s *sdk) ImageExists(ctx context.Context, img Image) (bool, error) {
 		return false, err
 	}
 	return len(r.VirtualMachineImageResourceArray) > 0, nil
+}
+
+func fromTags(t map[string]*string) map[string]string {
+	out := make(map[string]string, len(t))
+	for k, v := range t {
+		out[k] = str(v)
+	}
+	return out
+}
+
+// launchTags are the tags of a new VM: viper=<name> and the extra ones (its NATS labels).
+func launchTags(l Launch) map[string]*string {
+	t := tags(l.Name)
+	for k, v := range l.Tags {
+		t[k] = to.Ptr(v)
+	}
+	return t
+}
+
+func groupRefs(id string) []*armnetwork.ApplicationSecurityGroup {
+	if id == "" {
+		return nil
+	}
+	return []*armnetwork.ApplicationSecurityGroup{{ID: to.Ptr(id)}}
+}
+
+func lastSegment(id string) string {
+	if i := strings.LastIndex(id, "/"); i >= 0 {
+		return id[i+1:]
+	}
+	return id
+}
+
+// fillNIC reads the private address and the application security groups of the interface of the VM.
+func (s *sdk) fillNIC(ctx context.Context, v *VM) error {
+	nic, err := s.nics.Get(ctx, s.o.group(), v.Name+"-nic", nil)
+	if err != nil {
+		if notFound(err) {
+			return nil
+		}
+		return err
+	}
+	if nic.Properties == nil {
+		return nil
+	}
+	for _, c := range nic.Properties.IPConfigurations {
+		if c.Properties == nil {
+			continue
+		}
+		if v.PrivateIP == "" {
+			v.PrivateIP = str(c.Properties.PrivateIPAddress)
+		}
+		for _, g := range c.Properties.ApplicationSecurityGroups {
+			v.InGroups = append(v.InGroups, lastSegment(str(g.ID)))
+		}
+	}
+	return nil
+}
+
+func (s *sdk) CreateGroupASG(ctx context.Context, name string, t map[string]string) error {
+	ctx = policy.WithHTTPHeader(ctx, http.Header{"If-None-Match": []string{"*"}})
+	tg := map[string]*string{}
+	for k, v := range t {
+		tg[k] = to.Ptr(v)
+	}
+	poller, err := s.asgs.BeginCreateOrUpdate(ctx, s.o.group(), name, armnetwork.ApplicationSecurityGroup{Location: to.Ptr(s.o.Location), Tags: tg}, nil)
+	var re *azcore.ResponseError
+	if errors.As(err, &re) && (re.StatusCode == http.StatusPreconditionFailed || re.StatusCode == http.StatusConflict) {
+		return ErrExists
+	}
+	if err != nil {
+		return err
+	}
+	_, err = poller.PollUntilDone(ctx, nil)
+	return err
+}
+
+func (s *sdk) GroupASG(ctx context.Context, name string) (*GroupASG, error) {
+	r, err := s.asgs.Get(ctx, s.o.group(), name, nil)
+	if err != nil {
+		if notFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	out := &GroupASG{ID: str(r.ID), Name: name, Location: str(r.Location), Tags: fromTags(r.Tags)}
+	return out, nil
+}
+
+func (s *sdk) DeleteGroupASG(ctx context.Context, name string) error {
+	poller, err := s.asgs.BeginDelete(ctx, s.o.group(), name, nil)
+	var re *azcore.ResponseError
+	if errors.As(err, &re) && (re.ErrorCode == "ApplicationSecurityGroupInUse" || re.StatusCode == http.StatusConflict) {
+		return ErrInUse
+	}
+	if err != nil {
+		if notFound(err) {
+			return nil
+		}
+		return err
+	}
+	_, err = poller.PollUntilDone(ctx, nil)
+	return err
+}
+
+// groupRule is the rule of a NATS group in a network security group.
+func groupRule(group, asgID string, port int, priority int32) *armnetwork.SecurityRule {
+	return &armnetwork.SecurityRule{
+		Name: to.Ptr(natsPrefix + group),
+		Properties: &armnetwork.SecurityRulePropertiesFormat{
+			Priority: to.Ptr(priority), Direction: to.Ptr(armnetwork.SecurityRuleDirectionInbound), Access: to.Ptr(armnetwork.SecurityRuleAccessAllow),
+			Protocol: to.Ptr(armnetwork.SecurityRuleProtocolTCP), SourcePortRange: to.Ptr("*"), DestinationPortRange: to.Ptr(fmt.Sprint(port)),
+			SourceApplicationSecurityGroups:      []*armnetwork.ApplicationSecurityGroup{{ID: to.Ptr(asgID)}},
+			DestinationApplicationSecurityGroups: []*armnetwork.ApplicationSecurityGroup{{ID: to.Ptr(asgID)}},
+		},
+	}
+}
+
+func (s *sdk) AllowGroup(ctx context.Context, nsg, group, asgID string, port int) error {
+	r, err := s.nsgs.Get(ctx, s.o.group(), nsg, nil)
+	if err != nil {
+		return err
+	}
+	if r.Properties != nil {
+		for _, rule := range r.Properties.SecurityRules {
+			if str(rule.Name) == natsPrefix+group {
+				return nil // there already
+			}
+		}
+	}
+	prios, err := s.freePriorities(ctx, nsg, 1)
+	if err != nil {
+		return err
+	}
+	poller, err := s.rules.BeginCreateOrUpdate(ctx, s.o.group(), nsg, natsPrefix+group, *groupRule(group, asgID, port, prios[0]), nil)
+	if err != nil {
+		return err
+	}
+	_, err = poller.PollUntilDone(ctx, nil)
+	return err
+}
+
+func (s *sdk) DropGroupRule(ctx context.Context, group string) error {
+	pager := s.nsgs.NewListPager(s.o.group(), nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return err
+		}
+		for _, n := range page.Value {
+			if err := s.dropRule(ctx, n, group); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// dropRule deletes the rule of the group from the network security group, if it has it.
+func (s *sdk) dropRule(ctx context.Context, n *armnetwork.SecurityGroup, group string) error {
+	if n.Properties == nil {
+		return nil
+	}
+	for _, rule := range n.Properties.SecurityRules {
+		if str(rule.Name) != natsPrefix+group {
+			continue
+		}
+		poller, err := s.rules.BeginDelete(ctx, s.o.group(), str(n.Name), natsPrefix+group, nil)
+		if err != nil {
+			return err
+		}
+		if _, err := poller.PollUntilDone(ctx, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *sdk) ListVMs(ctx context.Context, want map[string]string) ([]*VM, error) {
+	var out []*VM
+	pager := s.vms.NewListPager(s.o.group(), nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+	vms:
+		for _, r := range page.Value {
+			t := fromTags(r.Tags)
+			for k, v := range want {
+				if t[k] != v {
+					continue vms
+				}
+			}
+			v := &VM{Name: str(r.Name), Tags: t}
+			if r.Properties != nil && r.Properties.TimeCreated != nil {
+				v.Created = *r.Properties.TimeCreated
+			}
+			if err := s.fillNIC(ctx, v); err != nil {
+				return nil, err
+			}
+			out = append(out, v)
+		}
+	}
+	return out, nil
+}
+
+func (s *sdk) SetVMTags(ctx context.Context, name string, t map[string]string) error {
+	have, err := s.vms.Get(ctx, s.o.group(), name, nil)
+	if err != nil {
+		return err
+	}
+	merged := have.Tags
+	if merged == nil {
+		merged = map[string]*string{}
+	}
+	for k, v := range t {
+		merged[k] = to.Ptr(v)
+	}
+	poller, err := s.vms.BeginUpdate(ctx, s.o.group(), name, armcompute.VirtualMachineUpdate{Tags: merged}, nil)
+	if err != nil {
+		return err
+	}
+	_, err = poller.PollUntilDone(ctx, nil)
+	return err
+}
+
+func (s *sdk) JoinGroup(ctx context.Context, vm, group, asgID string, port int) error {
+	nic, err := s.nics.Get(ctx, s.o.group(), vm+"-nic", nil)
+	if err != nil {
+		return err
+	}
+	if nic.Properties == nil || len(nic.Properties.IPConfigurations) == 0 || nic.Properties.IPConfigurations[0].Properties == nil || nic.Properties.NetworkSecurityGroup == nil {
+		return errors.New("the network interface has no IP configuration or no network security group")
+	}
+	if err := s.AllowGroup(ctx, lastSegment(str(nic.Properties.NetworkSecurityGroup.ID)), group, asgID, port); err != nil {
+		return err
+	}
+	cfg := nic.Properties.IPConfigurations[0].Properties
+	for _, g := range cfg.ApplicationSecurityGroups {
+		if str(g.ID) == asgID {
+			return nil // in it already
+		}
+	}
+	cfg.ApplicationSecurityGroups = append(cfg.ApplicationSecurityGroups, &armnetwork.ApplicationSecurityGroup{ID: to.Ptr(asgID)})
+	poller, err := s.nics.BeginCreateOrUpdate(ctx, s.o.group(), vm+"-nic", nic.Interface, nil)
+	if err != nil {
+		return err
+	}
+	_, err = poller.PollUntilDone(ctx, nil)
+	return err
 }

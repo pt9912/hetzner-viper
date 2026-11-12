@@ -3,6 +3,7 @@ package cli_test
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -213,5 +214,31 @@ func TestTheOperatorSendsFromThisComputerAndTheMachineSeesTheOperator(t *testing
 	got := inbox()
 	if !strings.Contains(got, "operator") || !strings.Contains(got, "hello from the operator") {
 		t.Fatalf("beta got %q", got)
+	}
+}
+
+func TestDownOfAGroupSaysThatTheOperatorKeyIsLeft(t *testing.T) {
+	dir, env := natsGroup(t, "")
+	_, h := fakeTools(t)
+	downHost(h, downRoles(), func(string, func(string) string) (int, error) { return 0, nil })
+	run := func() string {
+		var out strings.Builder
+		if err := cli.RunGroupDown(context.Background(), &cli.Opts{Host: h, Dir: dir, Group: "dev"}, env, strings.NewReader(""), &out, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+		return out.String()
+	}
+	if out := run(); strings.Contains(out, "operator") {
+		t.Errorf("no key, no hint:\n%s", out)
+	}
+	key := operatorKey(t, dir, env)
+	if err := os.MkdirAll(filepath.Dir(key), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(key, []byte("SU..\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out := run(); !strings.Contains(out, "key of the operator") || !strings.Contains(out, key) {
+		t.Errorf("a key that is left is named:\n%s", out)
 	}
 }

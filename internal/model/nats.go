@@ -2,11 +2,17 @@ package model
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// OperatorKeyFile is where the seed of the operator of a NATS group is kept on this computer.
+func OperatorKeyFile(stateDir, group string) string {
+	return filepath.Join(stateDir, "nats", group, "operator.nk")
+}
 
 // NATSRole is what a machine does in its NATS group.
 type NATSRole string
@@ -197,6 +203,9 @@ type PrivateNetwork struct {
 	// Zone is the network zone at the provider ("eu-central"); servers can only be attached from
 	// locations in it.
 	Zone string
+	// Problems are the ways the rule that makes the network (security group, firewall rule) differs from
+	// what viper makes; empty if it is as made. Only the providers whose network is such a rule fill it.
+	Problems []string
 }
 
 // Group is a group of groups/<name>.env: the machines it names, in the order of the file; the first

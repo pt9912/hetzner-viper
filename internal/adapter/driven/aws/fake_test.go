@@ -25,6 +25,7 @@ type fakeAWS struct {
 	params    map[string]string
 
 	runs          []*ec2.RunInstancesInput
+	dryRunDenied  bool
 	authorized    []*ec2.AuthorizeSecurityGroupIngressInput
 	imported      []*ec2.ImportKeyPairInput
 	created       []*ec2.CreateSecurityGroupInput
@@ -308,6 +309,12 @@ func (f *fakeAWS) DescribeSecurityGroups(_ context.Context, in *ec2.DescribeSecu
 }
 
 func (f *fakeAWS) CreateSecurityGroup(_ context.Context, in *ec2.CreateSecurityGroupInput, _ ...func(*ec2.Options)) (*ec2.CreateSecurityGroupOutput, error) {
+	if in.DryRun != nil && *in.DryRun { // EC2: "yes" is an error too
+		if f.dryRunDenied {
+			return nil, apiError("UnauthorizedOperation", "not allowed")
+		}
+		return nil, apiError("DryRunOperation", "Request would have succeeded")
+	}
 	f.created = append(f.created, in)
 	for _, g := range f.groups {
 		if g.name == *in.GroupName && g.vpc == *in.VpcId {

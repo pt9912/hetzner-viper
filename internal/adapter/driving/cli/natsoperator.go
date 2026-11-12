@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/natsmcp"
 	"github.com/pt9912/hetzner-viper/internal/natsserver"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
@@ -61,7 +62,7 @@ func loadNatsGroup(o *options, env settings.Env, group string) (*natsGroup, erro
 
 // keyFile is where the seed of the operator of the group is.
 func (g *natsGroup) keyFile() string {
-	return filepath.Join(g.ms[g.order[0]].cfg.StateDir, "nats", g.name, "operator.nk")
+	return model.OperatorKeyFile(g.ms[g.order[0]].cfg.StateDir, g.name)
 }
 
 // targets are the machines that can be reached (they have run viper up).

@@ -3,6 +3,7 @@ package gcp
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
 )
@@ -40,6 +41,9 @@ func (c *Client) Validate(ctx context.Context, ch model.Check) []model.Finding {
 	} else {
 		f.add(model.OK, "network %s exists", c.opts.network())
 	}
+	if ch.NATS {
+		c.checkNATSRights(ctx, api, &f)
+	}
 	f.add(model.Info, "login key goes into the VM's cloud-init (Google Cloud keeps no key objects)")
 	if srv != nil {
 		f.add(model.Info, "server %s exists; viper up reuses it", ch.ServerName)
@@ -72,5 +76,24 @@ func (c *Client) checkMachine(ctx context.Context, api API, f *findings, ch mode
 		f.add(model.Fail, "image %s does not exist for %s", ch.Spec.Image, arch)
 	default:
 		f.add(model.OK, "image %s is %s", ch.Spec.Image, link)
+	}
+}
+
+// natsPermissions are what a NATS group needs besides what a server needs: the rule of the group and the
+// tag and labels of the VMs.
+func natsPermissions() []string {
+	return []string{"compute.firewalls.create", "compute.firewalls.get", "compute.firewalls.delete", "compute.instances.setTags", "compute.instances.setLabels", "compute.instances.list"}
+}
+
+// checkNATSRights asks Google which of the rights of a NATS group the credentials lack (nothing is changed).
+func (c *Client) checkNATSRights(ctx context.Context, api API, f *findings) {
+	missing, err := api.MissingPermissions(ctx, natsPermissions())
+	switch {
+	case err != nil:
+		f.add(model.Info, "the rights of a NATS group could not be tested (Cloud Resource Manager API): %s", c.Describe(err))
+	case len(missing) > 0:
+		f.add(model.Fail, "the credentials lack rights a NATS group needs in project %s: %s", c.opts.Project, strings.Join(missing, ", "))
+	default:
+		f.add(model.OK, "the credentials have the rights of a NATS group (firewall rule, network tags, labels)")
 	}
 }

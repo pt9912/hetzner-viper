@@ -20,6 +20,8 @@ type fake struct {
 	instances map[string]*gcp.Instance
 	rules     map[string]*gcp.Rule
 	natsRules map[string]*gcp.NATSRule
+	denied    map[string]bool
+	permErr   error
 	labelSets int
 	tagAdds   int
 	machines  map[string]gcp.MachineType
@@ -127,6 +129,16 @@ func (f *fake) MachineType(_ context.Context, name string) (*gcp.MachineType, er
 
 func (f *fake) ImageFamily(_ context.Context, project, family string) (string, error) {
 	return f.families[project+"/"+family], nil
+}
+
+func (f *fake) MissingPermissions(_ context.Context, p []string) ([]string, error) {
+	var missing []string
+	for _, x := range p {
+		if f.denied[x] {
+			missing = append(missing, x)
+		}
+	}
+	return missing, f.permErr
 }
 
 func (f *fake) NetworkExists(_ context.Context, name string) (bool, error) {
@@ -393,4 +405,26 @@ func (f *fake) CreateNATSFirewall(_ context.Context, r gcp.NATSRule) error {
 func (f *fake) DeleteFirewall(_ context.Context, name string) error {
 	delete(f.natsRules, name)
 	return nil
+}
+
+func TestValidateAsksForTheRightsOfANATSGroup(t *testing.T) {
+	f := newFake()
+	c := client(f)
+	check := model.Check{ServerName: "claude-web", KeyName: "claude-login", KeyFile: "/k", PublicKey: "ssh-ed25519 AAAA",
+		Spec: model.ServerSpec{Name: "claude-web", Size: "e2-standard-2", Image: "ubuntu-24.04"}}
+	if got := texts(c.Validate(context.Background(), check)); strings.Contains(got, "rights") {
+		t.Errorf("without NATS nothing is asked:\n%s", got)
+	}
+	check.NATS = true
+	if got := texts(c.Validate(context.Background(), check)); !strings.Contains(got, "ok the credentials have the rights of a NATS group") {
+		t.Errorf("%s", got)
+	}
+	f.denied = map[string]bool{"compute.firewalls.create": true, "compute.instances.setTags": true}
+	if got := texts(c.Validate(context.Background(), check)); !strings.Contains(got, "FAIL the credentials lack rights a NATS group needs in project my-project: compute.firewalls.create, compute.instances.setTags") {
+		t.Errorf("%s", got)
+	}
+	f.denied, f.permErr = nil, errors.New("API disabled")
+	if got := texts(c.Validate(context.Background(), check)); !strings.Contains(got, "info the rights of a NATS group could not be tested") {
+		t.Errorf("%s", got)
+	}
 }

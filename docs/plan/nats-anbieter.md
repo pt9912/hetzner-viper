@@ -4,7 +4,7 @@
 
 Grundlage ist [`nats.md`](nats.md) (Gruppe, Rechte, Server-Bootstrap). Dieser Plan ändert an der Gruppenlogik nichts, er ergänzt nur, was ein Anbieter dafür können muss. Die Fortsetzung für die Kommandozeile ist [`nats-cli.md`](nats-cli.md).
 
-**Stand:** Entwurf, einmal unabhängig geprüft; die Befunde sind eingearbeitet (§11) und ändern den Plan an mehreren Stellen (Anbinden, AWS-Sperre, Sicherheitsaussage, Azure). Entschieden ist die Reihenfolge (§9). Umgesetzt: Meilenstein 1, 2 (AWS) und 3 (Google Cloud), gegen Fakes getestet; **echte Läufe offen**. Abweichung bei GCP: Die VMs einer Gruppe müssen in **einer Zone** liegen (nicht einer Region), weil die Labels je Zone gelesen werden; `NetworkZone` gibt die Zone zurück. Azure: nicht umgesetzt (M0 ohne Konto nicht möglich, §3.4).
+**Stand:** Entwurf, einmal unabhängig geprüft; die Befunde sind eingearbeitet (§11) und ändern den Plan an mehreren Stellen (Anbinden, AWS-Sperre, Sicherheitsaussage, Azure). Entschieden ist die Reihenfolge (§9). Umgesetzt: Meilenstein 1, 2 (AWS) und 3 (Google Cloud), gegen Fakes getestet; **echte Läufe offen**. Abweichung bei GCP: Die VMs einer Gruppe müssen in **einer Zone** liegen (nicht einer Region), weil die Labels je Zone gelesen werden; `NetworkZone` gibt die Zone zurück. Azure: **umgesetzt gegen Fakes, ohne belegte Sperre** (Entscheidung vom Anwender: vorher umsetzen): Netz der Gruppe = Anwendungssicherheitsgruppe (ASG) `viper-nats-<gruppe>` mit `If-None-Match: *` beim Anlegen, Regel `viper-nats-<gruppe>` in der NSG jedes Rechners (Quelle und Ziel die ASG), Tags an der VM. Ob Azure `If-None-Match` bei ASGs durchsetzt, ist offen; das Handbuch sagt es. Außerdem umgesetzt: Rechteprüfung im Preflight (AWS `DryRun`, GCP `testIamPermissions`; Azure nicht) und Prüfung der Regel der Gruppe in `viper check` (AWS, GCP).
 
 **Kennzeichnung:** *[V]* heißt, im Code oder in einem Plan bestätigt. *[?]* heißt Vermutung; jede solche Stelle wird in Meilenstein 0 geprüft, bevor etwas darauf gebaut wird. **(zu bestätigen)** markiert Arbeitsannahmen, die eine Entscheidung brauchen.
 
@@ -134,7 +134,7 @@ Wenn M0 keine Sperre zeigt, bleibt Azure ohne NATS und das Handbuch sagt es.
 Entschieden am 11.11.2026 (ohne Rückfrage, nach der Prüfung in §11):
 
 1. **Reihenfolge:** AWS, dann Google Cloud, dann Azure. AWS zuerst, weil nur dort ein echter Lauf möglich ist.
-2. **Azure:** zurückgestellt, bis M0 eine Sperre belegt (§3.4).
+2. **Azure:** zunächst zurückgestellt; dann auf Wunsch des Anwenders trotzdem umgesetzt, mit unbelegter Sperre (siehe Stand oben).
 3. **Google Cloud und Azure ohne echten Lauf:** Wenn ausgeliefert, dann mit der Aussage im Handbuch „gebaut und gegen nachgebildete Schnittstellen getestet, ein Lauf in einem echten Konto ist nicht belegt“ (wie die Anbieter selbst).
 4. **Einstellung für zusätzliche Tags/Labels (Gegenstück zu `AWS_TAGS_SHARED`) für GCP/Azure:** keine. Es gibt kein Gegenstück bei den Anbietern, das einen Bedarf belegt; wer es braucht, meldet es.
 5. **Anbietertabelle:** `NATS`-Flag in `model/provider.go`; die Prüfung beim Laden der Einstellungen richtet sich danach, der Test in `start/nats.go` bleibt als zweite Sicherung.

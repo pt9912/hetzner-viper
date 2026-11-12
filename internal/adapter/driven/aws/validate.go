@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+
 	"github.com/pt9912/hetzner-viper/internal/model"
 )
 
@@ -37,6 +39,9 @@ func (c *Client) Validate(ctx context.Context, ch model.Check) []model.Finding {
 		f.add(model.OK, "subnet %s in %s (VPC %s)", n.subnet, n.zone, n.vpc)
 	}
 	c.checkKey(ctx, &f, ch)
+	if ch.NATS {
+		c.checkNATSRights(ctx, &f)
+	}
 	if srv != nil {
 		f.add(model.Info, "server %s exists; viper up reuses it", ch.ServerName)
 	} else {
@@ -90,5 +95,29 @@ func (c *Client) checkKey(ctx context.Context, f *findings, ch model.Check) {
 		f.add(model.Fail, "key pair %s in AWS belongs to a different public key than %s.pub", ch.KeyName, ch.KeyFile)
 	default:
 		f.add(model.Info, "login key will be uploaded as %s", ch.KeyName)
+	}
+}
+
+// checkNATSRights asks EC2 with DryRun whether the credentials may make the security group of a NATS group and
+// add its rule: EC2 answers DryRunOperation for "yes" and UnauthorizedOperation for "no", and changes nothing.
+// The rights to add the group to an instance and to delete it are not tested: they need an existing one.
+func (c *Client) checkNATSRights(ctx context.Context, f *findings) {
+	a, err := c.api(ctx)
+	if err != nil {
+		f.add(model.Info, "the rights of a NATS group could not be tested: %s", c.Describe(err))
+		return
+	}
+	n, err := c.network(ctx)
+	if err != nil || n == nil {
+		return // reported above
+	}
+	_, err = a.ec2.CreateSecurityGroup(ctx, &ec2.CreateSecurityGroupInput{GroupName: ptr("viper-dryrun"), Description: ptr("viper: test of the rights"), VpcId: ptr(n.vpc), DryRun: ptr(true)})
+	switch apiCode(err) {
+	case "DryRunOperation":
+		f.add(model.OK, "the credentials may create the security group of a NATS group (dry run)")
+	case "UnauthorizedOperation", "AccessDenied":
+		f.add(model.Fail, "the credentials may not create security groups (ec2:CreateSecurityGroup, ec2:AuthorizeSecurityGroupIngress, ec2:CreateTags, ec2:ModifyInstanceAttribute, ec2:DeleteSecurityGroup are needed for a NATS group): %s", c.Describe(err))
+	default:
+		f.add(model.Info, "the rights of a NATS group could not be tested: %s", c.Describe(err))
 	}
 }

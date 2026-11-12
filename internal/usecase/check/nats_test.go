@@ -382,3 +382,46 @@ func TestTheDefaultTopicsOfTheMCPServerAreCompared(t *testing.T) {
 		t.Errorf("%s", sec)
 	}
 }
+
+func TestAChangedGroupRuleIsAProblem(t *testing.T) {
+	n := newNATSFixture(t, "", model.NATSClient, healthyClient)
+	for _, net := range n.nc.Networks {
+		net.Problems = []string{"it lets TCP 4222 in from addresses outside the group"}
+	}
+	out, problems := n.run()
+	if problems == 0 || !strings.Contains(natsSection(out), "FAIL  the rule of viper-nats-dev is not as viper makes it: it lets TCP 4222 in") {
+		t.Errorf("%d\n%s", problems, natsSection(out))
+	}
+}
+
+func TestTheOperatorKeyIsComparedWithTheRegistrationAtTheServer(t *testing.T) {
+	st := strings.Replace(healthyServer, "alpha,web", "beta,web", 1)
+	n := newNATSFixture(t, "", model.NATSServer, st)
+	n.c.StateDir = t.TempDir()
+	key := model.OperatorKeyFile(n.c.StateDir, "dev")
+	if err := os.MkdirAll(filepath.Dir(key), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := n.run(); strings.Contains(natsSection(out), "operator") {
+		t.Errorf("no key and not registered: nothing to say:\n%s", natsSection(out))
+	}
+	if err := os.WriteFile(key, []byte("SU\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, _ := n.run()
+	if !strings.Contains(natsSection(out), "WARN  this computer has a key for the operator operator, but the server does not know it") {
+		t.Errorf("a key the server does not know:\n%s", natsSection(out))
+	}
+	n.status = st + "operators=operator\n"
+	out, _ = n.run()
+	if !strings.Contains(natsSection(out), "ok    operator operator is registered at the server, its key is on this computer") {
+		t.Errorf("registered with a key:\n%s", natsSection(out))
+	}
+	if err := os.Remove(key); err != nil {
+		t.Fatal(err)
+	}
+	out, _ = n.run()
+	if !strings.Contains(natsSection(out), "info  operator operator is registered at the server; this computer has no key") {
+		t.Errorf("registered without a key:\n%s", natsSection(out))
+	}
+}
