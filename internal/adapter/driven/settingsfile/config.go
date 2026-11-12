@@ -124,14 +124,7 @@ func Load(dir, machine string, env settings.Env, needTokens bool) (*model.Machin
 	c.SSHKey = model.KeyPath(c.Get("SSH_KEY"), dir, env.Home)
 	c.ServerType = or(c.Get("SERVER_TYPE"), prov.Size)
 	c.ServerLocation = or(c.Get("SERVER_LOCATION"), prov.Region)
-	c.ServerImage = or(c.Get("SERVER_IMAGE"), prov.Image)
-	if c.Provider == "kubernetes" {
-		c.ServerImage = c.Get("K8S_IMAGE") // the image of the container, not an operating system image
-	}
-	c.WorkspaceDir = or(c.Get("WORKSPACE_DIR"), "/Development")
-	if prov.Container {
-		c.WorkspaceDir = or(c.Get("WORKSPACE_DIR"), ContainerWorkspace) // a pod has no root to make a directory anywhere else
-	}
+	c.ServerImage, c.WorkspaceDir = imageAndWorkspace(c, prov)
 	c.ServerPrefix = or(c.Get("SERVER_PREFIX"), "claude")
 	if !nameRe.MatchString(c.ServerPrefix) {
 		return nil, fmt.Errorf("SERVER_PREFIX: lowercase letters, digits, hyphens: %s", c.ServerPrefix)
@@ -350,6 +343,19 @@ func derivePaths(c *model.Machine, home string) {
 	c.RepoState = filepath.Join(c.StateDir, "repo-"+c.ServerName)
 	c.EventsLog = filepath.Join(c.StateDir, "events.log")
 	c.LogDir = filepath.Join(c.StateDir, "logs")
+}
+
+// imageAndWorkspace are SERVER_IMAGE and WORKSPACE_DIR of the machine. A machine that is a container has the image
+// of the container (K8S_IMAGE) and its work directory on its volume: it has no root to make a directory elsewhere.
+func imageAndWorkspace(c *model.Machine, prov model.ProviderInfo) (image, workspace string) {
+	image, workspace = or(c.Get("SERVER_IMAGE"), prov.Image), or(c.Get("WORKSPACE_DIR"), "/Development")
+	if c.Provider == "kubernetes" {
+		image = c.Get("K8S_IMAGE")
+	}
+	if prov.Container {
+		workspace = or(c.Get("WORKSPACE_DIR"), ContainerWorkspace)
+	}
+	return image, workspace
 }
 
 // ContainerWorkspace is WORKSPACE_DIR of a machine that is a container, when it is not set: on its volume.
