@@ -23,7 +23,7 @@ func testConfig(t *testing.T) *model.Machine {
 	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\nWORKSPACE_DIR=/Development\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\nWORKSPACE_DIR=/work\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	c, err := settingsfile.Load(dir, "web", portsettings.Env{Home: home, Lookup: func(string) (string, bool) { return "", false }}, false)

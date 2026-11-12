@@ -182,7 +182,7 @@ func TestEverythingFine(t *testing.T) {
 			}
 		}
 	}
-	if len(remote) != 5 || remote[4] != "bash -s -- '/Development' '' '/home/linuxbrew/.linuxbrew/bin/brew' '' '' '' '' '0' '8080'" {
+	if len(remote) != 5 || remote[4] != "bash -s -- '/home/builder/work' '' '/home/linuxbrew/.linuxbrew/bin/brew' '' '' '' '' '0' '8080'" {
 		t.Errorf("remote call %q", remote)
 	}
 }
@@ -302,7 +302,7 @@ func TestHomebrew(t *testing.T) {
 	f.probeOut = "brew_missing=\nbrewfile=ok\nrepo=abc123 first commit\nrepo_changes=3\n" + okProbe
 	out, n, _ := f.run(c)
 	contains(t, out, "ok    Homebrew: taps, trust entries and formulae present (hashicorp/tap=https://***@git.example.com/x; trust hashicorp/tap/terraform; ripgrep fd)",
-		"ok    Homebrew: Brewfile of the repository satisfied", "ok    repository /Development/r at abc123 first commit (3 uncommitted changes)")
+		"ok    Homebrew: Brewfile of the repository satisfied", "ok    repository /home/builder/work/r at abc123 first commit (3 uncommitted changes)")
 	if strings.Contains(out, "tok@") || n != 0 {
 		t.Errorf("%d\n%s", n, out)
 	}
@@ -316,7 +316,7 @@ func TestHomebrew(t *testing.T) {
 			remote = cl[4]
 		}
 	}
-	contains(t, remote, "'/Development/r/Brewfile'", "'hashicorp/tap=https://u:tok@git.example.com/x'", "'ripgrep fd'")
+	contains(t, remote, "'/home/builder/work/r/Brewfile'", "'hashicorp/tap=https://u:tok@git.example.com/x'", "'ripgrep fd'")
 	f, c = newFixture(t, "")
 	f.probeOut = strings.Replace(okProbe, "brew_version=Homebrew 5.0.0\n", "brew_version=\n", 1)
 	out, _, _ = f.run(c)
@@ -337,7 +337,7 @@ func TestSshdRebootCloudInitAndRepository(t *testing.T) {
 	f.probeOut = "reboot=required\ncloudinit_errors=2\ncloudinit_error=Failed run of module\n" + strings.Replace(strings.Replace(okProbe, "passwordauthentication no", "passwordauthentication yes", 1), "cloudinit=disabled", "cloudinit=running", 1)
 	out, n, _ := f.run(c)
 	contains(t, out, "WARN  cloud-init: running", "WARN  cloud-init reported 2 error(s) at the first boot, e.g.: Failed run of module (see /var/log/cloud-init.log)",
-		"FAIL  repository missing: /Development/r", "FAIL  sshd hardening not in effect: authenticationmethods publickey;passwordauthentication yes;permitrootlogin no;",
+		"FAIL  repository missing: /home/builder/work/r", "FAIL  sshd hardening not in effect: authenticationmethods publickey;passwordauthentication yes;permitrootlogin no;",
 		"WARN  updates need a reboot: viper ssh web --cmd 'sudo reboot' (tmux sessions end)", "Check: 2 problem(s).")
 	if n != 2 {
 		t.Errorf("%d", n)

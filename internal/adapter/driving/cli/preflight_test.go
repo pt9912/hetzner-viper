@@ -221,7 +221,7 @@ func TestDownReadsItsAnswersFromAPipeAndLogsTheOutcome(t *testing.T) {
 			DNS:   dnsDeleter{},
 			Run: func(_ context.Context, _, name string, args ...string) (string, string, error) {
 				if strings.HasPrefix(args[len(args)-1], "bash -s") {
-					return "== /Development ==\n== tmux sessions ==\nUNSAVED WORK: x\n== end of check ==\n", "", nil
+					return "== /work ==\n== tmux sessions ==\nUNSAVED WORK: x\n== end of check ==\n", "", nil
 				}
 				return "ssh-ed25519 AAAA k\n", "", nil
 			},
@@ -315,7 +315,7 @@ func TestInterruptionAtAPromptIsLoggedNotAFailure(t *testing.T) {
 			DNS:   dnsDeleter{},
 			Run: func(_ context.Context, _, _ string, args ...string) (string, string, error) {
 				if strings.HasPrefix(args[len(args)-1], "bash -s") {
-					return "== /Development ==\n== tmux sessions ==\n== end of check ==\n", "", nil
+					return "== /work ==\n== tmux sessions ==\n== end of check ==\n", "", nil
 				}
 				return "ssh-ed25519 AAAA k\n", "", nil
 			},

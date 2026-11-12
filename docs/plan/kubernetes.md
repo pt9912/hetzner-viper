@@ -326,7 +326,7 @@ Abgleich mit dem, was `cloud-init.yaml` einrichtet:
 1. Das Einstiegsprogramm brach ab, weil `cp -a` die Zeiten des Volume-Wurzelverzeichnisses setzen wollte, das der Cluster `root` zuweist. In meinem lokalen Test gehörte es dem Benutzer 1000. `image/test.sh` legt das Volume jetzt als `root` an, wie ein Cluster es tut (39 Prüfungen).
 2. `ssh`-Konfiguration unter Windows: Pfade mit Backslashes wurden vom Quoting der `ProxyCommand` abgelehnt (CI); jetzt Schrägstriche.
 3. Die Meldung „Existing firewall … verify that its rules permit your connection“ erschien auch bei Pods; der Firewall-Schritt entfällt für sie.
-4. Ein Arbeitsverzeichnis `/Development` (der Standard der VMs, in einem globalen `.env.local` gesetzt) ist für Pods nicht möglich; der Standard dafür ist `/home/builder/work`, und die Meldung sagt, wo man `WORKSPACE_DIR` für die Maschine setzt.
+4. Ein Arbeitsverzeichnis außerhalb von `/home/builder/` (damals der Standard der VMs, in einem globalen `.env.local` gesetzt) ist für Pods nicht möglich; der Standard ist `/home/builder/work` (seit Handbuch 1.97 für alle Anbieter), und die Meldung sagt, wo man `WORKSPACE_DIR` für die Maschine setzt.
 
 **Bekannte Grenzen:**
 * **Programme, die man mit `brew install` nachinstalliert, überleben das Ersetzen des Pods nicht**, weil Homebrew im Image liegt und nicht auf dem Volume. Was `VIPER_BREW_PACKAGES` nennt, wird bei jedem `viper up` wieder installiert. Ein zweites Volume für `/home/linuxbrew` wäre die Lösung (das Verzeichnis wäre beim ersten Start aus dem Image zu füllen) und ist nicht gebaut.

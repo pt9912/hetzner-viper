@@ -32,7 +32,7 @@ func newSrvWorld(t *testing.T, settings string) *srvWorld {
 		t.Skip("the fake server runs the server scripts in bash on Unix paths")
 	}
 	brew := filepath.Join(t.TempDir(), "linuxbrew", "bin", "brew")
-	// the work directory is a temporary one, as /Development cannot be made here
+	// the work directory is a temporary one, as the default one cannot be made here
 	w := newWorld(t, "VIPER_BREW="+brew+"\nWORKSPACE_DIR="+filepath.Join(t.TempDir(), "ws")+"\n"+settings)
 	return &srvWorld{world: w, srv: servertest.New(t, brew)}
 }

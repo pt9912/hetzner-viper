@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.96  
+Version: 1.97  
 Software-Version: v0.18.0  
 Stand: 12.11.2026  
 
@@ -194,6 +194,53 @@ Sie wissen, dass Tokens, DNS, SSH-Vertrauen, Einrichtung, Clone und Löschen in 
 * 1 GB RAM reicht für den Funktionstest. Für echte Arbeit des Agenten mit Builds und Tests ist der Speicher zu knapp. Nutzen Sie dafür einen größeren Typ.
 * Bricht `viper up` ab, bleibt der Server bestehen. Führen Sie `viper up test` nach dem Beheben erneut aus, oder löschen Sie ihn mit `viper down test`. Ein Server gilt erst nach einem vollständig gelaufenen `viper up` als eingerichtet (vermerkt lokal und auf dem Server, gilt also auch für andere Computer); bis dahin wartet ein erneuter Lauf wie bei einem neuen Server, auch auf den Neustart nach den Updates, aber höchstens etwa drei Minuten.
 
+### Lokal arbeiten, ohne Cloud-Konto (Docker Compose oder k3d)
+
+Sie können `viper` auch ohne Cloud-Konto ausprobieren und nutzen: Der Rechner ist dann ein Container auf dem Docker Ihres eigenen Computers (`PROVIDER=compose`) oder ein Pod in einem lokalen k3d-Cluster (`PROVIDER=kubernetes`). Es entstehen keine Kosten, kein DNS-Eintrag und kein Server im Netz. Dieser Abschnitt ist die kurze Fassung; die vollständigen Aufgaben stehen weiter unten („Einen Rechner als Container auf dem eigenen Docker-Host betreiben“ und „Einen Rechner als Pod in einem Kubernetes-Cluster betreiben“).
+
+#### Voraussetzung
+
+* Die „Erstmalige Einrichtung“ ist gemacht (`viper setup`: Login-Schlüssel und Host-CA). Mit `DNS_PROVIDER=none` brauchen Sie weder eine Domain noch Cloudflare.
+* Docker auf Ihrem Computer. Für Compose zusätzlich das Plugin `docker compose`, für k3d das Programm `k3d` und `kubectl`.
+
+#### Vorgehen
+
+1. **Image bauen:** `viper image build` (für k3d: erst `k3d cluster create viper`, dann `viper image build --k3d viper`). Das dauert beim ersten Mal einige Minuten. Die Ausgabe nennt den Namen des Images.
+2. **Einstellungen** in `machines/lokal.env.local`:
+
+   Docker Compose:
+
+   ```
+   PROVIDER=compose
+   DNS_PROVIDER=none
+   SERVER_LOCATION=default
+   COMPOSE_IMAGE=<Name aus Schritt 1>
+   COMPOSE_DOCKER=dind
+   SERVER_TYPE=2x4
+   ```
+
+   k3d:
+
+   ```
+   PROVIDER=kubernetes
+   DNS_PROVIDER=none
+   SERVER_LOCATION=k3d-viper
+   K8S_IMAGE=<Name aus Schritt 1>
+   SERVER_TYPE=2x4
+   ```
+3. `viper preflight lokal`, dann `viper up lokal`, danach `viper ssh lokal` und `viper check lokal`. Zum Aufräumen: `viper down lokal`.
+
+#### Ergebnis
+
+`viper up` meldet „The machine is the container …“ (Compose) oder „… the pod …“ (k3d) und am Ende „Ready“. Auf dem Rechner laufen Docker, Homebrew und Claude Code wie auf einem Server in der Cloud; das Repository liegt unter `/home/builder/work`.
+
+#### Hinweise
+
+* `COMPOSE_DOCKER=dind` muss ausdrücklich stehen: Der Docker im Rechner ist ein privilegierter Container, der Root auf Ihrem Computer bedeuten kann, wenn er geknackt wird. Nutzen Sie das nur auf Ihrem eigenen Computer.
+* Ist `DOCKER_HOST` in Ihrer Umgebung gesetzt, verweigert `viper` bei Compose die Arbeit (Docker würde den Wert statt des Kontexts nehmen).
+* NATS-Gruppen gehen auch lokal: eine Gruppendatei mit mehreren Rechnern und `NATS_ENABLED=true`.
+* Daten liegen in Volumes und überstehen einen Neustart des Containers, nicht aber `viper down`.
+
 ### Einen Rechner für ein Repository einrichten
 
 #### Voraussetzung
@@ -212,7 +259,7 @@ Die erstmalige Einrichtung ist abgeschlossen und die drei Zugangsdaten sind gese
 
 #### Ergebnis
 
-Die Meldung `Ready: ssh hetzner-claude-web (work dir: …)` erscheint. Das Repository liegt im Arbeitsverzeichnis unter dem Arbeitsverzeichnis (Standard `/Development`).
+Die Meldung `Ready: ssh hetzner-claude-web (work dir: …)` erscheint. Das Repository liegt im Arbeitsverzeichnis unter dem Arbeitsverzeichnis (Standard `/home/builder/work`).
 
 #### Hinweise
 
@@ -1022,7 +1069,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `VIPER_BREWFILE` | `1`: eine `Brewfile` im geklonten Repository mit `brew bundle` anwenden | `0` |
 | `VIPER_POST_CLONE` | Shell-Befehle, die nach dem Clone und nach Homebrew im geklonten Repository laufen (mehrere Zeilen: Wert in einfachen Anführungszeichen, dann kommen `$VARIABLEN` unverändert auf dem Server an; in doppelten würden sie auf Ihrem Computer aufgelöst). Brauchen ein Repository, laufen nur einmal direkt nach dem Clone (nach einem Fehler versucht es das nächste `viper up` erneut), ein Fehler ist standardmäßig nur eine Warnung (siehe `VIPER_POST_CLONE_ON_ERROR`). Log auf dem Server: `~/.config/viper/post-clone.log` | leer |
 | `VIPER_POST_CLONE_ON_ERROR` | Bei einem Fehler der Befehle von `VIPER_POST_CLONE`: `retry` (Warnung, das nächste `viper up` versucht es erneut), `ignore` (Warnung, nie wieder) oder `abort` (`viper up` schlägt fehl, der Rechner bleibt, das nächste `viper up` versucht es erneut). Der Ausgang steht im Protokoll (`viper log`) | `retry` |
-| `WORKSPACE_DIR` | Verzeichnis auf dem Server, in das die Repositories geklont werden (Kubernetes: unter `/home/builder/`, Standard `/home/builder/work`) | `/Development` |
+| `WORKSPACE_DIR` | Verzeichnis auf dem Server, in das die Repositories geklont werden (bei Containern nur unter `/home/builder/`) | `/home/builder/work` |
 | `REPO_URL` | Repository, das beim Start geklont wird | leer |
 | `REPO_BRANCH` | Zweig, der geklont wird | Standardzweig |
 | `GIT_DEPLOY_KEY_FILE` | Deploy-Key für private SSH-Repositories | leer |
@@ -1463,3 +1510,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.94 | nach v0.17.0 | Neu: Kubernetes als Anbieter (`PROVIDER=kubernetes`): Rechner als Pods, `viper image build`, `viper k8s-proxy`, Einstellungen `K8S_*`, NATS-Gruppen im Cluster. |
 | 1.95 | nach v0.17.0 | Neu: Docker Compose als Anbieter (`PROVIDER=compose`): Rechner als Container auf dem lokalen Docker-Host, `viper docker-proxy`, Einstellungen `COMPOSE_*` (mit NATS-Gruppen). |
 | 1.96 | v0.18.0 | Release v0.18.0: die Änderungen 1.86 bis 1.95 (`viper preflight --group`, `viper nats`, NATS-Gruppen bei AWS, Google Cloud und Azure, Kubernetes und Docker Compose als Anbieter). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.18.0`. |
+| 1.97 | nach v0.18.0 | Der Standard von `WORKSPACE_DIR` ist für alle Anbieter `/home/builder/work` (bisher ein Verzeichnis außerhalb des Heimverzeichnisses, das nur VMs anlegen konnten). Wer sich auf den früheren Standard verlassen hat, setzt `WORKSPACE_DIR` ausdrücklich; `viper down` prüft vorhandene Rechner weiter in den Verzeichnissen, mit denen sie gestartet wurden. Neu: der Abschnitt „Lokal arbeiten, ohne Cloud-Konto (Docker Compose oder k3d)“ in Kapitel 3. |

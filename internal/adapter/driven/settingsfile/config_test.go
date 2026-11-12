@@ -34,7 +34,7 @@ DNS_DOMAIN=
 SSH_KEY="$HOME/.ssh/hetzner-build"
 SSH_ALLOWED_CIDRS=0.0.0.0/0,::/0
 # VIPER_HOMEBREW=1
-export WORKSPACE_DIR=/Development
+export WORKSPACE_DIR=/work
 VIPER_BREW_PACKAGES="ripgrep fd
   hashicorp/tap/terraform"
 `
@@ -44,7 +44,7 @@ VIPER_BREW_PACKAGES="ripgrep fd
 	}
 	want := map[string]string{
 		"SERVER_PREFIX": "claude", "SERVER_TYPE": "cpx32", "DNS_DOMAIN": "", "SSH_KEY": "/home/me/.ssh/hetzner-build",
-		"SSH_ALLOWED_CIDRS": "0.0.0.0/0,::/0", "WORKSPACE_DIR": "/Development",
+		"SSH_ALLOWED_CIDRS": "0.0.0.0/0,::/0", "WORKSPACE_DIR": "/work",
 		"VIPER_BREW_PACKAGES": "ripgrep fd\n  hashicorp/tap/terraform",
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -152,7 +152,7 @@ func TestLoadDerivesNamesAndPaths(t *testing.T) {
 	for got, want := range map[string]string{
 		c.ServerName: "lab-web", c.SSHAlias: "hetzner-lab-web", c.DNSHost: "lab-web.example.com", c.KeyName: "lab-login",
 		c.FirewallName: "lab-ssh", c.SSHKey: "/home/me/.ssh/k", c.ServerType: "cpx52", c.ServerLocation: "fsn1", c.ServerImage: "ubuntu-26.04",
-		c.WorkspaceDir: "/Development", c.SSHConfig: "/home/me/.ssh/config_hetzner_lab-web",
+		c.WorkspaceDir: settingsfile.DefaultWorkspace, c.SSHConfig: "/home/me/.ssh/config_hetzner_lab-web",
 		c.KnownPin: "/home/me/.ssh/known_hosts_hetzner_lab-web", c.StateDir: "/home/me/.local/state/hetzner-claude",
 	} {
 		if got != want {
@@ -526,7 +526,7 @@ func TestLoadReadsTheSettingsOfTheKubernetesProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Provider != "kubernetes" || c.ServerLocation != "k3d-viper" || c.ServerImage != "viper-machine:v1" || c.ServerType != "2x4" || !c.IsContainer() || c.WorkspaceDir != settingsfile.ContainerWorkspace {
+	if c.Provider != "kubernetes" || c.ServerLocation != "k3d-viper" || c.ServerImage != "viper-machine:v1" || c.ServerType != "2x4" || !c.IsContainer() || c.WorkspaceDir != settingsfile.DefaultWorkspace {
 		t.Errorf("%+v", c)
 	}
 	for name, tc := range map[string]struct{ settings, want string }{
@@ -562,7 +562,7 @@ func TestLoadReadsTheSettingsOfTheComposeProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c.Provider != "compose" || c.ServerLocation != "default" || c.ServerImage != "viper-machine:v1" || c.ServerType != "2x4" || !c.IsContainer() ||
-		c.WorkspaceDir != settingsfile.ContainerWorkspace || c.ProxyVerb() != "docker-proxy" || c.DockerMode() != "dind" {
+		c.WorkspaceDir != settingsfile.DefaultWorkspace || c.ProxyVerb() != "docker-proxy" || c.DockerMode() != "dind" {
 		t.Errorf("%+v", c)
 	}
 	for name, tc := range map[string]struct{ settings, want string }{

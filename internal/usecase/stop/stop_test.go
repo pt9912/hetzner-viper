@@ -21,8 +21,8 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/usecase/stop"
 )
 
-const cleanReport = "== /Development ==\n== tmux sessions ==\n== end of check ==\n"
-const unsavedReport = "== /Development/r ==\n M file.txt\n== tmux sessions ==\nUNSAVED WORK: uncommitted, unpushed, stashed or unversioned data exists and will be lost.\n== end of check ==\n"
+const cleanReport = "== /work ==\n== tmux sessions ==\n== end of check ==\n"
+const unsavedReport = "== /work/r ==\n M file.txt\n== tmux sessions ==\nUNSAVED WORK: uncommitted, unpushed, stashed or unversioned data exists and will be lost.\n== end of check ==\n"
 
 type world struct {
 	leftovers                        []string // what the provider has left of the machine
@@ -58,7 +58,7 @@ func newWorld(t *testing.T) *world {
 	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\nWORKSPACE_DIR=/Development\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\nWORKSPACE_DIR=/work\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	c, err := settingsfile.Load(dir, "web", portsettings.Env{Home: home, Lookup: func(string) (string, bool) { return "", false }}, false)
@@ -94,7 +94,7 @@ func (w *world) allLocal() {
 	if err := os.WriteFile(w.c.IDState, []byte("42\n"), 0o600); err != nil {
 		w.t.Fatal(err)
 	}
-	if err := os.WriteFile(w.c.WorkspaceState, []byte("/Development\n"), 0o600); err != nil {
+	if err := os.WriteFile(w.c.WorkspaceState, []byte("/work\n"), 0o600); err != nil {
 		w.t.Fatal(err)
 	}
 	if err := os.WriteFile(w.c.IPState, []byte("203.0.113.7\n"), 0o600); err != nil {
@@ -216,7 +216,7 @@ func TestDeletesServerAndDnsAfterDELETE(t *testing.T) {
 	if len(w.deleted) != 1 || w.deleted[0] != "42" || len(w.dnsCalls) != 1 || w.dnsCalls[0] != "claude-web.example.com 203.0.113.7" {
 		t.Errorf("deleted %v, dns %q", w.deleted, w.dnsCalls)
 	}
-	has(t, w.all(), "Checking git repositories, loose files and running sessions ...", "Server claude-web (203.0.113.7) and ALL its data (including /Development) will be DESTROYED.",
+	has(t, w.all(), "Checking git repositories, loose files and running sessions ...", "Server claude-web (203.0.113.7) and ALL its data (including /work) will be DESTROYED.",
 		"DNS record removed (if present)", "Server claude-web deleted.")
 	if strings.Join(w.prompts, "|") != "Type DELETE to continue: " {
 		t.Errorf("a clean machine asks only DELETE: %q", w.prompts)
@@ -278,7 +278,7 @@ func TestUnsavedWorkNeedsDISCARDandDELETE(t *testing.T) {
 
 func TestAnIncompleteCheckRefuses(t *testing.T) {
 	w := newWorld(t)
-	w.report = "== /Development ==\n"
+	w.report = "== /work ==\n"
 	code, err := w.run(false, "DELETE")
 	if code != 1 || err != nil || len(w.deleted) != 0 || len(w.prompts) != 0 {
 		t.Fatalf("%d %v %v %q", code, err, w.deleted, w.prompts)
@@ -287,7 +287,7 @@ func TestAnIncompleteCheckRefuses(t *testing.T) {
 	has(t, w.events(), "refused (git check incomplete)")
 	// a line that merely contains the marker is not the marker
 	w = newWorld(t)
-	w.report = "== /Development/x == end of check ==\n"
+	w.report = "== /work/x == end of check ==\n"
 	if code, _ := w.run(false, "DELETE"); code != 1 || len(w.deleted) != 0 {
 		t.Errorf("%d", code)
 	}
@@ -295,9 +295,9 @@ func TestAnIncompleteCheckRefuses(t *testing.T) {
 
 func TestTheErrorsOfTheServerCheckStayVisible(t *testing.T) {
 	w := newWorld(t)
-	w.reportStderr = "fatal: detected dubious ownership in repository at '/Development/r'\n"
+	w.reportStderr = "fatal: detected dubious ownership in repository at '/work/r'\n"
 	_, _ = w.run(false, "DELETE")
-	has(t, w.errb.String(), "fatal: detected dubious ownership in repository at '/Development/r'\n")
+	has(t, w.errb.String(), "fatal: detected dubious ownership in repository at '/work/r'\n")
 	w = newWorld(t)
 	w.reportStderr = "Connection to 203.0.113.7 closed by remote host."
 	w.reportErr = errors.New("exit 255")
@@ -387,7 +387,7 @@ func TestCheckCallGetsTheWorkspacesAndTheScript(t *testing.T) {
 	if err := os.MkdirAll(w.state, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(w.c.WorkspaceState, []byte("/Development\n\n/srv/it's here\n"), 0o600); err != nil {
+	if err := os.WriteFile(w.c.WorkspaceState, []byte("/work\n\n/srv/it's here\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, _ = w.run(false, "DELETE")
@@ -397,18 +397,18 @@ func TestCheckCallGetsTheWorkspacesAndTheScript(t *testing.T) {
 			cmd, stdin = c[len(c)-1], w.stdins[i]
 		}
 	}
-	if cmd != `bash -s -- '/Development' '/srv/it'\''s here'` {
+	if cmd != `bash -s -- '/work' '/srv/it'\''s here'` {
 		t.Errorf("command %q", cmd)
 	}
 	if !strings.HasPrefix(stdin, "set -uo pipefail\n") || !strings.Contains(stdin, "== end of check ==") {
 		t.Errorf("script %q", stdin[:40])
 	}
-	has(t, w.errb.String(), "(including /Development /srv/it's here)")
+	has(t, w.errb.String(), "(including /work /srv/it's here)")
 	// no record: the configured workspace
 	w = newWorld(t)
 	_, _ = w.run(false, "DELETE")
 	for _, c := range w.calls {
-		if strings.HasPrefix(c[len(c)-1], "bash -s -- ") && c[len(c)-1] != `bash -s -- '/Development'` {
+		if strings.HasPrefix(c[len(c)-1], "bash -s -- ") && c[len(c)-1] != `bash -s -- '/work'` {
 			t.Errorf("command %q", c[len(c)-1])
 		}
 	}

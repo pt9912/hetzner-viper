@@ -9,11 +9,11 @@ import (
 )
 
 func TestWorkDir(t *testing.T) {
-	c := &model.Machine{WorkspaceDir: "/Development"}
+	c := &model.Machine{WorkspaceDir: "/work"}
 	for url, want := range map[string]string{
-		"": "/Development", "https://git.example.com/o/r.git": "/Development/r", "https://git.example.com/o/r": "/Development/r",
-		"git@github.com:o/my-repo.git": "/Development/my-repo", "https://git.example.com/o/r.git/": "/Development/r.git",
-		"/srv/git/local.git": "/Development/local",
+		"": "/work", "https://git.example.com/o/r.git": "/work/r", "https://git.example.com/o/r": "/work/r",
+		"git@github.com:o/my-repo.git": "/work/my-repo", "https://git.example.com/o/r.git/": "/work/r.git",
+		"/srv/git/local.git": "/work/local",
 	} {
 		if got := c.WorkDir(url); got != want {
 			t.Errorf("%q: got %q, want %q", url, got, want)

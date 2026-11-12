@@ -296,15 +296,15 @@ func TestCreatesAllResourcesForAMachine(t *testing.T) {
 	if strings.Join(w.includes, ",") != "add" {
 		t.Errorf("includes %v", w.includes)
 	}
-	for f, want := range map[string]string{w.c.IDState: "42\n", w.c.IPState: "203.0.113.7\n", w.c.ReadyState: "42\n", w.c.WorkspaceState: "/Development\n"} {
+	for f, want := range map[string]string{w.c.IDState: "42\n", w.c.IPState: "203.0.113.7\n", w.c.ReadyState: "42\n", w.c.WorkspaceState: "/home/builder/work\n"} {
 		if b, _ := os.ReadFile(f); string(b) != want {
 			t.Errorf("%s = %q, want %q", filepath.Base(f), b, want)
 		}
 	}
 	has(t, w.out.String(), "Preflight OK.", "SSH key claude-login uploaded.", "Firewall claude-ssh created.", "Server claude-web created.", "claude-web.example.com -> 203.0.113.7",
-		"Waiting for SSH and cloud-init ...", "== installed on the server ==", "Ready: ssh hetzner-claude-web (work dir: /Development)")
+		"Waiting for SSH and cloud-init ...", "== installed on the server ==", "Ready: ssh hetzner-claude-web (work dir: /home/builder/work)")
 	ev := w.events()
-	has(t, ev, " up        start (cpx32, fsn1, ubuntu-26.04)\n", " up        server created id=42\n", " up        ip=203.0.113.7 dns=claude-web.example.com\n", " up        ready (work dir /Development)\n")
+	has(t, ev, " up        start (cpx32, fsn1, ubuntu-26.04)\n", " up        server created id=42\n", " up        ip=203.0.113.7 dns=claude-web.example.com\n", " up        ready (work dir /home/builder/work)\n")
 	if strings.Contains(ev, "FAILED") {
 		t.Errorf("events %s", ev)
 	}
@@ -318,7 +318,7 @@ func TestCreatesAllResourcesForAMachine(t *testing.T) {
 	if sign == nil || sign[3] != filepath.Join(w.c.SSHDir, "hetzner_claude_host_ca") || sign[8] != "claude-web.example.com" {
 		t.Errorf("signing %q", sign)
 	}
-	if len(w.vscode) != 1 || w.vscode[0] != "hetzner-claude-web /Development" {
+	if len(w.vscode) != 1 || w.vscode[0] != "hetzner-claude-web /home/builder/work" {
 		t.Errorf("vscode %q", w.vscode)
 	}
 }
@@ -708,12 +708,12 @@ func TestWorkspaceIsRecordedOnTheServerBeforeLaterSteps(t *testing.T) {
 	}
 	// a second run records it only once
 	w2 := newWorld(t, "")
-	if err := os.WriteFile(w2.c.WorkspaceState, []byte("/Development\n"), 0o600); err != nil {
+	if err := os.WriteFile(w2.c.WorkspaceState, []byte("/home/builder/work\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	w2.server = &model.Server{ID: "42", Name: "claude-web", IPv4: "203.0.113.7", Created: w2.now.Add(-time.Hour)}
 	_, _ = w2.run("")
-	if b, _ := os.ReadFile(w2.c.WorkspaceState); string(b) != "/Development\n" {
+	if b, _ := os.ReadFile(w2.c.WorkspaceState); string(b) != "/home/builder/work\n" {
 		t.Errorf("recorded twice: %q", b)
 	}
 }
@@ -779,7 +779,7 @@ func TestADeployKeyIsNotBypassedByTheGithubToken(t *testing.T) {
 	if strings.Join(scp.args, " ") != "scp -F "+w.c.SSHConfig+" -q "+filepath.ToSlash(key)+" hetzner-claude-web:.ssh/deploy_key" || chmod.args == nil {
 		t.Errorf("scp %q chmod %q", scp.args, chmod.args)
 	}
-	if clone.command() != "bash -s -- 'git@github.com:o/r.git' '/Development/r' '' '1' ''" {
+	if clone.command() != "bash -s -- 'git@github.com:o/r.git' '/home/builder/work/r' '' '1' ''" {
 		t.Errorf("clone command %q", clone.command())
 	}
 }
@@ -804,14 +804,14 @@ func TestCloneArgumentsAreQuotedAndTheRepositoryIsRemembered(t *testing.T) {
 			clone = call
 		}
 	}
-	want := "bash -s -- 'https://git.example.com/o/odd path; rm -rf $HOME.git' '/Development/odd path; rm -rf $HOME' 'feature/x y' '' ''"
+	want := "bash -s -- 'https://git.example.com/o/odd path; rm -rf $HOME.git' '/home/builder/work/odd path; rm -rf $HOME' 'feature/x y' '' ''"
 	if clone.command() != want {
 		t.Errorf("command\n%s\nwant\n%s", clone.command(), want)
 	}
 	if b, _ := os.ReadFile(w.c.RepoState); string(b) != "https://git.example.com/o/odd path; rm -rf $HOME.git\n" {
 		t.Errorf("remembered %q", b)
 	}
-	has(t, w.out.String(), "Ready: ssh hetzner-claude-web (work dir: /Development/odd path; rm -rf $HOME)")
+	has(t, w.out.String(), "Ready: ssh hetzner-claude-web (work dir: /home/builder/work/odd path; rm -rf $HOME)")
 	// given once, remembered for the next run
 	w2 := newWorld(t, "")
 	if err := os.WriteFile(w2.c.RepoState, []byte("https://user:tok3n@git.example.com/o/r.git\n"), 0o600); err != nil {
@@ -931,7 +931,7 @@ func TestBrewTapsTrustAndPackagesGoToTheScriptInOrder(t *testing.T) {
 			brew = call
 		}
 	}
-	want := "bash -s -- '/home/linuxbrew/.linuxbrew/bin/brew' '/Development/r/Brewfile' '2' '1' 'hashicorp/tap' 'o/t=https://git.example.com/o/t.git' 'hashicorp/tap/terraform' 'ripgrep' 'fd'"
+	want := "bash -s -- '/home/linuxbrew/.linuxbrew/bin/brew' '/home/builder/work/r/Brewfile' '2' '1' 'hashicorp/tap' 'o/t=https://git.example.com/o/t.git' 'hashicorp/tap/terraform' 'ripgrep' 'fd'"
 	if brew.command() != want {
 		t.Errorf("command\n%s\nwant\n%s", brew.command(), want)
 	}
@@ -994,7 +994,7 @@ func TestTheShellSetupAndInventoryRunLast(t *testing.T) {
 	for i, call := range w.calls {
 		if call.stdin == start.CdLineScript() {
 			cd = i
-			if call.command() != "bash -s -- '/Development/r' '/Development' '/home/linuxbrew/.linuxbrew/bin/brew' '42'" {
+			if call.command() != "bash -s -- '/home/builder/work/r' '/home/builder/work' '/home/linuxbrew/.linuxbrew/bin/brew' '42'" {
 				t.Errorf("cdline %q", call.command())
 			}
 		}

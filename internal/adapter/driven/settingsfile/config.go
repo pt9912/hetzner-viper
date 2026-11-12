@@ -345,18 +345,16 @@ func derivePaths(c *model.Machine, home string) {
 	c.LogDir = filepath.Join(c.StateDir, "logs")
 }
 
-// imageAndWorkspace are SERVER_IMAGE and WORKSPACE_DIR of the machine. A machine that is a container has the image
-// of the container (K8S_IMAGE) and its work directory on its volume: it has no root to make a directory elsewhere.
+// imageAndWorkspace are SERVER_IMAGE and WORKSPACE_DIR of the machine. The work directory is below the home directory of
+// builder unless WORKSPACE_DIR says otherwise (a machine that is a container has no root to make one elsewhere). A machine
+// that is a container has the image of the container (K8S_IMAGE or COMPOSE_IMAGE).
 func imageAndWorkspace(c *model.Machine, prov model.ProviderInfo) (image, workspace string) {
-	image, workspace = or(c.Get("SERVER_IMAGE"), prov.Image), or(c.Get("WORKSPACE_DIR"), "/Development")
+	image, workspace = or(c.Get("SERVER_IMAGE"), prov.Image), or(c.Get("WORKSPACE_DIR"), DefaultWorkspace)
 	switch c.Provider {
 	case "kubernetes":
 		image = c.Get("K8S_IMAGE")
 	case "compose":
 		image = c.Get("COMPOSE_IMAGE")
-	}
-	if prov.Container {
-		workspace = or(c.Get("WORKSPACE_DIR"), ContainerWorkspace)
 	}
 	return image, workspace
 }
@@ -370,8 +368,9 @@ var (
 	dockerHostRe = regexp.MustCompile(`^(tcp://[A-Za-z0-9._-]+:[0-9]{1,5}|unix:///[A-Za-z0-9._/-]+|ssh://[A-Za-z0-9._@-]+(:[0-9]{1,5})?)$`)
 )
 
-// ContainerWorkspace is WORKSPACE_DIR of a machine that is a container, when it is not set: on its volume.
-const ContainerWorkspace = "/home/builder/work"
+// DefaultWorkspace is WORKSPACE_DIR when it is not set: below the home directory of builder, which is the volume of a
+// container and needs no root on a VM. A container accepts no other place.
+const DefaultWorkspace = "/home/builder/work"
 
 // checkKubernetesValues checks the settings of a pod that are a name or a number.
 func checkKubernetesValues(c *model.Machine) error {
@@ -429,8 +428,8 @@ func checkKubernetes(c *model.Machine) error {
 	default:
 		return fmt.Errorf("K8S_DOCKER: dind, remote or none: %s", c.Get("K8S_DOCKER"))
 	}
-	if ws := c.Setting("WORKSPACE_DIR", ContainerWorkspace); !strings.HasPrefix(ws, "/home/builder/") || strings.Contains(ws, "..") {
-		return fmt.Errorf("WORKSPACE_DIR: for PROVIDER=kubernetes a directory below /home/builder, which is the volume of the pod (default %s); a WORKSPACE_DIR in .env.local is for the VMs: set it for this machine in machines/%s.env.local or in its group file: %s", ContainerWorkspace, c.Name, ws)
+	if ws := c.Setting("WORKSPACE_DIR", DefaultWorkspace); !strings.HasPrefix(ws, "/home/builder/") || strings.Contains(ws, "..") {
+		return fmt.Errorf("WORKSPACE_DIR: for PROVIDER=kubernetes a directory below /home/builder, which is the volume of the pod (default %s); a WORKSPACE_DIR in .env.local is for the VMs: set it for this machine in machines/%s.env.local or in its group file: %s", DefaultWorkspace, c.Name, ws)
 	}
 	return nil
 }
@@ -497,8 +496,8 @@ func checkCompose(c *model.Machine) error {
 	if err := checkComposeDocker(c); err != nil {
 		return err
 	}
-	if ws := c.Setting("WORKSPACE_DIR", ContainerWorkspace); !strings.HasPrefix(ws, "/home/builder/") || strings.Contains(ws, "..") {
-		return fmt.Errorf("WORKSPACE_DIR: for PROVIDER=compose a directory below /home/builder, which is the volume of the container (default %s); set it for this machine in machines/%s.env.local or in its group file: %s", ContainerWorkspace, c.Name, ws)
+	if ws := c.Setting("WORKSPACE_DIR", DefaultWorkspace); !strings.HasPrefix(ws, "/home/builder/") || strings.Contains(ws, "..") {
+		return fmt.Errorf("WORKSPACE_DIR: for PROVIDER=compose a directory below /home/builder, which is the volume of the container (default %s); set it for this machine in machines/%s.env.local or in its group file: %s", DefaultWorkspace, c.Name, ws)
 	}
 	return nil
 }
