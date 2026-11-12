@@ -185,7 +185,7 @@ func (e *dockerError) Unwrap() error { return e.err }
 // notFound says whether docker reported that the object is not there.
 func notFound(err error) bool {
 	var de *dockerError
-	return errors.As(err, &de) && strings.Contains(de.msg, "No such")
+	return errors.As(err, &de) && strings.Contains(strings.ToLower(de.msg), "no such")
 }
 
 // compose runs docker compose for the project of the server.

@@ -118,7 +118,7 @@ D9 **Privilegierter `dind`-Dienst:** der Preflight meldet es als **Fehler**, sol
 | 1 | Adapter (erledigt, §16) | `compose`-Adapter gegen einen Fake des `docker`-Aufrufs: Datei erzeugen, `up`, `rm`, Leftovers, Preflight |
 | 2 | Anbindung (erledigt, §17) | Einstellungen, `sshconfig`, `viper docker-proxy`, Preflight |
 | 3 | Echter Lauf (erledigt, §18) | lokales Docker: `up`, `check`, `ssh`, Docker im Rechner, Neustart des Containers (Daten bleiben), `down`; Handbuch |
-| 4 | NATS | Gruppennetz, Name im Zertifikat, Zustand der Labels; Lauf mit drei Containern |
+| 4 | NATS (erledigt, §19) | Gruppennetz, Name im Zertifikat, Zustand der Labels; Lauf mit drei Containern |
 
 ## 11 Teststrategie und Aussage über die Qualität
 
@@ -229,3 +229,17 @@ Echter Lauf mit dem gebauten `viper` auf dem Docker-Host dieser Umgebung (eigene
 | `viper down` mit ungesicherter Datei | fragt `DISCARD` und `DELETE`; danach nichts mehr da |
 
 Offen bleiben: Docker Desktop, rootless Docker/Podman, VS Code Remote-SSH über den Proxy, ein Neustart des ganzen Hosts, ein entfernter Docker-Host (Version 1 lehnt ihn ab). Das Handbuch (1.95) beschreibt den Anbieter; NATS folgt in Meilenstein 4.
+
+
+## 19 Ergebnis von Meilenstein 4 (Stand 12.11.2026)
+
+NATS-Gruppen laufen mit `PROVIDER=compose` (`cloud.NATSProvider` im Adapter, `ProviderInfo.NATS`):
+
+* **Gruppennetz:** `EnsurePrivateNetwork` ist `docker network create` (mit den Labels `viper-managed` und Gruppe); „already exists“ heißt „gefunden“, ein Netz ohne unsere Labels ist `ErrNotOurs`. `DeletePrivateNetwork` löscht es, wenn kein Mitglied mehr da ist (`active endpoints` ist `ErrNetworkInUse`). Ein Rechner einer Gruppe hängt **nur** an diesem Netz (`external: true`); der Server trägt dort den Alias `viper-nats-<gruppe>`.
+* **Name im Zertifikat:** `Machine.NATSServerHost` (`viper-nats-<gruppe>` bei `compose`); `natsserver.Render` lässt jetzt auch einen Namen ohne Punkt zu (bisher nur `dienst.namespace.svc`).
+* **Adresse des Servers:** `viper` gibt das Teilnetz des Gruppennetzes als `VIPER_NATS_SUBNET` mit; `image/entry.sh` setzt daraus `POD_IP` (Adresse aus `/proc/net/fib_trie`, wartet bis zu 60 s). Der Image-Test prüft es (48 Prüfungen).
+* **Zustand:** Gruppe und Rolle als Labels am Container; der Zustand als Volumes `viper-nats-<gruppe>-<rechner>-<zustand>` (neues Volume zuerst, dann die alten weg; bleibt ein altes stehen, gilt der spätere Zustand). `ListGroupMachines` listet Container mit dem Gruppenlabel. Die Zustands-Volumes gehen mit der Maschine (`DeleteServer`, Leftovers).
+* **Nachträglicher Beitritt:** `AttachPrivateNetwork` ist ein klarer Fehler (die Labels eines Containers sind nicht änderbar): `viper down` und `viper up`.
+* **Echter Lauf mit drei Containern** (`viper up --group`, Server `a1`, Clients `b1`, `c1`): Gruppe in 20 s bereit, das Netz von `viper` angelegt (`172.19.0.0/16`), der Server hört auf seiner Adresse im Netz; `viper check --group` ohne Fehler (genau ein Server, drei Rechner angemeldet, Anmeldung mit NKey über TLS); `viper nats init` und Senden als Betreiber; eine Nachricht von `b1` kommt bei `c1` an; ein Container ohne das Netz erreicht Port 4222 nicht; die Zustands-Volumes stehen auf `ready`; nach Neustart des Servers allein meldet `check` nur den getrennten `dind`-Dienst, `viper up` repariert; bekommt der Server eine **andere Adresse** (`172.19.0.2` → `.5`, ein anderer Container nahm die alte), melden sich die Clients ohne Änderung weiter an; `viper down` der drei Rechner entfernt Container, Volumes (auch die des Zustands), Dateien und am Ende das Netz.
+* **Fehler des Laufs:** `docker volume inspect` meldet „no such volume“ in Kleinbuchstaben, der Adapter erkannte nur „No such“; behoben (ohne Beachtung der Schreibweise).
+* **Nicht geprüft:** `NATS_MCP` mit den MCP-Programmen im Container (Nachrichten der Maschinen an den Betreiber), gleichzeitiger erster Start zweier Server (die Sperre ist `docker network create`, in §1 mit sechs Aufrufen geprüft, aber nicht mit `viper up --group` und mehreren Servern).

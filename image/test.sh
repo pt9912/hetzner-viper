@@ -8,7 +8,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 srv_version=$(sed -n 's/^ARG NATS_SERVER_VERSION=//p' "$here/Dockerfile")
 cli_version=$(sed -n 's/^ARG NATS_CLI_VERSION=//p' "$here/Dockerfile")
 t=$(mktemp -d); export t; name="viper-machine-test-$$"
-trap 'docker rm -f "$name" "$name-2" "$name-3" >/dev/null 2>&1 || true; docker run --rm --user 0 --entrypoint chown -v "$t/home:/h" -v "$t/brew:/b" "$image" -R 1000:1000 /h /b >/dev/null 2>&1 || true; rm -rf "$t"' EXIT
+trap 'docker rm -f "$name" "$name-2" "$name-3" "$name-4" >/dev/null 2>&1 || true; docker run --rm --user 0 --entrypoint chown -v "$t/home:/h" -v "$t/brew:/b" "$image" -R 1000:1000 /h /b >/dev/null 2>&1 || true; rm -rf "$t"' EXIT
 ok=0; bad=0
 check() { # check "what" command...
   local what="$1"; shift
@@ -100,6 +100,15 @@ check "nats-server is started again after it ended" sshc 2224 '
 check "viper's natsconfig.sh reloads it through the pid file" bash -c "$(declare -f sshc)
   script=\$(cat $here/../internal/usecase/natsgroup/scripts/natsconfig.sh)
   printf 'host: \$POD_IP\nport: 14223\n' | sshc 2224 \"bash -c \$(printf %q \"\$script\") -- /home/builder/.viper-nats viper-nats\" | grep -q 'server reloaded'"
+
+# 4: a container on a Docker network (Docker Compose) is told the subnet of the group network and takes its address in it
+docker network create --label viper-test=1 "$name-net" >/dev/null
+subnet=$(docker network inspect --format '{{(index .IPAM.Config 0).Subnet}}' "$name-net")
+docker run -d --name "$name-4" --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges --network "$name-net" \
+  -e VIPER_NATS_SERVER=1 -e VIPER_NATS_SUBNET="$subnet" -p 127.0.0.1:2225:2222 -v "$t/secret:/run/viper/secret:ro" "$image" >/dev/null
+check "a server container finds its address from the subnet of the group network" bash -c "$(declare -f sshc wait_ssh); wait_ssh 2225 &&
+  want=\$(docker inspect --format '{{(index .NetworkSettings.Networks \"$name-net\").IPAddress}}' $name-4) && [ \"\$(sshc 2225 'echo \$POD_IP')\" = \"\$want\" ]"
+docker rm -f "$name-4" >/dev/null; docker network rm "$name-net" >/dev/null
 
 echo "--- $ok ok, $bad failed"
 [ "$bad" -eq 0 ]

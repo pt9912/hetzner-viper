@@ -45,6 +45,27 @@ install -m 600 "$secret/host_key" "$home/.viper/sshd/host_key"
 install -m 644 "$secret/host_key.pub" "$home/.viper/sshd/host_key.pub"
 install -m 644 "$secret/host_key-cert.pub" "$home/.viper/sshd/host_key-cert.pub"
 
+# A container (Docker Compose) has no Downward API: the server of a NATS group is told the subnet of the group network
+# (VIPER_NATS_SUBNET) and takes the address it has in it. hostname -i is not reliable with two networks. The address may
+# come a moment after the start.
+if [ -z "${POD_IP:-}" ] && [ -n "${VIPER_NATS_SUBNET:-}" ]; then
+  for _ in $(seq 1 60); do
+    POD_IP=$(python3 - "$VIPER_NATS_SUBNET" <<'PY'
+import ipaddress, re, sys
+net = ipaddress.ip_network(sys.argv[1], strict=False)
+for m in re.finditer(r"\|-- (\S+)\n\s+/32 host LOCAL", open("/proc/net/fib_trie").read()):
+    if ipaddress.ip_address(m.group(1)) in net:
+        print(m.group(1))
+        break
+PY
+) || POD_IP=""
+    [ -z "$POD_IP" ] || break
+    sleep 1
+  done
+  [ -n "$POD_IP" ] || fail "no address in $VIPER_NATS_SUBNET"
+  export POD_IP
+fi
+
 # The environment of the container does not reach the sessions of sshd. What the sessions need of it is handed over by
 # SetEnv: where the Docker daemon is (the sidecar or a remote one), and the address of the pod (the NATS server reads it
 # when viper tests its configuration over ssh).

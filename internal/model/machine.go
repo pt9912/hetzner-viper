@@ -74,6 +74,16 @@ func (m *Machine) ProxyVerb() string {
 	return "k8s-proxy"
 }
 
+// NATSServerHost is the name the clients of the NATS group connect to, and what the certificate of the server is for: in a
+// cluster the headless Service of the group in its namespace, on a Docker host the alias of the server on the network of
+// the group. The address of a container changes, the name does not.
+func (m *Machine) NATSServerHost() string {
+	if m.Provider == "compose" {
+		return "viper-nats-" + m.NATS.Group
+	}
+	return NATSServiceHost(m.NATS.Group, m.Setting("K8S_NAMESPACE", "viper"))
+}
+
 // DockerMode is how a container gets its Docker (dind, remote or none).
 func (m *Machine) DockerMode() string {
 	if m.Provider == "compose" {

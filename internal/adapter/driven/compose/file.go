@@ -31,7 +31,7 @@ type service struct {
 	MemLimit      string               `yaml:"mem_limit,omitempty"`
 	Volumes       []string             `yaml:"volumes,omitempty"`
 	Secrets       []secretRef          `yaml:"secrets,omitempty"`
-	Networks      []string             `yaml:"networks,omitempty"`
+	Networks      map[string]netAttach `yaml:"networks,omitempty"`
 	Healthcheck   *healthcheck         `yaml:"healthcheck,omitempty"`
 	DependsOn     map[string]dependsOn `yaml:"depends_on,omitempty"`
 	Restart       string               `yaml:"restart"`
@@ -41,6 +41,11 @@ type service struct {
 type secretRef struct {
 	Source string `yaml:"source"`
 	Target string `yaml:"target"`
+}
+
+// netAttach is how a service is on a network: with the names it can be found by there.
+type netAttach struct {
+	Aliases []string `yaml:"aliases,omitempty"`
 }
 
 type healthcheck struct {
@@ -98,7 +103,7 @@ func (o Options) dockerEnv() map[string]string {
 // fileFor is the compose file of the machine. The keys are files next to it (./secret/), bind-mounted to the place the
 // image reads them from. s.Network, if set, is the group network of a NATS group (made by viper, not by compose): the
 // machine is then on that network only.
-func (o Options) fileFor(s model.ServerSpec, cpus float64, memMiB int) composeFile {
+func (o Options) fileFor(s model.ServerSpec, cpus float64, memMiB int, subnet string) composeFile {
 	name := s.Name
 	m := service{
 		Image: o.Image, PullPolicy: "never", ContainerName: name,
@@ -125,7 +130,15 @@ func (o Options) fileFor(s model.ServerSpec, cpus float64, memMiB int) composeFi
 	}
 	if s.Network != "" {
 		f.Networks = map[string]network{groupNet: {External: true, Name: s.Network}}
-		m.Networks = []string{groupNet}
+		attach := netAttach{}
+		if s.Labels[model.LabelNATSRole] == string(model.NATSServer) {
+			// the server is found by the name of the group, which its certificate is for; it listens on its address in the
+			// network (the entrypoint finds it from the subnet), and runs nats-server as a process of the container
+			attach.Aliases = []string{s.Network}
+			m.Environment = withEnv(m.Environment, "VIPER_NATS_SERVER", "1")
+			m.Environment = withEnv(m.Environment, "VIPER_NATS_SUBNET", subnet)
+		}
+		m.Networks = map[string]netAttach{groupNet: attach}
 	}
 	if o.docker() == DockerDind {
 		f.Services[serviceDocker] = o.dockerService(name)
@@ -153,3 +166,11 @@ func (o Options) dockerService(server string) service {
 }
 
 func (f composeFile) marshal() ([]byte, error) { return yaml.Marshal(f) }
+
+func withEnv(env map[string]string, k, v string) map[string]string {
+	if env == nil {
+		env = map[string]string{}
+	}
+	env[k] = v
+	return env
+}

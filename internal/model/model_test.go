@@ -61,3 +61,14 @@ func TestParseAWSTags(t *testing.T) {
 		}
 	}
 }
+
+func TestTheNATSServerHostIsTheServiceInAClusterAndTheAliasOnADockerHost(t *testing.T) {
+	m := &model.Machine{Provider: "compose", NATS: model.NATSConfig{Group: "dev"}}
+	if got := m.NATSServerHost(); got != "viper-nats-dev" {
+		t.Errorf("compose: %s", got)
+	}
+	m.Provider = "kubernetes"
+	if got := m.NATSServerHost(); got != "viper-nats-dev.viper.svc" {
+		t.Errorf("kubernetes: %s", got)
+	}
+}

@@ -16,6 +16,7 @@ import (
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/compose"
 	"github.com/pt9912/hetzner-viper/internal/model"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
 )
 
 // host is a fake Docker host: the docker program as the adapter calls it. It knows containers and volumes, and
@@ -32,16 +33,18 @@ type host struct {
 	noCompose  bool
 	noImage    bool
 	networks   int
+	nets       map[string]map[string]string // docker networks by name, with their labels
 }
 
 type ctr struct {
 	id     string
 	labels map[string]string
 	run    bool
+	nets   []string
 }
 
 func newHost() *host {
-	return &host{containers: map[string]*ctr{}, volumes: map[string]map[string]string{}, noEth0: map[string]bool{}, endpoint: "unix:///var/run/docker.sock"}
+	return &host{containers: map[string]*ctr{}, volumes: map[string]map[string]string{}, nets: map[string]map[string]string{}, noEth0: map[string]bool{}, endpoint: "unix:///var/run/docker.sock"}
 }
 
 func (h *host) record(args []string) { h.calls = append(h.calls, strings.Join(args, " ")) }
@@ -85,8 +88,42 @@ func (h *host) run(_ context.Context, _, name string, args ...string) (string, s
 			return nosuch("image", args[len(args)-1])
 		}
 		return "sha256:1\n", "", nil
-	case args[0] == "network":
+	case args[0] == "network" && args[1] == "ls":
 		return strings.Repeat("abc\n", h.networks), "", nil
+	case args[0] == "network":
+		return h.network(args)
+	case args[0] == "container" && args[1] == "ls":
+		var ids []string
+		for _, c := range h.containers {
+			if matches(c.labels, filters(args)) {
+				ids = append(ids, c.id)
+			}
+		}
+		return strings.Join(ids, "\n"), "", nil
+	case args[0] == "volume" && args[1] == "create":
+		labels := map[string]string{}
+		for i, a := range args {
+			if a == "--label" {
+				kv := strings.SplitN(args[i+1], "=", 2)
+				labels[kv[0]] = kv[1]
+			}
+		}
+		h.volumes[args[len(args)-1]] = labels
+		return "", "", nil
+	case args[0] == "volume" && args[1] == "ls":
+		var out []string
+		f := filters(args)
+		for n, l := range h.volumes {
+			if !matches(l, f) {
+				continue
+			}
+			if i := indexOf(args, "--format"); i >= 0 {
+				out = append(out, l["viper-nats-state"])
+			} else {
+				out = append(out, n)
+			}
+		}
+		return strings.Join(out, "\n"), "", nil
 	case args[0] == "container" && args[1] == "inspect" && args[2] == "--format":
 		return "healthy\n", "", nil
 	case args[0] == "container" && args[1] == "inspect":
@@ -118,12 +155,86 @@ func (h *host) run(_ context.Context, _, name string, args ...string) (string, s
 	return "", "", fmt.Errorf("fake docker: unknown call %v", args)
 }
 
+func indexOf(args []string, a string) int {
+	for i, x := range args {
+		if x == a {
+			return i
+		}
+	}
+	return -1
+}
+
+// filters are the label filters of a docker command, as key or key=value.
+func filters(args []string) []string {
+	var out []string
+	for i, a := range args {
+		if a == "--filter" {
+			out = append(out, strings.TrimPrefix(args[i+1], "label="))
+		}
+	}
+	return out
+}
+
+func matches(labels map[string]string, f []string) bool {
+	for _, x := range f {
+		kv := strings.SplitN(x, "=", 2)
+		v, ok := labels[kv[0]]
+		if !ok || (len(kv) == 2 && v != kv[1]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (h *host) network(args []string) (string, string, error) {
+	name := args[len(args)-1]
+	switch args[1] {
+	case "create":
+		if _, ok := h.nets[name]; ok {
+			return "", "Error response from daemon: network with name " + name + " already exists", errors.New("exit status 1")
+		}
+		labels := map[string]string{}
+		for i, a := range args {
+			if a == "--label" {
+				kv := strings.SplitN(args[i+1], "=", 2)
+				labels[kv[0]] = kv[1]
+			}
+		}
+		h.nets[name] = labels
+		return "id\n", "", nil
+	case "inspect":
+		l, ok := h.nets[name]
+		if !ok {
+			return nosuch("network", name)
+		}
+		b, _ := json.Marshal([]map[string]any{{"Id": "net-" + name, "Name": name, "Labels": l,
+			"IPAM": map[string]any{"Config": []map[string]string{{"Subnet": "10.9.0.0/16"}}}}})
+		return string(b), "", nil
+	case "rm":
+		for _, c := range h.containers {
+			for _, n := range c.nets {
+				if n == name {
+					return "", "Error response from daemon: network " + name + " has active endpoints", errors.New("exit status 1")
+				}
+			}
+		}
+		delete(h.nets, name)
+		return "", "", nil
+	}
+	return "", "", fmt.Errorf("unknown network call %v", args)
+}
+
 func (h *host) inspect(ref string) (string, string, error) {
 	for n, c := range h.containers {
 		if n == ref || c.id == ref {
+			nets := map[string]any{}
+			for _, x := range c.nets {
+				nets[x] = map[string]string{"IPAddress": "10.9.0.5"}
+			}
 			b, _ := json.Marshal([]map[string]any{{
 				"Id": c.id, "Created": time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC),
 				"Config": map[string]any{"Labels": c.labels}, "State": map[string]any{"Running": c.run},
+				"NetworkSettings": map[string]any{"Networks": nets},
 			}})
 			return string(b), "", nil
 		}
@@ -132,8 +243,9 @@ func (h *host) inspect(ref string) (string, string, error) {
 }
 
 type fileSvc struct {
-	ContainerName string            `yaml:"container_name"`
-	Labels        map[string]string `yaml:"labels"`
+	ContainerName string                    `yaml:"container_name"`
+	Labels        map[string]string         `yaml:"labels"`
+	Networks      map[string]map[string]any `yaml:"networks"`
 }
 
 func (h *host) compose(args []string) (string, string, error) {
@@ -168,7 +280,11 @@ func (h *host) compose(args []string) (string, string, error) {
 				c.run = true
 				continue // --no-recreate
 			}
-			h.containers[s.ContainerName] = &ctr{id: "id-" + s.ContainerName, labels: s.Labels, run: true}
+			var nets []string
+			for range s.Networks {
+				nets = append(nets, "viper-nats-"+s.Labels["viper-nats-group"])
+			}
+			h.containers[s.ContainerName] = &ctr{id: "id-" + s.ContainerName, labels: s.Labels, run: true, nets: nets}
 		}
 		return "", "", nil
 	case "down":
@@ -279,6 +395,9 @@ func TestDockerModes(t *testing.T) {
 func TestGroupNetworkAndLabelsGoIntoTheFile(t *testing.T) {
 	h := newHost()
 	c, dir := newClient(t, h)
+	if _, _, err := c.EnsurePrivateNetwork(context.Background(), "g", "default"); err != nil {
+		t.Fatal(err)
+	}
 	s := spec("web")
 	s.Network = "viper-nats-g"
 	s.Labels = map[string]string{model.LabelNATSGroup: "g", model.LabelNATSRole: "client"}
@@ -539,3 +658,163 @@ func TestValidate(t *testing.T) {
 }
 
 func isWindows() bool { return os.PathSeparator == '\\' }
+
+// --- NATS groups
+
+func natsSpec(name, group, role string) model.ServerSpec {
+	sp := spec(name)
+	sp.Network = "viper-nats-" + group
+	sp.Labels = model.NATSLabels(model.NATSMetadata{Group: group, Role: model.NATSRole(role), State: model.NATSProvisioning})
+	return sp
+}
+
+func TestTheGroupNetworkIsMadeOnceAndFoundByTheOthers(t *testing.T) {
+	h := newHost()
+	c, _ := newClient(t, h)
+	n, created, err := c.EnsurePrivateNetwork(context.Background(), "g", "default")
+	if err != nil || !created || n.ID != "viper-nats-g" || n.IPRange != "10.9.0.0/16" || n.Zone != "default" {
+		t.Fatalf("%+v %v %v", n, created, err)
+	}
+	if n2, created, err := c.EnsurePrivateNetwork(context.Background(), "g", "default"); err != nil || created || n2.ID != n.ID {
+		t.Fatalf("second: %+v %v %v", n2, created, err)
+	}
+	if f, err := c.FindPrivateNetwork(context.Background(), "g"); err != nil || f == nil {
+		t.Fatalf("%v %v", f, err)
+	}
+	if f, err := c.FindPrivateNetwork(context.Background(), "other"); err != nil || f != nil {
+		t.Fatalf("%v %v", f, err)
+	}
+	h.nets["viper-nats-x"] = map[string]string{} // somebody else's
+	if _, _, err := c.EnsurePrivateNetwork(context.Background(), "x", "default"); !errors.Is(err, compose.ErrNotOurs) {
+		t.Fatalf("%v", err)
+	}
+	if f, err := c.FindPrivateNetwork(context.Background(), "x"); err != nil || f != nil {
+		t.Fatalf("a network that is not viper's is found: %v %v", f, err)
+	}
+	if _, _, err := c.EnsurePrivateNetwork(context.Background(), "g", ""); err == nil {
+		t.Fatal("no Docker host accepted")
+	}
+}
+
+func TestAServerMemberHasTheAliasTheSubnetAndOnlyTheGroupNetwork(t *testing.T) {
+	h := newHost()
+	c, dir := newClient(t, h)
+	if _, _, err := c.EnsurePrivateNetwork(context.Background(), "g", "default"); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := c.CreateServer(context.Background(), natsSpec("web", "g", "server"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if srv.PrivateIP != "10.9.0.5" || !srv.InNetwork() {
+		t.Fatalf("%+v", srv)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, "compose", "web", "compose.yaml"))
+	for _, want := range []string{"VIPER_NATS_SERVER: \"1\"", "VIPER_NATS_SUBNET: 10.9.0.0/16", "aliases:", "- viper-nats-g", "external: true"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("missing %q in\n%s", want, b)
+		}
+	}
+	cl, err := c.CreateServer(context.Background(), natsSpec("api", "g", "client"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cb, _ := os.ReadFile(filepath.Join(dir, "compose", "api", "compose.yaml"))
+	if strings.Contains(string(cb), "VIPER_NATS") || strings.Contains(string(cb), "aliases") || cl.PrivateIP == "" {
+		t.Errorf("a client is not a server:\n%s", cb)
+	}
+	// a group network that is not there is an error before anything is written
+	if _, err := c.CreateServer(context.Background(), natsSpec("lost", "nogroup", "client")); err == nil {
+		t.Error("a machine for a group without a network was made")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "compose", "lost", "compose.yaml")); err == nil {
+		t.Error("a file was written for it")
+	}
+}
+
+func TestTheStateIsKeptInVolumesAndChangesReplaceIt(t *testing.T) {
+	h := newHost()
+	c, _ := newClient(t, h)
+	ctx := context.Background()
+	_, _, _ = c.EnsurePrivateNetwork(ctx, "g", "default")
+	srv, err := c.CreateServer(ctx, natsSpec("web", "g", "server"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := c.NATSMetadataOf(ctx, srv.ID)
+	if err != nil || m == nil || m.State != model.NATSProvisioning || m.Role != model.NATSServer {
+		t.Fatalf("%+v %v", m, err)
+	}
+	for _, st := range []model.NATSState{model.NATSProvisioning, model.NATSReady} {
+		if err := c.UpdateNATSMetadata(ctx, srv.ID, model.NATSMetadata{Group: "g", Role: model.NATSServer, State: st}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var states []string
+	for n := range h.volumes {
+		if strings.HasPrefix(n, "viper-nats-g-web-") {
+			states = append(states, n)
+		}
+	}
+	if len(states) != 1 || states[0] != "viper-nats-g-web-ready" {
+		t.Fatalf("state volumes %v", states)
+	}
+	list, err := c.ListGroupMachines(ctx, "g")
+	if err != nil || len(list) != 1 || list[0].NATS.State != model.NATSReady || list[0].Server.Name != "web" || list[0].Server.PrivateIP == "" {
+		t.Fatalf("%+v %v", list, err)
+	}
+	// a change cut off between the new volume and the removal of the old one: the later state wins
+	h.volumes["viper-nats-g-web-provisioning"] = map[string]string{"viper-managed": "true", "viper-server": "web", "viper-nats-state": "provisioning"}
+	if m, _ := c.NATSMetadataOf(ctx, srv.ID); m == nil || m.State != model.NATSReady {
+		t.Fatalf("%+v", m)
+	}
+	// a machine of no group has no metadata and is no member
+	plain, _ := c.CreateServer(ctx, spec("plain"))
+	if m, err := c.NATSMetadataOf(ctx, plain.ID); err != nil || m != nil {
+		t.Fatalf("%+v %v", m, err)
+	}
+	if list, _ := c.ListGroupMachines(ctx, "g"); len(list) != 1 {
+		t.Fatalf("%+v", list)
+	}
+}
+
+func TestTheNetworkGoesWhenTheLastMemberIsGone(t *testing.T) {
+	h := newHost()
+	c, _ := newClient(t, h)
+	ctx := context.Background()
+	_, _, _ = c.EnsurePrivateNetwork(ctx, "g", "default")
+	srv, err := c.CreateServer(ctx, natsSpec("web", "g", "server"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = c.UpdateNATSMetadata(ctx, srv.ID, model.NATSMetadata{Group: "g", Role: model.NATSServer, State: model.NATSReady})
+	if err := c.DeletePrivateNetwork(ctx, "viper-nats-g"); !errors.Is(err, cloud.ErrNetworkInUse) {
+		t.Fatalf("%v", err)
+	}
+	if err := c.DeleteServer(ctx, srv.ID); err != nil {
+		t.Fatal(err)
+	}
+	for n := range h.volumes {
+		t.Errorf("volume left: %s", n) // the state volumes go with the machine
+	}
+	if err := c.DeletePrivateNetwork(ctx, "viper-nats-g"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := h.nets["viper-nats-g"]; ok {
+		t.Fatal("the network is still there")
+	}
+	if err := c.DeletePrivateNetwork(ctx, "viper-nats-g"); err != nil {
+		t.Fatalf("a network that is gone is an error: %v", err)
+	}
+	h.nets["viper-nats-z"] = map[string]string{}
+	if err := c.DeletePrivateNetwork(ctx, "viper-nats-z"); !errors.Is(err, compose.ErrNotOurs) {
+		t.Fatalf("%v", err)
+	}
+}
+
+func TestAMachineCannotJoinAGroupLater(t *testing.T) {
+	c, _ := newClient(t, newHost())
+	if _, err := c.AttachPrivateNetwork(context.Background(), "id", "viper-nats-g"); err == nil {
+		t.Fatal("attached")
+	}
+}

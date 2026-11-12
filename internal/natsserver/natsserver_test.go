@@ -194,6 +194,18 @@ func TestParseEndpointReadsWhatRenderWrote(t *testing.T) {
 	}
 }
 
+func TestAServerOnADockerNetworkIsReachedByTheAliasOfOneLabel(t *testing.T) {
+	cfg := natsserver.Config{Group: "dev", Host: "viper-nats-dev", Listen: natsserver.ListenPodIP, Port: 4222,
+		Clients: []natsserver.Client{{Machine: "alpha", PublicKey: keyA}}}
+	out, err := cfg.Render()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if end, ok := natsserver.ParseEndpoint(out); !ok || end.Host != "viper-nats-dev" || end.Listen != natsserver.ListenPodIP {
+		t.Errorf("%+v %v", end, ok)
+	}
+}
+
 func TestAServerInAPodListensOnThePodAddressAndIsReachedByTheServiceName(t *testing.T) {
 	cfg := natsserver.Config{Group: "dev", Host: "viper-nats-dev.viper.svc", Listen: natsserver.ListenPodIP, Port: 4222,
 		Clients: []natsserver.Client{{Machine: "alpha", PublicKey: keyA}}}

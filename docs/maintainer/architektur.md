@@ -128,6 +128,6 @@ Bei einem Issue: Die Seite im Browser ansehen, das Muster in der Auswertung anpa
 |---|---|
 | AWS | echte Läufe: Adapter, `up` und `down`, x86 und ARM, ohne Cloudflare |
 | Hetzner | Server anlegen und löschen gegen nachgebildete Schnittstellen (die früheren Bash-Skripte liefen echt); NATS-Gruppen (Netzwerke, Labels, Bootstrap, Clients, `down`, `check`) auch in echten Läufen |
-| Docker Compose | echter Lauf auf dem lokalen Docker-Host: `up`, `check`, `ssh`, Docker im Rechner (dind), Neustart und Reparatur, `up` auf vorhandener Maschine, `down`, Reste; ohne NATS; Docker Desktop und entfernte Hosts nicht getestet |
+| Docker Compose | echter Lauf auf dem lokalen Docker-Host: `up`, `check`, `ssh`, Docker im Rechner (dind), Neustart und Reparatur, `up` auf vorhandener Maschine, `down`, Reste; NATS-Gruppe aus drei Containern (Netz, Name im Zertifikat, Zustand als Volumes, Wechsel der Adresse); Docker Desktop und entfernte Hosts nicht getestet |
 | Kubernetes | echte Läufe in k3d: Adapter, `up`, `check`, `ssh`, Docker (dind), Ersetzen des Pods, `down`, NATS-Gruppe aus drei Pods mit `viper nats` und Betreiber, NetworkPolicy; EKS, GKE, AKS nicht in einem Konto getestet |
 | Google Cloud, Azure | nur gegen nachgebildete Schnittstellen; die SDK-Schicht ist vom Compiler geprüft, nicht gegen ein Konto gelaufen |

@@ -38,6 +38,11 @@ type inspected struct {
 	State struct {
 		Running bool `json:"Running"`
 	} `json:"State"`
+	NetworkSettings struct {
+		Networks map[string]struct {
+			IPAddress string `json:"IPAddress"`
+		} `json:"Networks"`
+	} `json:"NetworkSettings"`
 }
 
 // container returns the container of that name or ID, nil if there is none; ErrNotOurs if viper did not make it.
@@ -60,8 +65,12 @@ func (c *Client) container(ctx context.Context, ref string) (*inspected, error) 
 }
 
 func serverOf(name string, in *inspected) *model.Server {
-	return &model.Server{ID: in.ID, Name: name, Created: in.Created, SSHPort: SSHPort, ViaAPI: true,
+	s := &model.Server{ID: in.ID, Name: name, Created: in.Created, SSHPort: SSHPort, ViaAPI: true,
 		GroupRuleMissing: in.Config.Labels[model.LabelNATSGroup] == ""}
+	if g := in.Config.Labels[model.LabelNATSGroup]; g != "" { // the address in the network of the group
+		s.PrivateIP = in.NetworkSettings.Networks[NetworkName(g)].IPAddress
+	}
+	return s
 }
 
 // ServerByName returns the server of that name, nil if there is none.
@@ -148,7 +157,11 @@ func (c *Client) CreateServer(ctx context.Context, s model.ServerSpec) (*model.S
 	if err := c.dropStale(ctx, s.Name); err != nil {
 		return nil, err
 	}
-	if err := c.writeProject(s, c.opts.fileFor(s, cpus, mem)); err != nil {
+	subnet, err := c.subnetOf(ctx, s.Network)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.writeProject(s, c.opts.fileFor(s, cpus, mem, subnet)); err != nil {
 		return nil, &cloud.OpError{Op: "writing the compose file of " + s.Name, Write: true, Err: err}
 	}
 	if err := c.up(ctx, s.Name); err != nil {
@@ -259,9 +272,14 @@ func (c *Client) volumeOurs(ctx context.Context, v string) (exists, ours bool, e
 	return true, labels[labelManaged] == "true", nil
 }
 
-// removeVolumes deletes the volumes of the machine that viper made. One that viper did not make is an error.
+// removeVolumes deletes the volumes of the machine that viper made: home directory, Homebrew and the NATS state. One
+// that viper did not make is an error.
 func (c *Client) removeVolumes(ctx context.Context, name string) error {
-	for _, v := range []string{homeVolume(name), brewVolume(name)} {
+	states, err := c.stateVolumes(ctx, name)
+	if err != nil {
+		return err
+	}
+	for _, v := range append([]string{homeVolume(name), brewVolume(name)}, states...) {
 		exists, ours, err := c.volumeOurs(ctx, v)
 		if err != nil {
 			return err
@@ -356,7 +374,15 @@ func (c *Client) Leftovers(ctx context.Context, name string) ([]string, error) {
 	} else if side != nil {
 		out = append(out, "container "+dockerName(name))
 	}
-	for _, v := range []struct{ vol, what string }{{homeVolume(name), "home directory"}, {brewVolume(name), "Homebrew"}} {
+	states, err := c.stateVolumes(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	vols := []struct{ vol, what string }{{homeVolume(name), "home directory"}, {brewVolume(name), "Homebrew"}}
+	for _, v := range states {
+		vols = append(vols, struct{ vol, what string }{v, "NATS state"})
+	}
+	for _, v := range vols {
 		exists, ours, err := c.volumeOurs(ctx, v.vol)
 		if err != nil {
 			return nil, err

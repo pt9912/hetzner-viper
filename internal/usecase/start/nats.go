@@ -244,7 +244,7 @@ func (r *runner) natsIdentity(ctx context.Context) (string, error) {
 // server on a VM, the name of the Service of the group in a cluster (the address of a pod changes).
 func (r *runner) natsHost(serverIP string) string {
 	if r.c.IsContainer() {
-		return model.NATSServiceHost(r.c.NATS.Group, r.c.Setting("K8S_NAMESPACE", "viper"))
+		return r.c.NATSServerHost()
 	}
 	return serverIP
 }

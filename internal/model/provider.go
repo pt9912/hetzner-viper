@@ -41,7 +41,7 @@ func LookupProvider(name string) (info ProviderInfo, ok bool) {
 		return ProviderInfo{DiskSetting: "K8S_DISK_GB", Size: "2x4", Container: true, NATS: true}, true
 	case "compose":
 		// the Docker host is the Docker context (SERVER_LOCATION, no default); the image is COMPOSE_IMAGE (no default)
-		return ProviderInfo{Size: "2x4", Container: true}, true
+		return ProviderInfo{Size: "2x4", Container: true, NATS: true}, true
 	case "gcp":
 		// the credentials come from Google's application default credentials; the project is a setting
 		return ProviderInfo{DiskSetting: "GCP_ROOT_GB", Credentials: []string{"GCP_PROJECT"}, Secrets: []string{"GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_OAUTH_ACCESS_TOKEN"}, Size: "e2-standard-2", Region: "europe-west3-b", Image: "ubuntu-24.04", NATS: true}, true

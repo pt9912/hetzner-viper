@@ -117,8 +117,9 @@ const ListenPodIP = "$POD_IP"
 // the address of its pod (read back by ParseEndpoint).
 const advertisePrefix = "# viper-advertise "
 
-// dnsNameRe is the name of a Service in a cluster, with its namespace.
-var dnsNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
+// dnsNameRe is the name the clients of a server in a container connect to: the Service of a cluster with its namespace, or
+// the alias of the server on the network of a Docker host (one label).
+var dnsNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$`)
 
 // Permissions are the subjects a machine may use (the default policy, §6 of the plan): it
 // publishes to its own subtree and to the request subjects of the others, and listens to the
@@ -223,7 +224,7 @@ func (c Config) Render() (string, error) {
 	listen := fmt.Sprintf("%q", c.Host)
 	if c.Listen != "" {
 		if c.Listen != ListenPodIP || !dnsNameRe.MatchString(c.Host) || net.ParseIP(c.Host) != nil {
-			return "", fmt.Errorf("nats-server in a pod listens on %s and is reached by the name of a Service, not %q (%q)", ListenPodIP, c.Listen, c.Host)
+			return "", fmt.Errorf("nats-server in a pod listens on %s and is reached by a DNS name (a Service or a network alias), not %q (%q)", ListenPodIP, c.Listen, c.Host)
 		}
 		listen = ListenPodIP
 	} else if ip := net.ParseIP(c.Host); ip == nil || ip.To4() == nil || !ip.IsPrivate() {
