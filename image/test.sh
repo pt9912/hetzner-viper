@@ -76,7 +76,9 @@ docker rm -f "$name" >/dev/null
 
 # 2: a volume over the home directory (world-writable and empty, as a cluster makes it): the entrypoint brings the files
 # a first start that was cut off left half a Homebrew and a copy in progress on the volume
-mkdir -p "$t/brew/.linuxbrew/bin" "$t/brew/.linuxbrew.partial" && touch "$t/brew/.linuxbrew/junk" "$t/brew/.linuxbrew.partial/junk"
+# (made as builder, as the entrypoint of the interrupted start was: the user of this script may be another uid, and what it
+# makes could not be removed by builder)
+docker run --rm --user 1000:1000 --entrypoint sh -v "$t/brew:/b" "$image" -c 'mkdir -p /b/.linuxbrew/bin /b/.linuxbrew.partial && touch /b/.linuxbrew/junk /b/.linuxbrew.partial/junk'
 run "$name-2" 2223 "$t/home" "$t/brew"
 check "starts with an empty volume over the home directory" wait_ssh 2223 300
 check "an empty volume is seeded" sshc 2223 'test -f ~/.tmux.conf && test -x ~/.local/bin/claude && test -f ~/.viper-seeded'
