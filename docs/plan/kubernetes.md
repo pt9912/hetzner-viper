@@ -132,6 +132,7 @@ D8 **Namen der Einstellungen:** `K8S_*` (zu bestätigen).
 | 3 | Anbindung | `ServerSpec`, `Server.Proxy`, `WriteConfig` mit ganzer `Server`-Angabe und alle Stellen aus §5 Punkt 4, „Container“-Fähigkeit in `start`/`check` (§5 Punkt 3), `K8S_*` in `settingsfile`, `viper k8s-proxy`, Quoting der SSH-Konfiguration |
 | 4 | Echter Lauf | k3d: `up`, `check`, `ssh`, Neustart, `down`; Handbuch (Kapitel zum Anbieter) |
 | 5 | NATS | Dienstname und Zertifikat, Prozessverwalter, NetworkPolicy als Gruppennetz; Lauf mit drei Pods |
+| 6 | Verwaltete Cluster | EKS, GKE, AKS nach §16: Einstellungen für Knotengruppe und Image-Zugang, Preflight, Handbuch; **Lauf nur, wenn ein Konto da ist** |
 
 ## 11 Definition of Done
 
@@ -223,3 +224,34 @@ Frage: Kommen wir in den Containern ohne root aus, geht Homebrew, und Docker **m
 1. Docker im Pod braucht heute einen **privilegierten Container**. Der Namespace braucht Pod Security `privileged`; ein kompromittierter Daemon ist Root auf dem Knoten. In k3d lokal ist das vertretbar, in geteilten Clustern nicht. Das Handbuch sagt es so.
 2. Wer das nicht darf, nimmt `remote` (ein Daemon außerhalb) oder `none`. Langfristig sind Sysbox, Kata oder die Benutzer-Namensräume der Cluster der Weg ohne Privileg; das hängt vom Cluster ab und ist nicht Teil dieses Plans.
 3. `K8S_DOCKER=dind` bestimmt auch den Sicherheitskontext des Pods und die Pod-Security-Stufe, auf die der Preflight prüft (§5 Punkt 7).
+
+## 16 Verwaltete Cluster (AWS EKS, Google GKE, Azure AKS)
+
+**Stand: nicht geprüft.** Es gibt hier kein Konto; alles in dieser Tabelle ist Wissen über die Dienste *[?]*, kein Test. Die Anforderung „Docker muss gehen“ (§15) und die Wahl `dind` gelten für k3d. In verwalteten Clustern gilt: `viper` selbst braucht dafür **nichts anderes als eine `kubeconfig`**; die Unterschiede liegen im Cluster.
+
+**Was `viper` zusätzlich braucht (kleine Änderungen am Plan):**
+
+| Bedarf | Warum | Änderung |
+|---|---|---|
+| **Anmeldung über ein Hilfsprogramm** | Die `kubeconfig` von EKS (`aws eks get-token`), GKE (`gke-gcloud-auth-plugin`) und AKS (`kubelogin`) ruft beim Verbinden ein Programm auf. `client-go` kann das (Exec-Plugins), das Programm muss auf dem Rechner des Nutzers installiert sein | keine; der Preflight meldet es, wenn die Anmeldung scheitert |
+| **Image in einem Register des Clusters** | Der Cluster zieht das Image aus ECR, Artifact Registry oder ACR, nicht von deinem Rechner (`k3d image import` gibt es nicht); privat heißt `imagePullSecrets` | `K8S_IMAGE_PULL_SECRET` (Name eines vorhandenen Secrets, `viper` legt keines an); `make image` bekommt ein Ziel zum Hochladen (nutzt `docker push`, Anmeldung macht der Nutzer) |
+| **Mehrere Architekturen** | AWS Graviton, GKE Axion und AKS Ampere sind arm64; x86 ist der Standard | Image für `amd64` und `arm64` (D7 war nur amd64) *[(zu bestätigen)]* |
+| **Eine eigene Knotengruppe für `dind`** | Ein privilegierter Container auf gemeinsamen Knoten ist Root dort; Knotengruppe mit Taint, Pod mit Toleration | `K8S_NODE_SELECTOR` und `K8S_TOLERATION` (waren in §8 „später“) |
+| **Datenträger-Klasse** | EKS braucht das EBS-CSI-Add-on für `gp3`, GKE hat `standard-rwo`, AKS `managed-csi`; ein Volume liegt in **einer Zone**, der Pod muss danach dort laufen | Preflight prüft, ob eine StorageClass da ist; `WaitForFirstConsumer` ist üblich; bei Ausfall der Zone bleibt der Pod hängen (Hinweis im Handbuch) |
+| **Rechte der Anmeldung** | `pods/portforward`, Secrets, StatefulSets, PVC, bei `dind` privilegierte Pods | Preflight mit `SelfSubjectAccessReview` (§5 Punkt 7) |
+| **Verbindung nicht abreißen lassen** | Der Port-Forward geht durch die API und meist durch einen Load Balancer mit Leerlaufgrenze (etwa AWS-NLB 350 Sekunden) | `ServerAliveInterval` in der SSH-Konfiguration, die `viper` schreibt |
+| **Erreichbarkeit der API** | Private Cluster sind nur über VPN oder Bastion erreichbar | Preflight sagt, dass die API nicht antwortet; mehr nicht |
+| **Internetzugang der Pods** | `brew`, Claude-Installer, Git-Klon brauchen ausgehende Verbindungen (NAT-Gateway) | Preflight kann es nicht prüfen; Handbuch |
+
+**Was in den Diensten anders ist *[?]*:**
+
+| | EKS | GKE | AKS |
+|---|---|---|---|
+| privilegierte Pods (`dind`) | nur auf EC2-Knoten, **nicht auf Fargate** | nur Standard-Cluster, **nicht Autopilot** | ja, auf normalen Knoten |
+| NetworkPolicy (Gruppennetz bei NATS) | nur mit aktiviertem Dienst im VPC-CNI oder Calico | mit Dataplane V2 oder aktivierter Option | nur mit Azure NPM, Calico oder Cilium **beim Anlegen** gewählt |
+| Standard-Anmeldung | `aws` CLI | `gcloud` mit Plugin | `az` mit `kubelogin` |
+| Register | ECR | Artifact Registry | ACR |
+
+Wo `dind` nicht erlaubt ist (Fargate, Autopilot, „restricted“-Namespaces), bleibt `K8S_DOCKER=remote` oder `none` (§15). Wo NetworkPolicy nicht durchgesetzt wird, gilt der NATS-Schutz des Ports nur durch die Schichten des Servers (Schlüssel, Zertifikat, Bindung an die Pod-IP), nicht durch das Netz; `viper check` kann das nicht erkennen, das Handbuch sagt es.
+
+**Aussage über die Qualität:** In k3d getestet; EKS, GKE und AKS nur nach dem Plan gebaut, ein Lauf ist erst mit einem Konto belegt (wie bei AWS, Google Cloud und Azure als VM-Anbieter). Kosten entstehen durch die Knoten, nicht durch `viper`; ein Cluster ohne freie Knoten lässt den Pod in „Pending“ hängen, und der Preflight kann nur die vorhandene Kapazität nennen.
