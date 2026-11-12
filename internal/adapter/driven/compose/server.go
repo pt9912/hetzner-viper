@@ -217,7 +217,30 @@ func (c *Client) repairDocker(ctx context.Context, name string) error {
 	if _, err := c.docker(ctx, "restart", dockerName(name)); err != nil {
 		return &cloud.OpError{Op: "restarting the Docker service of " + name, Write: true, Err: err}
 	}
-	return nil
+	return c.waitHealthy(ctx, dockerName(name))
+}
+
+// waitHealthy waits until the health check of the container passes: the daemon needs several seconds after a restart,
+// and viper goes on with commands that need it.
+func (c *Client) waitHealthy(ctx context.Context, name string) error {
+	deadline := time.Now().Add(c.opts.timeout())
+	for {
+		out, err := c.docker(ctx, "container", "inspect", "--format", "{{if .State.Health}}{{.State.Health.Status}}{{end}}", "--", name)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(out) == "healthy" {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%s is not healthy after %s", name, c.opts.timeout())
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 // ours reports whether the volume carries viper's label. A volume that is not there is not ours and no error.

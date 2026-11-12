@@ -87,6 +87,8 @@ func (h *host) run(_ context.Context, _, name string, args ...string) (string, s
 		return "sha256:1\n", "", nil
 	case args[0] == "network":
 		return strings.Repeat("abc\n", h.networks), "", nil
+	case args[0] == "container" && args[1] == "inspect" && args[2] == "--format":
+		return "healthy\n", "", nil
 	case args[0] == "container" && args[1] == "inspect":
 		return h.inspect(args[len(args)-1])
 	case args[0] == "container" && args[1] == "rm":
@@ -472,7 +474,7 @@ func TestEnsureRunningRepairsTheDockerService(t *testing.T) {
 	if err := c.EnsureRunning(context.Background(), "web"); err != nil {
 		t.Fatal(err)
 	}
-	if h.called("restart web-docker") != 1 {
+	if h.called("restart web-docker") != 1 || h.called("{{.State.Health.Status}}") < 1 {
 		t.Fatalf("the Docker service was not restarted: %v", h.calls)
 	}
 	h.containers["web"].run = false // stopped

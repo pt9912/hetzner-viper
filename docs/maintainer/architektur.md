@@ -31,7 +31,7 @@ Die Abhängigkeiten laufen nach innen: `model` kennt nichts, die Ports kennen nu
 
 Der Login-Schlüssel muss kein Objekt beim Anbieter sein: `LoginKey.Ref` ist der Name des Schlüssels oder der Schlüssel selbst (GCP, Azure).
 
-## Container als Maschinen (Kubernetes)
+## Container als Maschinen (Kubernetes, Docker Compose)
 
 `PROVIDER=kubernetes` (`internal/adapter/driven/kubernetes`) macht aus einer Maschine ein StatefulSet mit einem Pod, einem Secret (Schlüssel) und einem PVC. Planung, Entscheidungen und Ergebnisse: `docs/plan/kubernetes.md`. Was es von den VM-Anbietern unterscheidet, und wo der Code es merkt:
 
@@ -40,6 +40,9 @@ Der Login-Schlüssel muss kein Objekt beim Anbieter sein: `LoginKey.Ref` ist der
 * `ServerSpec.Bootstrap` trägt dieselben Schlüssel wie `UserData` (cloud-init) als Werte, für den Adapter.
 * Das Image (`image/`, `viper image build` mit den eingebetteten Dateien aus `embed.go`, `make image`, `make image-test`, Workflow `image.yml` für ghcr.io; ein Test prüft, dass alles im Kontext steht, was das `Dockerfile` kopiert) läuft als uid 1000 ohne Rechte; Härtung von `sshd`, `tmux`- und VS-Code-Einstellungen nimmt `image/seed.py` aus `cloud-init.yaml`; die Versionen und Prüfsummen von `nats-server` und `nats` im `Dockerfile` hält ein Test gleich mit `internal/natsserver`.
 * NATS: das Gruppennetz ist eine NetworkPolicy (Anlegen = Sperre), der Server wird über einen headless Service erreicht (Zertifikat auf den Dienstnamen), `nats-server` läuft als Prozess des Containers (`image/nats-supervisor.sh`, Neuladen per `SIGHUP` über die PID-Datei), die Konfiguration sagt `host: $POD_IP` (`natsserver.Config.Listen`) und trägt den Dienstnamen als `# viper-advertise`.
+
+
+`PROVIDER=compose` (`internal/adapter/driven/compose`) macht aus einer Maschine ein Compose-Projekt auf dem lokalen Docker-Host: `viper up` schreibt die `compose.yaml` selbst (feste Typen, gleiche Eingabe gleiche Datei), legt die Schlüssel als Dateien daneben und startet mit `docker compose up -d --no-recreate --wait`. Ein vorhandener Container wird nie neu angelegt; `cloud.Starter` (`EnsureRunning`) startet ihn und repariert den `dind`-Dienst nach einem Neustart allein. Der Zugang ist `viper docker-proxy` (`docker exec` mit `/dev/tcp`). Planung, Prüfungen und Ergebnisse: `docs/plan/compose.md`. Der Adapter ruft nur das Programm `docker` über `system.Runner` auf (kein SDK); Tests nutzen einen Fake des `docker`-Aufrufs, der Container und Volumes aus der erzeugten Datei nachbildet.
 
 ## NATS-Gruppen
 
@@ -125,5 +128,6 @@ Bei einem Issue: Die Seite im Browser ansehen, das Muster in der Auswertung anpa
 |---|---|
 | AWS | echte Läufe: Adapter, `up` und `down`, x86 und ARM, ohne Cloudflare |
 | Hetzner | Server anlegen und löschen gegen nachgebildete Schnittstellen (die früheren Bash-Skripte liefen echt); NATS-Gruppen (Netzwerke, Labels, Bootstrap, Clients, `down`, `check`) auch in echten Läufen |
+| Docker Compose | echter Lauf auf dem lokalen Docker-Host: `up`, `check`, `ssh`, Docker im Rechner (dind), Neustart und Reparatur, `up` auf vorhandener Maschine, `down`, Reste; ohne NATS; Docker Desktop und entfernte Hosts nicht getestet |
 | Kubernetes | echte Läufe in k3d: Adapter, `up`, `check`, `ssh`, Docker (dind), Ersetzen des Pods, `down`, NATS-Gruppe aus drei Pods mit `viper nats` und Betreiber, NetworkPolicy; EKS, GKE, AKS nicht in einem Konto getestet |
 | Google Cloud, Azure | nur gegen nachgebildete Schnittstellen; die SDK-Schicht ist vom Compiler geprüft, nicht gegen ein Konto gelaufen |

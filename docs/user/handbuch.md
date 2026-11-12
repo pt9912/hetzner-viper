@@ -1,8 +1,8 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.94  
+Version: 1.95  
 Software-Version: v0.17.0  
-Stand: 11.11.2026  
+Stand: 12.11.2026  
 
 ## 1. Einleitung
 
@@ -393,6 +393,45 @@ Mit `PROVIDER=kubernetes` ist ein „Rechner“ ein **Pod** in einem Kubernetes-
 * **Docker (`K8S_DOCKER`):** Standard ist `dind`, ein Docker-Daemon als zweiter, **privilegierter** Container im Pod. Wer ihn übernimmt, hat Root auf dem Knoten: Nutzen Sie das in k3d oder einem eigenen Cluster, nicht in einem geteilten. Wo privilegierte Pods verboten sind, nehmen Sie `remote` (ein Daemon außerhalb, `K8S_DOCKER_HOST`) oder `none` (kein Docker).
 * **NATS-Gruppen** funktionieren wie sonst. Der Server der Gruppe ist im Cluster unter `viper-nats-<gruppe>.<namespace>.svc` erreichbar. Ersetzt der Cluster seinen Pod, arbeiten die Clients ohne neue Anmeldung weiter. **Der Schutz des Ports im Netz setzt voraus, dass der Cluster NetworkPolicies durchsetzt** (k3d tut es; bei anderen Clustern hängt es vom Netz-Plugin ab).
 * Startet ein Pod nicht oder bleiben Reste im Cluster, hilft Kapitel 7.
+
+### Einen Rechner als Container auf dem eigenen Docker-Host betreiben (`PROVIDER=compose`)
+
+Mit `PROVIDER=compose` ist ein „Rechner“ ein **Container** auf dem Docker-Host Ihres eigenen Computers. `viper up` schreibt dafür eine `compose.yaml` und startet sie mit `docker compose`. Sie arbeiten mit denselben Befehlen wie sonst (`up`, `check`, `ssh`, `vscode`, `down`, Gruppen) und brauchen weder ein Cloud-Konto noch einen Cluster, nur Docker. NATS-Gruppen gehen mit diesem Anbieter noch nicht.
+
+#### Voraussetzung
+
+* Docker mit dem Plugin `docker compose` auf Ihrem Computer; der Daemon läuft auf **diesem** Computer (ein Docker-Host über `ssh://` wird nicht unterstützt, weil die Schlüssel des Rechners als Dateien in den Container eingehängt werden). Geprüft ist Linux; Docker Desktop (Windows, macOS) ist nicht einzeln geprüft.
+* Das Recht, den Docker-Socket zu benutzen.
+* Der Container braucht Internetzugang (Homebrew-Pakete, Claude-Installer, Git).
+
+#### Vorgehen
+
+1. **Image bauen:** `viper image build`. Das Image liegt danach im Docker-Host und braucht kein Register. Die Ausgabe nennt den Namen; er kommt in Schritt 2 als `COMPOSE_IMAGE` hinein (`--tag NAME:TAG` wählt einen eigenen).
+2. **Einstellungen** in `machines/<rechner>.env.local` oder in der Gruppendatei (nicht in der allgemeinen `.env.local`):
+
+   ```
+   PROVIDER=compose
+   DNS_PROVIDER=none
+   SERVER_LOCATION=default
+   COMPOSE_IMAGE=<name aus Schritt 1>
+   COMPOSE_DOCKER=dind
+   SERVER_TYPE=2x4
+   ```
+
+   `SERVER_LOCATION` ist der Docker-Kontext (`default` ist der lokale Daemon) und Pflicht, ohne Standard. `SERVER_TYPE` ist `<CPUs>x<GiB Speicher>`. `COMPOSE_DOCKER=dind` müssen Sie ausdrücklich eintragen: Der Docker im Rechner ist ein **privilegierter** Container, und der Preflight meldet sonst einen Fehler (siehe Hinweise).
+3. `viper preflight <rechner>`, dann `viper up <rechner> [--repo URL]`. Danach `viper ssh <rechner>`, `viper vscode <rechner>`, `viper check <rechner>`. Zum Löschen: `viper down <rechner>`.
+
+#### Ergebnis
+
+`viper up` meldet „The machine is the container …“ und am Ende „Ready“ mit dem Arbeitsverzeichnis. Auf dem Docker-Host laufen die Container `<präfix>-<rechner>` und mit `dind` zusätzlich `<präfix>-<rechner>-docker`. Das Repository liegt in `/home/builder/work/<repo>`. `docker run` im Rechner startet Container im Docker des Rechners, nicht auf Ihrem Host.
+
+#### Hinweise und Warnungen
+
+* **Zugang:** Der Container hat keine Adresse und keinen veröffentlichten Port; `viper` verbindet sich mit `docker exec` (`viper docker-proxy`). `ssh`, `scp` und `viper ssh` funktionieren wie sonst.
+* **Daten:** Heimverzeichnis (mit Arbeitsverzeichnis) und Homebrew liegen auf zwei Docker-Volumes `<name>-home` und `<name>-brew`. Sie überstehen einen Neustart des Containers und `viper up` auf einer vorhandenen Maschine; `viper up` legt einen vorhandenen Container nie neu an (eine geänderte Größe oder ein anderes Image gilt erst nach `viper down` und neuem `viper up`). `viper down` löscht beide mit allen Daten, nach den Abfragen.
+* **Docker im Rechner (`COMPOSE_DOCKER`):** `dind` ist ein Docker-Daemon in einem **privilegierten** zweiten Container. Wer ihn übernimmt, hat Root auf Ihrem Host: Nutzen Sie ihn nur auf Ihrem eigenen Computer. Statt dessen gehen `remote` (ein Daemon außerhalb, `COMPOSE_DOCKER_HOST`) und `none`. Die Images im Docker des Rechners gehen verloren, wenn der Container neu angelegt wird. Wird nur der Rechner-Container neu gestartet (Absturz, `docker restart`), startet `viper up` den zweiten Container neu und wartet, bis der Daemon antwortet.
+* **Schlüssel:** Die Schlüssel des Rechners liegen als Dateien im Zustandsverzeichnis (`~/.local/state/hetzner-claude/compose/<name>/`, nur für Sie lesbar) und bleiben bis `viper down`. Neue erlaubte Schlüssel gelten erst für einen neu angelegten Rechner.
+* Startet ein Container nicht oder bleiben Reste auf dem Docker-Host, hilft Kapitel 7.
 
 ### Rechner über NATS verbinden (NATS-Gruppe)
 
@@ -942,7 +981,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | Einstellung | Bedeutung | Standard |
 |---|---|---|
 | `SERVER_PREFIX` | Namensanfang aller Ressourcen | `claude` |
-| `PROVIDER` | Anbieter: `hetzner`, `aws`, `gcp`, `azure` oder `kubernetes`; wird nur aus den Einstellungsdateien gelesen, nicht aus der Shell | `hetzner` |
+| `PROVIDER` | Anbieter: `hetzner`, `aws`, `gcp`, `azure`, `kubernetes` oder `compose`; wird nur aus den Einstellungsdateien gelesen, nicht aus der Shell | `hetzner` |
 | `SERVER_TYPE` | Servertyp (Hetzner), Instanztyp (AWS), Maschinentyp (GCP) bzw. VM-Größe (Azure) (Kubernetes: `<CPUs>x<GiB>`) | `cpx32`, `t3.large`, `e2-standard-2` bzw. `Standard_D2s_v5` |
 | `SERVER_LOCATION` | Standort (Hetzner), Region oder Zone (AWS, z. B. `eu-central-1b`), Zone (GCP, z. B. `europe-west3-b`) bzw. Region (Azure, z. B. `germanywestcentral`) (Kubernetes: der Kontext der `kubeconfig`, Pflicht) | `fsn1`, `eu-central-1`, `europe-west3-b` bzw. `germanywestcentral` |
 | `SERVER_IMAGE` | Betriebssystem-Image; bei AWS, GCP und Azure `ubuntu-<Version>` (AWS auch `ami-…`, GCP auch `projects/…`, Azure auch `Herausgeber:Angebot:SKU:Version`) | `ubuntu-26.04` (Hetzner), sonst `ubuntu-24.04` |
@@ -956,6 +995,8 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `AZURE_SUBSCRIPTION_ID` | Azure-Abonnement (nur Azure, Pflichtangabe) | leer |
 | `AZURE_RESOURCE_GROUP`, `AZURE_SUBNET_ID`, `AZURE_ROOT_GB` | Ressourcengruppe, vorhandenes Subnetz bzw. Größe der Systemplatte in GB (nur Azure) | `viper`, eigenes Netz bzw. `64` |
 | `K8S_IMAGE` | Image der Rechner (nur `kubernetes`, Pflichtangabe; `viper image build` baut es) | leer |
+| `COMPOSE_IMAGE` | Image der Rechner (nur `compose`, Pflichtangabe; `viper image build` baut es) | leer |
+| `COMPOSE_DOCKER`, `COMPOSE_DOCKER_HOST`, `COMPOSE_DOCKER_IMAGE` | Docker auf dem Rechner: `dind` (privilegierter zweiter Container), `remote` (Daemon unter `COMPOSE_DOCKER_HOST`) oder `none`; Image des zweiten Containers (nur `compose`) | `dind`, leer, `docker:dind` |
 | `K8S_NAMESPACE`, `K8S_STORAGE_CLASS`, `K8S_DISK_GB`, `K8S_BREW_GB` | Namespace, StorageClass, Größe des Volumes für das Heimverzeichnis und Größe des Volumes für Homebrew in GB (nur `kubernetes`) | `viper`, die des Clusters, `20` bzw. `10` |
 | `K8S_DOCKER`, `K8S_DOCKER_HOST`, `K8S_DOCKER_IMAGE` | Docker auf dem Rechner: `dind` (privilegierter Sidecar), `remote` (Daemon unter `K8S_DOCKER_HOST`) oder `none`; Image des Sidecars (nur `kubernetes`) | `dind`, leer, `docker:dind` |
 | `NATS_ENABLED` | `true`: der Rechner gehört zu einer NATS-Gruppe (nur Hetzner); `false` oder leer: aus | `false` |
@@ -1019,6 +1060,17 @@ Die Aufgabe beschreibt das Kapitel „Einen Rechner als Pod in einem Kubernetes-
 * **Docker:** Mit `dind` ist der Pod erst bereit, wenn der Daemon antwortet. Der Daemon lauscht nur im Pod selbst (ohne Anmeldung ist er sonst für jeden Pod des Clusters offen). Er hat sein eigenes Lager für Images, das mit dem Pod verschwindet, und keine eigenen Grenzen für CPU und Speicher. Der Preflight warnt vor dem privilegierten Container und meldet einen Fehler, wenn der Namespace Pod Security mit einer anderen Stufe als `privileged` erzwingt.
 * **Register mit Anmeldung:** `K8S_IMAGE_PULL_SECRET` nennt ein Secret vom Typ `docker-registry`, das Sie selbst im Namespace anlegen. `viper` trägt es in den Pod ein und prüft im Preflight, dass es da ist; es ändert oder löscht es nie. Das Secret muss im Namespace liegen, den `K8S_NAMESPACE` nennt; legen Sie den Namespace dafür zuerst an.
 * **Nicht geprüft** sind VS Code Remote-SSH über den Proxy, ein Register mit Anmeldung (`K8S_IMAGE_PULL_SECRET`) und EKS, GKE und AKS in einem echten Konto. Die Anzeige von Arbeitsspeicher und Platte (`viper check`, `viper ssh`) zeigt die Werte des Knotens, nicht die Grenzen des Pods. `viper find` kennt für Kubernetes keine Preise.
+
+### Docker Compose: Einstellungen und was `viper` auf dem Docker-Host anlegt
+
+Die Aufgabe beschreibt das Kapitel „Einen Rechner als Container auf dem eigenen Docker-Host betreiben“. Hier steht das Nachschlagbare.
+
+* **Einstellungen:** `PROVIDER=compose`, `SERVER_LOCATION` (der Docker-Kontext, Pflicht, ohne Standard: `viper` nimmt nie den „aktuellen“ Kontext, damit nichts auf dem falschen Host entsteht; `default` ist der lokale), `COMPOSE_IMAGE` (Pflicht), `SERVER_TYPE` (`<CPUs>x<GiB>`, Standard `2x4`), `COMPOSE_DOCKER` (`dind`, `remote` oder `none`), `COMPOSE_DOCKER_HOST` (bei `remote`), `COMPOSE_DOCKER_IMAGE` (Image des Daemons bei `dind`, Standard `docker:dind`). `WORKSPACE_DIR` muss unter `/home/builder/` liegen (Standard `/home/builder/work`). Eine Größe für die Volumes gibt es nicht.
+* **Abgelehnt** werden: ein `DNS_PROVIDER` außer `none`, `VIPER_SWAP`, `VIPER_CODE_SERVER=1`, ein `WORKSPACE_DIR` außerhalb von `/home/builder/`, ein unbekannter Wert von `COMPOSE_DOCKER` und `remote` ohne `COMPOSE_DOCKER_HOST`. `SSH_ALLOWED_CIDRS` wird ignoriert. NATS-Gruppen sind mit diesem Anbieter nicht möglich.
+* **Was `viper` anlegt:** je Rechner ein Compose-Projekt `viper-<präfix>-<rechner>` mit dem Container des Rechners (Größe als `cpus` und `mem_limit`, Neustart `unless-stopped`), mit `dind` dem Container `<name>-docker`, und zwei Volumes `<name>-home` und `<name>-brew`. Alles trägt das Label `viper-managed`; `viper` ändert und löscht nur, was es trägt. Die `compose.yaml` und die Schlüssel liegen unter `~/.local/state/hetzner-claude/compose/<name>/`; die Datei wird bei jedem `viper up` eines neuen Rechners geschrieben und ist nicht zum Bearbeiten da. Zwei Aufrufe für denselben Rechner laufen nacheinander (eine Sperre je Rechner).
+* **Reste:** Fehlt der Container eines Rechners, weil `viper down` unterbrochen wurde oder jemand ihn anders gelöscht hat (etwa mit `docker rm`), bleiben Volumes und Dateien samt Daten stehen. `viper down <rechner>` nennt sie dann und löscht sie nach der Abfrage `CLEANUP`; `viper up <rechner>` nimmt die Volumes dagegen wieder in Betrieb (nur was ein unterbrochenes `viper down` schon als gelöscht markiert hatte, ersetzt es durch neue).
+* **Der Preflight** prüft Docker, den Kontext (nur ein lokaler Daemon), das Compose-Plugin, das Image und die Größe; er meldet `dind` ohne ausdrückliches `COMPOSE_DOCKER` als Fehler und warnt bei 20 oder mehr Docker-Netzen.
+* **Nicht geprüft** sind Docker Desktop, rootless Docker und Podman als Host sowie VS Code Remote-SSH über den Proxy. Die Anzeige von Arbeitsspeicher und Platte (`viper check`) zeigt die Werte des Hosts, nicht die Grenzen des Containers. `viper find` kennt für Compose keine Preise.
 
 ### Google Cloud und Azure als Anbieter (nur gegen nachgebildete Schnittstellen getestet)
 
@@ -1110,6 +1162,16 @@ Der DNS-Eintrag ist ein A-Record ohne Cloudflare-Proxy, weil dieser SSH nicht we
 
 **Ursache:** `viper down` wurde unterbrochen oder ein Cluster war nicht erreichbar.
 **Lösung:** `viper down <rechner>` meldet „Server … not found“, nennt Secret und Volumes, die übrig sind, und löscht sie nach der Abfrage `CLEANUP` (ihre Daten gehen verloren). Wollen Sie den Rechner dagegen mit seinen Daten wiederhaben, führen Sie `viper up <rechner>` aus: Es nimmt die Volumes wieder in Betrieb. Was `viper` angelegt hat, finden Sie mit `kubectl -n viper get all,pvc,secret,netpol -l viper-managed=true`.
+
+### Reste auf dem Docker-Host nach einer abgebrochenen Löschung (Docker Compose)
+
+**Ursache:** `viper down` wurde unterbrochen oder ein Container wurde von Hand gelöscht.
+**Lösung:** `viper down <rechner>` meldet „Server … not found“, nennt Volumes, Container und Dateien, die übrig sind, und löscht sie nach der Abfrage `CLEANUP` (ihre Daten gehen verloren). Wollen Sie den Rechner dagegen mit seinen Daten wiederhaben, führen Sie `viper up <rechner>` aus. Was `viper` angelegt hat, finden Sie mit `docker ps -a --filter label=viper-managed=true` und `docker volume ls --filter label=viper-managed=true`.
+
+### Meldung: "docker not running" nach einem Neustart des Containers (Docker Compose)
+
+**Ursache:** Der Container des Rechners wurde allein neu gestartet (`docker restart`, Absturz, Neustart des Hosts); der zweite Container mit dem Docker-Daemon hängt dann am alten Netz.
+**Lösung:** `viper up <rechner>` erkennt das, startet den zweiten Container neu und wartet, bis der Daemon antwortet.
 
 ### Meldung: "SSH not reachable; server retained."
 
@@ -1397,3 +1459,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.92 | nach v0.17.0 | NATS-Gruppen auch bei Azure (Sperre des ersten Starts nicht belegt); Preflight prüft die Rechte für NATS bei AWS und Google Cloud; `viper check` meldet eine veränderte Regel der Gruppe und den Betreiber-Eintrag (Schlüssel dieses Rechners gegen Eintrag am Server); `down --group` weist auf einen zurückbleibenden Betreiber-Schlüssel hin. |
 | 1.93 | nach v0.17.0 | `viper nats listen`: `--topic` mehrfach oder als Liste; neu `--all` zeigt auch die Direktnachrichten zwischen anderen Rechnern. |
 | 1.94 | nach v0.17.0 | Neu: Kubernetes als Anbieter (`PROVIDER=kubernetes`): Rechner als Pods, `viper image build`, `viper k8s-proxy`, Einstellungen `K8S_*`, NATS-Gruppen im Cluster. |
+| 1.95 | nach v0.17.0 | Neu: Docker Compose als Anbieter (`PROVIDER=compose`): Rechner als Container auf dem lokalen Docker-Host, `viper docker-proxy`, Einstellungen `COMPOSE_*` (ohne NATS-Gruppen). |

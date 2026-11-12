@@ -117,7 +117,7 @@ D9 **Privilegierter `dind`-Dienst:** der Preflight meldet es als **Fehler**, sol
 | 0 | Verifikation (erledigt, §15) | Belegt sind schon (§13, §14): Secrets in der langen Schreibweise, der Transport (mit der Abhilfe `wait -n; kill`), das Gruppennetz als Sperre, Alias an einem `external`-Netz, die Eigenadresse aus `fib_trie`, der `dind`-Dienst und sein Verhalten beim Neustart. **Noch zu zeigen:** **1.** Zustand als Volumes, ein Wechsel, die Liste mit Filter (D7). **2.** Ein Rechner **nur** am Gruppennetz hat Internet. **3.** Der Transport mit einem echten `sshd` im Container und einer lange stehenden Sitzung. **4.** `viper up` auf einer laufenden Maschine startet nur (`--no-recreate`) und repariert den Docker-Dienst. **5.** Ein `dind`-Dienst mit dem echten Image `docker:dind` und `service_healthy`. |
 | 1 | Adapter (erledigt, §16) | `compose`-Adapter gegen einen Fake des `docker`-Aufrufs: Datei erzeugen, `up`, `rm`, Leftovers, Preflight |
 | 2 | Anbindung (erledigt, §17) | Einstellungen, `sshconfig`, `viper docker-proxy`, Preflight |
-| 3 | Echter Lauf | lokales Docker: `up`, `check`, `ssh`, Docker im Rechner, Neustart des Containers (Daten bleiben), `down`; Handbuch |
+| 3 | Echter Lauf (erledigt, §18) | lokales Docker: `up`, `check`, `ssh`, Docker im Rechner, Neustart des Containers (Daten bleiben), `down`; Handbuch |
 | 4 | NATS | Gruppennetz, Name im Zertifikat, Zustand der Labels; Lauf mit drei Containern |
 
 ## 11 Teststrategie und Aussage über die Qualität
@@ -210,3 +210,22 @@ Der Anbieter ist angebunden; ein echter Lauf (Meilenstein 3) steht noch aus.
 * **Gemeinsame Stellen** statt fester Kubernetes-Texte: `Machine.DockerMode`, `Machine.Where` (Frage vor `viper down`), `Machine.DockerLogHint`; „a container“ statt „a pod“ in `check` und `start`.
 * **Neue Fähigkeit `cloud.Starter`** (`EnsureRunning`): `viper up` auf einer vorhandenen Maschine ruft sie auf (startet eine angehaltene Maschine, repariert den Docker-Dienst nach `docker restart`); ein Fehler bricht `up` ab. Kubernetes hat sie nicht.
 * **Tests:** Einstellungen (11 Fälle), `sshconfig`, `start` (mit und ohne Fehler beim Starten); der Proxy selbst braucht einen echten Container und wird in Meilenstein 3 geprüft.
+
+
+## 18 Ergebnis von Meilenstein 3 (Stand 12.11.2026)
+
+Echter Lauf mit dem gebauten `viper` auf dem Docker-Host dieser Umgebung (eigenes `HOME`, Präfix `ctest`, Image `viper-machine:test`, `COMPOSE_DOCKER=dind`):
+
+| Schritt | Ergebnis |
+|---|---|
+| `viper preflight` | Docker, Compose, Image, Größe in Ordnung; Warnung für `dind` |
+| `viper up w1` | Maschine bereit in 9,8 s einschließlich Homebrew; „The machine is the container …“; Arbeitsverzeichnis `/home/builder/work` |
+| `viper check w1` | ohne Fehler: Container, `docker running`, Homebrew, `sshd` nur mit Schlüssel |
+| `viper ssh w1` | `DOCKER_HOST=tcp://127.0.0.1:2375`, `docker run alpine` im Docker des Rechners, `brew` läuft; danach keine Transportprozesse im Container |
+| `viper up w1` auf laufender Maschine | derselbe Container (gleiche ID), „Existing server: reusing it.“ |
+| Neustart des Rechner-Containers allein | `check` meldet „docker not running“; **Fehler gefunden:** `viper up` startete den `dind`-Dienst neu, wartete aber nicht, bis der Daemon antwortet, und `check` schlug direkt danach fehl. Behoben: `waitHealthy` wartet auf die Gesundheit des Dienstes. Danach `up` Exit 0, `check` in Ordnung, `docker run` im Rechner geht. |
+| beide Container angehalten, `viper up` | startet sie wieder, Daten (Datei im Arbeitsverzeichnis) da |
+| Container von Hand gelöscht, `viper down` | „Server … not found“, nennt beide Volumes und die Dateien, löscht nach `CLEANUP`; danach keine Container, Volumes, Dateien, kein Eintrag in der SSH-Konfiguration |
+| `viper down` mit ungesicherter Datei | fragt `DISCARD` und `DELETE`; danach nichts mehr da |
+
+Offen bleiben: Docker Desktop, rootless Docker/Podman, VS Code Remote-SSH über den Proxy, ein Neustart des ganzen Hosts, ein entfernter Docker-Host (Version 1 lehnt ihn ab). Das Handbuch (1.95) beschreibt den Anbieter; NATS folgt in Meilenstein 4.
