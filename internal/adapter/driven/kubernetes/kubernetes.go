@@ -52,10 +52,13 @@ type Options struct {
 	StorageClass string // K8S_STORAGE_CLASS, "" for the default of the cluster
 	DiskGB       int    // K8S_DISK_GB
 	BrewGB       int    // K8S_BREW_GB: the volume of Homebrew
-	Docker       string // K8S_DOCKER: dind, remote or none
-	DockerHost   string // K8S_DOCKER_HOST: where a remote daemon is
-	DockerImage  string // K8S_DOCKER_IMAGE: the image of the daemon of the sidecar
-	NATSPort     int
+	// PullSecret is K8S_IMAGE_PULL_SECRET: the name of a Secret of type docker-registry in the namespace, for a registry
+	// that wants a login. The user makes it; viper only names it in the pod and never changes or deletes it.
+	PullSecret  string
+	Docker      string // K8S_DOCKER: dind, remote or none
+	DockerHost  string // K8S_DOCKER_HOST: where a remote daemon is
+	DockerImage string // K8S_DOCKER_IMAGE: the image of the daemon of the sidecar
+	NATSPort    int
 	// Poll is how long to wait between two looks at an object (default 2 s); Timeout how long to wait for a pod.
 	Poll, Timeout time.Duration
 }

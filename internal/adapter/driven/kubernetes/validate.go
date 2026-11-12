@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	authv1 "k8s.io/api/authorization/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -45,6 +46,7 @@ func (c *Client) Validate(ctx context.Context, ch model.Check) []model.Finding {
 		f.add(model.OK, "image %s", c.opts.Image)
 	}
 	c.checkNamespace(ctx, cs, &f)
+	c.checkPullSecret(ctx, cs, &f)
 	c.checkRights(ctx, cs, &f)
 	c.checkStorage(ctx, cs, &f)
 	c.checkDocker(&f)
@@ -154,5 +156,24 @@ func (c *Client) checkDocker(f *findings) {
 		f.add(model.Info, "K8S_DOCKER=none: no Docker on the machine")
 	default:
 		f.add(model.Fail, "K8S_DOCKER is dind, remote or none: %s", c.opts.Docker)
+	}
+}
+
+// checkPullSecret: the Secret for the registry (K8S_IMAGE_PULL_SECRET) is in the namespace and is a registry login.
+func (c *Client) checkPullSecret(ctx context.Context, cs kubernetes.Interface, f *findings) {
+	name, ns := c.opts.PullSecret, c.opts.namespace()
+	if name == "" {
+		return
+	}
+	sec, err := cs.CoreV1().Secrets(ns).Get(ctx, name, metav1.GetOptions{})
+	switch {
+	case apierrors.IsNotFound(err):
+		f.add(model.Fail, "K8S_IMAGE_PULL_SECRET: the Secret %s is not in the namespace %s (make the namespace and the Secret first: kubectl -n %s create secret docker-registry %s --docker-server=… --docker-username=… --docker-password=…)", name, ns, ns, name)
+	case err != nil:
+		f.add(model.Fail, "K8S_IMAGE_PULL_SECRET: the Secret %s could not be read: %s", name, c.Describe(err))
+	case sec.Type != corev1.SecretTypeDockerConfigJson && sec.Type != corev1.SecretTypeDockercfg:
+		f.add(model.Fail, "K8S_IMAGE_PULL_SECRET: the Secret %s is of type %q, not a registry login (kubernetes.io/dockerconfigjson)", name, sec.Type)
+	default:
+		f.add(model.OK, "the Secret %s logs the cluster in to the registry", name)
 	}
 }

@@ -348,3 +348,45 @@ func TestValidateReadsTheClusterAndNamesWhatIsWrong(t *testing.T) {
 		t.Errorf("%s", noCtx)
 	}
 }
+
+func TestAPullSecretIsNamedInThePodAndCheckedByThePreflight(t *testing.T) {
+	c := newCluster()
+	ctx := context.Background()
+	k := client(c, kubernetes.Options{Namespace: "w", Context: "k3d-x", PullSecret: "regcred"})
+	ch := model.Check{ServerName: "claude-a", Spec: model.ServerSpec{Size: "2x4"}}
+	if got := texts(k.Validate(ctx, ch)); !strings.Contains(got, "FAIL K8S_IMAGE_PULL_SECRET: the Secret regcred is not in the namespace w") || !strings.Contains(got, "docker-registry regcred") {
+		t.Errorf("a missing Secret, with the command to make it:\n%s", got)
+	}
+	_, _ = c.cs.CoreV1().Secrets("w").Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "regcred", Namespace: "w"}, Type: corev1.SecretTypeOpaque}, metav1.CreateOptions{})
+	if got := texts(k.Validate(ctx, ch)); !strings.Contains(got, "FAIL K8S_IMAGE_PULL_SECRET: the Secret regcred is of type \"Opaque\"") {
+		t.Errorf("a Secret that is no registry login:\n%s", got)
+	}
+	_ = c.cs.CoreV1().Secrets("w").Delete(ctx, "regcred", metav1.DeleteOptions{})
+	_, _ = c.cs.CoreV1().Secrets("w").Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "regcred", Namespace: "w"}, Type: corev1.SecretTypeDockerConfigJson}, metav1.CreateOptions{})
+	if got := texts(k.Validate(ctx, ch)); !strings.Contains(got, "ok the Secret regcred logs the cluster in to the registry") {
+		t.Errorf("%s", got)
+	}
+	if _, err := k.CreateServer(ctx, spec("claude-a")); err != nil {
+		t.Fatal(err)
+	}
+	sts, _ := c.cs.AppsV1().StatefulSets("w").Get(ctx, "claude-a", metav1.GetOptions{})
+	if got := sts.Spec.Template.Spec.ImagePullSecrets; len(got) != 1 || got[0].Name != "regcred" {
+		t.Errorf("the pod logs in with it: %v", got)
+	}
+	// viper does not own the Secret: deleting the server leaves it
+	srv, _ := k.ServerByName(ctx, "claude-a")
+	if err := k.DeleteServer(ctx, srv.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.cs.CoreV1().Secrets("w").Get(ctx, "regcred", metav1.GetOptions{}); err != nil {
+		t.Errorf("the Secret of the user stays: %v", err)
+	}
+	// without the setting the pod names none
+	plain := newCluster()
+	if _, err := client(plain, kubernetes.Options{Namespace: "w"}).CreateServer(ctx, spec("claude-b")); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := plain.cs.AppsV1().StatefulSets("w").Get(ctx, "claude-b", metav1.GetOptions{}); len(s.Spec.Template.Spec.ImagePullSecrets) != 0 {
+		t.Errorf("%v", s.Spec.Template.Spec.ImagePullSecrets)
+	}
+}

@@ -358,8 +358,24 @@ func imageAndWorkspace(c *model.Machine, prov model.ProviderInfo) (image, worksp
 	return image, workspace
 }
 
+// secretNameRe is the name of a Kubernetes Secret.
+var secretNameRe = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$`)
+
 // ContainerWorkspace is WORKSPACE_DIR of a machine that is a container, when it is not set: on its volume.
 const ContainerWorkspace = "/home/builder/work"
+
+// checkKubernetesValues checks the settings of a pod that are a name or a number.
+func checkKubernetesValues(c *model.Machine) error {
+	if v := c.Get("K8S_IMAGE_PULL_SECRET"); v != "" && !secretNameRe.MatchString(v) {
+		return fmt.Errorf("K8S_IMAGE_PULL_SECRET: the name of a Secret (lowercase letters, digits, - and .): %s", v)
+	}
+	if v := c.Get("K8S_BREW_GB"); v != "" {
+		if n, err := strconv.Atoi(v); err != nil || n < 1 || n > 16384 {
+			return fmt.Errorf("K8S_BREW_GB must be a whole number of GB between 1 and 16384: %s", v)
+		}
+	}
+	return nil
+}
 
 // checkKubernetes reports what a machine in a Kubernetes cluster needs (docs/plan/kubernetes.md): the cluster, the
 // image, no DNS (a pod has no public address) and a work directory that is on its volume.
@@ -376,10 +392,8 @@ func checkKubernetes(c *model.Machine) error {
 	if DNSProviderOf(map[string]string{"DNS_PROVIDER": c.Get("DNS_PROVIDER")}) != model.DNSNone {
 		return errors.New("DNS_PROVIDER=none is needed for PROVIDER=kubernetes: a pod has no public address to name")
 	}
-	if v := c.Get("K8S_BREW_GB"); v != "" {
-		if n, err := strconv.Atoi(v); err != nil || n < 1 || n > 16384 {
-			return fmt.Errorf("K8S_BREW_GB must be a whole number of GB between 1 and 16384: %s", v)
-		}
+	if err := checkKubernetesValues(c); err != nil {
+		return err
 	}
 	if v := c.Get("VIPER_SWAP"); v != "" && v != "0" {
 		return errors.New("VIPER_SWAP: a pod has no swap file to make (PROVIDER=kubernetes)")

@@ -151,6 +151,7 @@ func statefulSetFor(ns string, s model.ServerSpec, o Options, res corev1.Resourc
 					AutomountServiceAccountToken:  ptr(false),
 					TerminationGracePeriodSeconds: ptr(int64(10)),
 					SecurityContext:               &corev1.PodSecurityContext{FSGroup: ptr(int64(uid))},
+					ImagePullSecrets:              pullSecrets(o.PullSecret),
 					Containers:                    containers,
 					Volumes:                       volumes,
 				},
@@ -182,4 +183,12 @@ func natsPod(sts *appsv1.StatefulSet, labels map[string]string) {
 	m.Env = append(m.Env,
 		corev1.EnvVar{Name: "VIPER_NATS_SERVER", Value: "1"},
 		corev1.EnvVar{Name: "POD_IP", ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "status.podIP"}}})
+}
+
+// pullSecrets names the Secret the kubelet logs in to the registry with, none if there is no setting.
+func pullSecrets(name string) []corev1.LocalObjectReference {
+	if name == "" {
+		return nil
+	}
+	return []corev1.LocalObjectReference{{Name: name}}
 }

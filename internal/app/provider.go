@@ -96,7 +96,7 @@ func (n noAdapter) EnsureFirewall(context.Context, string, []string) (model.Fire
 func kubernetesOptions(m *model.Machine) kubernetes.Options {
 	disk, _ := strconv.Atoi(m.Get("K8S_DISK_GB"))
 	brew, _ := strconv.Atoi(m.Get("K8S_BREW_GB"))
-	return kubernetes.Options{BrewGB: brew,
+	return kubernetes.Options{BrewGB: brew, PullSecret: m.Get("K8S_IMAGE_PULL_SECRET"),
 		Context: m.ServerLocation, Namespace: m.Get("K8S_NAMESPACE"), Image: m.ServerImage, StorageClass: m.Get("K8S_STORAGE_CLASS"),
 		DiskGB: disk, Docker: m.Get("K8S_DOCKER"), DockerHost: m.Get("K8S_DOCKER_HOST"), DockerImage: m.Get("K8S_DOCKER_IMAGE"), NATSPort: m.NATS.Port,
 	}

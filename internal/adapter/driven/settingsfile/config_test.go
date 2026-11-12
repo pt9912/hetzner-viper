@@ -535,6 +535,7 @@ func TestLoadReadsTheSettingsOfTheKubernetesProvider(t *testing.T) {
 		"DNS":                     {"PROVIDER=kubernetes\nDNS_DOMAIN=example.com\nSERVER_LOCATION=x\nK8S_IMAGE=i\n", "DNS_PROVIDER=none is needed for PROVIDER=kubernetes"},
 		"docker mode":             {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_DOCKER=podman\n", "K8S_DOCKER: dind, remote or none: podman"},
 		"work directory":          {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nWORKSPACE_DIR=/work\n", "WORKSPACE_DIR: for PROVIDER=kubernetes a directory below /home/builder"},
+		"pull secret":             {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_IMAGE_PULL_SECRET=Reg_Cred\n", "K8S_IMAGE_PULL_SECRET: the name of a Secret"},
 		"homebrew volume size":    {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_BREW_GB=big\n", "K8S_BREW_GB must be a whole number of GB between 1 and 16384: big"},
 		"volume size":             {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_DISK_GB=0\n", "K8S_DISK_GB must be a whole number of GB between 1 and 16384: 0"},
 	} {
