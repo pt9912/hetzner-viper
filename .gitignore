@@ -4,6 +4,7 @@
 *.pem
 .env
 machines/*.env.local
+groups/*.env
 .ssh-pub-key-file
 dist/
 .devcontainer/devcontainer.env
