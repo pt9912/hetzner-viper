@@ -2,7 +2,7 @@
 
 **Ziel:** `PROVIDER=kubernetes` startet eine „Maschine“ als **Pod** in einem beliebigen Kubernetes-Cluster (k3d lokal, aber auch GKE, EKS, AKS, Hetzner-Cluster), statt als VM bei einem Cloud-Anbieter. `viper up`, `down`, `check`, `ssh`, `vscode` und die Gruppen sollen dort so arbeiten wie bei den anderen Anbietern. Der Anbieter ist der **Cluster**, nicht die Cloud darunter: `viper` braucht nur eine `kubeconfig`.
 
-**Stand:** Entwurf, einmal unabhängig gegen den Code geprüft; die Befunde sind eingearbeitet (§12) und ändern den Plan an mehreren Stellen (die „Naht“ SSH, die Server-ID, NATS-Labels, Docker, Sicherheitskontext, `ProxyCommand`). Nichts ist umgesetzt.
+**Stand:** Entwurf, einmal unabhängig gegen den Code geprüft; die Befunde sind eingearbeitet (§12) und ändern den Plan an mehreren Stellen (die „Naht“ SSH, die Server-ID, NATS-Labels, Docker, Sicherheitskontext, `ProxyCommand`). Meilenstein 0 ist teilweise gelaufen (§13); sonst ist nichts umgesetzt.
 
 **Kennzeichnung:** *[V]* heißt, im Code oder in einem Plan bestätigt. *[?]* heißt Vermutung; jede solche Stelle wird in Meilenstein 0 geprüft, bevor etwas darauf gebaut wird. **(zu bestätigen)** markiert Arbeitsannahmen, die eine Entscheidung brauchen (§9).
 
@@ -155,3 +155,21 @@ Ein unabhängiger Agent hat den Plan gegen den Code geprüft. Befunde und was da
 10. **`DNSHost` bei `DNS_PROVIDER=none` (niedrig):** → §5 Punkt 6.
 
 Zur Testumgebung: Der Entwicklungscontainer hat einen **eigenen** Docker-Daemon (`--privileged`), k3d sollte also laufen; die Grenze ist der Speicher (4 GB). → §7.
+
+## 13 Ergebnisse Meilenstein 0 (Stand 12.11.2026, teilweise)
+
+Gelaufen in dieser Umgebung mit `k3d` v5.9.0 (k3s v1.35.5), ein Server-Knoten, ohne Traefik und Metrics-Server; der Cluster ist wieder gelöscht. Ein Wegwerf-Pod aus `ubuntu:24.04` mit `sshd` als Hauptprozess.
+
+| Punkt | Ergebnis |
+|---|---|
+| 1 Cluster hier erreichbar | **ja**, in 13 Sekunden angelegt, `kubectl` erreicht ihn auf `localhost` |
+| 2 `sshd` ohne `systemd`, Host-Zertifikat, nur Schlüssel | **ja**: Host-Schlüssel und Zertifikat (von der Host-CA signiert) aus einem Secret, `HostCertificate` gelesen, die Prüfung mit `@cert-authority` ging durch, ein falscher Name wurde abgelehnt |
+| 3 `ProxyCommand` durch die API | **ja** für `ssh` und `scp` mit `kubectl exec -i … -- nc localhost 22`. **Nicht geprüft:** VS Code Remote-SSH, der Weg über `kubectl port-forward` (der Plan sieht ihn für `viper k8s-proxy` vor), `ssh -L` |
+| 4 NetworkPolicy als Sperre | **ja**: sechs gleichzeitige `create` ergaben ein „created“ und fünf „AlreadyExists“. **Nicht geprüft:** ob k3d die Policy durchsetzt |
+| 5 Daten bleiben | **ja**: eine Datei im Volume überlebte das Löschen des Pods. Ein PVC aus `volumeClaimTemplates` **bleibt nach dem Löschen des StatefulSet stehen** (bestätigt) und muss ausdrücklich gelöscht werden |
+| 6 `sudo`, `code-server`, Claude, Homebrew | offen |
+| 7 Speicher | offen (die Maschine hatte hier 31 GB; die Grenze des Entwicklungscontainers ist 4 GB) |
+
+**Neuer Befund:** Das Volume von k3d (`local-path`) legt das Verzeichnis mit Rechten `777` und Besitzer `root` an. `sshd` lehnt dann den Schlüssel ab („bad ownership or modes for directory /home/builder“). Das Einstiegsprogramm muss Besitzer und Rechte des Heimverzeichnisses selbst setzen (`chown builder`, `chmod 755`), nicht nur Dateien bei leerem Volume anlegen. Dieser Punkt gehört in Meilenstein 1.
+
+Außerdem: Ein Pod gilt als bereit, sobald der Container läuft, nicht wenn `sshd` läuft. `viper` wartet auf `/run/viper-ready` (§5 Punkt 3); eine Bereitschaftsprüfung (Port 22) wäre die saubere Ergänzung.
