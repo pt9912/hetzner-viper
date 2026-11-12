@@ -223,6 +223,7 @@ type NATSLine struct {
 	Me    string `json:"me,omitempty"`    // ready: this machine
 	Group string `json:"group,omitempty"` // ready
 	From  string `json:"from,omitempty"`  // message, answer: the sender, as the subject proves it
+	To    string `json:"to,omitempty"`    // message via out: the machine it is for
 	Via   string `json:"via,omitempty"`   // message: out, pub or presence
 	Topic string `json:"topic,omitempty"` // message via pub
 	Type  string `json:"type,omitempty"`  // message: the kind of the envelope (msg, req, res, presence)

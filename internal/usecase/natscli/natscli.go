@@ -116,7 +116,11 @@ func Words(c driving.NATSCommand) []string {
 		}
 		return w
 	}
-	return append(w, "watch") // listen
+	w = append(w, "watch") // listen
+	if c.All {
+		w = append(w, "--all")
+	}
+	return w
 }
 
 // Event is one line the machine printed, checked.
@@ -160,7 +164,7 @@ func checkEvent(e Event) error {
 	default:
 		return fmt.Errorf("an event of the kind %.20q", e.Event)
 	}
-	for _, n := range []string{e.Me, e.From} {
+	for _, n := range []string{e.Me, e.From, e.To} {
 		if n != "" && !natsmcp.ValidName(n) {
 			return fmt.Errorf("an event with the name %.20q", n)
 		}

@@ -241,6 +241,20 @@ func (s *Service) onOut(m *nats.Msg) {
 	}
 }
 
+// onDirect shows a message between two other machines (viper nats listen --all); the tap only.
+func (s *Service) onDirect(m *nats.Msg) {
+	in, ok := s.cfg.Names.ParseDirect(m.Subject)
+	if !ok {
+		return
+	}
+	e, err := Decode(m.Data, s.cfg.MaxText)
+	if err != nil {
+		s.logLimited("refused a message from %s to %s", in.From, in.To)
+		return
+	}
+	s.seen(in, e)
+}
+
 // onTopic handles a message on a topic this machine subscribed to.
 func (s *Service) onTopic(m *nats.Msg) {
 	in, ok := s.cfg.Names.Parse(m.Subject)
@@ -363,6 +377,11 @@ func (s *Service) subscribeTopics(nc *nats.Conn) error {
 	if s.tap != nil {
 		if _, err := nc.Subscribe(s.cfg.Names.PubSub(">"), s.onTopic); err != nil {
 			return err
+		}
+		if s.cfg.TapAll {
+			if _, err := nc.Subscribe(s.cfg.Names.AllOutSub(), s.onDirect); err != nil {
+				return err
+			}
 		}
 	}
 	for _, t := range s.cfg.Topics {

@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.92  
+Version: 1.93  
 Software-Version: v0.17.0  
 Stand: 11.11.2026  
 
@@ -570,6 +570,7 @@ viper nats send      entwicklung "Bitte pushen" --to beta
 viper nats broadcast entwicklung "Release um 15 Uhr" --topic news
 viper nats request   entwicklung "Wie ist der Stand?" --to beta --timeout 60
 viper nats listen    entwicklung [--topic news]           # bis Strg-C; --topic mehrfach oder mit Komma: --topic news,build
+viper nats listen    entwicklung --all                    # zusätzlich die Direktnachrichten zwischen den anderen Rechnern
 echo "langer Text" | viper nats send entwicklung - --to beta   # Text von der Standardeingabe
 ```
 
@@ -590,6 +591,7 @@ echo "langer Text" | viper nats send entwicklung - --to beta   # Text von der St
 * **Als Betreiber senden (`viper nats init <gruppe>`).** Der Betreiber ist ein eigener Eintrag am NATS-Server mit dem Namen `operator` (einstellbar mit `NATS_OPERATOR_NAME` in der Gruppen- oder Rechnerdatei). `viper nats init entwicklung` erzeugt einen Schlüssel **auf Ihrem Rechner** (`~/.local/state/hetzner-claude/nats/<gruppe>/operator.nk`, nur für Sie lesbar) und trägt den öffentlichen Teil am Server ein (der Server liest die Konfiguration neu; die Rechner der Gruppe bleiben eingetragen). Danach sendet `viper nats` ohne `--from` als `operator`: es baut einen SSH-Tunnel zum Server auf (über die Servermaschine) und verbindet sich von Ihrem Rechner aus; das Zertifikat holt es bei jedem Aufruf frisch vom Server. Ein Rechner der Gruppe wird nicht mehr als Absender gebraucht. `--from <maschine>` sendet weiter als diese Maschine. Der Empfänger sieht `operator` als Absender. `viper nats revoke <gruppe>` trägt den Betreiber wieder aus und löscht den Schlüssel.
 * **Was der Betreiber darf:** senden nur in seinem eigenen Bereich `viper.<gruppe>.operator.>` und alles in der Gruppe mitlesen. Die Anfragebereiche der anderen Rechner (`…req.>`) und den Posteingang `_INBOX` hat er nicht; Antworten auf seine Anfragen kommen als normale Nachrichten an `viper.<gruppe>.<antwortender>.out.operator`. Wer den Schlüssel hat, kann als `operator` senden und alles in der Gruppe lesen (dieselbe Vertraulichkeit wie bei jedem Rechner). **Kein Rechner der Gruppe darf `operator` heißen** (und umgekehrt): `viper up` verweigert ihn, und ein Eintrag überschreibt nie den Schlüssel des anderen Typs.
 * **Agenten und der Betreiber:** Für die Agenten ist `operator` ein weiterer Absender, der Anweisungen schickt. `NATS_MCP_PUSH_FROM` darf `operator` nennen, dann schiebt der MCP-Server die Nachrichten des Betreibers von selbst in die Sitzung; Standard ist die leere Liste. Das ist Ihre Entscheidung über das Vertrauen, `viper` warnt dabei nicht.
+* **`listen --all`** zeigt zusätzlich die Direktnachrichten zwischen anderen Rechnern der Gruppe, mit Absender und Empfänger (`alpha -> beta: …`; `"to"` bei `--json`). Das ist kein neues Recht: der Server lässt jeden Rechner und den Betreiber die ganze Gruppe lesen. Es gibt in einer Gruppe keine Privatsphäre zwischen den Agenten. `--all` gilt nur für `listen`; `--topic` filtert nur Topic-Nachrichten, Direktnachrichten haben kein Topic.
 * **`listen`** beendet das Programm auf der Maschine, wenn die Verbindung abbricht; es kann bis zur nächsten Nachricht der Gruppe (spätestens 30 Sekunden) weiterlaufen.
 
 ### Ein privates Repository per SSH klonen
@@ -1324,3 +1326,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.90 | nach v0.17.0 | NATS-Gruppen auch bei Google Cloud (gegen nachgebildete Schnittstellen getestet, echter Lauf offen). |
 | 1.91 | nach v0.17.0 | `viper nats init`/`revoke`: eigener Absender „operator“ mit eigenem Schlüssel auf Ihrem Rechner, SSH-Tunnel zum NATS-Server; `NATS_OPERATOR_NAME`. |
 | 1.92 | nach v0.17.0 | NATS-Gruppen auch bei Azure (Sperre des ersten Starts nicht belegt); Preflight prüft die Rechte für NATS bei AWS und Google Cloud; `viper check` meldet eine veränderte Regel der Gruppe und den Betreiber-Eintrag (Schlüssel dieses Rechners gegen Eintrag am Server); `down --group` weist auf einen zurückbleibenden Betreiber-Schlüssel hin. |
+| 1.93 | nach v0.17.0 | `viper nats listen`: `--topic` mehrfach oder als Liste; neu `--all` zeigt auch die Direktnachrichten zwischen anderen Rechnern. |

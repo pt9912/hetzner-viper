@@ -39,6 +39,7 @@ type cliArgs struct {
 	timeout   time.Duration
 	forTime   time.Duration
 	query     bool
+	all       bool
 }
 
 func parseCLIArgs(name string, args []string, stderr io.Writer) (cliArgs, error) {
@@ -55,6 +56,7 @@ func parseCLIArgs(name string, args []string, stderr io.Writer) (cliArgs, error)
 		fs.StringVar(&a.topic, "topic", "", "the topic")
 	case "watch":
 		fs.DurationVar(&a.forTime, "for", 0, "stop after this time (default: until interrupted)")
+		fs.BoolVar(&a.all, "all", false, "also show the messages between the other machines")
 		fs.BoolVar(&a.query, "query", false, "ask the others to say that they are there (this machine then counts as present for a while)")
 	}
 	if err := fs.Parse(args); err != nil {
@@ -196,8 +198,9 @@ func watch(ctx context.Context, cfg Config, a cliArgs, stdout, stderr io.Writer)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	out := &lockedLines{w: stdout}
+	cfg.TapAll = a.all
 	tap := func(m Seen) {
-		if out.write(Line{Event: "message", From: m.In.From, Via: m.In.Kind, Topic: m.In.Arg, Type: m.E.Kind, ID: m.E.ID,
+		if out.write(Line{Event: "message", From: m.In.From, To: m.In.To, Via: m.In.Kind, Topic: m.In.Arg, Type: m.E.Kind, ID: m.E.ID,
 			Re: m.E.Re, State: m.E.State, Query: m.E.Query, Text: Clean(m.E.Text)}) != nil {
 			cancel()
 		}

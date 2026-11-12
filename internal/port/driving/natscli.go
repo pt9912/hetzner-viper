@@ -21,6 +21,7 @@ type NATSCommand struct {
 	Text    string        // send, broadcast, request
 	Timeout time.Duration // request (default 30 seconds); peers: how long to listen
 	Query   bool          // peers: ask the others to say that they are there
+	All     bool          // listen: also the messages between the other machines
 }
 
 // NATSPeer is a machine that said that it is there.

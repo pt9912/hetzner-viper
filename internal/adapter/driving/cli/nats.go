@@ -34,7 +34,7 @@ func parseNatsArgs(o *options, stdin io.Reader) (natsArgs, error) {
 		return natsArgs{}, errors.New(usage)
 	}
 	sub, group, rest := o.args[0], o.args[1], o.args[2:]
-	c := driving.NATSCommand{Name: sub, To: o.to, Topic: o.topic, Timeout: o.timeout, Query: o.query}
+	c := driving.NATSCommand{Name: sub, To: o.to, Topic: o.topic, Timeout: o.timeout, Query: o.query, All: o.all}
 	if err := checkNatsOptions(o, sub); err != nil {
 		return natsArgs{}, err
 	}
@@ -69,11 +69,11 @@ func checkNatsOptions(o *options, sub string) error {
 		"request":   {"to", "timeout"},
 		"broadcast": {"topic"},
 		"peers":     {"timeout", "query"},
-		"listen":    {"topic"},
+		"listen":    {"topic", "all"},
 		"init":      {},
 		"revoke":    {},
 	}[sub]
-	given := map[string]bool{"to": o.to != "", "topic": o.topic != "", "timeout": o.timeout != 0, "query": o.query}
+	given := map[string]bool{"to": o.to != "", "topic": o.topic != "", "timeout": o.timeout != 0, "query": o.query, "all": o.all}
 	for opt, set := range given {
 		if set && !slices.Contains(use, opt) {
 			return fmt.Errorf("viper nats %s: --%s is not used by this subcommand\n%s", sub, opt, usageLine("nats"))
@@ -307,6 +307,9 @@ func reportPeers(o *options, res driving.NATSResult, stdout io.Writer) {
 
 func natsLine(e model.NATSLine) string {
 	where := e.From
+	if e.To != "" && e.Via == "out" {
+		where += " -> " + e.To
+	}
 	if e.Topic != "" {
 		where += " [" + e.Topic + "]"
 	}

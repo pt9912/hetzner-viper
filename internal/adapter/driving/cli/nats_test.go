@@ -148,6 +148,7 @@ func TestNatsTextFromStdinAndOptionChecks(t *testing.T) {
 		{Args: []string{"broadcast", "dev", "x"}, Topic: "news", To: "beta"}, // --to is not used
 		{Args: []string{"peers", "dev", "x"}},                                // text where none belongs
 		{Args: []string{"listen", "dev"}, Query: true},                       // --query is not used
+		{Args: []string{"send", "dev", "x"}, To: "beta", All: true},          // --all is for listen only
 		{Args: []string{"dance", "dev"}},                                     // unknown
 		{Args: []string{"peers"}},                                            // no group
 		{Args: []string{"send", "dev", "x"}, To: "be.ta"},                    // not a name

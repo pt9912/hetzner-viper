@@ -217,3 +217,53 @@ func TestTheRequestSubcommandIgnoresAnAnswerOfAnotherMachine(t *testing.T) {
 		t.Fatalf("%v %q %d", lines, errs, code)
 	}
 }
+
+func watchFor(t *testing.T, m *machine, d string, during func(), args ...string) []natsmcp.Line {
+	t.Helper()
+	var out bytes.Buffer
+	var mu sync.Mutex
+	done := make(chan int, 1)
+	go func() {
+		var errb bytes.Buffer
+		w := &syncWriter{mu: &mu, b: &out}
+		done <- natsmcp.RunCLI(context.Background(), m.svc.Cfg(), "watch", append([]string{"--for", d}, args...), strings.NewReader(""), w, &errb)
+	}()
+	eventually(t, "watch is ready", func() bool { mu.Lock(); defer mu.Unlock(); return strings.Contains(out.String(), `"ready"`) })
+	during()
+	if code := <-done; code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	var msgs []natsmcp.Line
+	for _, l := range decodeLines(t, out.String()) {
+		if l.Event == "message" && l.Via != "presence" {
+			msgs = append(msgs, l)
+		}
+	}
+	return msgs
+}
+
+func TestWatchAllShowsTheMessagesBetweenOtherMachinesOnceAndOnlyWithTheOption(t *testing.T) {
+	x := newTrio(t, nil)
+	send := func() {
+		if _, err := call(t, x.a.svc, "send", map[string]any{"to": "b", "text": "between a and b"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := call(t, x.a.svc, "send", map[string]any{"to": "c", "text": "for c itself"}); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	if msgs := watchFor(t, x.c, "2s", send); len(msgs) != 1 || msgs[0].Text != "for c itself" || msgs[0].To != "c" {
+		t.Errorf("without --all only what is for c: %+v", msgs)
+	}
+	msgs := watchFor(t, x.c, "2s", send, "--all")
+	if len(msgs) != 2 {
+		t.Fatalf("with --all both, each once: %+v", msgs)
+	}
+	sort.Slice(msgs, func(i, j int) bool { return msgs[i].To < msgs[j].To })
+	if msgs[0].From != "a" || msgs[0].To != "b" || msgs[0].Text != "between a and b" || msgs[1].To != "c" {
+		t.Errorf("%+v", msgs)
+	}
+}

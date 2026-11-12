@@ -46,6 +46,9 @@ func (n Names) Presence() string { return fmt.Sprintf("viper.%s.%s.presence", n.
 // InSub is what this machine reads for messages addressed to it.
 func (n Names) InSub() string { return fmt.Sprintf("viper.%s.*.out.%s", n.Group, n.Me) }
 
+// AllOutSub is what listen --all reads in addition: the messages between all machines.
+func (n Names) AllOutSub() string { return fmt.Sprintf("viper.%s.*.out.*", n.Group) }
+
 // PubSub is what this machine reads for a topic.
 func (n Names) PubSub(topic string) string { return fmt.Sprintf("viper.%s.*.pub.%s", n.Group, topic) }
 
@@ -57,6 +60,17 @@ type Inbound struct {
 	Kind string // "out", "pub" or "presence"
 	From string // the sender, from the subject
 	Arg  string // the topic of a "pub"
+	To   string // the machine an "out" is for
+}
+
+// ParseDirect takes apart a message between two other machines (listen --all). The messages for this machine
+// are not accepted: the subscription for them delivers those.
+func (n Names) ParseDirect(subject string) (Inbound, bool) {
+	t := strings.Split(subject, ".")
+	if len(t) != 5 || t[0] != "viper" || t[1] != n.Group || t[3] != "out" || !ValidName(t[2]) || !ValidName(t[4]) || t[2] == n.Me || t[4] == n.Me {
+		return Inbound{}, false
+	}
+	return Inbound{Kind: "out", From: t[2], To: t[4]}, true
 }
 
 // Parse takes a subject apart. It accepts exactly the shapes of the subscriptions and nothing
@@ -70,7 +84,7 @@ func (n Names) Parse(subject string) (Inbound, bool) {
 	}
 	switch {
 	case len(t) == 5 && t[3] == "out" && t[4] == n.Me:
-		return Inbound{Kind: "out", From: t[2]}, true
+		return Inbound{Kind: "out", From: t[2], To: n.Me}, true
 	case len(t) == 5 && t[3] == "pub" && ValidName(t[4]):
 		return Inbound{Kind: "pub", From: t[2], Arg: t[4]}, true
 	case len(t) == 4 && t[3] == "presence":

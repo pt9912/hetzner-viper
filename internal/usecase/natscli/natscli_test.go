@@ -175,6 +175,15 @@ func TestListenFiltersByTopic(t *testing.T) {
 	}
 }
 
+func TestListenAllAsksTheMachineForTheMessagesBetweenTheOthers(t *testing.T) {
+	if w := natscli.Words(driving.NATSCommand{Name: "listen", All: true}); w[len(w)-1] != "--all" {
+		t.Errorf("%v", w)
+	}
+	if w := natscli.Words(driving.NATSCommand{Name: "listen"}); w[len(w)-1] == "--all" {
+		t.Errorf("%v", w)
+	}
+}
+
 func TestListenTakesSeveralTopicsAndBroadcastOnlyOne(t *testing.T) {
 	f := &fakeRemote{out: `{"event":"message","from":"a","via":"pub","topic":"news","type":"msg","text":"1"}
 {"event":"message","from":"a","via":"pub","topic":"build","type":"msg","text":"2"}

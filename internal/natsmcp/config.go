@@ -32,6 +32,9 @@ type Config struct {
 	// Quiet: the server connects but says nothing in the group (no presence, no goodbye); viper's test of the
 	// installation runs it so, to not make the machine disappear for a Claude Code session that runs already.
 	Quiet bool
+	// TapAll: watch also shows the messages between the other machines (viper nats listen --all). The server
+	// lets every machine read the group, so this is no new right.
+	TapAll bool
 }
 
 // Defaults of the limits (docs/plan/nats-mcp.md §3).

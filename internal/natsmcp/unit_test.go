@@ -13,7 +13,7 @@ import (
 func TestParseAcceptsOnlyTheShapesOfTheSubscriptions(t *testing.T) {
 	n := natsmcp.Names{Group: "g", Me: "me"}
 	good := map[string]natsmcp.Inbound{
-		"viper.g.a.out.me":    {Kind: "out", From: "a"},
+		"viper.g.a.out.me":    {Kind: "out", From: "a", To: "me"},
 		"viper.g.a.pub.build": {Kind: "pub", From: "a", Arg: "build"},
 		"viper.g.a.presence":  {Kind: "presence", From: "a"},
 	}
