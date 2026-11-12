@@ -14,7 +14,7 @@ type Machine struct {
 	// Vars looks a setting up (nil: none); see Get.
 	Vars func(name string) string
 
-	// Provider is the cloud the server is made in (PROVIDER).
+	// Provider is the cloud the server is made in (PROVIDER). For a Kubernetes cluster the server is a container (see IsContainer).
 	Provider string
 
 	// NATS is the NATS group of the machine (NATS_ENABLED, NATS_GROUP, NATS_PORT); the zero value
@@ -64,4 +64,10 @@ func (m *Machine) WorkDir(repoURL string) string {
 		return m.WorkspaceDir
 	}
 	return m.WorkspaceDir + "/" + path.Base(strings.TrimSuffix(repoURL, ".git"))
+}
+
+// IsContainer tells whether the machine is a container (PROVIDER=kubernetes) and not a VM.
+func (m *Machine) IsContainer() bool {
+	info, _ := LookupProvider(m.Provider)
+	return info.Container
 }

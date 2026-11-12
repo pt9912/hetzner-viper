@@ -57,11 +57,13 @@ RUN set -eu; \
     rm -rf "$tmp"; \
     nats-server --version; nats --version
 
-# builder, the work directory and the place of Homebrew (the installer needs sudo only to make it)
+# builder, the place of Homebrew (the installer needs sudo only to make it) and /Development, the default work directory:
+# a link into the home directory, so that it is on the volume of a pod and root is not needed to make it
 RUN (id ubuntu >/dev/null 2>&1 && userdel -r ubuntu || true) \
  && useradd -m -u 1000 -s /bin/bash builder \
- && mkdir -p /Development /home/linuxbrew/.linuxbrew /opt/viper /run/viper \
- && chown builder:builder /Development /home/linuxbrew/.linuxbrew \
+ && mkdir -p /home/linuxbrew/.linuxbrew /opt/viper /run/viper \
+ && chown builder:builder /home/linuxbrew/.linuxbrew \
+ && ln -s /home/builder/Development /Development \
  && echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' > /etc/profile.d/brew.sh
 
 # what the VM gets from cloud-init.yaml: the sshd hardening, tmux and the VS Code settings: the same text

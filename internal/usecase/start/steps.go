@@ -124,6 +124,7 @@ func (r *runner) server(ctx context.Context, ca, keyName, ipadKeyFile string) (s
 		Name: c.ServerName, Size: c.ServerType, Region: c.ServerLocation, Image: c.ServerImage,
 		SSHKey: keyName, Firewall: c.FirewallName, UserData: userData,
 		Labels: r.natsLabels(), Network: r.natsNetwork(),
+		Bootstrap: model.Bootstrap{AuthorizedKeys: trimmed(keys), HostKey: hk.Private, HostKeyPub: hk.Public, HostCertificate: hk.Certificate},
 	})
 	if err != nil {
 		code, err := r.fail("creating the server %s failed: %s", c.ServerName, r.d.Cloud.Describe(err))
@@ -250,4 +251,13 @@ func (r *runner) waitForServer(ctx context.Context, id string, reused bool) (str
 	}
 	r.reportSSHFailure(errMsg)
 	return "", 1, driving.ErrShown
+}
+
+// trimmed is the keys without the new line at the end of each.
+func trimmed(keys []string) []string {
+	out := make([]string, len(keys))
+	for i, k := range keys {
+		out[i] = strings.TrimSpace(k)
+	}
+	return out
 }

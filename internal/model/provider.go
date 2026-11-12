@@ -15,13 +15,16 @@ type ProviderInfo struct {
 	DiskSetting string
 	// NATS is whether the provider can hold NATS groups (it has the capability cloud.NATSProvider).
 	NATS bool
+	// Container is whether the machine is a container, not a VM: no cloud-init, no systemd, no sudo, no
+	// public address (docs/plan/kubernetes.md).
+	Container bool
 }
 
 // DefaultProvider is the provider when PROVIDER is not set.
 const DefaultProvider = "hetzner"
 
 // ProviderNames are the names PROVIDER takes.
-func ProviderNames() []string { return []string{"aws", "azure", "gcp", "hetzner"} }
+func ProviderNames() []string { return []string{"aws", "azure", "gcp", "hetzner", "kubernetes"} }
 
 // LookupProvider is what viper knows of the provider of that name; ok is false for an unknown one.
 func LookupProvider(name string) (info ProviderInfo, ok bool) {
@@ -31,6 +34,9 @@ func LookupProvider(name string) (info ProviderInfo, ok bool) {
 	case "azure":
 		// the credentials come from the default Azure credentials (az login, environment, managed identity); the subscription is a setting
 		return ProviderInfo{DiskSetting: "AZURE_ROOT_GB", Credentials: []string{"AZURE_SUBSCRIPTION_ID"}, Secrets: []string{"AZURE_CLIENT_SECRET", "AZURE_CLIENT_CERTIFICATE_PASSWORD", "AZURE_PASSWORD"}, Size: "Standard_D2s_v5", Region: "germanywestcentral", Image: "ubuntu-24.04", NATS: true}, true
+	case "kubernetes":
+		// the cluster is the context of the kubeconfig (SERVER_LOCATION, no default); the image is K8S_IMAGE (no default)
+		return ProviderInfo{DiskSetting: "K8S_DISK_GB", Size: "2x4", Container: true}, true
 	case "gcp":
 		// the credentials come from Google's application default credentials; the project is a setting
 		return ProviderInfo{DiskSetting: "GCP_ROOT_GB", Credentials: []string{"GCP_PROJECT"}, Secrets: []string{"GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_OAUTH_ACCESS_TOKEN"}, Size: "e2-standard-2", Region: "europe-west3-b", Image: "ubuntu-24.04", NATS: true}, true

@@ -130,7 +130,7 @@ D8 **Einstellungen:** `PROVIDER=kubernetes`; **`SERVER_LOCATION` ist der Kontext
 |---|---|---|
 | 0 | Verifikation | **1.** `k3d` installieren (`kubectl` ist da), Cluster mit dem fertigen k3s-Image anlegen, in dieser Umgebung erreichbar? **2.** `sshd` ohne `systemd` im Container mit Host-Zertifikat und `AuthenticationMethods publickey`. **3.** `ProxyCommand` mit Port-Forward: `ssh`, `scp`, VS Code Remote-SSH. **4.** NetworkPolicy-Anlegen als atomare Sperre (zwei gleichzeitige Aufrufe); Durchsetzung der Policy in k3d. **5.** Daten bleiben nach Neustart des Pods; ein leeres Volume wird mit den Dateien des Heimverzeichnisses angelegt; `down` hinterlässt keinen PVC. **6.** `sudo` und `sshd` mit den nötigen Rechten, `code-server`/`systemctl`-Ersatz, Claude Code und Homebrew im Image. **7.** Speicher: k3d plus Pod in 4 GB RAM. **8.** Entscheidungen aus §9. |
 | 1 | Image | **erledigt (§17):** Dockerfile, Einstiegsprogramm, `make image`, `make image-test` |
-| 2 | Adapter | `kubernetes`-Adapter gegen die Fake-API: Anbieter ohne NATS |
+| 2 | Adapter | **erledigt (§18):** `kubernetes`-Adapter gegen die Fake-API: Anbieter ohne NATS |
 | 3 | Anbindung | `ServerSpec`, `Server.Proxy`, `WriteConfig` mit ganzer `Server`-Angabe und alle Stellen aus §5 Punkt 4, „Container“-Fähigkeit in `start`/`check` (§5 Punkt 3), `K8S_*` in `settingsfile`, `viper k8s-proxy`, Quoting der SSH-Konfiguration |
 | 4 | Echter Lauf | k3d: `up`, `check`, `ssh`, Neustart, `down`; Handbuch (Kapitel zum Anbieter) |
 | 5 | NATS | Dienstname und Zertifikat, Prozessverwalter, NetworkPolicy als Gruppennetz; Lauf mit drei Pods |
@@ -292,3 +292,17 @@ Abgleich mit dem, was `cloud-init.yaml` einrichtet:
 | Updates, Neustart, Host-Schlüssel, Authorized Keys | entfallen bzw. kommen als Secret (§3) |
 | `code-server` (von `viper up` installiert, nicht von cloud-init) | fehlt; VS Code Remote-SSH braucht ihn nicht |
 | Homebrew (von `viper up` installiert) | enthalten |
+
+## 18 Ergebnis Meilenstein 2: der Adapter (Stand 12.11.2026)
+
+`internal/adapter/driven/kubernetes` (mit `client-go` v0.37.2), eingehängt als `PROVIDER=kubernetes` (`model/provider.go`, `app/provider.go`, `settingsfile`). Getestet gegen die Fake-Clientmenge von `client-go`, deren Reaktoren das nachbilden, worauf der Adapter sich verlässt (ein StatefulSet macht seinen Pod, das Löschen nimmt ihn weg). `go test ./...`, Linter und `gofmt` grün.
+
+* **Anlegen:** Namespace (wenn er fehlt, mit Label `viper-managed`; bei `dind` mit Pod Security `privileged`; er wird nie gelöscht), Secret (`authorized_keys`, `host_key`, `host_key-cert.pub`), PVC, StatefulSet; wartet auf den bereiten Pod und bricht früher ab, wenn er nicht starten kann (`ImagePullBackOff`, `Unschedulable`). Ein Rest von Secret oder PVC eines halb gescheiterten `down` wird vorher entfernt, aber nur, was `viper` angelegt hat; ein fremdes Objekt gleichen Namens bricht mit `ErrNotOurs` ab.
+* **Pod:** Maschine als uid 1000, ohne Capabilities, ohne Privilegieneskalation, Seccomp `RuntimeDefault`, ohne API-Zugang (`automountServiceAccountToken: false`), Größe `<cpu>x<GiB>` als Requests und Limits, Schlüssel nur als Datei (nie in Umgebung oder Befehlszeile; getestet). `K8S_DOCKER`: `dind` (privilegierter Sidecar, der Pod ist erst bereit, wenn der Daemon antwortet), `remote` (`DOCKER_HOST` aus `K8S_DOCKER_HOST`) oder `none`.
+* **`Server.ID`** ist die UID des StatefulSet (§3). `Server.ViaAPI` und `Server.SSHPort` (2222) sagen den Aufrufern, dass es keine Adresse gibt.
+* **Löschen:** StatefulSet (Vordergrund-Kaskade), Warten auf Pod, Secret, Volume; ein bereits entferntes ist kein Fehler.
+* **Preflight:** Kontext und API, Größe, Image, Namespace samt Pod-Security-Stufe, Rechte (`SelfSubjectAccessReview` je Aufgabe), StorageClass, Docker-Modus, vorhandener Server.
+* **Einstellungen (`settingsfile`):** `SERVER_LOCATION` (Kontext) und `K8S_IMAGE` sind Pflicht ohne Standard; `DNS_PROVIDER=none` ist Pflicht; `WORKSPACE_DIR` nur `/Development` oder unter `/home/builder`; `K8S_DOCKER` geprüft; `K8S_DISK_GB` 1 bis 16384; NATS bleibt verweigert, bis Meilenstein 5 fertig ist.
+* **Image:** `/Development` ist ein Link nach `/home/builder/Development` (auf dem Volume, ohne root zu machen).
+
+**Noch nicht angeschlossen** (Meilenstein 3): `start`, `stop`, `check` brauchen eine IPv4 und `cloud-init`; `viper k8s-proxy` und die SSH-Konfiguration mit `ProxyCommand` fehlen. Bis dahin scheitert `viper up` mit diesem Anbieter („has no IPv4 address“).

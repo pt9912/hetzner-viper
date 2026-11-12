@@ -256,7 +256,7 @@ func TestLoadTakesCloudflareAsTheDefaultDNSAndChecksTheValue(t *testing.T) {
 func TestLoadRejectsAnUnknownProvider(t *testing.T) {
 	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
 	_, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nPROVIDER=nope\n", ""), "web", env, false)
-	if err == nil || err.Error() != "PROVIDER: unknown provider nope (one of: aws, azure, gcp, hetzner)" {
+	if err == nil || err.Error() != "PROVIDER: unknown provider nope (one of: aws, azure, gcp, hetzner, kubernetes)" {
 		t.Errorf("got %v", err)
 	}
 }
@@ -516,5 +516,35 @@ func TestLoadReadsTheDefaultTopicsOfTheMCPServer(t *testing.T) {
 	c, err = settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nNATS_MCP_TOPICS=build\n", ""), "web", env, false)
 	if err != nil || c.NATS.MCPTopics != nil {
 		t.Fatalf("NATS off: %v %v", err, c.NATS.MCPTopics)
+	}
+}
+
+func TestLoadReadsTheSettingsOfTheKubernetesProvider(t *testing.T) {
+	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
+	base := "PROVIDER=kubernetes\nDNS_PROVIDER=none\n"
+	c, err := settingsfile.Load(setupDir(t, base+"SERVER_LOCATION=k3d-viper\nK8S_IMAGE=viper-machine:v1\nK8S_DISK_GB=30\n", ""), "web", env, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Provider != "kubernetes" || c.ServerLocation != "k3d-viper" || c.ServerImage != "viper-machine:v1" || c.ServerType != "2x4" || !c.IsContainer() {
+		t.Errorf("%+v", c)
+	}
+	for name, tc := range map[string]struct{ settings, want string }{
+		"no cluster and no image": {base, "Missing settings: SERVER_LOCATION K8S_IMAGE"},
+		"no image":                {base + "SERVER_LOCATION=x\n", "Missing settings: K8S_IMAGE"},
+		"DNS":                     {"PROVIDER=kubernetes\nDNS_DOMAIN=example.com\nSERVER_LOCATION=x\nK8S_IMAGE=i\n", "DNS_PROVIDER=none is needed for PROVIDER=kubernetes"},
+		"docker mode":             {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_DOCKER=podman\n", "K8S_DOCKER: dind, remote or none: podman"},
+		"work directory":          {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nWORKSPACE_DIR=/work\n", "WORKSPACE_DIR: for PROVIDER=kubernetes /Development or a directory below /home/builder"},
+		"volume size":             {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_DISK_GB=0\n", "K8S_DISK_GB must be a whole number of GB between 1 and 16384: 0"},
+	} {
+		_, err := settingsfile.Load(setupDir(t, tc.settings, ""), "web", env, false)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: got %v, want %q", name, err, tc.want)
+		}
+	}
+	// NATS is not available for a pod yet
+	_, err = settingsfile.Load(setupDir(t, base+"SERVER_LOCATION=x\nK8S_IMAGE=i\nNATS_ENABLED=true\nNATS_GROUP=g\n", ""), "web", env, false)
+	if err == nil || !strings.Contains(err.Error(), "NATS groups need PROVIDER=") {
+		t.Errorf("NATS: %v", err)
 	}
 }

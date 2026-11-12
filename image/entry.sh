@@ -20,7 +20,7 @@ if [ ! -e "$home/.viper-seeded" ]; then
   : > "$home/.viper-seeded"
 fi
 # the volume made the directory; its owner and mode are not ours to set when we are not root, only its content
-mkdir -p "$home/.ssh" "$home/.viper/sshd"
+mkdir -p "$home/.ssh" "$home/.viper/sshd" "$home/Development"
 chmod 700 "$home/.ssh" "$home/.viper" "$home/.viper/sshd"
 install -m 600 "$secret/authorized_keys" "$home/.ssh/authorized_keys"
 install -m 600 "$secret/host_key" "$home/.viper/sshd/host_key"

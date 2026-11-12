@@ -27,6 +27,11 @@ type Server struct {
 	Hostname string
 	// Created is when the server was created.
 	Created time.Time
+	// SSHPort is the port of sshd on the server, 0 for 22.
+	SSHPort int
+	// ViaAPI says that the server has no address to connect to: it is reached through the API of the provider
+	// (a pod of a Kubernetes cluster; ssh goes through viper k8s-proxy). IPv4 is empty then.
+	ViaAPI bool
 }
 
 // InNetwork tells whether the server is attached to the private network of its NATS group.
@@ -39,10 +44,20 @@ type ServerSpec struct {
 	SSHKey                    string // Ref of the login key
 	Firewall                  string // name of the firewall
 	UserData                  string // cloud-init
+	// Bootstrap is the same material as structured values, for a provider that has no cloud-init (a container).
+	Bootstrap Bootstrap
 	// Labels are put on the server when it is created (nil: none), e.g. its NATS group.
 	Labels map[string]string
 	// Network is the ID of a private network the server is attached to when it is created ("": none).
 	Network string
+}
+
+// Bootstrap is what a new machine needs to be reachable: the keys that may log in and the host key with its
+// certificate (signed by the host CA). The same values go into cloud-init as text (ServerSpec.UserData).
+type Bootstrap struct {
+	AuthorizedKeys      []string
+	HostKey, HostKeyPub string
+	HostCertificate     string
 }
 
 // LoginKey is the login key in the provider.

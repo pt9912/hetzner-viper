@@ -125,6 +125,9 @@ func Load(dir, machine string, env settings.Env, needTokens bool) (*model.Machin
 	c.ServerType = or(c.Get("SERVER_TYPE"), prov.Size)
 	c.ServerLocation = or(c.Get("SERVER_LOCATION"), prov.Region)
 	c.ServerImage = or(c.Get("SERVER_IMAGE"), prov.Image)
+	if c.Provider == "kubernetes" {
+		c.ServerImage = c.Get("K8S_IMAGE") // the image of the container, not an operating system image
+	}
 	c.WorkspaceDir = or(c.Get("WORKSPACE_DIR"), "/Development")
 	c.ServerPrefix = or(c.Get("SERVER_PREFIX"), "claude")
 	if !nameRe.MatchString(c.ServerPrefix) {
@@ -283,6 +286,8 @@ func diskSize(provider string) (name string, smallest int, ok bool) {
 		return "GCP_ROOT_GB", 10, true
 	case "azure":
 		return "AZURE_ROOT_GB", 30, true
+	case "kubernetes":
+		return "K8S_DISK_GB", 1, true
 	}
 	return "", 0, false
 }
@@ -344,6 +349,32 @@ func derivePaths(c *model.Machine, home string) {
 	c.LogDir = filepath.Join(c.StateDir, "logs")
 }
 
+// checkKubernetes reports what a machine in a Kubernetes cluster needs (docs/plan/kubernetes.md): the cluster, the
+// image, no DNS (a pod has no public address) and a work directory that is on its volume.
+func checkKubernetes(c *model.Machine) error {
+	var missing []string
+	for _, name := range []string{"SERVER_LOCATION", "K8S_IMAGE"} {
+		if c.Get(name) == "" {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("Missing settings: %s (PROVIDER=kubernetes: SERVER_LOCATION is the context of the kubeconfig, K8S_IMAGE the image of the machine; viper takes no default so that nothing is made in the wrong cluster)", strings.Join(missing, " "))
+	}
+	if DNSProviderOf(map[string]string{"DNS_PROVIDER": c.Get("DNS_PROVIDER")}) != model.DNSNone {
+		return errors.New("DNS_PROVIDER=none is needed for PROVIDER=kubernetes: a pod has no public address to name")
+	}
+	switch c.Get("K8S_DOCKER") {
+	case "", "dind", "remote", "none":
+	default:
+		return fmt.Errorf("K8S_DOCKER: dind, remote or none: %s", c.Get("K8S_DOCKER"))
+	}
+	if ws := c.Setting("WORKSPACE_DIR", "/Development"); ws != "/Development" && !strings.HasPrefix(ws, "/home/builder/") {
+		return fmt.Errorf("WORKSPACE_DIR: for PROVIDER=kubernetes /Development or a directory below /home/builder (the volume): %s", ws)
+	}
+	return nil
+}
+
 // applyProviders sets the cloud provider and the DNS provider of the machine and the domain that
 // follows from them, and checks what they need. It returns what is known of the cloud provider.
 func applyProviders(c *model.Machine, vars map[string]string, needTokens bool) (model.ProviderInfo, error) {
@@ -363,6 +394,11 @@ func applyProviders(c *model.Machine, vars map[string]string, needTokens bool) (
 		}
 	}
 	c.DNSProvider = DNSProviderOf(vars)
+	if c.Provider == "kubernetes" {
+		if err := checkKubernetes(c); err != nil {
+			return prov, err
+		}
+	}
 	if c.DNSProvider != model.DNSCloudflare && c.DNSProvider != model.DNSNone {
 		return prov, fmt.Errorf("DNS_PROVIDER: %s or %s: %s", model.DNSCloudflare, model.DNSNone, c.DNSProvider)
 	}

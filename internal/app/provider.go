@@ -9,6 +9,7 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/azure"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/gcp"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/hetzner"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/kubernetes"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
 )
@@ -35,6 +36,12 @@ func NewProvider(m *model.Machine) Provider {
 		return Provider{azure.New(azure.Options{
 			SubscriptionID: m.Get("AZURE_SUBSCRIPTION_ID"), ResourceGroup: m.Get("AZURE_RESOURCE_GROUP"), Location: m.ServerLocation,
 			SubnetID: m.Get("AZURE_SUBNET_ID"), RootGB: int32(root), NATSPort: m.NATS.Port,
+		})}
+	case "kubernetes":
+		disk, _ := strconv.Atoi(m.Get("K8S_DISK_GB"))
+		return Provider{kubernetes.New(kubernetes.Options{
+			Context: m.ServerLocation, Namespace: m.Get("K8S_NAMESPACE"), Image: m.ServerImage, StorageClass: m.Get("K8S_STORAGE_CLASS"),
+			DiskGB: disk, Docker: m.Get("K8S_DOCKER"), DockerHost: m.Get("K8S_DOCKER_HOST"), DockerImage: m.Get("K8S_DOCKER_IMAGE"), NATSPort: m.NATS.Port,
 		})}
 	case "gcp":
 		root, _ := strconv.Atoi(m.Get("GCP_ROOT_GB"))
