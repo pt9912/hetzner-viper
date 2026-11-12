@@ -70,7 +70,8 @@ func proxyCommand(c *model.Machine) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	parts := []string{exe, "k8s-proxy", "--dir", dir, c.Name}
+	// on Windows the paths have backslashes, which the quoting below would have to refuse; Windows takes slashes too
+	parts := []string{filepath.ToSlash(exe), "k8s-proxy", "--dir", filepath.ToSlash(dir), c.Name}
 	for i, p := range parts {
 		if strings.ContainsAny(p, "\"\n\r\\'") {
 			return "", fmt.Errorf("the ProxyCommand cannot hold %q (a quote, a backslash or a line break)", p)

@@ -129,6 +129,9 @@ func Load(dir, machine string, env settings.Env, needTokens bool) (*model.Machin
 		c.ServerImage = c.Get("K8S_IMAGE") // the image of the container, not an operating system image
 	}
 	c.WorkspaceDir = or(c.Get("WORKSPACE_DIR"), "/Development")
+	if prov.Container {
+		c.WorkspaceDir = or(c.Get("WORKSPACE_DIR"), ContainerWorkspace) // a pod has no root to make a directory anywhere else
+	}
 	c.ServerPrefix = or(c.Get("SERVER_PREFIX"), "claude")
 	if !nameRe.MatchString(c.ServerPrefix) {
 		return nil, fmt.Errorf("SERVER_PREFIX: lowercase letters, digits, hyphens: %s", c.ServerPrefix)
@@ -349,6 +352,9 @@ func derivePaths(c *model.Machine, home string) {
 	c.LogDir = filepath.Join(c.StateDir, "logs")
 }
 
+// ContainerWorkspace is WORKSPACE_DIR of a machine that is a container, when it is not set: on its volume.
+const ContainerWorkspace = "/home/builder/work"
+
 // checkKubernetes reports what a machine in a Kubernetes cluster needs (docs/plan/kubernetes.md): the cluster, the
 // image, no DNS (a pod has no public address) and a work directory that is on its volume.
 func checkKubernetes(c *model.Machine) error {
@@ -375,8 +381,8 @@ func checkKubernetes(c *model.Machine) error {
 	default:
 		return fmt.Errorf("K8S_DOCKER: dind, remote or none: %s", c.Get("K8S_DOCKER"))
 	}
-	if ws := c.Setting("WORKSPACE_DIR", "/Development"); ws != "/Development" && !strings.HasPrefix(ws, "/home/builder/") {
-		return fmt.Errorf("WORKSPACE_DIR: for PROVIDER=kubernetes /Development or a directory below /home/builder (the volume): %s", ws)
+	if ws := c.Setting("WORKSPACE_DIR", ContainerWorkspace); !strings.HasPrefix(ws, "/home/builder/") {
+		return fmt.Errorf("WORKSPACE_DIR: for PROVIDER=kubernetes a directory below /home/builder, which is the volume of the pod (default %s); a WORKSPACE_DIR in .env.local is for the VMs: set it for this machine in machines/%s.env.local or in its group file: %s", ContainerWorkspace, c.Name, ws)
 	}
 	return nil
 }

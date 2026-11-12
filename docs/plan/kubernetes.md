@@ -131,8 +131,8 @@ D8 **Einstellungen:** `PROVIDER=kubernetes`; **`SERVER_LOCATION` ist der Kontext
 | 0 | Verifikation | **1.** `k3d` installieren (`kubectl` ist da), Cluster mit dem fertigen k3s-Image anlegen, in dieser Umgebung erreichbar? **2.** `sshd` ohne `systemd` im Container mit Host-Zertifikat und `AuthenticationMethods publickey`. **3.** `ProxyCommand` mit Port-Forward: `ssh`, `scp`, VS Code Remote-SSH. **4.** NetworkPolicy-Anlegen als atomare Sperre (zwei gleichzeitige Aufrufe); Durchsetzung der Policy in k3d. **5.** Daten bleiben nach Neustart des Pods; ein leeres Volume wird mit den Dateien des Heimverzeichnisses angelegt; `down` hinterlässt keinen PVC. **6.** `sudo` und `sshd` mit den nötigen Rechten, `code-server`/`systemctl`-Ersatz, Claude Code und Homebrew im Image. **7.** Speicher: k3d plus Pod in 4 GB RAM. **8.** Entscheidungen aus §9. |
 | 1 | Image | **erledigt (§17):** Dockerfile, Einstiegsprogramm, `make image`, `make image-test` |
 | 2 | Adapter | **erledigt (§18):** `kubernetes`-Adapter gegen die Fake-API: Anbieter ohne NATS |
-| 3 | Anbindung | `ServerSpec`, `Server.Proxy`, `WriteConfig` mit ganzer `Server`-Angabe und alle Stellen aus §5 Punkt 4, „Container“-Fähigkeit in `start`/`check` (§5 Punkt 3), `K8S_*` in `settingsfile`, `viper k8s-proxy`, Quoting der SSH-Konfiguration |
-| 4 | Echter Lauf | k3d: `up`, `check`, `ssh`, Neustart, `down`; Handbuch (Kapitel zum Anbieter) |
+| 3 | Anbindung (**erledigt, §19**) | `ServerSpec`, `Server.Proxy`, `WriteConfig` mit ganzer `Server`-Angabe und alle Stellen aus §5 Punkt 4, „Container“-Fähigkeit in `start`/`check` (§5 Punkt 3), `K8S_*` in `settingsfile`, `viper k8s-proxy`, Quoting der SSH-Konfiguration |
+| 4 | Echter Lauf | **erledigt (§19)** k3d: `up`, `check`, `ssh`, Neustart, `down`; das Handbuch folgt (offen) |
 | 5 | NATS | Dienstname und Zertifikat, Prozessverwalter, NetworkPolicy als Gruppennetz; Lauf mit drei Pods |
 | 6 | Verwaltete Cluster | EKS, GKE, AKS nach §16: Einstellungen für Knotengruppe und Image-Zugang, Preflight, Handbuch; **Lauf nur, wenn ein Konto da ist** |
 
@@ -206,7 +206,7 @@ Frage: Kommen wir in den Containern ohne root aus, geht Homebrew, und Docker **m
 | `natsinstall.sh`, `natscli.sh` (`sudo install` nach `/usr/local/bin`) | `nats-server` und `nats` sind im Image |
 | `natsunit.sh`, `natsconfig.sh` (`systemd`-Einheit, `systemctl reload`) | `nats-server` läuft als Prozess unter dem Prozessverwalter; Neuladen mit Signal (`SIGHUP`) statt `systemctl` |
 | `swap.sh` | entfällt |
-| `provision.go` `sudo install -d … /Development`, `code-server` (`.deb`, `systemctl`) | Verzeichnis legt das Einstiegsprogramm an; `code-server` entfällt oder kommt als Benutzerinstallation ins Image (VS Code Remote-SSH braucht ihn nicht) |
+| `provision.go` `sudo install -d …` (Arbeitsverzeichnis), `code-server` (`.deb`, `systemctl`) | das Arbeitsverzeichnis liegt unter `/home/builder` (auf dem Volume) und braucht kein root; `code-server` entfällt oder kommt als Benutzerinstallation ins Image (VS Code Remote-SSH braucht ihn nicht) |
 | `check/probe.sh` (`sudo sshd -T`) | für Container eine eigene Prüfung (Konfigurationsdatei lesen) |
 | Claude Code (`install.sh`) | **geht ohne root** (läuft schon als `builder`) |
 
@@ -302,7 +302,34 @@ Abgleich mit dem, was `cloud-init.yaml` einrichtet:
 * **`Server.ID`** ist die UID des StatefulSet (§3). `Server.ViaAPI` und `Server.SSHPort` (2222) sagen den Aufrufern, dass es keine Adresse gibt.
 * **Löschen:** StatefulSet (Vordergrund-Kaskade), Warten auf Pod, Secret, Volume; ein bereits entferntes ist kein Fehler.
 * **Preflight:** Kontext und API, Größe, Image, Namespace samt Pod-Security-Stufe, Rechte (`SelfSubjectAccessReview` je Aufgabe), StorageClass, Docker-Modus, vorhandener Server.
-* **Einstellungen (`settingsfile`):** `SERVER_LOCATION` (Kontext) und `K8S_IMAGE` sind Pflicht ohne Standard; `DNS_PROVIDER=none` ist Pflicht; `WORKSPACE_DIR` nur `/Development` oder unter `/home/builder`; `K8S_DOCKER` geprüft; `K8S_DISK_GB` 1 bis 16384; NATS bleibt verweigert, bis Meilenstein 5 fertig ist.
-* **Image:** `/Development` ist ein Link nach `/home/builder/Development` (auf dem Volume, ohne root zu machen).
+* **Einstellungen (`settingsfile`):** `SERVER_LOCATION` (Kontext) und `K8S_IMAGE` sind Pflicht ohne Standard; `DNS_PROVIDER=none` ist Pflicht; `WORKSPACE_DIR` nur unter `/home/builder` (Standard `/home/builder/work`); `K8S_DOCKER` geprüft; `K8S_DISK_GB` 1 bis 16384; NATS bleibt verweigert, bis Meilenstein 5 fertig ist.
+* **Arbeitsverzeichnis:** Standard `/home/builder/work`, auf dem Volume; das Image kennt keinen Pfad des Nutzers. Eine Einstellung `WORKSPACE_DIR` außerhalb von `/home/builder` wird für diesen Anbieter abgelehnt.
 
 **Noch nicht angeschlossen** (Meilenstein 3): `start`, `stop`, `check` brauchen eine IPv4 und `cloud-init`; `viper k8s-proxy` und die SSH-Konfiguration mit `ProxyCommand` fehlen. Bis dahin scheitert `viper up` mit diesem Anbieter („has no IPv4 address“).
+
+## 19 Ergebnis Meilenstein 3 und 4: Anbindung und echter Lauf in k3d (Stand 12.11.2026)
+
+**Anbindung (M3):** `Server.ViaAPI` und `SSHPort`; `sshconfig.WriteConfig` schreibt für einen Pod `HostName <servername>`, `Port 2222` und einen `ProxyCommand` (`viper k8s-proxy --dir <einstellungen> <maschine>`, Pfade zitiert, `%` verdoppelt, Anführungszeichen, Zeilenumbrüche und Backslashes abgelehnt; unter Windows mit Schrägstrichen); `PinHostKey` liest den Schlüssel aus `/home/builder/.viper/sshd/host_key.pub`. In `start`, `stop` und `check` fallen die Annahmen einer VM weg (keine Adresse, kein DNS, keine Firewall, kein cloud-init, kein `sudo`, keine Auslagerungsdatei, kein `code-server`); die Probe für Pods meldet bereit, wenn die Bereitschaftsdatei da ist, Claude im Image liegt und Docker antwortet. `VIPER_SWAP` und `VIPER_CODE_SERVER` werden für diesen Anbieter abgelehnt. Das Image gibt `DOCKER_HOST` per `SetEnv` an die SSH-Sitzungen weiter. `viper k8s-proxy` (Port-Forward mit `client-go`) ist ein Unterbefehl von `viper`.
+
+**Echter Lauf (M4)** in k3d v5.9.0 (k3s v1.35.5), Pod Security `privileged` im Namespace `viper`, Maschine `1x2`, Volume 2 GB, `dind`:
+
+| Schritt | Ergebnis |
+|---|---|
+| `viper preflight` | grün; die Rechteprüfung (`SelfSubjectAccessReview`), StorageClass, Namespace, Größe, Image gegen den echten Cluster |
+| `viper up` | **fertig in rund 25 Sekunden** nach dem Anlegen (Image und Docker-Image lagen im Cluster); SSH durch die API, Homebrew, Claude, Docker bereit, „Ready“ mit Arbeitsverzeichnis `/home/builder/work` |
+| `viper check` | grün: sshd nur Schlüssel, Docker läuft, Homebrew, gh, Git |
+| `viper ssh --cmd` | `DOCKER_HOST` gesetzt, `docker run hello-world` lief, Arbeitsverzeichnis beschreibbar |
+| Pod ersetzt (`kubectl delete pod`, das StatefulSet legt einen neuen an) | Dateien im Arbeitsverzeichnis und im Heimverzeichnis blieben; `viper up` danach nahm den Pod wieder auf |
+| `viper down` (mit und ohne `--force`) | StatefulSet, Pod, Secret und Volume entfernt, Namespace bleibt (mit `viper-managed` und Pod Security `privileged`) |
+
+**Fehler, die der echte Lauf aufdeckte (alle behoben):**
+1. Das Einstiegsprogramm brach ab, weil `cp -a` die Zeiten des Volume-Wurzelverzeichnisses setzen wollte, das der Cluster `root` zuweist. In meinem lokalen Test gehörte es dem Benutzer 1000. `image/test.sh` legt das Volume jetzt als `root` an, wie ein Cluster es tut (39 Prüfungen).
+2. `ssh`-Konfiguration unter Windows: Pfade mit Backslashes wurden vom Quoting der `ProxyCommand` abgelehnt (CI); jetzt Schrägstriche.
+3. Die Meldung „Existing firewall … verify that its rules permit your connection“ erschien auch bei Pods; der Firewall-Schritt entfällt für sie.
+4. Ein Arbeitsverzeichnis `/Development` (der Standard der VMs, in einem globalen `.env.local` gesetzt) ist für Pods nicht möglich; der Standard dafür ist `/home/builder/work`, und die Meldung sagt, wo man `WORKSPACE_DIR` für die Maschine setzt.
+
+**Bekannte Grenzen:**
+* **Programme, die man mit `brew install` nachinstalliert, überleben das Ersetzen des Pods nicht**, weil Homebrew im Image liegt und nicht auf dem Volume. Was `VIPER_BREW_PACKAGES` nennt, wird bei jedem `viper up` wieder installiert. Ein zweites Volume für `/home/linuxbrew` wäre die Lösung (das Verzeichnis wäre beim ersten Start aus dem Image zu füllen) und ist nicht gebaut.
+* `viper` ist durch `client-go` und den Port-Forward etwa **34 MiB** größer (117,5 statt 83,9 MiB, gestrippt).
+* Die Arbeitsspeicher- und Plattenanzeige in `viper ssh` und `check` zeigt die Werte des Knotens, nicht die Grenzen des Pods.
+* VS Code Remote-SSH über den Proxy ist nicht geprüft (keine grafische Oberfläche).

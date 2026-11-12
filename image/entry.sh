@@ -15,13 +15,16 @@ for f in authorized_keys host_key host_key.pub host_key-cert.pub; do
   [ -s "$secret/$f" ] || fail "$secret/$f is missing"
 done
 
-# A volume over the home directory hides what the image has there: bring it once, and never overwrite.
+# A volume over the home directory hides what the image has there: bring it once, and never overwrite. The directory
+# of the volume is not ours (a cluster makes it root's, world-writable), so its own mode and times are left alone:
+# the entries are copied one by one, not "." itself.
 if [ ! -e "$home/.viper-seeded" ]; then
-  cp -an /opt/viper/home-seed/. "$home/"
+  shopt -s dotglob nullglob
+  cp -r --update=none --preserve=mode,timestamps,links /opt/viper/home-seed/* "$home/"
   : > "$home/.viper-seeded"
 fi
 # the volume made the directory; its owner and mode are not ours to set when we are not root, only its content
-mkdir -p "$home/.ssh" "$home/.viper/sshd" "$home/Development"
+mkdir -p "$home/.ssh" "$home/.viper/sshd"
 chmod 700 "$home/.ssh" "$home/.viper" "$home/.viper/sshd"
 install -m 600 "$secret/authorized_keys" "$home/.ssh/authorized_keys"
 install -m 600 "$secret/host_key" "$home/.viper/sshd/host_key"

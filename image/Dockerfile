@@ -57,13 +57,11 @@ RUN set -eu; \
     rm -rf "$tmp"; \
     nats-server --version; nats --version
 
-# builder, the place of Homebrew (the installer needs sudo only to make it) and /Development, the default work directory:
-# a link into the home directory, so that it is on the volume of a pod and root is not needed to make it
+# builder and the place of Homebrew (the installer needs sudo only to make it)
 RUN (id ubuntu >/dev/null 2>&1 && userdel -r ubuntu || true) \
  && useradd -m -u 1000 -s /bin/bash builder \
  && mkdir -p /home/linuxbrew/.linuxbrew /opt/viper /run/viper \
  && chown builder:builder /home/linuxbrew/.linuxbrew \
- && ln -s /home/builder/Development /Development \
  && echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' > /etc/profile.d/brew.sh
 
 # what the VM gets from cloud-init.yaml: the sshd hardening, tmux and the VS Code settings: the same text
@@ -72,9 +70,6 @@ COPY image/seed.py /tmp/seed.py
 RUN python3 /tmp/seed.py /tmp/cloud-init.yaml / \
  && chown -R builder:builder /home/builder \
  && rm /tmp/seed.py /tmp/cloud-init.yaml
-
-COPY image/sshd_config /opt/viper/sshd_config
-COPY --chmod=0755 image/entry.sh /opt/viper/entry.sh
 
 USER builder
 ENV HOME=/home/builder
@@ -95,6 +90,10 @@ RUN set -eu; for i in 1 2 3 4 5; do \
 # a volume over /home/builder hides all this: keep a copy that the entrypoint brings to an empty volume
 USER root
 RUN mkdir -p /opt/viper/home-seed && cp -a /home/builder/. /opt/viper/home-seed/ && chown -R builder:builder /opt/viper/home-seed
+
+# last, so that a change of the entrypoint does not make the long steps above run again
+COPY image/sshd_config /opt/viper/sshd_config
+COPY --chmod=0755 image/entry.sh /opt/viper/entry.sh
 
 USER 1000
 ENV PATH=/home/linuxbrew/.linuxbrew/bin:/home/builder/.local/bin:$PATH

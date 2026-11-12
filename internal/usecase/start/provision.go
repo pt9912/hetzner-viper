@@ -167,7 +167,7 @@ func (r *runner) workspace(ctx context.Context) (int, error) {
 	q := model.Quote(c.WorkspaceDir)
 	install := "sudo install -d -o builder -g builder "
 	if c.IsContainer() {
-		install = "install -d " // no sudo: /Development is a link into the home directory, which is builder's
+		install = "install -d " // no sudo: the work directory of a pod is below the home directory, which is builder's
 	}
 	cmd := install + q + " && mkdir -p ~/.config/viper && { grep -qxF -- " + q +
 		" ~/.config/viper/workspaces 2>/dev/null || printf '%s\\n' " + q + " >> ~/.config/viper/workspaces; }"

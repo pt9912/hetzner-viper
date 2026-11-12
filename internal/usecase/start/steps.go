@@ -55,6 +55,9 @@ func (r *runner) opFail(err error) (int, error) {
 // (ping, for diagnosis) from SSH_ALLOWED_CIDRS.
 func (r *runner) firewall(ctx context.Context) (int, error) {
 	c := r.c
+	if c.IsContainer() {
+		return 0, nil // a pod is reached through the API of the cluster: there is no port to open
+	}
 	cidrs := strings.Split(c.Setting("SSH_ALLOWED_CIDRS", "0.0.0.0/0,::/0"), ",")
 	res, err := r.d.Cloud.EnsureFirewall(ctx, c.FirewallName, cidrs)
 	if res.Created {

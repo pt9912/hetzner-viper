@@ -8,7 +8,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 srv_version=$(sed -n 's/^ARG NATS_SERVER_VERSION=//p' "$here/Dockerfile")
 cli_version=$(sed -n 's/^ARG NATS_CLI_VERSION=//p' "$here/Dockerfile")
 t=$(mktemp -d); export t; name="viper-machine-test-$$"
-trap 'docker rm -f "$name" "$name-2" >/dev/null 2>&1 || true; rm -rf "$t"' EXIT
+trap 'docker rm -f "$name" "$name-2" >/dev/null 2>&1 || true; docker run --rm --user 0 --entrypoint chown -v "$t/home:/h" "$image" -R 1000:1000 /h >/dev/null 2>&1 || true; rm -rf "$t"' EXIT
 ok=0; bad=0
 check() { # check "what" command...
   local what="$1"; shift
@@ -16,6 +16,8 @@ check() { # check "what" command...
 }
 
 mkdir -p "$t/secret" "$t/home" && chmod 777 "$t/home"
+# a cluster makes the directory of a volume root's and world-writable: the entrypoint must cope (not owned by builder)
+docker run --rm --user 0 --entrypoint chown -v "$t/home:/h" "$image" root:root /h
 ssh-keygen -q -t ed25519 -N '' -f "$t/ca" -C testca
 ssh-keygen -q -t ed25519 -N '' -f "$t/host_key" -C host
 ssh-keygen -q -t ed25519 -N '' -f "$t/user" -C user
@@ -58,7 +60,7 @@ check "viper's natscli.sh finds the nats tool installed" bash -c "$(declare -f s
 check "DOCKER_HOST reaches the sessions of sshd (SetEnv)" sshc 2222 '[ "$DOCKER_HOST" = tcp://127.0.0.1:2375 ]'
 check "docker client and plugins" sshc 2222 "bash -lc 'docker --version && docker buildx version && docker compose version'"
 check "home was seeded: tmux and VS Code settings" sshc 2222 'test -f ~/.tmux.conf && test -f ~/.vscode-server/data/Machine/settings.json'
-check "the work directory is writable" sshc 2222 'touch /Development/x && rm /Development/x'
+check "a work directory below the home directory can be made" sshc 2222 'install -d ~/work/p && touch ~/work/p/x && rm -r ~/work'
 check "brew installs a package without root" sshc 2222 "bash -lc 'HOMEBREW_NO_AUTO_UPDATE=1 brew install hello >/dev/null 2>&1 && hello | head -n 1'"
 docker rm -f "$name" >/dev/null
 
