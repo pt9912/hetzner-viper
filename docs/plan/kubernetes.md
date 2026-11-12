@@ -129,7 +129,7 @@ D8 **Einstellungen:** `PROVIDER=kubernetes`; **`SERVER_LOCATION` ist der Kontext
 | # | Titel | Inhalt |
 |---|---|---|
 | 0 | Verifikation | **1.** `k3d` installieren (`kubectl` ist da), Cluster mit dem fertigen k3s-Image anlegen, in dieser Umgebung erreichbar? **2.** `sshd` ohne `systemd` im Container mit Host-Zertifikat und `AuthenticationMethods publickey`. **3.** `ProxyCommand` mit Port-Forward: `ssh`, `scp`, VS Code Remote-SSH. **4.** NetworkPolicy-Anlegen als atomare Sperre (zwei gleichzeitige Aufrufe); Durchsetzung der Policy in k3d. **5.** Daten bleiben nach Neustart des Pods; ein leeres Volume wird mit den Dateien des Heimverzeichnisses angelegt; `down` hinterlässt keinen PVC. **6.** `sudo` und `sshd` mit den nötigen Rechten, `code-server`/`systemctl`-Ersatz, Claude Code und Homebrew im Image. **7.** Speicher: k3d plus Pod in 4 GB RAM. **8.** Entscheidungen aus §9. |
-| 1 | Image | Dockerfile, Einstiegsprogramm, `make image`, Test mit `docker run` |
+| 1 | Image | **erledigt (§17):** Dockerfile, Einstiegsprogramm, `make image`, `make image-test` |
 | 2 | Adapter | `kubernetes`-Adapter gegen die Fake-API: Anbieter ohne NATS |
 | 3 | Anbindung | `ServerSpec`, `Server.Proxy`, `WriteConfig` mit ganzer `Server`-Angabe und alle Stellen aus §5 Punkt 4, „Container“-Fähigkeit in `start`/`check` (§5 Punkt 3), `K8S_*` in `settingsfile`, `viper k8s-proxy`, Quoting der SSH-Konfiguration |
 | 4 | Echter Lauf | k3d: `up`, `check`, `ssh`, Neustart, `down`; Handbuch (Kapitel zum Anbieter) |
@@ -257,3 +257,20 @@ Frage: Kommen wir in den Containern ohne root aus, geht Homebrew, und Docker **m
 Wo `dind` nicht erlaubt ist (Fargate, Autopilot, „restricted“-Namespaces), bleibt `K8S_DOCKER=remote` oder `none` (§15). Wo NetworkPolicy nicht durchgesetzt wird, gilt der NATS-Schutz des Ports nur durch die Schichten des Servers (Schlüssel, Zertifikat, Bindung an die Pod-IP), nicht durch das Netz; `viper check` kann das nicht erkennen, das Handbuch sagt es.
 
 **Aussage über die Qualität:** In k3d getestet; EKS, GKE und AKS nur nach dem Plan gebaut, ein Lauf ist erst mit einem Konto belegt (wie bei AWS, Google Cloud und Azure als VM-Anbieter). Kosten entstehen durch die Knoten, nicht durch `viper`; ein Cluster ohne freie Knoten lässt den Pod in „Pending“ hängen, und der Preflight kann nur die vorhandene Kapazität nennen.
+
+## 17 Ergebnis Meilenstein 1: das Image (Stand 12.11.2026)
+
+Dateien: `image/Dockerfile`, `image/entry.sh`, `image/sshd_config`, `image/seed.py`, `image/test.sh`; `make image` und `make image-test`. Gebaut mit Ubuntu 26.04 (Digest festgelegt), 2 Minuten 22 Sekunden, **2,6 GB**. `image/test.sh` läuft mit **33 Prüfungen, alle grün**, unter den Einschränkungen von Pod Security „restricted“ (uid 1000, `--cap-drop ALL`, `no-new-privileges`), ohne Cluster; `shellcheck` meldet nichts.
+
+* **Eine Quelle für VM und Image:** `seed.py` nimmt die Härtung von `sshd` (`01-keys-only.conf`), die `tmux`-Konfiguration und die VS-Code-Einstellungen aus `cloud-init.yaml`. Die Datei `image/sshd_config` bindet die Härtung ein und ergänzt nur Port 2222, Host-Schlüssel und -Zertifikat, `UsePAM no`, `StrictModes no` und SFTP. Die wirksame Konfiguration (`sshd -T`) wird geprüft: Passwort aus, Tastatur-Interaktiv aus, nur Schlüssel, kein Root, Port 2222.
+* **Inhalt:** die Pakete aus `cloud-init.yaml` (ohne die, die nur eine VM braucht), `tini` als PID 1, Docker-Client mit Buildx und Compose (Schlüssel mit dem veröffentlichten Fingerabdruck geprüft, wie in `cloud-init.yaml`), Homebrew (im Image, `/home/linuxbrew`), Claude Code (Wiederholung mit wachsenden Pausen, wie bei der VM). `sudo` gibt es nicht.
+* **Heimverzeichnis und Volume:** Der Inhalt des Heimverzeichnisses (Claude, `tmux`, VS Code) liegt zusätzlich unter `/opt/viper/home-seed`. Das Einstiegsprogramm kopiert ihn **einmal** in ein leeres Volume (`cp -an`, Markierung `~/.viper-seeded`) und überschreibt nichts. Geprüft mit einem leeren, für alle beschreibbaren Verzeichnis, wie ein Cluster es anlegt: Claude läuft daraus, und eine Datei im Volume überlebt einen Neustart des Containers. Die Schlüssel kommen nur als Dateien (`VIPER_SECRET_DIR`), nie als Umgebung oder Befehlszeile.
+* **Bereitschaft:** `/tmp/viper-ready` (anpassbar mit `VIPER_READY_FILE`), geschrieben kurz vor dem Start von `sshd`; die Bereitschaftsprüfung des Pods soll zusätzlich Port 2222 prüfen.
+* **Getestet auch:** Anmeldung mit Host-Zertifikat, falscher Host-Name abgelehnt, anderer Schlüssel und Passwort abgelehnt, `scp`, `brew install` ohne root, Docker-Client und Plugins.
+
+**Offen / für später:**
+* **Größe 2,6 GB.** Das meiste sind `build-essential`, Homebrew und Claude; kleiner wird es nur durch Weglassen (etwa `build-essential`, wenn Homebrew nur Bottles braucht). Für den ersten Schritt akzeptiert.
+* Nur `amd64` (D7); `arm64` mit Meilenstein 6.
+* `nats-server` und `nats` sind noch nicht im Image (Meilenstein 5).
+* `code-server` fehlt (nicht nötig für VS Code Remote-SSH, §15).
+* Der Test läuft nicht in `make check`/CI (er braucht Docker und dauert Minuten); er ist ein eigenes Ziel.

@@ -9,7 +9,7 @@ LDFLAGS    = -s -w -X main.version=$(VERSION)
 # viper-nats-mcp is built into viper (internal/mcpbin/bin) for the Linux servers: same bytes in every build
 MCPDIR     = internal/mcpbin/bin
 
-.PHONY: help build mcp dist dist-docker test vet fmt lint gates check
+.PHONY: help build mcp dist dist-docker test vet fmt lint gates check image image-test
 
 # The gates in the order of a serial run (not guaranteed under make -j). The fragments in tools/mk/
 # put themselves in front (GATE_CHECKS := <target> $(GATE_CHECKS)), before gates is defined below.
@@ -45,6 +45,12 @@ dist: mcp ## all release binaries and SHA256SUMS into dist/ (make dist VERSION=v
 	done; \
 	cd dist && sha256sum viper_* > SHA256SUMS
 	@ls dist
+
+image: ## viper-machine, the image of the Kubernetes provider (needs Docker; docs/plan/kubernetes.md)
+	docker build -f image/Dockerfile -t viper-machine:$(VERSION) -t viper-machine:test .
+
+image-test: image ## test the image with docker: sshd, host certificate, tools, seeding of the home directory
+	image/test.sh viper-machine:test
 
 dist-docker: ## like dist, but built by the Dockerfile (needs only Docker, no Go)
 	rm -f dist/viper_* dist/SHA256SUMS

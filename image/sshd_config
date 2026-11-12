@@ -1,0 +1,15 @@
+# sshd of the container (viper-machine): runs as builder, without root, on port 2222.
+# The hardening (keys only, no root login, ...) is the file that cloud-init.yaml writes on a VM; the image
+# takes it from there (image/seed.py), so it is the same text. First, so its values win.
+Include /etc/ssh/sshd_config.d/*.conf
+
+Port 2222
+HostKey /home/builder/.viper/sshd/host_key
+HostCertificate /home/builder/.viper/sshd/host_key-cert.pub
+AuthorizedKeysFile /home/builder/.ssh/authorized_keys
+PidFile none
+# no PAM, no privilege separation to speak of: there is one user. StrictModes would refuse a home directory that a
+# volume made group- or world-writable, and an unprivileged user cannot change it.
+UsePAM no
+StrictModes no
+Subsystem sftp /usr/lib/openssh/sftp-server
