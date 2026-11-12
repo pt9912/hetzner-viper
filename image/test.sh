@@ -8,7 +8,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 srv_version=$(sed -n 's/^ARG NATS_SERVER_VERSION=//p' "$here/Dockerfile")
 cli_version=$(sed -n 's/^ARG NATS_CLI_VERSION=//p' "$here/Dockerfile")
 t=$(mktemp -d); export t; name="viper-machine-test-$$"
-trap 'docker rm -f "$name" "$name-2" "$name-3" "$name-4" >/dev/null 2>&1 || true; docker run --rm --user 0 --entrypoint chown -v "$t/home:/h" -v "$t/brew:/b" "$image" -R 1000:1000 /h /b >/dev/null 2>&1 || true; rm -rf "$t"' EXIT
+trap 'docker rm -f "$name" "$name-2" "$name-3" "$name-4" >/dev/null 2>&1 || true; docker run --rm --user 0 --entrypoint chown -v "$t/home:/h" -v "$t/brew:/b" "$image" -R "$(id -u):$(id -g)" /h /b >/dev/null 2>&1 || true; rm -rf "$t" || true' EXIT
 ok=0; bad=0
 check() { # check "what" command...
   local what="$1"; shift
