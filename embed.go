@@ -1,7 +1,7 @@
 // Package hetznerviper carries the files the viper binary needs without a checkout.
 package hetznerviper
 
-import _ "embed"
+import "embed"
 
 // EnvExample is the template for .env.local.
 //
@@ -22,3 +22,9 @@ var GroupExample []byte
 //
 //go:embed cloud-init.yaml
 var CloudInit []byte
+
+// ImageContext are the files that build the image of the Kubernetes provider, besides cloud-init.yaml (viper image build):
+// the user of a downloaded viper has neither a checkout nor make.
+//
+//go:embed image/Dockerfile image/entry.sh image/sshd_config image/seed.py image/nats-supervisor.sh
+var ImageContext embed.FS

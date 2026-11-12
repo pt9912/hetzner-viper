@@ -51,6 +51,7 @@ type Options struct {
 	Image        string // K8S_IMAGE
 	StorageClass string // K8S_STORAGE_CLASS, "" for the default of the cluster
 	DiskGB       int    // K8S_DISK_GB
+	BrewGB       int    // K8S_BREW_GB: the volume of Homebrew
 	Docker       string // K8S_DOCKER: dind, remote or none
 	DockerHost   string // K8S_DOCKER_HOST: where a remote daemon is
 	DockerImage  string // K8S_DOCKER_IMAGE: the image of the daemon of the sidecar
@@ -85,6 +86,13 @@ func (o Options) diskGB() int {
 		return o.DiskGB
 	}
 	return 20
+}
+
+func (o Options) brewGB() int {
+	if o.BrewGB > 0 {
+		return o.BrewGB
+	}
+	return 10
 }
 
 func (o Options) poll() time.Duration {

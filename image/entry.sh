@@ -23,6 +23,15 @@ if [ ! -e "$home/.viper-seeded" ]; then
   cp -r --update=none --preserve=mode,timestamps,links /opt/viper/home-seed/* "$home/"
   : > "$home/.viper-seeded"
 fi
+# Homebrew lives in /home/linuxbrew, which is a volume of its own in a pod (what brew installs must survive a new pod):
+# the first start puts the Homebrew of the image there. The same care for the directory of the volume as above.
+brewdir=/home/linuxbrew
+if [ ! -e "$brewdir/.viper-seeded" ] && [ -d /opt/viper/brew-seed ]; then
+  echo "viper-machine: putting Homebrew on its volume (first start) ..." >&2
+  cp -r --update=none --preserve=mode,timestamps,links /opt/viper/brew-seed "$brewdir/.linuxbrew" ||
+    fail "cannot put Homebrew on $brewdir (is the volume writable for group 1000?)"
+  : > "$brewdir/.viper-seeded"
+fi
 # the volume made the directory; its owner and mode are not ours to set when we are not root, only its content
 mkdir -p "$home/.ssh" "$home/.viper/sshd"
 chmod 700 "$home/.ssh" "$home/.viper" "$home/.viper/sshd"

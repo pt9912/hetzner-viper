@@ -8,16 +8,16 @@ here=$(cd "$(dirname "$0")" && pwd)
 srv_version=$(sed -n 's/^ARG NATS_SERVER_VERSION=//p' "$here/Dockerfile")
 cli_version=$(sed -n 's/^ARG NATS_CLI_VERSION=//p' "$here/Dockerfile")
 t=$(mktemp -d); export t; name="viper-machine-test-$$"
-trap 'docker rm -f "$name" "$name-2" "$name-3" >/dev/null 2>&1 || true; docker run --rm --user 0 --entrypoint chown -v "$t/home:/h" "$image" -R 1000:1000 /h >/dev/null 2>&1 || true; rm -rf "$t"' EXIT
+trap 'docker rm -f "$name" "$name-2" "$name-3" >/dev/null 2>&1 || true; docker run --rm --user 0 --entrypoint chown -v "$t/home:/h" -v "$t/brew:/b" "$image" -R 1000:1000 /h /b >/dev/null 2>&1 || true; rm -rf "$t"' EXIT
 ok=0; bad=0
 check() { # check "what" command...
   local what="$1"; shift
   if "$@" >"$t/out" 2>&1; then echo "ok    $what"; ok=$((ok+1)); else echo "FAIL  $what"; sed 's/^/        /' "$t/out" | tail -n 5; bad=$((bad+1)); fi
 }
 
-mkdir -p "$t/secret" "$t/home" && chmod 777 "$t/home"
+mkdir -p "$t/secret" "$t/home" "$t/brew" && chmod 777 "$t/home" "$t/brew"
 # a cluster makes the directory of a volume root's and world-writable: the entrypoint must cope (not owned by builder)
-docker run --rm --user 0 --entrypoint chown -v "$t/home:/h" "$image" root:root /h
+docker run --rm --user 0 --entrypoint chown -v "$t/home:/h" -v "$t/brew:/b" "$image" root:root /h /b
 ssh-keygen -q -t ed25519 -N '' -f "$t/ca" -C testca
 ssh-keygen -q -t ed25519 -N '' -f "$t/host_key" -C host
 ssh-keygen -q -t ed25519 -N '' -f "$t/user" -C user
@@ -27,7 +27,7 @@ printf '@cert-authority * %s\n' "$(cut -d' ' -f1,2 "$t/ca.pub")" > "$t/known_hos
 
 run() { # run NAME PORT HOMEDIR
   docker run -d --name "$1" --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges -e DOCKER_HOST=tcp://127.0.0.1:2375 \
-    -p "127.0.0.1:$2:2222" -v "$t/secret:/run/viper/secret:ro" ${3:+-v "$3:/home/builder"} "$image" >/dev/null
+    -p "127.0.0.1:$2:2222" -v "$t/secret:/run/viper/secret:ro" ${3:+-v "$3:/home/builder"} ${4:+-v "$4:/home/linuxbrew"} "$image" >/dev/null
 }
 sshc() { ssh -p "$1" -i "$t/user" -o IdentitiesOnly=yes -o UserKnownHostsFile="$t/known_hosts" -o StrictHostKeyChecking=yes \
   -o HostKeyAlias=vmtest -o BatchMode=yes -o ConnectTimeout=5 builder@127.0.0.1 "${@:2}"; }
@@ -65,10 +65,15 @@ check "brew installs a package without root" sshc 2222 "bash -lc 'HOMEBREW_NO_AU
 docker rm -f "$name" >/dev/null
 
 # 2: a volume over the home directory (world-writable and empty, as a cluster makes it): the entrypoint brings the files
-run "$name-2" 2223 "$t/home"
+run "$name-2" 2223 "$t/home" "$t/brew"
 check "starts with an empty volume over the home directory" wait_ssh 2223
 check "an empty volume is seeded" sshc 2223 'test -f ~/.tmux.conf && test -x ~/.local/bin/claude && test -f ~/.viper-seeded'
 check "claude runs from the seeded home" sshc 2223 "bash -lc 'claude --version'"
+check "Homebrew was put on its volume, and what brew installs there survives a new container" bash -c "$(declare -f sshc)
+  sshc 2223 'bash -lc \"HOMEBREW_NO_AUTO_UPDATE=1 brew install hello >/dev/null 2>&1 && hello | head -n 1\"' | grep -q Hello &&
+  docker rm -f $name-2 >/dev/null && docker run -d --name $name-2 --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges -p 127.0.0.1:2223:2222 \
+    -v $t/secret:/run/viper/secret:ro -v $t/home:/home/builder -v $t/brew:/home/linuxbrew $image >/dev/null &&
+  $(declare -f wait_ssh) && wait_ssh 2223 && sshc 2223 'bash -lc \"hello | head -n 1\"' | grep -q Hello"
 check "a change in the volume survives a restart" bash -c "$(declare -f sshc); sshc 2223 'echo mine > ~/keep.txt' && docker restart $name-2 >/dev/null && $(declare -f wait_ssh) && wait_ssh 2223 && sshc 2223 'cat ~/keep.txt' | grep -qx mine"
 
 docker rm -f "$name-2" >/dev/null

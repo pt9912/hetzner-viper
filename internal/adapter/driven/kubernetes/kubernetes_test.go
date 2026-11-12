@@ -99,9 +99,20 @@ func TestCreateMakesSecretVolumeAndStatefulSetAndWaitsForThePod(t *testing.T) {
 	if err != nil || pvc.Spec.Resources.Requests.Storage().String() != "20Gi" || pvc.Labels["viper-managed"] != "true" {
 		t.Errorf("%+v %v", pvc, err)
 	}
+	brew, err := c.cs.CoreV1().PersistentVolumeClaims("w").Get(ctx, "claude-alpha-brew", metav1.GetOptions{})
+	if err != nil || brew.Spec.Resources.Requests.Storage().String() != "10Gi" || brew.Labels["viper-managed"] != "true" {
+		t.Errorf("a volume of its own for Homebrew, so that what brew installs survives a new pod: %+v %v", brew, err)
+	}
 	sts, err := c.cs.AppsV1().StatefulSets("w").Get(ctx, "claude-alpha", metav1.GetOptions{})
 	if err != nil || *sts.Spec.Replicas != 1 || sts.Labels[model.LabelNATSGroup] != "dev" {
 		t.Fatalf("%+v %v", sts, err)
+	}
+	mounts := map[string]string{}
+	for _, m := range sts.Spec.Template.Spec.Containers[0].VolumeMounts {
+		mounts[m.Name] = m.MountPath
+	}
+	if mounts["home"] != "/home/builder" || mounts["brew"] != "/home/linuxbrew" {
+		t.Errorf("%v", mounts)
 	}
 	if got, err := k.ServerByName(ctx, "claude-alpha"); err != nil || got == nil || got.ID != srv.ID {
 		t.Errorf("%+v %v", got, err)
@@ -232,12 +243,16 @@ func TestDeleteTakesEverythingTheServerHadAndOnlyThat(t *testing.T) {
 		if _, err := c.cs.CoreV1().Secrets("w").Get(ctx, name+"-ssh", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
 			t.Errorf("Secret: %v", err)
 		}
-		if _, err := c.cs.CoreV1().PersistentVolumeClaims("w").Get(ctx, name+"-home", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
-			t.Errorf("volume: %v", err)
+		for _, v := range []string{"-home", "-brew"} {
+			if _, err := c.cs.CoreV1().PersistentVolumeClaims("w").Get(ctx, name+v, metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+				t.Errorf("volume %s: %v", v, err)
+			}
 		}
 	}
-	if _, err := c.cs.CoreV1().PersistentVolumeClaims("w").Get(ctx, "claude-b-home", metav1.GetOptions{}); err != nil {
-		t.Errorf("the other server's volume is not touched: %v", err)
+	for _, v := range []string{"claude-b-home", "claude-b-brew"} {
+		if _, err := c.cs.CoreV1().PersistentVolumeClaims("w").Get(ctx, v, metav1.GetOptions{}); err != nil {
+			t.Errorf("the other server's volume %s is not touched: %v", v, err)
+		}
 	}
 	if _, err := c.cs.CoreV1().Namespaces().Get(ctx, "w", metav1.GetOptions{}); err != nil {
 		t.Errorf("the namespace stays: %v", err)

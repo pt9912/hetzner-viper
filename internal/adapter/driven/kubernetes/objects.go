@@ -16,6 +16,7 @@ import (
 func secretName(server string) string { return server + "-ssh" }
 func pvcName(server string) string    { return server + "-home" }
 func podName(server string) string    { return server + "-0" }
+func brewName(server string) string   { return server + "-brew" }
 
 // PodName is the pod of the server: the one replica of its StatefulSet.
 func PodName(server string) string { return podName(server) }
@@ -47,13 +48,23 @@ func secretFor(ns string, s model.ServerSpec) *corev1.Secret {
 	}
 }
 
+// pvcFor is the volume of the home directory.
 func pvcFor(ns string, s model.ServerSpec, o Options) (*corev1.PersistentVolumeClaim, error) {
-	size, err := resource.ParseQuantity(fmt.Sprintf("%dGi", o.diskGB()))
+	return claim(ns, s.Name, pvcName(s.Name), o.diskGB(), o)
+}
+
+// brewPVCFor is the volume of Homebrew (/home/linuxbrew): what brew installs must survive a new pod.
+func brewPVCFor(ns string, s model.ServerSpec, o Options) (*corev1.PersistentVolumeClaim, error) {
+	return claim(ns, s.Name, brewName(s.Name), o.brewGB(), o)
+}
+
+func claim(ns, server, name string, gb int, o Options) (*corev1.PersistentVolumeClaim, error) {
+	size, err := resource.ParseQuantity(fmt.Sprintf("%dGi", gb))
 	if err != nil {
 		return nil, err
 	}
 	p := &corev1.PersistentVolumeClaim{
-		ObjectMeta: meta(ns, pvcName(s.Name), s.Name),
+		ObjectMeta: meta(ns, name, server),
 		Spec: corev1.PersistentVolumeClaimSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources:   corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: size}},
@@ -81,6 +92,7 @@ func machineSpec(o Options, res corev1.ResourceRequirements) corev1.Container {
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "secret", MountPath: secretDir, ReadOnly: true},
 			{Name: "home", MountPath: homeDir},
+			{Name: "brew", MountPath: "/home/linuxbrew"},
 		},
 		ReadinessProbe: tcpProbe(SSHPort),
 	}
@@ -119,6 +131,7 @@ func statefulSetFor(ns string, s model.ServerSpec, o Options, res corev1.Resourc
 	volumes := []corev1.Volume{
 		{Name: "secret", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: secretName(s.Name), DefaultMode: ptr(int32(0o444))}}},
 		{Name: "home", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: pvcName(s.Name)}}},
+		{Name: "brew", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: brewName(s.Name)}}},
 	}
 	if o.docker() == DockerDind {
 		containers = append(containers, dockerSpec(o))

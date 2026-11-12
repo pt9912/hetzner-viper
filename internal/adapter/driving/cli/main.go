@@ -25,7 +25,7 @@ func Main(version string, args []string, h *Host) int {
 		fmt.Fprintln(stdout, "viper", version)
 		return 0
 	}
-	o.h = h
+	o.h, o.version = h, version
 	err = dispatch(commands()[name], &o)
 	if err == nil {
 		return 0

@@ -95,7 +95,8 @@ func (n noAdapter) EnsureFirewall(context.Context, string, []string) (model.Fire
 // kubernetesOptions are the settings of a machine in a Kubernetes cluster.
 func kubernetesOptions(m *model.Machine) kubernetes.Options {
 	disk, _ := strconv.Atoi(m.Get("K8S_DISK_GB"))
-	return kubernetes.Options{
+	brew, _ := strconv.Atoi(m.Get("K8S_BREW_GB"))
+	return kubernetes.Options{BrewGB: brew,
 		Context: m.ServerLocation, Namespace: m.Get("K8S_NAMESPACE"), Image: m.ServerImage, StorageClass: m.Get("K8S_STORAGE_CLASS"),
 		DiskGB: disk, Docker: m.Get("K8S_DOCKER"), DockerHost: m.Get("K8S_DOCKER_HOST"), DockerImage: m.Get("K8S_DOCKER_IMAGE"), NATSPort: m.NATS.Port,
 	}

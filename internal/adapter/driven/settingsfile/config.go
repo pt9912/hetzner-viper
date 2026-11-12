@@ -371,10 +371,15 @@ func checkKubernetes(c *model.Machine) error {
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("Missing settings: %s (PROVIDER=kubernetes: SERVER_LOCATION is the context of the kubeconfig, K8S_IMAGE the image of the machine; viper takes no default so that nothing is made in the wrong cluster)", strings.Join(missing, " "))
+		return fmt.Errorf("Missing settings: %s (PROVIDER=kubernetes: SERVER_LOCATION is the context of the kubeconfig, K8S_IMAGE the image of the machine, which viper image build makes; viper takes no default so that nothing is made in the wrong cluster or from the wrong image)", strings.Join(missing, " "))
 	}
 	if DNSProviderOf(map[string]string{"DNS_PROVIDER": c.Get("DNS_PROVIDER")}) != model.DNSNone {
 		return errors.New("DNS_PROVIDER=none is needed for PROVIDER=kubernetes: a pod has no public address to name")
+	}
+	if v := c.Get("K8S_BREW_GB"); v != "" {
+		if n, err := strconv.Atoi(v); err != nil || n < 1 || n > 16384 {
+			return fmt.Errorf("K8S_BREW_GB must be a whole number of GB between 1 and 16384: %s", v)
+		}
 	}
 	if v := c.Get("VIPER_SWAP"); v != "" && v != "0" {
 		return errors.New("VIPER_SWAP: a pod has no swap file to make (PROVIDER=kubernetes)")

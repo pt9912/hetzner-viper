@@ -40,7 +40,7 @@ func (c *Client) Validate(ctx context.Context, ch model.Check) []model.Finding {
 		f.add(model.OK, "size %s", ch.Spec.Size)
 	}
 	if c.opts.Image == "" {
-		f.add(model.Fail, "K8S_IMAGE is not set: the image of the machine (make image builds it; for k3d: k3d image import)")
+		f.add(model.Fail, "K8S_IMAGE is not set: the image of the machine (viper image build builds it, with --k3d CLUSTER it puts it into a k3d cluster)")
 	} else {
 		f.add(model.OK, "image %s", c.opts.Image)
 	}

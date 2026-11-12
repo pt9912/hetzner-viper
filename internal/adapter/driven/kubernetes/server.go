@@ -133,7 +133,7 @@ func (c *Client) CreateServer(ctx context.Context, s model.ServerSpec) (*model.S
 		return nil, err
 	}
 	if c.opts.Image == "" {
-		return nil, fmt.Errorf("K8S_IMAGE is not set: the image of the machine (make image builds it)")
+		return nil, fmt.Errorf("K8S_IMAGE is not set: the image of the machine (viper image build builds it)")
 	}
 	res, err := resourcesOf(s.Size)
 	if err != nil {
@@ -183,6 +183,13 @@ func (c *Client) createObjects(ctx context.Context, cs *session, s model.ServerS
 	if _, err := cs.CoreV1().PersistentVolumeClaims(ns).Create(ctx, pvc, metav1.CreateOptions{}); err != nil {
 		return nil, &cloud.OpError{Op: "creating the volume " + pvcName(s.Name), Write: true, Err: err}
 	}
+	brew, err := brewPVCFor(ns, s, c.opts)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := cs.CoreV1().PersistentVolumeClaims(ns).Create(ctx, brew, metav1.CreateOptions{}); err != nil {
+		return nil, &cloud.OpError{Op: "creating the volume " + brewName(s.Name), Write: true, Err: err}
+	}
 	sts, err := cs.AppsV1().StatefulSets(ns).Create(ctx, statefulSetFor(ns, s, c.opts, res), metav1.CreateOptions{})
 	if err != nil {
 		return nil, &cloud.OpError{Op: "creating the StatefulSet " + s.Name, Write: true, Err: err}
@@ -228,17 +235,27 @@ func (c *Client) dropStale(ctx context.Context, name string) error {
 			return err
 		}
 	}
-	return c.deleteVolume(ctx, name)
+	return c.deleteVolumes(ctx, name)
 }
 
-// deleteVolume deletes the volume claim of the server if viper made it, and waits until it is gone.
-func (c *Client) deleteVolume(ctx context.Context, name string) error {
+// deleteVolumes deletes the volumes of the server (home directory and Homebrew).
+func (c *Client) deleteVolumes(ctx context.Context, name string) error {
+	for _, v := range []string{pvcName(name), brewName(name)} {
+		if err := c.deleteVolume(ctx, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// deleteVolume deletes the volume claim of that name if viper made it, and waits until it is gone.
+func (c *Client) deleteVolume(ctx context.Context, claimName string) error {
 	cs, err := c.client()
 	if err != nil {
 		return err
 	}
 	ns := c.opts.namespace()
-	p, err := cs.CoreV1().PersistentVolumeClaims(ns).Get(ctx, pvcName(name), metav1.GetOptions{})
+	p, err := cs.CoreV1().PersistentVolumeClaims(ns).Get(ctx, claimName, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return nil
 	}
@@ -307,5 +324,5 @@ func (c *Client) DeleteServer(ctx context.Context, id string) error {
 	if err := cs.CoreV1().Secrets(ns).Delete(ctx, secretName(name), metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 		return &cloud.OpError{Op: "deleting the secret " + secretName(name), Write: true, Err: err}
 	}
-	return c.deleteVolume(ctx, name)
+	return c.deleteVolumes(ctx, name)
 }

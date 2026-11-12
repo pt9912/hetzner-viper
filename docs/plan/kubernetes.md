@@ -356,3 +356,14 @@ Abgleich mit dem, was `cloud-init.yaml` einrichtet:
 3. `viper down --group` fragt nach `DISCARD`, wenn eine Maschine ihr Arbeitsverzeichnis nie bekam (hier: nach einer gescheiterten Anmeldung); das gilt auch bei `--force`.
 
 **Meilenstein 6 (verwaltete Cluster):** ohne Konto nicht möglich. Vorhanden: der Preflight (Rechte mit `SelfSubjectAccessReview`, StorageClass, Pod-Security-Stufe des Namespace), `K8S_STORAGE_CLASS`, `K8S_NAMESPACE`, `K8S_DOCKER=remote|none`. Offen: `K8S_IMAGE_PULL_SECRET`, `K8S_NODE_SELECTOR`/`K8S_TOLERATION`, `arm64`-Image, `ServerAliveInterval` ist schon gesetzt. Das Handbuch sagt, dass EKS, GKE und AKS nicht in einem echten Konto getestet sind.
+
+## 21 Nachtrag: Image für Benutzer und Volume für Homebrew (Stand 12.11.2026)
+
+**Wie das Image in den Cluster kommt.** Vorher nur von Hand: `make image` und `k3d image import`; ein Benutzer mit dem `viper`-Binary hat weder `make` noch das Repository. Jetzt:
+1. **`viper image build [--tag NAME:TAG] [--k3d CLUSTER]`** baut das Image mit Docker aus den in `viper` eingebetteten Dateien (`embed.go`: `Dockerfile`, Einstiegsprogramm, `sshd_config`, `seed.py`, Prozessverwalter, dazu `cloud-init.yaml`); mit `--k3d` kommt es in den Cluster. Standardtag `viper-machine:<version>`. Tag und Clustername werden geprüft (nichts, was Docker als Option läse).
+2. **Workflow `image.yml`:** bei einem `v*`-Tag (oder von Hand für einen vorhandenen Tag) baut er das Image, führt `image/test.sh` aus und veröffentlicht `ghcr.io/<eigentümer>/viper-machine:<tag>` und `:latest`. Ein `LABEL org.opencontainers.image.source` verknüpft das Paket mit dem Repository. **Das erste veröffentlichte Paket ist privat und muss einmal öffentlich geschaltet werden.** Der Workflow ist nie gelaufen (er veröffentlicht erst beim nächsten Tag). Ein Standard-`K8S_IMAGE` auf dieses Image gibt es **noch nicht**: erst nach der ersten Veröffentlichung, sonst zeigte er ins Leere.
+3. Andere Cluster: `docker push` in ein Register und `K8S_IMAGE` darauf.
+
+**Homebrew auf einem eigenen Volume.** `/home/linuxbrew` ist ein zweiter PVC (`<name>-brew`, `K8S_BREW_GB`, Standard 10): Das Image legt Homebrew (220 MB) nach `/opt/viper/brew-seed`, das Einstiegsprogramm füllt das Volume beim ersten Start (ohne Volume landet es im Container, wie vorher); `viper down` löscht beide Volumes. Getestet im Image mit einem Volume, das `root` gehört wie im Cluster: `brew install hello`, neuer Container, `hello` läuft noch (`image/test.sh`, 46 Prüfungen). **Noch nicht in einem Cluster geprüft** (der Adapter ist gegen die Fake-API getestet).
+
+**Git-Repository:** liegt unter `WORKSPACE_DIR` im Heimverzeichnis und damit auf dem Volume `<name>-home`. Ein Lauf mit `--repo` im Cluster steht noch aus.

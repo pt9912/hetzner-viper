@@ -917,7 +917,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `AZURE_SUBSCRIPTION_ID` | Azure-Abonnement (nur Azure, Pflichtangabe) | leer |
 | `AZURE_RESOURCE_GROUP`, `AZURE_SUBNET_ID`, `AZURE_ROOT_GB` | Ressourcengruppe, vorhandenes Subnetz bzw. Größe der Systemplatte in GB (nur Azure) | `viper`, eigenes Netz bzw. `64` |
 | `K8S_IMAGE` | Image der Maschine (nur `kubernetes`, Pflichtangabe; `make image` baut es) | leer |
-| `K8S_NAMESPACE`, `K8S_STORAGE_CLASS`, `K8S_DISK_GB` | Namespace, StorageClass und Größe des Volumes in GB (nur `kubernetes`) | `viper`, die des Clusters bzw. `20` |
+| `K8S_NAMESPACE`, `K8S_STORAGE_CLASS`, `K8S_DISK_GB`, `K8S_BREW_GB` | Namespace, StorageClass, Größe des Volumes für das Heimverzeichnis und Größe des Volumes für Homebrew in GB (nur `kubernetes`) | `viper`, die des Clusters, `20` bzw. `10` |
 | `K8S_DOCKER`, `K8S_DOCKER_HOST`, `K8S_DOCKER_IMAGE` | Docker auf der Maschine: `dind` (privilegierter Sidecar), `remote` (Daemon unter `K8S_DOCKER_HOST`) oder `none`; Image des Sidecars (nur `kubernetes`) | `dind`, leer, `docker:dind` |
 | `NATS_ENABLED` | `true`: der Rechner gehört zu einer NATS-Gruppe (nur Hetzner); `false` oder leer: aus | `false` |
 | `NATS_GROUP` | Name der NATS-Gruppe; Pflichtangabe mit `NATS_ENABLED=true`; 1 bis 31 Kleinbuchstaben, Ziffern, Bindestriche | leer |
@@ -976,14 +976,14 @@ Mit `PROVIDER=kubernetes` ist eine „Maschine“ ein **Pod** in einem Kubernete
 **Einrichtung:**
 
 1. Ein Cluster, dessen Kontext in Ihrer `kubeconfig` steht (k3d: `k3d cluster create viper`). `viper` nimmt **nie** den aktuellen Kontext, sondern nur den in `SERVER_LOCATION` genannten, damit nichts im falschen Cluster entsteht.
-2. Das Image bauen und in den Cluster bringen: `make image` (Docker nötig, rund 2,5 Minuten, 2,6 GB), bei k3d `k3d image import viper-machine:test -c viper`. Bei anderen Clustern in ein Register hochladen und `K8S_IMAGE` darauf zeigen lassen.
+2. Das Image der Maschine besorgen. **Mit Docker bauen, ohne Repository und ohne `make`:** `viper image build` baut es aus den Dateien, die in `viper` stecken (rund 2,5 Minuten beim ersten Mal, 2,6 GB), und nennt den Tag, den Sie als `K8S_IMAGE` eintragen. Bei **k3d** bringt `viper image build --k3d viper` es zugleich in den Cluster `viper` (k3d zieht lokale Images nicht selbst). Bei anderen Clustern muss das Image in einem Register liegen, das der Cluster erreicht: `docker push` dorthin und die Referenz in `K8S_IMAGE`. Zu jedem Release veröffentlicht der Workflow „machine image“ das Image auch bei GitHub: `ghcr.io/pt9912/viper-machine:<release>` (das Paket muss einmal öffentlich geschaltet sein, sonst braucht der Cluster ein Pull-Secret).
 3. In der Datei der Maschine (oder der Gruppe), **nicht** in der allgemeinen `.env.local`:
 
 ```
 PROVIDER=kubernetes
 DNS_PROVIDER=none
 SERVER_LOCATION=k3d-viper
-K8S_IMAGE=viper-machine:test
+K8S_IMAGE=viper-machine:v0.18.0
 SERVER_TYPE=2x4
 WORKSPACE_DIR=/home/builder/work
 ```
@@ -994,7 +994,7 @@ WORKSPACE_DIR=/home/builder/work
 
 * **Kein DNS, keine Adresse, keine Firewall.** `DNS_PROVIDER=none` ist Pflicht. `viper` erreicht den Pod durch die API des Clusters: Der `ProxyCommand` der SSH-Konfiguration ruft `viper k8s-proxy` auf, das einen Port-Forward zum `sshd` des Pods (Port 2222) macht. `ssh`, `scp`, `viper ssh` und die SSH-Tunnel gehen so; `SSH_ALLOWED_CIDRS` gilt nicht.
 * **Der Pod läuft ohne root und ohne `sudo`** (Benutzer `builder`, uid 1000, keine Capabilities, kein API-Zugang). Er startet deshalb auch unter Pod Security „restricted“, wenn kein Docker verlangt wird (`K8S_DOCKER=none`). `VIPER_SWAP` und `VIPER_CODE_SERVER` werden abgelehnt. Es gibt kein `cloud-init`; das Image enthält alles (Pakete, Docker-Client, Homebrew, Claude Code, `nats-server`, `nats`).
-* **Daten:** Ein Volume (PVC) hält `/home/builder` und das Arbeitsverzeichnis; es übersteht das Ersetzen des Pods und wird mit `viper down` (nach der Abfrage `DELETE`) gelöscht. **Mit `brew install` nachinstallierte Programme überstehen das Ersetzen des Pods nicht** (Homebrew liegt im Image); was `VIPER_BREW_PACKAGES` nennt, kommt bei jedem `viper up` wieder.
+* **Daten:** Zwei Volumes (PVC) gehören zu einer Maschine: eines hält `/home/builder` und damit auch das Arbeitsverzeichnis und das **Git-Repository** (`/home/builder/work/<repo>`), das andere `/home/linuxbrew` (Homebrew). Beide übersteht das Ersetzen des Pods, und was Sie mit `brew install` nachinstallieren, bleibt. Der erste Start füllt das Volume von Homebrew aus dem Image (rund 220 MB, wenige Sekunden). `viper down` löscht beide (nach der Abfrage `DELETE`).
 * **Docker:** Standard ist `K8S_DOCKER=dind`: ein privilegierter Docker-Daemon als zweiter Container im Pod. **Das ist ein privilegierter Container (root auf dem Knoten, wenn er geknackt wird) und braucht einen Namespace mit Pod Security `privileged`.** Nutzen Sie es in k3d oder einem eigenen Cluster, nicht in einem geteilten. Wo das verboten ist (Fargate, Autopilot, „restricted“), nehmen Sie `K8S_DOCKER=remote` mit einem Daemon außerhalb oder `none`. Ohne Privileg läuft Docker im Pod nach den Tests nicht.
 * **Namespace:** `viper` (`K8S_NAMESPACE`). Fehlt er, legt `viper` ihn an (mit Label `viper-managed`) und löscht ihn nie. `viper` ändert und löscht nur Objekte mit dem Label `viper-managed`.
 * **NATS-Gruppen** gehen wie sonst (`NATS_ENABLED`, `NATS_GROUP`, `viper nats`, MCP-Server, Betreiber). Das Netz der Gruppe ist eine NetworkPolicy `viper-nats-<gruppe>`, die den NATS-Port nur zwischen den Pods der Gruppe erlaubt; ihr Anlegen ist die Sperre des ersten Starts. Die Clients erreichen den Server über den Dienstnamen `viper-nats-<gruppe>.<namespace>.svc` (ein headless Service); darauf lautet auch das Zertifikat, denn die Adresse des Pods ändert sich bei jedem neuen Pod. Der Server (`nats-server` als Prozess im Pod, ohne `systemd`) lauscht nur auf der Adresse seines Pods. **Ob die NetworkPolicy wirkt, hängt vom Netz-Plugin des Clusters ab** (k3s: ja, getestet; in EKS, GKE und AKS muss es eingeschaltet sein). Ein Pod, der einen fremden Namen für den Server benutzt, kommt ohne Schlüssel nicht hinein, unabhängig davon.

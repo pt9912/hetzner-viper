@@ -6,6 +6,8 @@
 # without capabilities and without sudo, so it also starts under Pod Security "restricted".
 ARG UBUNTU=ubuntu:26.04@sha256:065aa8626841f16057b78b027b464cd59c4fac36c204c72dcbf48d66f5fa8a96
 FROM ${UBUNTU}
+# links the package on ghcr.io to this repository (its visibility and permissions follow it)
+LABEL org.opencontainers.image.source="https://github.com/pt9912/hetzner-viper" org.opencontainers.image.description="The machine of the Kubernetes provider of viper: sshd, Claude Code, Docker client, Homebrew, nats-server"
 ENV DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8
 
 # The NATS programs that viper puts on the machines of a NATS group (internal/natsserver: Version, CLIVersion and the
@@ -61,7 +63,7 @@ RUN set -eu; \
 RUN (id ubuntu >/dev/null 2>&1 && userdel -r ubuntu || true) \
  && useradd -m -u 1000 -s /bin/bash builder \
  && mkdir -p /home/linuxbrew/.linuxbrew /opt/viper /run/viper \
- && chown builder:builder /home/linuxbrew/.linuxbrew \
+ && chown builder:builder /home/linuxbrew /home/linuxbrew/.linuxbrew \
  && echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' > /etc/profile.d/brew.sh
 
 # what the VM gets from cloud-init.yaml: the sshd hardening, tmux and the VS Code settings: the same text
@@ -90,6 +92,10 @@ RUN set -eu; for i in 1 2 3 4 5; do \
 # a volume over /home/builder hides all this: keep a copy that the entrypoint brings to an empty volume
 USER root
 RUN mkdir -p /opt/viper/home-seed && cp -a /home/builder/. /opt/viper/home-seed/ && chown -R builder:builder /opt/viper/home-seed
+# the same for Homebrew: programs installed with brew must survive a new pod, so /home/linuxbrew is a volume of its own
+# in a pod. What the installer made is moved aside (not copied: the image stays as big as it was) and put on the volume
+# by the entrypoint at the first start; with no volume it lands in the container, as before.
+RUN mv /home/linuxbrew/.linuxbrew /opt/viper/brew-seed
 
 # last, so that a change of the entrypoint does not make the long steps above run again
 COPY image/sshd_config /opt/viper/sshd_config
