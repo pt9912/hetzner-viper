@@ -9,7 +9,10 @@ umask 077
 while true; do
   if [ -s "$dir/server.conf" ] && [ -s "$dir/server.crt" ] && [ -s "$dir/server.key" ]; then
     # POD_IP, the address of the pod, is in the environment of the container: the configuration says "host: $POD_IP"
-    nats-server -c "$dir/server.conf" --pid "$dir/nats-server.pid" -l "$dir/nats-server.log" --log_size_limit 5242880
+    # no --log_size_limit: nats-server then refuses every reload ("config reload not supported for LogSizeLimit"), and the
+    # new users would never be read. The log is kept small here instead: an old one is put aside at each start.
+    if [ "$(stat -c %s "$dir/nats-server.log" 2>/dev/null || echo 0)" -gt 5242880 ]; then mv -f "$dir/nats-server.log" "$dir/nats-server.log.1"; fi
+    nats-server -c "$dir/server.conf" --pid "$dir/nats-server.pid" -l "$dir/nats-server.log"
     rm -f "$dir/nats-server.pid"
   fi
   sleep 2

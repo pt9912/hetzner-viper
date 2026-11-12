@@ -133,8 +133,8 @@ D8 **Einstellungen:** `PROVIDER=kubernetes`; **`SERVER_LOCATION` ist der Kontext
 | 2 | Adapter | **erledigt (§18):** `kubernetes`-Adapter gegen die Fake-API: Anbieter ohne NATS |
 | 3 | Anbindung (**erledigt, §19**) | `ServerSpec`, `Server.Proxy`, `WriteConfig` mit ganzer `Server`-Angabe und alle Stellen aus §5 Punkt 4, „Container“-Fähigkeit in `start`/`check` (§5 Punkt 3), `K8S_*` in `settingsfile`, `viper k8s-proxy`, Quoting der SSH-Konfiguration |
 | 4 | Echter Lauf | **erledigt (§19)** k3d: `up`, `check`, `ssh`, Neustart, `down`; das Handbuch folgt (offen) |
-| 5 | NATS | Dienstname und Zertifikat, Prozessverwalter, NetworkPolicy als Gruppennetz; Lauf mit drei Pods |
-| 6 | Verwaltete Cluster | EKS, GKE, AKS nach §16: Einstellungen für Knotengruppe und Image-Zugang, Preflight, Handbuch; **Lauf nur, wenn ein Konto da ist** |
+| 5 | NATS | **erledigt (§20):** Dienstname und Zertifikat, Prozessverwalter, NetworkPolicy als Gruppennetz; Lauf mit drei Pods |
+| 6 | Verwaltete Cluster (**nicht ohne Konto möglich; die Einstellungen und der Preflight stehen, §20**) | EKS, GKE, AKS nach §16: Einstellungen für Knotengruppe und Image-Zugang, Preflight, Handbuch; **Lauf nur, wenn ein Konto da ist** |
 
 ## 11 Definition of Done
 
@@ -333,3 +333,26 @@ Abgleich mit dem, was `cloud-init.yaml` einrichtet:
 * `viper` ist durch `client-go` und den Port-Forward etwa **34 MiB** größer (117,5 statt 83,9 MiB, gestrippt).
 * Die Arbeitsspeicher- und Plattenanzeige in `viper ssh` und `check` zeigt die Werte des Knotens, nicht die Grenzen des Pods.
 * VS Code Remote-SSH über den Proxy ist nicht geprüft (keine grafische Oberfläche).
+
+## 20 Ergebnis Meilenstein 5: NATS im Cluster, echter Lauf in k3d (Stand 12.11.2026)
+
+`PROVIDER=kubernetes` mit `NATS_ENABLED`: Gruppe `kn` aus drei Pods (Server `kna`, Clients `knb` und `knc`, MCP-Server an), k3d v5.9.0.
+
+**Umbau gegenüber den VMs (Details in `docs/maintainer/architektur.md`):** Gruppennetz = NetworkPolicy `viper-nats-<gruppe>` (Anlegen ist die Sperre) plus headless Service gleichen Namens; die Clients erreichen den Server über `viper-nats-<gruppe>.<namespace>.svc`, das Zertifikat lautet auf diesen Namen (`natscert.sh`: IP oder DNS), der Server lauscht auf `$POD_IP` (`host: $POD_IP`, `# viper-advertise` in `server.conf`, `natsserver.Config.Listen`), `nats-server` läuft als Prozess des Containers (`image/nats-supervisor.sh`; `natsproc.sh` statt `natsunit.sh`; `natsconfig.sh` lädt per `SIGHUP` über die PID-Datei neu; `natsstatus.sh` meldet Dienst aktiv über die PID). Labels der Gruppe und der Rolle liegen an der Pod-Vorlage (das Netz wählt danach), der Zustand nur am StatefulSet (eine Änderung der Vorlage würde den Pod neu starten).
+
+| Schritt | Ergebnis |
+|---|---|
+| `viper up --group kn` | grün; Server in 36 s, Clients nach rund einer Minute; „NATS client … ready (server viper-nats-kn.viper.svc:4222)“ |
+| `viper check --group kn` | grün: Zertifikat gültig, Anmeldung über TLS mit dem NKey, **der Server lauscht nur auf `10.42.0.x:4222`**, drei Maschinen angemeldet |
+| `viper nats send/broadcast/request/listen` | Text unverändert (Anführungszeichen, `$(id)`, `{{…}}`, Zeilenumbruch); `listen --all` zeigt Direktnachrichten der anderen |
+| `viper nats init`, senden als Betreiber | über den SSH-Tunnel durch den Proxy, TLS gegen den Dienstnamen; `viper check` zeigt den Betreiber an |
+| **Server-Pod ersetzt** (neue IP) | `nats-server` startete auf der neuen Adresse aus der Konfiguration auf dem Volume; Clients, Betreiber, Zertifikat und `viper check` ohne neue Anmeldung |
+| NetworkPolicy | ein Pod ohne Gruppenlabel erreicht den Port nicht, ein Pod der Gruppe schon |
+| `viper down --group kn` | alles weg, auch Policy und Service; Hinweis auf den übrig gebliebenen Betreiber-Schlüssel |
+
+**Fehler, die der echte Lauf aufdeckte (alle behoben):**
+1. `nats-server --log_size_limit` auf der Kommandozeile macht **jedes** Neuladen ungültig („config reload not supported for LogSizeLimit“): die Schlüssel der Clients wurden nie gelesen, die Anmeldung scheiterte mit „Authorization Violation“. Das Image-Test prüft jetzt, dass das Neuladen im Log steht.
+2. Dem Image fehlte `ss` (Paket `iproute2`), das die Skripte von `viper` brauchen.
+3. `viper down --group` fragt nach `DISCARD`, wenn eine Maschine ihr Arbeitsverzeichnis nie bekam (hier: nach einer gescheiterten Anmeldung); das gilt auch bei `--force`.
+
+**Meilenstein 6 (verwaltete Cluster):** ohne Konto nicht möglich. Vorhanden: der Preflight (Rechte mit `SelfSubjectAccessReview`, StorageClass, Pod-Security-Stufe des Namespace), `K8S_STORAGE_CLASS`, `K8S_NAMESPACE`, `K8S_DOCKER=remote|none`. Offen: `K8S_IMAGE_PULL_SECRET`, `K8S_NODE_SELECTOR`/`K8S_TOLERATION`, `arm64`-Image, `ServerAliveInterval` ist schon gesetzt. Das Handbuch sagt, dass EKS, GKE und AKS nicht in einem echten Konto getestet sind.

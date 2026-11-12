@@ -84,8 +84,9 @@ check "nats-server starts when the configuration is there and listens on the add
   printf "host: \$POD_IP\nport: 14223\n" > $d/server.conf
   openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout $d/server.key -out $d/server.crt -days 1 -subj /CN=t >/dev/null 2>&1
   for _ in $(seq 1 20); do [ -s $d/nats-server.pid ] && ss -ltn "sport = :14223" | grep -qF 127.0.0.1:14223 && exit 0; sleep 1; done; exit 1'
-check "a signal makes it read the configuration again (the process stays)" sshc 2224 '
-  d=~/.viper-nats; p=$(cat $d/nats-server.pid); kill -HUP $p; sleep 1; kill -0 $p && [ "$(cat $d/nats-server.pid)" = "$p" ]'
+check "a signal makes it read the configuration again (the process stays, the log says it was read)" sshc 2224 '
+  d=~/.viper-nats; p=$(cat $d/nats-server.pid); kill -HUP $p; sleep 2; kill -0 $p && [ "$(cat $d/nats-server.pid)" = "$p" ] &&
+  tail -n 3 $d/nats-server.log | grep -q "Reloaded server configuration" && ! tail -n 3 $d/nats-server.log | grep -q "Failed to reload"'
 check "nats-server is started again after it ended" sshc 2224 '
   d=~/.viper-nats; p=$(cat $d/nats-server.pid); kill -9 $p; for _ in $(seq 1 20); do n=$(cat $d/nats-server.pid 2>/dev/null); [ -n "$n" ] && [ "$n" != "$p" ] && kill -0 $n && exit 0; sleep 1; done; exit 1'
 check "viper's natsconfig.sh reloads it through the pid file" bash -c "$(declare -f sshc)

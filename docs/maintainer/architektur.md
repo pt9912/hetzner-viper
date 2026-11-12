@@ -31,6 +31,16 @@ Die Abhängigkeiten laufen nach innen: `model` kennt nichts, die Ports kennen nu
 
 Der Login-Schlüssel muss kein Objekt beim Anbieter sein: `LoginKey.Ref` ist der Name des Schlüssels oder der Schlüssel selbst (GCP, Azure).
 
+## Container als Maschinen (Kubernetes)
+
+`PROVIDER=kubernetes` (`internal/adapter/driven/kubernetes`) macht aus einer Maschine ein StatefulSet mit einem Pod, einem Secret (Schlüssel) und einem PVC. Planung, Entscheidungen und Ergebnisse: `docs/plan/kubernetes.md`. Was es von den VM-Anbietern unterscheidet, und wo der Code es merkt:
+
+* `ProviderInfo.Container` und `Machine.IsContainer()`: kein cloud-init (`start` fragt eine andere Probe, `check` überspringt cloud-init), kein `sudo`, keine Auslagerungsdatei, kein `code-server`, keine Firewall, kein DNS.
+* `Server.ViaAPI` und `Server.SSHPort`: der Pod hat keine Adresse. `sshconfig.WriteConfig` schreibt einen `ProxyCommand` (`viper k8s-proxy`, Port-Forward mit `client-go` im Adapter, `Client.Proxy`); `ForwardAgent` bleibt aus. Alles danach geht weiter über `ssh -F <config> <alias>`.
+* `ServerSpec.Bootstrap` trägt dieselben Schlüssel wie `UserData` (cloud-init) als Werte, für den Adapter.
+* Das Image (`image/`, `make image`, `make image-test`) läuft als uid 1000 ohne Rechte; Härtung von `sshd`, `tmux`- und VS-Code-Einstellungen nimmt `image/seed.py` aus `cloud-init.yaml`; die Versionen und Prüfsummen von `nats-server` und `nats` im `Dockerfile` hält ein Test gleich mit `internal/natsserver`.
+* NATS: das Gruppennetz ist eine NetworkPolicy (Anlegen = Sperre), der Server wird über einen headless Service erreicht (Zertifikat auf den Dienstnamen), `nats-server` läuft als Prozess des Containers (`image/nats-supervisor.sh`, Neuladen per `SIGHUP` über die PID-Datei), die Konfiguration sagt `host: $POD_IP` (`natsserver.Config.Listen`) und trägt den Dienstnamen als `# viper-advertise`.
+
 ## NATS-Gruppen
 
 Optional (`NATS_ENABLED`), Hetzner, AWS und Google Cloud (die Anbietertabelle `model/provider.go` führt das Feld `NATS`; der Plan für weitere Anbieter ist `docs/plan/nats-anbieter.md`). Bei AWS ist das „private Netzwerk“ eine Security Group `viper-nats-<gruppe>` im VPC des Subnetzes; ihr Anlegen ist die Sperre des ersten Starts. Bei Google Cloud ist es eine Firewall-Regel `viper-nats-<gruppe>` mit einem gleichnamigen Netzwerk-Tag; die Markierung steht in ihrer Beschreibung (Regeln haben keine Labels), die VMs müssen in einer Zone liegen. `Server.InNetwork()` (nicht `PrivateIP`) sagt, ob ein Server angebunden ist. Der Plan mit allen Entscheidungen und den Ergebnissen der Tests gegen Hetzner steht in `docs/plan/nats.md`; hier die Bausteine.
@@ -115,4 +125,5 @@ Bei einem Issue: Die Seite im Browser ansehen, das Muster in der Auswertung anpa
 |---|---|
 | AWS | echte Läufe: Adapter, `up` und `down`, x86 und ARM, ohne Cloudflare |
 | Hetzner | Server anlegen und löschen gegen nachgebildete Schnittstellen (die früheren Bash-Skripte liefen echt); NATS-Gruppen (Netzwerke, Labels, Bootstrap, Clients, `down`, `check`) auch in echten Läufen |
+| Kubernetes | echte Läufe in k3d: Adapter, `up`, `check`, `ssh`, Docker (dind), Ersetzen des Pods, `down`, NATS-Gruppe aus drei Pods mit `viper nats` und Betreiber, NetworkPolicy; EKS, GKE, AKS nicht in einem Konto getestet |
 | Google Cloud, Azure | nur gegen nachgebildete Schnittstellen; die SDK-Schicht ist vom Compiler geprüft, nicht gegen ein Konto gelaufen |

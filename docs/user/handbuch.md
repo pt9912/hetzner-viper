@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.93  
+Version: 1.94  
 Software-Version: v0.17.0  
 Stand: 11.11.2026  
 
@@ -903,7 +903,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | Einstellung | Bedeutung | Standard |
 |---|---|---|
 | `SERVER_PREFIX` | Namensanfang aller Ressourcen | `claude` |
-| `PROVIDER` | Cloud-Anbieter: `hetzner`, `aws`, `gcp` oder `azure`; wird nur aus den Einstellungsdateien gelesen, nicht aus der Shell | `hetzner` |
+| `PROVIDER` | Anbieter: `hetzner`, `aws`, `gcp`, `azure` oder `kubernetes`; wird nur aus den Einstellungsdateien gelesen, nicht aus der Shell | `hetzner` |
 | `SERVER_TYPE` | Servertyp (Hetzner), Instanztyp (AWS), Maschinentyp (GCP) bzw. VM-Größe (Azure) | `cpx32`, `t3.large`, `e2-standard-2` bzw. `Standard_D2s_v5` |
 | `SERVER_LOCATION` | Standort (Hetzner), Region oder Zone (AWS, z. B. `eu-central-1b`), Zone (GCP, z. B. `europe-west3-b`) bzw. Region (Azure, z. B. `germanywestcentral`) | `fsn1`, `eu-central-1`, `europe-west3-b` bzw. `germanywestcentral` |
 | `SERVER_IMAGE` | Betriebssystem-Image; bei AWS, GCP und Azure `ubuntu-<Version>` (AWS auch `ami-…`, GCP auch `projects/…`, Azure auch `Herausgeber:Angebot:SKU:Version`) | `ubuntu-26.04` (Hetzner), sonst `ubuntu-24.04` |
@@ -916,6 +916,9 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `GCP_NETWORK`, `GCP_ROOT_GB` | VPC-Netz bzw. Größe der Bootplatte in GB (nur GCP) | `default` bzw. `50` |
 | `AZURE_SUBSCRIPTION_ID` | Azure-Abonnement (nur Azure, Pflichtangabe) | leer |
 | `AZURE_RESOURCE_GROUP`, `AZURE_SUBNET_ID`, `AZURE_ROOT_GB` | Ressourcengruppe, vorhandenes Subnetz bzw. Größe der Systemplatte in GB (nur Azure) | `viper`, eigenes Netz bzw. `64` |
+| `K8S_IMAGE` | Image der Maschine (nur `kubernetes`, Pflichtangabe; `make image` baut es) | leer |
+| `K8S_NAMESPACE`, `K8S_STORAGE_CLASS`, `K8S_DISK_GB` | Namespace, StorageClass und Größe des Volumes in GB (nur `kubernetes`) | `viper`, die des Clusters bzw. `20` |
+| `K8S_DOCKER`, `K8S_DOCKER_HOST`, `K8S_DOCKER_IMAGE` | Docker auf der Maschine: `dind` (privilegierter Sidecar), `remote` (Daemon unter `K8S_DOCKER_HOST`) oder `none`; Image des Sidecars (nur `kubernetes`) | `dind`, leer, `docker:dind` |
 | `NATS_ENABLED` | `true`: der Rechner gehört zu einer NATS-Gruppe (nur Hetzner); `false` oder leer: aus | `false` |
 | `NATS_GROUP` | Name der NATS-Gruppe; Pflichtangabe mit `NATS_ENABLED=true`; 1 bis 31 Kleinbuchstaben, Ziffern, Bindestriche | leer |
 | `NATS_PORT` | Port des NATS-Servers im privaten Netzwerk (1024 bis 65535) | `4222` |
@@ -965,6 +968,37 @@ Mit `PROVIDER=aws` in `.env.local` (oder in `machines/<rechner>.env.local`) legt
 * **Image:** `ubuntu-24.04` löst `viper` über den von Canonical veröffentlichten AMI-Parameter auf, passend zur Architektur des Instanztyps (`t3.*` x86, `t4g.*` ARM). Eine eigene AMI geben Sie als `ami-…` an.
 * **Berechtigungen:** Die Rolle muss Instanzen starten, beschreiben und beenden, Security Groups anlegen und ergänzen, Schlüsselpaare importieren und den SSM-Parameter von Canonical lesen dürfen. Mit `AWS_TAGS` oder `AWS_TAGS_SHARED` braucht sie außerdem `ec2:CreateTags` (beim Anlegen; eine Bedingung `ec2:CreateAction` ist möglich).
 * **Kosten:** AWS rechnet die Instanz und die Platte ab, solange der Server existiert. `viper down <rechner>` beendet die Instanz; Schlüsselpaar und Security Group bleiben für weitere Rechner erhalten.
+
+### Kubernetes als Anbieter (Pods in einem Cluster, zuerst k3d)
+
+Mit `PROVIDER=kubernetes` ist eine „Maschine“ ein **Pod** in einem Kubernetes-Cluster (k3d lokal, aber auch jeder andere Cluster, dessen `kubeconfig` Sie haben), nicht eine VM. `viper up`, `down`, `check`, `ssh`, `vscode` und die Gruppen arbeiten wie bei den anderen Anbietern. **In k3d ist das in echten Läufen getestet** (`up`, `check`, `ssh`, Docker, Ersetzen des Pods, `down`, eine NATS-Gruppe aus drei Pods mit `viper nats` und dem Betreiber). EKS, GKE und AKS sind nach demselben Plan gebaut, aber **nicht in einem echten Konto getestet** (Plan `docs/plan/kubernetes.md`, §16).
+
+**Einrichtung:**
+
+1. Ein Cluster, dessen Kontext in Ihrer `kubeconfig` steht (k3d: `k3d cluster create viper`). `viper` nimmt **nie** den aktuellen Kontext, sondern nur den in `SERVER_LOCATION` genannten, damit nichts im falschen Cluster entsteht.
+2. Das Image bauen und in den Cluster bringen: `make image` (Docker nötig, rund 2,5 Minuten, 2,6 GB), bei k3d `k3d image import viper-machine:test -c viper`. Bei anderen Clustern in ein Register hochladen und `K8S_IMAGE` darauf zeigen lassen.
+3. In der Datei der Maschine (oder der Gruppe), **nicht** in der allgemeinen `.env.local`:
+
+```
+PROVIDER=kubernetes
+DNS_PROVIDER=none
+SERVER_LOCATION=k3d-viper
+K8S_IMAGE=viper-machine:test
+SERVER_TYPE=2x4
+WORKSPACE_DIR=/home/builder/work
+```
+
+`SERVER_TYPE` ist `<CPUs>x<GiB Speicher>` (Standard `2x4`). `WORKSPACE_DIR` muss unter `/home/builder` liegen (dort ist das Volume); der Standard für Pods ist `/home/builder/work`, und ein `WORKSPACE_DIR` in der allgemeinen `.env.local` (für die VMs) wird für Pods abgelehnt. Dann `viper preflight <maschine>` und `viper up <maschine>`.
+
+**Was anders ist als bei einer VM:**
+
+* **Kein DNS, keine Adresse, keine Firewall.** `DNS_PROVIDER=none` ist Pflicht. `viper` erreicht den Pod durch die API des Clusters: Der `ProxyCommand` der SSH-Konfiguration ruft `viper k8s-proxy` auf, das einen Port-Forward zum `sshd` des Pods (Port 2222) macht. `ssh`, `scp`, `viper ssh` und die SSH-Tunnel gehen so; `SSH_ALLOWED_CIDRS` gilt nicht.
+* **Der Pod läuft ohne root und ohne `sudo`** (Benutzer `builder`, uid 1000, keine Capabilities, kein API-Zugang). Er startet deshalb auch unter Pod Security „restricted“, wenn kein Docker verlangt wird (`K8S_DOCKER=none`). `VIPER_SWAP` und `VIPER_CODE_SERVER` werden abgelehnt. Es gibt kein `cloud-init`; das Image enthält alles (Pakete, Docker-Client, Homebrew, Claude Code, `nats-server`, `nats`).
+* **Daten:** Ein Volume (PVC) hält `/home/builder` und das Arbeitsverzeichnis; es übersteht das Ersetzen des Pods und wird mit `viper down` (nach der Abfrage `DELETE`) gelöscht. **Mit `brew install` nachinstallierte Programme überstehen das Ersetzen des Pods nicht** (Homebrew liegt im Image); was `VIPER_BREW_PACKAGES` nennt, kommt bei jedem `viper up` wieder.
+* **Docker:** Standard ist `K8S_DOCKER=dind`: ein privilegierter Docker-Daemon als zweiter Container im Pod. **Das ist ein privilegierter Container (root auf dem Knoten, wenn er geknackt wird) und braucht einen Namespace mit Pod Security `privileged`.** Nutzen Sie es in k3d oder einem eigenen Cluster, nicht in einem geteilten. Wo das verboten ist (Fargate, Autopilot, „restricted“), nehmen Sie `K8S_DOCKER=remote` mit einem Daemon außerhalb oder `none`. Ohne Privileg läuft Docker im Pod nach den Tests nicht.
+* **Namespace:** `viper` (`K8S_NAMESPACE`). Fehlt er, legt `viper` ihn an (mit Label `viper-managed`) und löscht ihn nie. `viper` ändert und löscht nur Objekte mit dem Label `viper-managed`.
+* **NATS-Gruppen** gehen wie sonst (`NATS_ENABLED`, `NATS_GROUP`, `viper nats`, MCP-Server, Betreiber). Das Netz der Gruppe ist eine NetworkPolicy `viper-nats-<gruppe>`, die den NATS-Port nur zwischen den Pods der Gruppe erlaubt; ihr Anlegen ist die Sperre des ersten Starts. Die Clients erreichen den Server über den Dienstnamen `viper-nats-<gruppe>.<namespace>.svc` (ein headless Service); darauf lautet auch das Zertifikat, denn die Adresse des Pods ändert sich bei jedem neuen Pod. Der Server (`nats-server` als Prozess im Pod, ohne `systemd`) lauscht nur auf der Adresse seines Pods. **Ob die NetworkPolicy wirkt, hängt vom Netz-Plugin des Clusters ab** (k3s: ja, getestet; in EKS, GKE und AKS muss es eingeschaltet sein). Ein Pod, der einen fremden Namen für den Server benutzt, kommt ohne Schlüssel nicht hinein, unabhängig davon.
+* **Grenzen:** Die Anzeige von Arbeitsspeicher und Platte zeigt die Werte des Knotens, nicht die Grenzen des Pods. VS Code Remote-SSH über den Proxy ist nicht geprüft. `viper find` kennt keine Preise für diesen Anbieter. `viper` ist durch die Kubernetes-Bibliothek rund 34 MiB größer geworden.
 
 ### Google Cloud und Azure als Anbieter (nur gegen nachgebildete Schnittstellen getestet)
 
@@ -1327,3 +1361,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.91 | nach v0.17.0 | `viper nats init`/`revoke`: eigener Absender „operator“ mit eigenem Schlüssel auf Ihrem Rechner, SSH-Tunnel zum NATS-Server; `NATS_OPERATOR_NAME`. |
 | 1.92 | nach v0.17.0 | NATS-Gruppen auch bei Azure (Sperre des ersten Starts nicht belegt); Preflight prüft die Rechte für NATS bei AWS und Google Cloud; `viper check` meldet eine veränderte Regel der Gruppe und den Betreiber-Eintrag (Schlüssel dieses Rechners gegen Eintrag am Server); `down --group` weist auf einen zurückbleibenden Betreiber-Schlüssel hin. |
 | 1.93 | nach v0.17.0 | `viper nats listen`: `--topic` mehrfach oder als Liste; neu `--all` zeigt auch die Direktnachrichten zwischen anderen Rechnern. |
+| 1.94 | nach v0.17.0 | Neu: Kubernetes als Anbieter (`PROVIDER=kubernetes`): Pods in einem Cluster statt VMs, zuerst k3d (in echten Läufen getestet), mit `viper k8s-proxy`, Image `viper-machine` (`make image`), NATS-Gruppen mit NetworkPolicy und Dienstname, `K8S_*`-Einstellungen. EKS, GKE und AKS nicht in einem echten Konto getestet. |
