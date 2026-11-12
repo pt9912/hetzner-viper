@@ -429,6 +429,30 @@ func (s starterHz) EnsureRunning(_ context.Context, name string) error {
 	return s.err
 }
 
+// A machine that was stopped has no address until it runs: the server read before EnsureRunning is stale.
+type addressAfterStart struct {
+	starterHz
+	w *world
+}
+
+func (a addressAfterStart) EnsureRunning(ctx context.Context, name string) error {
+	a.w.server.IPv4 = "203.0.113.9"
+	return a.starterHz.EnsureRunning(ctx, name)
+}
+
+func TestTheServerIsReadAgainAfterAStoppedMachineWasStarted(t *testing.T) {
+	w := newWorld(t, "")
+	w.server = &model.Server{ID: "42", Name: "claude-web", Created: w.now.Add(-time.Hour)} // no address: it is stopped
+	var started []string
+	d := w.deps()
+	d.Cloud = addressAfterStart{starterHz: starterHz{hz: hz{w: w}, started: &started}, w: w}
+	code, err := start.Run(context.Background(), w.c, "", d, w.lg, &w.out, &w.err)
+	w.lg.Close(err, code)
+	if code != 0 || err != nil {
+		t.Fatalf("%d %v\n%s", code, err, w.all())
+	}
+}
+
 func TestAnExistingMachineIsStartedByAProviderThatCanStartIt(t *testing.T) {
 	for _, fail := range []bool{false, true} {
 		w := newWorld(t, "")

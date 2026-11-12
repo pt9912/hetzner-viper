@@ -18,7 +18,7 @@ import (
 //
 // Group and role are labels of the container and never change. The state (provisioning, ready, failed) changes, and
 // Docker cannot change the labels of a container: it is kept in small labelled volumes
-// viper-nats-<group>-<machine>-<state>, a change makes the new one and removes the old (docs/plan/compose.md §5, D7).
+// viper-nats-<group>_<machine>_<state>, a change makes the new one and removes the old (docs/plan/compose.md §5, D7).
 
 var _ cloud.NATSProvider = (*Client)(nil)
 
@@ -28,7 +28,7 @@ const natsPrefix = "viper-nats-"
 func NetworkName(group string) string { return natsPrefix + group }
 
 func stateVolume(group, machine string, state model.NATSState) string {
-	return natsPrefix + group + "-" + machine + "-" + string(state)
+	return natsPrefix + group + "_" + machine + "_" + string(state) // _ cannot be in the names: two groups never share a name
 }
 
 // NetworkZone is the Docker host: the machines of a group must be on one host (one network).

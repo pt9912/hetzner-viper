@@ -25,8 +25,8 @@ func (c *Client) Proxy(ctx context.Context, name string, in io.Reader, out io.Wr
 	if err := checkName(name); err != nil {
 		return err
 	}
-	if c.opts.Context == "" || c.opts.Context[0] == '-' {
-		return fmt.Errorf("SERVER_LOCATION %q is not a Docker context", c.opts.Context)
+	if err := c.checkTarget(); err != nil {
+		return err
 	}
 	cmd := exec.CommandContext(ctx, "docker", "--context", c.opts.Context, "exec", "-i", name, "bash", "-c", proxyScript()) //nolint:gosec // the context and the name are checked above
 	var stderr bytes.Buffer

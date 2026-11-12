@@ -31,6 +31,7 @@ func (*Client) EnsureFirewall(context.Context, string, []string) (model.Firewall
 // inspected is what the adapter reads of a container.
 type inspected struct {
 	ID      string    `json:"Id"`
+	Name    string    `json:"Name"`
 	Created time.Time `json:"Created"`
 	Config  struct {
 		Labels map[string]string `json:"Labels"`
@@ -64,6 +65,20 @@ func (c *Client) container(ctx context.Context, ref string) (*inspected, error) 
 	return &list[0], nil
 }
 
+// machine returns the container of the machine of that name, nil if there is none. docker inspect also finds a container
+// by the start of its ID and finds the Docker service of a machine by its own name, so the answer must carry the
+// name of the machine as its label.
+func (c *Client) machine(ctx context.Context, name string) (*inspected, error) {
+	in, err := c.container(ctx, name)
+	if err != nil || in == nil {
+		return nil, err
+	}
+	if in.Config.Labels[labelServer] != name || strings.TrimPrefix(in.Name, "/") != name {
+		return nil, nil
+	}
+	return in, nil
+}
+
 func serverOf(name string, in *inspected) *model.Server {
 	s := &model.Server{ID: in.ID, Name: name, Created: in.Created, SSHPort: SSHPort, ViaAPI: true,
 		GroupRuleMissing: in.Config.Labels[model.LabelNATSGroup] == ""}
@@ -78,7 +93,7 @@ func (c *Client) ServerByName(ctx context.Context, name string) (*model.Server, 
 	if err := checkName(name); err != nil {
 		return nil, err
 	}
-	in, err := c.container(ctx, name)
+	in, err := c.machine(ctx, name)
 	if err != nil || in == nil {
 		return nil, err
 	}
@@ -148,7 +163,7 @@ func (c *Client) CreateServer(ctx context.Context, s model.ServerSpec) (*model.S
 		return nil, err
 	}
 	defer unlock()
-	if in, err := c.container(ctx, s.Name); err != nil || in != nil {
+	if in, err := c.machine(ctx, s.Name); err != nil || in != nil {
 		if err == nil {
 			err = fmt.Errorf("the container %s exists: viper up uses it", s.Name)
 		}
@@ -167,7 +182,7 @@ func (c *Client) CreateServer(ctx context.Context, s model.ServerSpec) (*model.S
 	if err := c.up(ctx, s.Name); err != nil {
 		return nil, &cloud.OpError{Op: "starting the machine " + s.Name, Write: true, Err: err}
 	}
-	in, err := c.container(ctx, s.Name)
+	in, err := c.machine(ctx, s.Name)
 	if err != nil || in == nil {
 		if err == nil {
 			err = fmt.Errorf("the container %s is not there after docker compose up", s.Name)
@@ -190,7 +205,12 @@ func (c *Client) EnsureRunning(ctx context.Context, name string) error {
 	if err := checkName(name); err != nil {
 		return err
 	}
-	in, err := c.container(ctx, name)
+	unlock, err := c.lock(name) // before the look: a viper down that holds the lock may remove the machine meanwhile
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	in, err := c.machine(ctx, name)
 	if err != nil || in == nil {
 		if err == nil {
 			err = fmt.Errorf("the machine %s does not exist", name)
@@ -200,11 +220,11 @@ func (c *Client) EnsureRunning(ctx context.Context, name string) error {
 	if _, err := os.Stat(c.composeFile(name)); err != nil {
 		return fmt.Errorf("the compose file of %s is not on this computer (%s): the machine was made elsewhere", name, c.composeFile(name))
 	}
-	unlock, err := c.lock(name)
-	if err != nil {
+	// a machine that is in use again is not being deleted: a mark left by a viper down that stopped half way must not
+	// make a later viper up delete its volumes
+	if err := os.Remove(c.markerDeleting(name)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	defer unlock()
 	if !in.State.Running {
 		if err := c.up(ctx, name); err != nil {
 			return err
@@ -221,8 +241,14 @@ func (c *Client) repairDocker(ctx context.Context, name string) error {
 		return nil
 	}
 	side, err := c.container(ctx, dockerName(name))
-	if err != nil || side == nil || !side.State.Running {
+	if err != nil || side == nil {
 		return err
+	}
+	if !side.State.Running { // stopped alone: start it, and with a machine that runs it joins the network of the machine
+		if _, err := c.docker(ctx, "start", dockerName(name)); err != nil {
+			return &cloud.OpError{Op: "starting the Docker service of " + name, Write: true, Err: err}
+		}
+		return c.waitHealthy(ctx, dockerName(name))
 	}
 	if _, err := c.docker(ctx, "exec", dockerName(name), "test", "-e", "/sys/class/net/eth0"); err == nil {
 		return nil
@@ -318,8 +344,30 @@ func (c *Client) removeSidecar(ctx context.Context, name string) error {
 	if err != nil || side == nil {
 		return err
 	}
+	vol := c.daemonVolume(ctx, name)
 	if _, err := c.docker(ctx, "container", "rm", "-f", "--", dockerName(name)); err != nil && !notFound(err) {
 		return &cloud.OpError{Op: "removing the container " + dockerName(name), Write: true, Err: err}
+	}
+	return c.removeDaemonVolume(ctx, vol)
+}
+
+// daemonVolume is the name of the anonymous volume of /var/lib/docker of the Docker service ("" if there is none): the
+// image declares it, and neither docker compose down nor docker rm removes it. It holds the images of the machine's
+// Docker, which can be gigabytes. Read before the container goes.
+func (c *Client) daemonVolume(ctx context.Context, name string) string {
+	out, err := c.docker(ctx, "container", "inspect", "--format", `{{range .Mounts}}{{if eq .Destination "/var/lib/docker"}}{{.Name}}{{end}}{{end}}`, "--", dockerName(name))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+func (c *Client) removeDaemonVolume(ctx context.Context, vol string) error {
+	if vol == "" {
+		return nil
+	}
+	if _, err := c.docker(ctx, "volume", "rm", "--", vol); err != nil && !notFound(err) {
+		return &cloud.OpError{Op: "deleting the volume " + vol, Write: true, Err: err}
 	}
 	return nil
 }
@@ -335,6 +383,9 @@ func (c *Client) DeleteServer(ctx context.Context, id string) error {
 	if err := checkName(name); err != nil {
 		return fmt.Errorf("container %s: %w", id, err)
 	}
+	if strings.TrimPrefix(in.Name, "/") != name {
+		return fmt.Errorf("%w: container %s is not the machine %s", ErrNotOurs, id, name)
+	}
 	unlock, err := c.lock(name)
 	if err != nil {
 		return err
@@ -346,12 +397,16 @@ func (c *Client) DeleteServer(ctx context.Context, id string) error {
 	if err := os.WriteFile(c.markerDeleting(name), nil, 0o600); err != nil {
 		return err
 	}
+	dataVolume := c.daemonVolume(ctx, name)
 	if _, err := os.Stat(c.composeFile(name)); err == nil {
 		if _, err := c.compose(ctx, name, "down", "--timeout", "10"); err != nil {
 			return &cloud.OpError{Op: "stopping the machine " + name, Write: true, Err: err}
 		}
 	} else if _, err := c.docker(ctx, "container", "rm", "-f", "--", name, dockerName(name)); err != nil && !notFound(err) {
 		return &cloud.OpError{Op: "removing the containers of " + name, Write: true, Err: err}
+	}
+	if err := c.removeDaemonVolume(ctx, dataVolume); err != nil {
+		return err
 	}
 	if err := c.removeVolumes(ctx, name); err != nil {
 		return err
@@ -365,7 +420,7 @@ func (c *Client) Leftovers(ctx context.Context, name string) ([]string, error) {
 	if err := checkName(name); err != nil {
 		return nil, err
 	}
-	if in, err := c.container(ctx, name); err != nil || in != nil {
+	if in, err := c.machine(ctx, name); err != nil || in != nil {
 		return nil, err
 	}
 	var out []string
@@ -407,7 +462,7 @@ func (c *Client) DeleteLeftovers(ctx context.Context, name string) error {
 		return err
 	}
 	defer unlock()
-	if in, err := c.container(ctx, name); err != nil || in != nil {
+	if in, err := c.machine(ctx, name); err != nil || in != nil {
 		if err == nil {
 			err = fmt.Errorf("the machine %s exists: viper down deletes it", name)
 		}

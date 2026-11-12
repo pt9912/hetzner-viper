@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -122,6 +123,9 @@ func checkName(name string) error {
 	if !nameRe.MatchString(name) {
 		return fmt.Errorf("the name %q is not usable for a container: lowercase letters, digits and hyphens", name)
 	}
+	if strings.HasSuffix(name, "-docker") { // <name>-docker is the container of the Docker service of the machine <name>
+		return fmt.Errorf("the name %q is not usable: it ends in -docker, which names the Docker service of a machine", name)
+	}
 	return nil
 }
 
@@ -149,8 +153,8 @@ func (c *Client) dockerIn(ctx context.Context, stdin string, args ...string) (st
 	if c.opts.Context == "" {
 		return "", errors.New("SERVER_LOCATION is not set: it is the Docker context (\"default\" is the local daemon; viper does not take the current one, so that nothing is made on the wrong host)")
 	}
-	if strings.HasPrefix(c.opts.Context, "-") {
-		return "", fmt.Errorf("SERVER_LOCATION: %q is not a Docker context", c.opts.Context)
+	if err := c.checkTarget(); err != nil {
+		return "", err
 	}
 	out, errOut, err := c.run(ctx, stdin, "docker", append([]string{"--context", c.opts.Context}, args...)...)
 	if err != nil {
@@ -161,6 +165,18 @@ func (c *Client) dockerIn(ctx context.Context, stdin string, args ...string) (st
 		return out, &dockerError{args: args, msg: msg, err: err}
 	}
 	return out, nil
+}
+
+// checkTarget refuses a context that could be taken for an option, and a DOCKER_HOST in the environment: docker lets it
+// win over --context, so every call would go to that host and not to the one SERVER_LOCATION names.
+func (c *Client) checkTarget() error {
+	if c.opts.Context == "" || strings.HasPrefix(c.opts.Context, "-") {
+		return fmt.Errorf("SERVER_LOCATION: %q is not a Docker context", c.opts.Context)
+	}
+	if h := os.Getenv("DOCKER_HOST"); h != "" {
+		return fmt.Errorf("DOCKER_HOST is set (%s): docker uses it instead of the Docker context %s of SERVER_LOCATION; unset it for viper", h, c.opts.Context)
+	}
+	return nil
 }
 
 // dockerError is a failed docker call, worded with what docker said.
@@ -185,7 +201,17 @@ func (e *dockerError) Unwrap() error { return e.err }
 // notFound says whether docker reported that the object is not there.
 func notFound(err error) bool {
 	var de *dockerError
-	return errors.As(err, &de) && strings.Contains(strings.ToLower(de.msg), "no such")
+	if !errors.As(err, &de) {
+		return false
+	}
+	// not just "no such": a broken context says "no such file or directory", which is not an answer about the object
+	msg := strings.ToLower(de.msg)
+	for _, w := range []string{"no such container", "no such volume", "no such network", "no such object"} {
+		if strings.Contains(msg, w) {
+			return true
+		}
+	}
+	return false
 }
 
 // compose runs docker compose for the project of the server.

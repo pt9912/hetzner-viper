@@ -244,3 +244,20 @@ NATS-Gruppen laufen mit `PROVIDER=compose` (`cloud.NATSProvider` im Adapter, `Pr
 * **Fehler des Laufs:** `docker volume inspect` meldet „no such volume“ in Kleinbuchstaben, der Adapter erkannte nur „No such“; behoben (ohne Beachtung der Schreibweise).
 * **`NATS_MCP` mit den MCP-Programmen im Container** (zweiter Lauf, Gruppe mit `NATS_MCP=true`): `viper-nats-mcp` wird installiert, bei Claude Code als `nats` registriert (Benutzerebene) und antwortet über stdio mit seinen acht Werkzeugen. Weil im Container keine Claude-Sitzung läuft (kein Login), wurden die Werkzeuge mit einem kleinen JSON-RPC-Treiber über stdio aufgerufen: `peers` auf `b1` zeigt `c1` als anwesend; `send` von `b1` an `c1` kommt im `inbox` von `c1` an (mit dem Hinweis „untrusted text“); `send` von `b1` an `operator` und die Nachricht an `c1` sieht `viper nats listen --all` auf dem Rechner des Betreibers. Nicht geprüft ist der Schub („push“) einer Nachricht in eine laufende Claude-Sitzung (`NATS_MCP_PUSH_FROM`), weil dafür eine angemeldete Sitzung nötig ist.
 * **Nicht geprüft:** gleichzeitiger erster Start zweier Server (die Sperre ist `docker network create`, in §1 mit sechs Aufrufen geprüft, aber nicht mit `viper up --group` und mehreren Servern).
+
+
+## 20 Prüfung des Codes (Stand 12.11.2026)
+
+Ein unabhängiger Reviewer hat die Änderungen der Meilensteine 1 bis 4 gelesen und teils mit Docker nachgestellt. Keine Regression bei Kubernetes, kein Fehler beim Windows-Bau, keine Einschleusung über Namen oder Einstellungen. Behoben (jeweils mit Test):
+
+1. **`DOCKER_HOST` schlug `--context`** (nachgestellt): `viper` verweigert die Arbeit, solange die Variable gesetzt ist (Preflight, alle Aufrufe, `docker-proxy`).
+2. **Angehaltenes Mitglied einer Gruppe:** `viper up` las den Server vor dem Start (ohne Adresse im Netz) und scheiterte dann im Beitritt. Jetzt wird nach `EnsureRunning` erneut gelesen.
+3. **Anonymes Volume `/var/lib/docker`** des `dind`-Dienstes blieb bei jedem `viper down` stehen (nachgestellt, gigabytegroß möglich): `viper` liest es vor dem Löschen und entfernt es danach (auch bei Leftovers). Der echte Lauf hinterlässt keine Volumes mehr.
+4. **„not found“ zu großzügig:** nur noch „no such container/volume/network/object“; ein kaputter Kontext („no such file or directory“) gilt nicht mehr als „Rechner nicht da“.
+5. **Namenskollision mit dem Docker-Dienst** (`web-docker`): Namen auf `-docker` sind abgelehnt; `DeleteServer` löscht nur den Container, dessen Name der Maschinenname ist.
+6. **Marke `deleting` blieb:** `EnsureRunning` löscht sie; sonst hätte ein späteres Entfernen des Containers von Hand die Daten mitgenommen.
+7. **ID-Anfang als Name:** ein Container wird nur als Maschine genommen, wenn Name und Label stimmen.
+8. **Zustands-Volumes mit gleichem Namen** (Gruppe `a` + Rechner `b-c` gegen Gruppe `a-b` + Rechner `c`): Trenner `_` statt `-`.
+9. **Kleinigkeiten:** `EnsureRunning` nimmt die Sperre vor dem Lesen; ein angehaltener `dind`-Dienst bei laufender Maschine wird gestartet.
+
+Nicht behoben: Nach einem abgebrochenen `viper down` kann ein Zustands-Volume `ready` stehen bleiben, bis die neue Maschine mit gleichem Namen ihren Zustand schreibt (klein, `natsSetup` überschreibt es).

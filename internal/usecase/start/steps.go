@@ -72,6 +72,23 @@ func (r *runner) firewall(ctx context.Context) (int, error) {
 	return 0, nil
 }
 
+// startExisting asks a provider that can start a machine to start the existing one (a container that was stopped), and
+// reads it again: a machine that was stopped has no address in its network until it runs.
+func (r *runner) startExisting(ctx context.Context, existing *model.Server) (*model.Server, int, error) {
+	var st cloud.Starter
+	if !cloud.As(r.d.Cloud, &st) {
+		return existing, 0, nil
+	}
+	if err := st.EnsureRunning(ctx, r.c.ServerName); err != nil {
+		code, err := r.opFail(&cloud.OpError{Op: "starting the machine", Write: true, Err: err})
+		return nil, code, err
+	}
+	if again, err := r.d.Cloud.ServerByName(ctx, r.c.ServerName); err == nil && again != nil {
+		return again, 0, nil
+	}
+	return existing, 0, nil
+}
+
 // server creates the server, with a host key signed by the host CA, or reuses the existing one.
 // reused is true if it counts as set up by a completed run.
 func (r *runner) server(ctx context.Context, ca, keyName, ipadKeyFile string) (srv *model.Server, reused bool, code int, err error) {
@@ -86,12 +103,9 @@ func (r *runner) server(ctx context.Context, ca, keyName, ipadKeyFile string) (s
 		r.existed = true
 		id := existing.ID
 		r.d.SSH.ForgetStalePin(c, id, r.out)
-		var st cloud.Starter
-		if cloud.As(r.d.Cloud, &st) {
-			if err := st.EnsureRunning(ctx, c.ServerName); err != nil {
-				code, err := r.opFail(&cloud.OpError{Op: "starting the machine", Write: true, Err: err})
-				return nil, false, code, err
-			}
+		existing, code, err = r.startExisting(ctx, existing)
+		if err != nil || code != 0 {
+			return nil, false, code, err
 		}
 		r.lg.Event("reusing server id=%s", id)
 		// "reused" means set up by a completed run; a server whose first run was interrupted may

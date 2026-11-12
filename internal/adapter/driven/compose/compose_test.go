@@ -41,6 +41,7 @@ type ctr struct {
 	labels map[string]string
 	run    bool
 	nets   []string
+	anon   string // the anonymous volume of the container
 }
 
 func newHost() *host {
@@ -125,7 +126,16 @@ func (h *host) run(_ context.Context, _, name string, args ...string) (string, s
 		}
 		return strings.Join(out, "\n"), "", nil
 	case args[0] == "container" && args[1] == "inspect" && args[2] == "--format":
-		return "healthy\n", "", nil
+		if strings.Contains(args[3], "Health") {
+			return "healthy\n", "", nil
+		}
+		if c, ok := h.containers[strings.TrimPrefix(args[len(args)-1], "")]; ok && strings.Contains(args[3], "Mounts") && c.anon != "" {
+			return c.anon + "\n", "", nil // the anonymous /var/lib/docker volume
+		}
+		return "\n", "", nil
+	case args[0] == "start":
+		h.containers[args[1]].run = true
+		return "", "", nil
 	case args[0] == "container" && args[1] == "inspect":
 		return h.inspect(args[len(args)-1])
 	case args[0] == "container" && args[1] == "rm":
@@ -226,13 +236,13 @@ func (h *host) network(args []string) (string, string, error) {
 
 func (h *host) inspect(ref string) (string, string, error) {
 	for n, c := range h.containers {
-		if n == ref || c.id == ref {
+		if n == ref || c.id == ref || (len(ref) >= 4 && !strings.Contains(ref, "-") && strings.HasPrefix(c.id, ref)) {
 			nets := map[string]any{}
 			for _, x := range c.nets {
 				nets[x] = map[string]string{"IPAddress": "10.9.0.5"}
 			}
 			b, _ := json.Marshal([]map[string]any{{
-				"Id": c.id, "Created": time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC),
+				"Id": c.id, "Name": "/" + n, "Created": time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC),
 				"Config": map[string]any{"Labels": c.labels}, "State": map[string]any{"Running": c.run},
 				"NetworkSettings": map[string]any{"Networks": nets},
 			}})
@@ -284,7 +294,12 @@ func (h *host) compose(args []string) (string, string, error) {
 			for range s.Networks {
 				nets = append(nets, "viper-nats-"+s.Labels["viper-nats-group"])
 			}
-			h.containers[s.ContainerName] = &ctr{id: "id-" + s.ContainerName, labels: s.Labels, run: true, nets: nets}
+			c := &ctr{id: "id-" + s.ContainerName, labels: s.Labels, run: true, nets: nets}
+			if strings.HasSuffix(s.ContainerName, "-docker") { // docker:dind declares VOLUME /var/lib/docker
+				c.anon = "anon-" + s.ContainerName
+				h.volumes[c.anon] = map[string]string{}
+			}
+			h.containers[s.ContainerName] = c
 		}
 		return "", "", nil
 	case "down":
@@ -321,7 +336,7 @@ func TestCreateWritesFileAndKeysAndStarts(t *testing.T) {
 	if srv.ID != "id-viper-web" || srv.SSHPort != 2222 || !srv.ViaAPI || srv.Name != "viper-web" {
 		t.Fatalf("server %+v", srv)
 	}
-	if h.containers["viper-web-docker"] == nil || len(h.volumes) != 2 {
+	if h.containers["viper-web-docker"] == nil || len(h.volumes) != 3 { // home, Homebrew and the anonymous volume of the daemon
 		t.Fatalf("containers %v volumes %v", h.containers, h.volumes)
 	}
 	if h.called("compose -p viper-viper-web -f "+filepath.Join(dir, "compose", "viper-web", "compose.yaml")+" up -d --no-recreate --wait") != 1 {
@@ -752,11 +767,11 @@ func TestTheStateIsKeptInVolumesAndChangesReplaceIt(t *testing.T) {
 	}
 	var states []string
 	for n := range h.volumes {
-		if strings.HasPrefix(n, "viper-nats-g-web-") {
+		if strings.HasPrefix(n, "viper-nats-g_web_") {
 			states = append(states, n)
 		}
 	}
-	if len(states) != 1 || states[0] != "viper-nats-g-web-ready" {
+	if len(states) != 1 || states[0] != "viper-nats-g_web_ready" {
 		t.Fatalf("state volumes %v", states)
 	}
 	list, err := c.ListGroupMachines(ctx, "g")
@@ -764,7 +779,7 @@ func TestTheStateIsKeptInVolumesAndChangesReplaceIt(t *testing.T) {
 		t.Fatalf("%+v %v", list, err)
 	}
 	// a change cut off between the new volume and the removal of the old one: the later state wins
-	h.volumes["viper-nats-g-web-provisioning"] = map[string]string{"viper-managed": "true", "viper-server": "web", "viper-nats-state": "provisioning"}
+	h.volumes["viper-nats-g_web_provisioning"] = map[string]string{"viper-managed": "true", "viper-server": "web", "viper-nats-state": "provisioning"}
 	if m, _ := c.NATSMetadataOf(ctx, srv.ID); m == nil || m.State != model.NATSReady {
 		t.Fatalf("%+v", m)
 	}
@@ -816,5 +831,161 @@ func TestAMachineCannotJoinAGroupLater(t *testing.T) {
 	c, _ := newClient(t, newHost())
 	if _, err := c.AttachPrivateNetwork(context.Background(), "id", "viper-nats-g"); err == nil {
 		t.Fatal("attached")
+	}
+}
+
+// --- what the review found
+
+func TestDockerHostInTheEnvironmentIsRefused(t *testing.T) {
+	t.Setenv("DOCKER_HOST", "ssh://prod")
+	h := newHost()
+	c, _ := newClient(t, h)
+	if _, err := c.CreateServer(context.Background(), spec("web")); err == nil || !strings.Contains(err.Error(), "DOCKER_HOST is set") {
+		t.Fatalf("%v", err)
+	}
+	if f := c.Validate(context.Background(), model.Check{Spec: spec("web"), ServerName: "web"}); len(f) == 0 || f[0].Level != model.Fail {
+		t.Fatalf("%v", f)
+	}
+	if len(h.calls) != 0 {
+		t.Fatalf("docker was called: %v", h.calls)
+	}
+}
+
+func TestNamesThatEndInDockerAreRefused(t *testing.T) {
+	c, _ := newClient(t, newHost())
+	if _, err := c.ServerByName(context.Background(), "web-docker"); err == nil {
+		t.Fatal("a name of a Docker service is accepted")
+	}
+	if _, err := c.CreateServer(context.Background(), spec("web-docker")); err == nil {
+		t.Fatal("a machine named like a Docker service is made")
+	}
+}
+
+func TestOnlyTheMachineWithThatNameIsFound(t *testing.T) {
+	h := newHost()
+	c, _ := newClient(t, h)
+	srv, err := c.CreateServer(context.Background(), spec("web"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = srv
+	// the start of an ID is no name
+	h.containers["web"].id = "beef01aa22"
+	if s, err := c.ServerByName(context.Background(), "beef01"); err != nil || s != nil {
+		t.Fatalf("%v %v", s, err)
+	}
+	h.containers["web"].id = "id-web"
+	// the container of the Docker service is no machine, and cannot be deleted as one
+	if err := c.DeleteServer(context.Background(), "id-web-docker"); !errors.Is(err, compose.ErrNotOurs) {
+		t.Fatalf("%v", err)
+	}
+	if h.containers["web"] == nil {
+		t.Fatal("the machine was deleted through its Docker service")
+	}
+}
+
+func TestOnlyAnAnswerAboutTheObjectMeansItIsNotThere(t *testing.T) {
+	h := newHost()
+	c, _ := newClient(t, h)
+	broken := func(_ context.Context, _, _ string, _ ...string) (string, string, error) {
+		return "", `context "x": context not found: open /home/u/.docker/contexts/meta/ab/meta.json: no such file or directory`, errors.New("exit status 1")
+	}
+	cb := compose.New(compose.Options{Context: "x", Image: "i", StateDir: t.TempDir()}, broken)
+	if s, err := cb.ServerByName(context.Background(), "web"); err == nil || s != nil {
+		t.Fatalf("a broken context says the machine is not there: %v %v", s, err)
+	}
+	if err := cb.DeleteServer(context.Background(), "web"); err == nil {
+		t.Fatal("a broken context deleted nothing and said it was fine")
+	}
+	_ = c
+}
+
+func TestTheDockerServiceLeavesNoAnonymousVolume(t *testing.T) {
+	h := newHost()
+	c, _ := newClient(t, h)
+	srv, err := c.CreateServer(context.Background(), spec("web"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := h.volumes["anon-web-docker"]; !ok {
+		t.Fatal("the test does not make the volume")
+	}
+	if err := c.DeleteServer(context.Background(), srv.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.volumes) != 0 {
+		t.Fatalf("left: %v", h.volumes)
+	}
+	// and the sidecar of a machine that is gone
+	if _, err := c.CreateServer(context.Background(), spec("web")); err != nil {
+		t.Fatal(err)
+	}
+	delete(h.containers, "web")
+	if err := c.DeleteLeftovers(context.Background(), "web"); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.volumes) != 0 {
+		t.Fatalf("left after the leftovers: %v", h.volumes)
+	}
+}
+
+func TestAMarkOfAHalfDoneDownDoesNotSurviveANewStart(t *testing.T) {
+	h := newHost()
+	c, dir := newClient(t, h)
+	if _, err := c.CreateServer(context.Background(), spec("web")); err != nil {
+		t.Fatal(err)
+	}
+	mark := filepath.Join(dir, "compose", "web", "deleting")
+	if err := os.WriteFile(mark, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.EnsureRunning(context.Background(), "web"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(mark); err == nil {
+		t.Fatal("the mark is still there: a later removal of the container by hand would take the data with it")
+	}
+}
+
+func TestAStoppedDockerServiceOfARunningMachineIsStarted(t *testing.T) {
+	h := newHost()
+	c, _ := newClient(t, h)
+	if _, err := c.CreateServer(context.Background(), spec("web")); err != nil {
+		t.Fatal(err)
+	}
+	h.containers["web-docker"].run = false
+	if err := c.EnsureRunning(context.Background(), "web"); err != nil {
+		t.Fatal(err)
+	}
+	if !h.containers["web-docker"].run || h.called("start web-docker") != 1 {
+		t.Fatalf("%v", h.calls)
+	}
+}
+
+func TestStateVolumesOfDifferentGroupsAndMachinesNeverShareAName(t *testing.T) {
+	h := newHost()
+	c, _ := newClient(t, h)
+	ctx := context.Background()
+	for _, g := range []string{"a", "a-b"} {
+		_, _, _ = c.EnsurePrivateNetwork(ctx, g, "default")
+	}
+	s1, _ := c.CreateServer(ctx, natsSpec("b-c", "a", "client"))
+	s2, _ := c.CreateServer(ctx, natsSpec("c", "a-b", "client"))
+	for _, x := range []struct {
+		srv   *model.Server
+		group string
+	}{{s1, "a"}, {s2, "a-b"}} {
+		if err := c.UpdateNATSMetadata(ctx, x.srv.ID, model.NATSMetadata{Group: x.group, Role: model.NATSClient, State: model.NATSReady}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n := 0
+	for name := range h.volumes {
+		if strings.HasSuffix(name, "_ready") {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Fatalf("two machines, %d state volumes: %v", n, h.volumes)
 	}
 }
