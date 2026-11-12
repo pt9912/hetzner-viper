@@ -115,7 +115,7 @@ D9 **Privilegierter `dind`-Dienst:** der Preflight meldet es als **Fehler**, sol
 | # | Titel | Inhalt |
 |---|---|---|
 | 0 | Verifikation (erledigt, §15) | Belegt sind schon (§13, §14): Secrets in der langen Schreibweise, der Transport (mit der Abhilfe `wait -n; kill`), das Gruppennetz als Sperre, Alias an einem `external`-Netz, die Eigenadresse aus `fib_trie`, der `dind`-Dienst und sein Verhalten beim Neustart. **Noch zu zeigen:** **1.** Zustand als Volumes, ein Wechsel, die Liste mit Filter (D7). **2.** Ein Rechner **nur** am Gruppennetz hat Internet. **3.** Der Transport mit einem echten `sshd` im Container und einer lange stehenden Sitzung. **4.** `viper up` auf einer laufenden Maschine startet nur (`--no-recreate`) und repariert den Docker-Dienst. **5.** Ein `dind`-Dienst mit dem echten Image `docker:dind` und `service_healthy`. |
-| 1 | Adapter | `compose`-Adapter gegen einen Fake des `docker`-Aufrufs: Datei erzeugen, `up`, `rm`, Leftovers, Preflight |
+| 1 | Adapter (erledigt, §16) | `compose`-Adapter gegen einen Fake des `docker`-Aufrufs: Datei erzeugen, `up`, `rm`, Leftovers, Preflight |
 | 2 | Anbindung | Einstellungen, `sshconfig`, `viper docker-proxy`, Preflight |
 | 3 | Echter Lauf | lokales Docker: `up`, `check`, `ssh`, Docker im Rechner, Neustart des Containers (Daten bleiben), `down`; Handbuch |
 | 4 | NATS | Gruppennetz, Name im Zertifikat, Zustand der Labels; Lauf mit drei Containern |
@@ -185,3 +185,15 @@ Alle Versuche liefen gegen den verschachtelten Docker-Daemon dieses Dev-Containe
 | 5 | Echtes `docker:dind` mit Healthcheck | *[V]* `up -d --wait` in 4,9 s, beide Container laufen, Sidecar `healthy`. Der Rechner kann nicht von `service_healthy` des Sidecars abhängen (der Sidecar hängt am Netz des Rechners); die Abhängigkeit geht nur vom Sidecar zum Rechner. |
 
 **Folgen für den Plan:** D7 gilt (Volumes als Zustand). Im Transport ist `cat <&0 >&3` zu verwenden. `viper up` auf vorhandener Maschine startet mit `--no-recreate` und prüft danach den Sidecar. Noch offen: D9, ein ganzer Lauf von `viper up --group` (erst ab Meilenstein 3), Neustart des ganzen Hosts (hier nicht reproduzierbar).
+
+
+## 16 Ergebnis von Meilenstein 1 (Stand 12.11.2026)
+
+Der Adapter `internal/adapter/driven/compose` ist da (ohne NATS und ohne Anbindung an Einstellungen und Befehle; das sind Meilenstein 2 und 4):
+
+* `Client` ruft `docker --context <SERVER_LOCATION> …` über `system.Runner` auf (der Kontext wird nie als Option gelesen; leer oder mit `-` am Anfang ist ein Fehler). Implementiert sind `cloud.Provider` und `cloud.Leftovers`.
+* Die `compose.yaml` wird aus festen Typen mit `yaml.v3` geschrieben (gleiche Eingabe, gleiche Bytes; im Test geprüft), ohne Schlüssel darin. Schlüssel liegen als Dateien (0644) im Verzeichnis `<StateDir>/compose/<name>/secret` (0700) und kommen als Compose-`secrets` mit `target:` unter `/run/viper/secret`. Rechner-Dienst mit Healthcheck auf Port 2222, `pull_policy: never`, `restart: unless-stopped`, `cpus` und `mem_limit`; `dind`-Dienst mit `network_mode: service:machine` und `depends_on … restart: true`; Gruppennetz (`ServerSpec.Network`) als `external`-Netz; Labels `viper-managed` und `viper-server` an Containern und Volumes.
+* `CreateServer` nimmt eine Dateisperre je Maschine, räumt Reste einer halb gelöschten Maschine (Marke `deleting` im Verzeichnis: dann auch die Volumes, sonst bleiben sie mit den Daten stehen), schreibt Dateien und startet mit `up -d --no-recreate --wait`. `DeleteServer` schreibt zuerst die Marke, dann `down`, dann die Volumes (nur eigene; ein fremdes Volume ist `ErrNotOurs`), dann das Verzeichnis.
+* `EnsureRunning` (noch nicht angebunden, Meilenstein 2) startet eine angehaltene Maschine und startet den `dind`-Dienst neu, wenn ihm `eth0` fehlt (§15, 4b).
+* `Validate`: Docker erreichbar, Kontext ist ein lokaler Daemon (`unix://` oder `npipe://`), Compose-Plugin, Image vorhanden, Größe, `dind` (D9: Fehler, solange `COMPOSE_DOCKER` nicht ausdrücklich gesetzt ist), Warnung bei 20 oder mehr Netzen.
+* Tests gegen einen Fake des `docker`-Aufrufs, der Container und Volumes aus der erzeugten Datei nachbildet (16 Tests). Zusätzlich ein einmaliger Lauf gegen das echte Docker dieser Umgebung (Validate, Anlegen, Neustart, Reparatur, Löschen, keine Reste), der nicht im Repository bleibt.
