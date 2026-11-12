@@ -292,7 +292,7 @@ func serverChecks(r *report, c *model.Machine, val map[string]string, workdir, r
 	v := func(k string) string { return val[k] }
 	rerun := "viper up " + c.Name
 
-	cloudInitChecks(r, v)
+	cloudInitChecks(r, c, v)
 	claudeChecks(r, c, v, rerun)
 	ghChecks(r, c, v, rerun)
 	if v("git_name") != "" && v("git_email") != "" {
@@ -327,7 +327,11 @@ func serverChecks(r *report, c *model.Machine, val map[string]string, workdir, r
 	r.info("memory: %s; disk: %s", v("mem"), v("disk"))
 }
 
-func cloudInitChecks(r *report, v func(string) string) {
+func cloudInitChecks(r *report, c *model.Machine, v func(string) string) {
+	if c.IsContainer() {
+		r.ok("a pod: no cloud-init, the image has everything")
+		return
+	}
 	switch v("cloudinit") {
 	case "done":
 		r.ok("cloud-init: done")

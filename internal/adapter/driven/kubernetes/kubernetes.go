@@ -15,6 +15,7 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
@@ -104,8 +105,9 @@ func (o Options) timeout() time.Duration {
 type Client struct {
 	opts Options
 
-	mu sync.Mutex
-	cs kubernetes.Interface
+	mu  sync.Mutex
+	cs  kubernetes.Interface
+	cfg *rest.Config // nil for a client made over a given clientset
 }
 
 // New returns a client. It reads the kubeconfig when it is first used.
@@ -161,7 +163,7 @@ func (c *Client) client() (*session, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.cs = cs
+	c.cs, c.cfg = cs, cfg
 	return &session{cs}, nil
 }
 

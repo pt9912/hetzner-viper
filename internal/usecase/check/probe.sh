@@ -60,6 +60,8 @@ if [ -d "$dir/.git" ]; then
   echo "repo_changes=$(git -C "$dir" -c status.showUntrackedFiles=all status --porcelain --untracked-files=all --ignore-submodules=none | wc -l)"
 fi
 if [ -f "${VIPER_REBOOT_FILE:-/var/run/reboot-required}" ]; then echo reboot=required; fi
-echo "sshd=$(sudo sshd -T 2>/dev/null | grep -iE '^(passwordauthentication|permitrootlogin|authenticationmethods) ' | sort | tr '\n' ';')"
+# a VM: sshd -T as root; a pod has no sudo and keeps the configuration of its sshd in the home directory
+sshd_cfg=$(sudo -n sshd -T 2>/dev/null || sshd -T -f "$HOME/.viper/sshd/config" 2>/dev/null)
+echo "sshd=$(printf '%s\n' "$sshd_cfg" | grep -iE '^(passwordauthentication|permitrootlogin|authenticationmethods) ' | sort | tr '\n' ';')"
 echo "mem=$(free -m | awk '/^Mem:/ {print $7 " MB available of " $2 " MB"}')"
 echo "disk=$(df -h / | awk 'NR == 2 {print $4 " free of " $2}')"

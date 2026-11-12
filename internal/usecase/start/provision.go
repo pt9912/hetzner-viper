@@ -83,7 +83,10 @@ func (r *runner) verifyStatus(ctx context.Context, status string) (int, error) {
 			return code, err
 		}
 	}
-	if !hasLine(status, "docker=ok") {
+	if dockerWanted(c) && !hasLine(status, "docker=ok") {
+		if c.IsContainer() {
+			return r.fail("Docker does not answer in the pod (K8S_DOCKER=%s): look at the container dockerd: kubectl -n %s logs %s-0 -c dockerd. Server retained.", c.Setting("K8S_DOCKER", "dind"), c.Setting("K8S_NAMESPACE", "viper"), c.ServerName)
+		}
 		return r.fail("Docker is not running; see /var/log/cloud-init-output.log on the server. Server retained.")
 	}
 	if hasLine(status, "cloud-init=1") {
@@ -97,6 +100,9 @@ func (r *runner) verifyStatus(ctx context.Context, status string) (int, error) {
 
 // swap sets the swap file up (not fatal).
 func (r *runner) swap(ctx context.Context) {
+	if r.c.IsContainer() {
+		return // a pod has no swap file to make (settingsfile refuses VIPER_SWAP for it)
+	}
 	rerun := "viper up " + r.c.Name
 	// Swap file, opt-in with VIPER_SWAP (not fatal): a factor of the server's RAM (1 = as much as
 	// RAM, 0.5 = half) or a size (4G, 512M). Idempotent: an active /swapfile is left alone.
@@ -135,7 +141,11 @@ func (r *runner) installClaude(ctx context.Context) (int, error) {
 		if ctx.Err() != nil {
 			return 1, driving.ErrShown
 		}
-		if err := r.ssh(ctx, "", "bash -o pipefail -c 'curl -fsSL https://claude.ai/install.sh | bash' && sudo touch /var/tmp/claude-ready"); err == nil {
+		cmd := "bash -o pipefail -c 'curl -fsSL https://claude.ai/install.sh | bash' && sudo touch /var/tmp/claude-ready"
+		if r.c.IsContainer() {
+			cmd = "bash -o pipefail -c 'curl -fsSL https://claude.ai/install.sh | bash'" // no sudo; the probe looks for the program itself
+		}
+		if err := r.ssh(ctx, "", cmd); err == nil {
 			return 0, nil
 		}
 		if interrupted(ctx) {
@@ -155,7 +165,11 @@ func (r *runner) installClaude(ctx context.Context) (int, error) {
 func (r *runner) workspace(ctx context.Context) (int, error) {
 	c := r.c
 	q := model.Quote(c.WorkspaceDir)
-	cmd := "sudo install -d -o builder -g builder " + q + " && mkdir -p ~/.config/viper && { grep -qxF -- " + q +
+	install := "sudo install -d -o builder -g builder "
+	if c.IsContainer() {
+		install = "install -d " // no sudo: /Development is a link into the home directory, which is builder's
+	}
+	cmd := install + q + " && mkdir -p ~/.config/viper && { grep -qxF -- " + q +
 		" ~/.config/viper/workspaces 2>/dev/null || printf '%s\\n' " + q + " >> ~/.config/viper/workspaces; }"
 	if err := r.ssh(ctx, "", cmd); err != nil {
 		return r.fail("creating the work directory %s on the server failed", c.WorkspaceDir)
@@ -384,7 +398,7 @@ func (r *runner) postClone(ctx context.Context, repoURL, workdir string) (int, e
 // user-data.
 func (r *runner) codeServer(ctx context.Context) {
 	c := r.c
-	if c.Setting("VIPER_CODE_SERVER", "0") != "1" {
+	if c.Setting("VIPER_CODE_SERVER", "0") != "1" || c.IsContainer() {
 		return
 	}
 	rerun := "viper up " + c.Name

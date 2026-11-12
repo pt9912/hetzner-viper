@@ -21,14 +21,24 @@ type Files struct{}
 // very server: a key leaked from an earlier server (it is readable in the user-data) is
 // rejected, even though its certificate from the same CA is still valid. Without a pin
 // (server created elsewhere) it falls back to the host CA.
+//
+// A machine that is a container (PROVIDER=kubernetes) has no address: it is reached on port 2222 through
+// "viper k8s-proxy", which connects ssh to the pod through the API of the cluster; ip is ignored.
 func (Files) WriteConfig(c *model.Machine, ip string) error {
 	known := c.KnownPin
 	if st, err := os.Stat(c.KnownPin); err != nil || st.Size() == 0 {
 		known = filepath.Join(c.SSHDir, "known_hosts_hetzner_claude_ca")
 	}
+	connect := fmt.Sprintf("    HostName %s\n", ip)
+	if c.IsContainer() {
+		proxy, err := proxyCommand(c)
+		if err != nil {
+			return err
+		}
+		connect = fmt.Sprintf("    HostName %s\n    Port 2222\n    ProxyCommand %s\n", c.ServerName, proxy)
+	}
 	body := fmt.Sprintf(`Host %s
-    HostName %s
-    HostKeyAlias %s
+%s    HostKeyAlias %s
     User builder
     IdentityFile %s
     IdentitiesOnly yes
@@ -41,8 +51,34 @@ func (Files) WriteConfig(c *model.Machine, ip string) error {
     # the server is root-equivalent for the agent: never hand it the local ssh-agent or X11
     ForwardAgent no
     ForwardX11 no
-`, c.SSHAlias, ip, c.DNSHost, quote(c.SSHKey), quote(known))
+`, c.SSHAlias, connect, c.DNSHost, quote(c.SSHKey), quote(known))
 	return writeAtomic(c.SSHConfig, []byte(body))
+}
+
+// proxyCommand is the ProxyCommand of a container: this program, k8s-proxy, the settings directory and the machine.
+// ssh expands % in it and splits it like a shell would, so the parts are quoted and % is doubled; names with a quote or
+// a line break are refused (they could add directives to the file).
+func proxyCommand(c *model.Machine) (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("the path of viper (for the ProxyCommand): %w", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	dir, err := filepath.Abs(c.Dir)
+	if err != nil {
+		return "", err
+	}
+	parts := []string{exe, "k8s-proxy", "--dir", dir, c.Name}
+	for i, p := range parts {
+		if strings.ContainsAny(p, "\"\n\r\\'") {
+			return "", fmt.Errorf("the ProxyCommand cannot hold %q (a quote, a backslash or a line break)", p)
+		}
+		p = strings.ReplaceAll(p, "%", "%%")
+		parts[i] = `"` + p + `"`
+	}
+	return strings.Join(parts, " "), nil
 }
 
 // writeAtomic puts the file in place in one step (a file of its own next to it, then rename), so
@@ -123,7 +159,11 @@ func (Files) PinHostKey(c *model.Machine, id string, ssh func(args ...string) (s
 	if st, err := os.Stat(c.KnownPin); err == nil && st.Size() > 0 {
 		return
 	}
-	stdout, err := ssh("-n", "-F", c.SSHConfig, "-o", "BatchMode=yes", c.SSHAlias, "cat /etc/ssh/ssh_host_ed25519_key.pub")
+	hostKey := "/etc/ssh/ssh_host_ed25519_key.pub"
+	if c.IsContainer() {
+		hostKey = "/home/builder/.viper/sshd/host_key.pub" // the host key of a container is in its home directory
+	}
+	stdout, err := ssh("-n", "-F", c.SSHConfig, "-o", "BatchMode=yes", c.SSHAlias, "cat "+hostKey)
 	f := strings.Fields(strings.SplitN(stdout, "\n", 2)[0])
 	if err != nil || len(f) < 2 || f[0] != "ssh-ed25519" {
 		return

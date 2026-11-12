@@ -19,8 +19,8 @@ func InventoryScript() string { return inventoryScript }
 // Needle exports needle for the tests.
 func Needle() string { return needle }
 
-// Probe exports probe for the tests.
-func Probe() string { return probe }
+// Probe exports the probe of a VM for the tests.
+func Probe() string { return vmProbe }
 
 // NatsCertScript exports natsCertScript for the tests.
 func NatsCertScript() string { return natsCertScript }
@@ -42,3 +42,6 @@ func NatsMCPTestScript() string { return natsMCPTestScript }
 
 // CheckLinuxBinary exports checkLinuxBinary for the tests.
 func CheckLinuxBinary(data []byte, goarch string) error { return checkLinuxBinary(data, goarch) }
+
+// ContainerProbe exports the probe of a pod for the tests.
+func ContainerProbe() string { return containerProbe }

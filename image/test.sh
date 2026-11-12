@@ -20,11 +20,11 @@ ssh-keygen -q -t ed25519 -N '' -f "$t/ca" -C testca
 ssh-keygen -q -t ed25519 -N '' -f "$t/host_key" -C host
 ssh-keygen -q -t ed25519 -N '' -f "$t/user" -C user
 ssh-keygen -q -s "$t/ca" -I vmtest -h -n vmtest "$t/host_key.pub"
-cp "$t/host_key" "$t/host_key-cert.pub" "$t/secret/"; cp "$t/user.pub" "$t/secret/authorized_keys"; chmod -R a+rX "$t/secret"
+cp "$t/host_key" "$t/host_key.pub" "$t/host_key-cert.pub" "$t/secret/"; cp "$t/user.pub" "$t/secret/authorized_keys"; chmod -R a+rX "$t/secret"
 printf '@cert-authority * %s\n' "$(cut -d' ' -f1,2 "$t/ca.pub")" > "$t/known_hosts"
 
 run() { # run NAME PORT HOMEDIR
-  docker run -d --name "$1" --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges \
+  docker run -d --name "$1" --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges -e DOCKER_HOST=tcp://127.0.0.1:2375 \
     -p "127.0.0.1:$2:2222" -v "$t/secret:/run/viper/secret:ro" ${3:+-v "$3:/home/builder"} "$image" >/dev/null
 }
 sshc() { ssh -p "$1" -i "$t/user" -o IdentitiesOnly=yes -o UserKnownHostsFile="$t/known_hosts" -o StrictHostKeyChecking=yes \
@@ -40,7 +40,7 @@ check "password login is refused" bash -c "! ssh -p 2222 -o PreferredAuthenticat
 check "another key is refused" bash -c "ssh-keygen -q -t ed25519 -N '' -f $t/other && ! ssh -p 2222 -i $t/other -o IdentitiesOnly=yes -o UserKnownHostsFile=$t/known_hosts -o HostKeyAlias=vmtest -o BatchMode=yes builder@127.0.0.1 true"
 check "a wrong host name is refused" bash -c "! ssh -p 2222 -i $t/user -o IdentitiesOnly=yes -o UserKnownHostsFile=$t/known_hosts -o HostKeyAlias=other -o BatchMode=yes builder@127.0.0.1 true"
 check "scp works (sftp subsystem)" bash -c "echo hi > $t/f && scp -P 2222 -i $t/user -o IdentitiesOnly=yes -o UserKnownHostsFile=$t/known_hosts -o HostKeyAlias=vmtest -o BatchMode=yes $t/f builder@127.0.0.1:/tmp/f && $(declare -f sshc) && sshc 2222 'cat /tmp/f' | grep -qx hi"
-cfg=$(docker exec "$name" sshd -T -f /opt/viper/sshd_config)
+cfg=$(docker exec "$name" sshd -T -f /home/builder/.viper/sshd/config)
 for want in "passwordauthentication no" "kbdinteractiveauthentication no" "pubkeyauthentication yes" "permitrootlogin no" "permitemptypasswords no" "authenticationmethods publickey" "port 2222"; do
   check "effective sshd setting: $want" grep -qx "$want" <<<"$cfg"
 done
@@ -55,6 +55,7 @@ check "a nats-server starts as builder and answers the nats tool" sshc 2222 'nat
 # the scripts of viper that install them on a VM must find them and do nothing (they would need sudo to install)
 check "viper's natsinstall.sh finds nats-server installed" bash -c "$(declare -f sshc); sshc 2222 \"bash -s -- $srv_version https://x.invalid/x 0\" < $here/../internal/usecase/start/scripts/natsinstall.sh | grep -q 'is installed'"
 check "viper's natscli.sh finds the nats tool installed" bash -c "$(declare -f sshc); sshc 2222 \"bash -s -- $cli_version https://x.invalid/x 0\" < $here/../internal/usecase/start/scripts/natscli.sh | grep -q 'is installed'"
+check "DOCKER_HOST reaches the sessions of sshd (SetEnv)" sshc 2222 '[ "$DOCKER_HOST" = tcp://127.0.0.1:2375 ]'
 check "docker client and plugins" sshc 2222 "bash -lc 'docker --version && docker buildx version && docker compose version'"
 check "home was seeded: tmux and VS Code settings" sshc 2222 'test -f ~/.tmux.conf && test -f ~/.vscode-server/data/Machine/settings.json'
 check "the work directory is writable" sshc 2222 'touch /Development/x && rm /Development/x'

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
 	"strconv"
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/aws"
@@ -38,11 +39,7 @@ func NewProvider(m *model.Machine) Provider {
 			SubnetID: m.Get("AZURE_SUBNET_ID"), RootGB: int32(root), NATSPort: m.NATS.Port,
 		})}
 	case "kubernetes":
-		disk, _ := strconv.Atoi(m.Get("K8S_DISK_GB"))
-		return Provider{kubernetes.New(kubernetes.Options{
-			Context: m.ServerLocation, Namespace: m.Get("K8S_NAMESPACE"), Image: m.ServerImage, StorageClass: m.Get("K8S_STORAGE_CLASS"),
-			DiskGB: disk, Docker: m.Get("K8S_DOCKER"), DockerHost: m.Get("K8S_DOCKER_HOST"), DockerImage: m.Get("K8S_DOCKER_IMAGE"), NATSPort: m.NATS.Port,
-		})}
+		return Provider{kubernetes.New(kubernetesOptions(m))}
 	case "gcp":
 		root, _ := strconv.Atoi(m.Get("GCP_ROOT_GB"))
 		return Provider{gcp.New(gcp.Options{Project: m.Get("GCP_PROJECT"), Zone: m.ServerLocation, Network: m.Get("GCP_NETWORK"), Subnet: m.Get("GCP_SUBNET"), RootGB: int64(root), NATSPort: m.NATS.Port})}
@@ -93,4 +90,18 @@ func (n noAdapter) EnsureLoginKey(context.Context, string, string) (model.LoginK
 
 func (n noAdapter) EnsureFirewall(context.Context, string, []string) (model.FirewallResult, error) {
 	return model.FirewallResult{}, n.err()
+}
+
+// kubernetesOptions are the settings of a machine in a Kubernetes cluster.
+func kubernetesOptions(m *model.Machine) kubernetes.Options {
+	disk, _ := strconv.Atoi(m.Get("K8S_DISK_GB"))
+	return kubernetes.Options{
+		Context: m.ServerLocation, Namespace: m.Get("K8S_NAMESPACE"), Image: m.ServerImage, StorageClass: m.Get("K8S_STORAGE_CLASS"),
+		DiskGB: disk, Docker: m.Get("K8S_DOCKER"), DockerHost: m.Get("K8S_DOCKER_HOST"), DockerImage: m.Get("K8S_DOCKER_IMAGE"), NATSPort: m.NATS.Port,
+	}
+}
+
+// Proxy connects stdin and stdout to the ssh port of a machine in a Kubernetes cluster (viper k8s-proxy).
+func Proxy(ctx context.Context, m *model.Machine, in io.Reader, out io.Writer) error {
+	return kubernetes.New(kubernetesOptions(m)).Proxy(ctx, m.ServerName, in, out)
 }

@@ -3,6 +3,7 @@
 # The material of the machine comes as files, never in the environment or the command line:
 #   $VIPER_SECRET_DIR/authorized_keys      the keys that may log in
 #   $VIPER_SECRET_DIR/host_key             the host key of the machine
+#   $VIPER_SECRET_DIR/host_key.pub         its public key (viper pins it)
 #   $VIPER_SECRET_DIR/host_key-cert.pub    its certificate (signed by the host CA)
 set -euo pipefail
 secret="${VIPER_SECRET_DIR:-/run/viper/secret}"
@@ -10,7 +11,7 @@ home=/home/builder
 ready="${VIPER_READY_FILE:-/tmp/viper-ready}"
 
 fail() { echo "viper-machine: $*" >&2; exit 1; }
-for f in authorized_keys host_key host_key-cert.pub; do
+for f in authorized_keys host_key host_key.pub host_key-cert.pub; do
   [ -s "$secret/$f" ] || fail "$secret/$f is missing"
 done
 
@@ -24,7 +25,17 @@ mkdir -p "$home/.ssh" "$home/.viper/sshd" "$home/Development"
 chmod 700 "$home/.ssh" "$home/.viper" "$home/.viper/sshd"
 install -m 600 "$secret/authorized_keys" "$home/.ssh/authorized_keys"
 install -m 600 "$secret/host_key" "$home/.viper/sshd/host_key"
+install -m 644 "$secret/host_key.pub" "$home/.viper/sshd/host_key.pub"
 install -m 644 "$secret/host_key-cert.pub" "$home/.viper/sshd/host_key-cert.pub"
 
+# The environment of the container does not reach the sessions of sshd. What the sessions need of it is handed over by
+# SetEnv: where the Docker daemon is (the sidecar or a remote one).
+cfg="$home/.viper/sshd/config"
+cp /opt/viper/sshd_config "$cfg"
+if [ -n "${DOCKER_HOST:-}" ]; then
+  case "$DOCKER_HOST" in *[[:space:]]*) fail "DOCKER_HOST has a blank in it" ;; esac
+  echo "SetEnv DOCKER_HOST=$DOCKER_HOST" >> "$cfg"
+fi
+
 : > "$ready"
-exec /usr/sbin/sshd -D -e -f /opt/viper/sshd_config
+exec /usr/sbin/sshd -D -e -f "$cfg"

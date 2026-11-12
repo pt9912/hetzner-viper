@@ -221,6 +221,11 @@ func (r *runner) announceServer(ctx context.Context, srv *model.Server) (int, er
 	if err := d.SSH.AddInclude(c); err != nil {
 		r.eprintf("%s\n", d.SSH.IncludeWarning(c))
 	}
+	if srv.ViaAPI {
+		// no address and no DNS name: viper reaches the pod through the API of the cluster (viper k8s-proxy)
+		r.printf("The machine is the pod %s; viper reaches it through the API of the cluster, not by an address.\n", srv.Name)
+		return 0, nil
+	}
 	// The DNS name is for people (iPad, other clients); the scripts connect by IP and need not wait for it.
 	msg, err := d.DNS.Set(ctx, c.DNSHost, ip)
 	if err != nil {

@@ -67,6 +67,7 @@ func Run(version string, args []string, stdin io.Reader, stdout, stderr io.Write
 			NATS:      natscli.Service{},
 			NATSOp:    natsop.Service{Ops: natsgroup.Ops{Run: system.Run, SSH: sshconfig.Files{}, Out: io.Discard, Jitter: natsgroup.RandomJitter}},
 			MCPBinary: mcpbin.Binary,
+			Proxy:     Proxy,
 			Up:        func(c *model.Machine, o driving.UpOptions) driving.Up { return Up(c, o) },
 			Down:      func(c *model.Machine, o driving.DownOptions) driving.Down { return Down(c, o) },
 			Check:     func(c *model.Machine) driving.Check { return Check(c) },

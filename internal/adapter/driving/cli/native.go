@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -288,4 +289,26 @@ func exportLines(provider, dnsProvider string) string {
 		fmt.Fprintf(&b, "  export %s='...'\n", name)
 	}
 	return b.String()
+}
+
+// nativeK8sProxy is the ProxyCommand of the ssh config of a machine that is a pod: it connects standard input and
+// output to the ssh port of the pod through the API of the cluster. Nothing else may go to standard output.
+func nativeK8sProxy(o *options) error {
+	env, err := o.host().Env()
+	if err != nil {
+		return err
+	}
+	c, err := o.host().Services.Settings.Load(settingsDir(o), o.machine, env, false)
+	if err != nil {
+		return err
+	}
+	if !c.IsContainer() {
+		return fmt.Errorf("viper k8s-proxy: %s is not a machine in a Kubernetes cluster (PROVIDER=%s)", o.machine, c.Provider)
+	}
+	if o.host().Services.Proxy == nil {
+		return errors.New("viper k8s-proxy: this build has no proxy")
+	}
+	ctx, stop := notifyContext(context.Background())
+	defer stop()
+	return o.host().Services.Proxy(ctx, c, o.host().Stdin, o.host().Stdout)
 }

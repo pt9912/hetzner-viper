@@ -364,6 +364,12 @@ func checkKubernetes(c *model.Machine) error {
 	if DNSProviderOf(map[string]string{"DNS_PROVIDER": c.Get("DNS_PROVIDER")}) != model.DNSNone {
 		return errors.New("DNS_PROVIDER=none is needed for PROVIDER=kubernetes: a pod has no public address to name")
 	}
+	if v := c.Get("VIPER_SWAP"); v != "" && v != "0" {
+		return errors.New("VIPER_SWAP: a pod has no swap file to make (PROVIDER=kubernetes)")
+	}
+	if c.Get("VIPER_CODE_SERVER") == "1" {
+		return errors.New("VIPER_CODE_SERVER: code-server needs root and systemd, which a pod does not have (PROVIDER=kubernetes); VS Code Remote-SSH works without it")
+	}
 	switch c.Get("K8S_DOCKER") {
 	case "", "dind", "remote", "none":
 	default:

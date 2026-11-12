@@ -32,6 +32,8 @@ type Services struct {
 	// OpenLog starts the log of a run, ShowLog shows the log of a server (viper log).
 	OpenLog runlog.Opener
 	ShowLog runlog.Viewer
+	// Proxy connects stdin and stdout to the ssh port of a machine that is a pod (viper k8s-proxy).
+	Proxy driving.Proxy
 	// MCPBinary is the viper-nats-mcp program built into viper for a Linux architecture ("amd64" or "arm64").
 	MCPBinary func(goarch string) ([]byte, error)
 	// LaunchVSCode opens VS Code on a machine (viper vscode).

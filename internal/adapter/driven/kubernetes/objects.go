@@ -41,6 +41,7 @@ func secretFor(ns string, s model.ServerSpec) *corev1.Secret {
 		StringData: map[string]string{
 			"authorized_keys":   strings.Join(b.AuthorizedKeys, "\n") + "\n",
 			"host_key":          strings.TrimRight(b.HostKey, "\n") + "\n",
+			"host_key.pub":      strings.TrimSpace(b.HostKeyPub) + "\n",
 			"host_key-cert.pub": strings.TrimSpace(b.HostCertificate) + "\n",
 		},
 	}

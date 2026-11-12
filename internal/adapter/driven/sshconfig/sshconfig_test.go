@@ -317,3 +317,60 @@ func TestWriteConfigKeepsALinkAndRemovesOldTemporaryFiles(t *testing.T) {
 		t.Error("the old temporary file is still there")
 	}
 }
+
+func podConfig(t *testing.T, name string) *model.Machine {
+	t.Helper()
+	home, dir := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("PROVIDER=kubernetes\nDNS_PROVIDER=none\nSERVER_LOCATION=k3d-x\nK8S_IMAGE=i\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := settingsfile.Load(dir, name, portsettings.Env{Home: home, Lookup: func(string) (string, bool) { return "", false }}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func TestAPodIsReachedThroughTheProxyOnPort2222(t *testing.T) {
+	c := podConfig(t, "web")
+	if err := files().WriteConfig(c, ""); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(c.SSHConfig)
+	for _, want := range []string{"    HostName claude-web\n", "    Port 2222\n", "    ProxyCommand \"", "\" \"k8s-proxy\" \"--dir\" \"", "\" \"web\"\n", "    StrictHostKeyChecking yes\n", "    ServerAliveInterval 15\n"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("missing %q in\n%s", want, b)
+		}
+	}
+	if strings.Contains(string(b), "HostName \n") || strings.Contains(string(b), "HostName 203") {
+		t.Errorf("a pod has no address:\n%s", b)
+	}
+	// the host key of a pod is pinned from its home directory, not from /etc/ssh
+	var asked string
+	files().PinHostKey(c, "id1", func(args ...string) (string, error) {
+		asked = strings.Join(args, " ")
+		return "ssh-ed25519 AAAA host\n", nil
+	}, &strings.Builder{})
+	if !strings.HasSuffix(asked, "cat /home/builder/.viper/sshd/host_key.pub") {
+		t.Errorf("%s", asked)
+	}
+}
+
+func TestTheProxyCommandCannotCarryAnythingIntoTheFile(t *testing.T) {
+	c := podConfig(t, "web")
+	c.Dir = c.Dir + "/a\"b"
+	if err := files().WriteConfig(c, ""); err == nil || !strings.Contains(err.Error(), "ProxyCommand") {
+		t.Errorf("a quote in the directory: %v", err)
+	}
+	c.Dir = c.Dir[:len(c.Dir)-4] + "/50%d"
+	if err := files().WriteConfig(c, ""); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(c.SSHConfig)
+	if !strings.Contains(string(b), "50%%d") || strings.Contains(string(b), "50%d\"") {
+		t.Errorf("ssh expands a percent sign in a ProxyCommand: it is doubled\n%s", b)
+	}
+}

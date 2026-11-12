@@ -130,3 +130,17 @@ func TestUserDataOfOddKeysIsWhatPythonMade(t *testing.T) {
 		}
 	}
 }
+
+func TestTheProbeOfAPodAsksForNothingATheImageDoesNotHave(t *testing.T) {
+	p := start.ContainerProbe()
+	for _, bad := range []string{"cloud-init status", "sudo", "reboot", "/var/tmp/claude-ready"} {
+		if strings.Contains(p, bad) {
+			t.Errorf("a pod has no %q: %s", bad, p)
+		}
+	}
+	for _, want := range []string{"/tmp/viper-ready", "claude=ok", "docker=ok", "ready="} {
+		if !strings.Contains(p, want) {
+			t.Errorf("the probe must report %q: %s", want, p)
+		}
+	}
+}

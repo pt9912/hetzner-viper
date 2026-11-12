@@ -141,7 +141,7 @@ func (r *runner) server(ctx context.Context, ca, keyName, ipadKeyFile string) (s
 }
 
 func (r *runner) ipOrFail(s *model.Server, reused bool) (*model.Server, bool, int, error) {
-	if s.IPv4 == "" {
+	if s.IPv4 == "" && !s.ViaAPI { // a pod has no address: it is reached through the API of the cluster
 		code, err := r.fail("server %s has no IPv4 address", r.c.ServerName)
 		return nil, false, code, err
 	}
@@ -151,7 +151,25 @@ func (r *runner) ipOrFail(s *model.Server, reused bool) (*model.Server, bool, in
 // The probe always exits 0 once connected; only connection failures are retried.
 // cloud-init exits 0 (done), 2 (done with warnings) or 1 (errors).
 // reboot=pending: updates were installed and cloud-init is about to restart the server.
-const probe = `cloud-init status --wait >/dev/null 2>&1; echo "cloud-init=$?"; test -f /var/tmp/claude-ready && echo claude=ok; docker info >/dev/null 2>&1 && echo docker=ok; test -f "${VIPER_REBOOT_FILE:-/var/run/reboot-required}" && echo reboot=pending; echo "ready=$(cat ~/.config/viper/ready 2>/dev/null)"; true`
+const vmProbe = `cloud-init status --wait >/dev/null 2>&1; echo "cloud-init=$?"; test -f /var/tmp/claude-ready && echo claude=ok; docker info >/dev/null 2>&1 && echo docker=ok; test -f "${VIPER_REBOOT_FILE:-/var/run/reboot-required}" && echo reboot=pending; echo "ready=$(cat ~/.config/viper/ready 2>/dev/null)"; true`
+
+// containerProbe is the probe for a pod: there is no cloud-init (the image has all), the entrypoint writes the ready
+// file before sshd starts, Claude Code is in the image, and Docker answers once the sidecar is up (the pod is ready only
+// then).
+const containerProbe = `test -f /tmp/viper-ready && echo "cloud-init=0"; test -x "$HOME/.local/bin/claude" && echo claude=ok; docker info >/dev/null 2>&1 && echo docker=ok; echo "ready=$(cat ~/.config/viper/ready 2>/dev/null)"; true`
+
+// probe is the readiness probe of the machine.
+func (r *runner) probe() string {
+	if r.c.IsContainer() {
+		return containerProbe
+	}
+	return vmProbe
+}
+
+// dockerWanted tells whether the machine must have a running Docker: always on a VM, on a pod unless K8S_DOCKER=none.
+func dockerWanted(c *model.Machine) bool {
+	return !c.IsContainer() || c.Setting("K8S_DOCKER", "dind") != "none"
+}
 
 func hasLine(s, line string) bool {
 	for _, l := range strings.Split(s, "\n") {
@@ -216,14 +234,14 @@ func (r *runner) reportSSHFailure(errMsg string) {
 // there and end the wait at once.
 func (r *runner) waitForServer(ctx context.Context, id string, reused bool) (string, int, error) {
 	c := r.c
-	r.printf("Waiting for SSH and cloud-init ...\n")
+	r.printf("Waiting for SSH%s ...\n", map[bool]string{false: " and cloud-init", true: ""}[r.c.IsContainer()])
 	status, errMsg := "", ""
 	var rw rebootWait
 	for i := 1; i <= 120; i++ {
 		if ctx.Err() != nil {
 			return "", 1, driving.ErrShown
 		}
-		stdout, stderr, err := r.d.Run(ctx, "", "ssh", "-n", "-F", c.SSHConfig, "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", c.SSHAlias, probe)
+		stdout, stderr, err := r.d.Run(ctx, "", "ssh", "-n", "-F", c.SSHConfig, "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", c.SSHAlias, r.probe())
 		if err == nil {
 			status = stdout
 			// set up by a completed run (from this or another computer): the server records it itself

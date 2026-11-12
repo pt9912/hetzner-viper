@@ -95,7 +95,11 @@ func Run(ctx context.Context, c *model.Machine, force bool, d Deps, lg runlog.Lo
 	if code != 0 || err != nil {
 		return code, err
 	}
-	fmt.Fprintf(errOut, "\nServer %s (%s) and ALL its data (including %s) will be DESTROYED.\n", c.ServerName, ip, strings.Join(wss, " "))
+	where := ip
+	if srv.ViaAPI {
+		where = "pod, " + c.Setting("K8S_NAMESPACE", "viper")
+	}
+	fmt.Fprintf(errOut, "\nServer %s (%s) and ALL its data (including %s) will be DESTROYED.\n", c.ServerName, where, strings.Join(wss, " "))
 	if d.Ask("Type DELETE to continue: ") != "DELETE" {
 		fmt.Fprintln(out, "Cancelled")
 		lg.Final("cancelled (no DELETE)")
@@ -193,10 +197,12 @@ func destroy(ctx context.Context, c *model.Machine, d Deps, lg runlog.Log, srv *
 		forced = " (--force, no git checks)"
 	}
 	lg.Event("server deleted id=%s ip=%s%s", id, ip, forced)
-	if ip == "" {
+	switch {
+	case srv.ViaAPI: // a pod has no address and no DNS record
+	case ip == "":
 		// without the IP the record cannot be matched to this server: leave it
 		fmt.Fprintf(errOut, "WARNING: the server had no IPv4 address; DNS record %s left untouched.\n", c.DNSHost)
-	} else {
+	default:
 		d.deleteDNS(ctx, c, ip, out, errOut)
 	}
 	d.cleanupLocal(c, errOut)
