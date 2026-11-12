@@ -1034,9 +1034,9 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 |---|---|---|
 | `SERVER_PREFIX` | Namensanfang aller Ressourcen | `claude` |
 | `PROVIDER` | Anbieter: `hetzner`, `aws`, `gcp`, `azure`, `kubernetes` oder `compose`; wird nur aus den Einstellungsdateien gelesen, nicht aus der Shell | `hetzner` |
-| `SERVER_TYPE` | Servertyp (Hetzner), Instanztyp (AWS), Maschinentyp (GCP) bzw. VM-Größe (Azure) (Kubernetes: `<CPUs>x<GiB>`) | `cpx32`, `t3.large`, `e2-standard-2` bzw. `Standard_D2s_v5` |
-| `SERVER_LOCATION` | Standort (Hetzner), Region oder Zone (AWS, z. B. `eu-central-1b`), Zone (GCP, z. B. `europe-west3-b`) bzw. Region (Azure, z. B. `germanywestcentral`) (Kubernetes: der Kontext der `kubeconfig`, Pflicht) | `fsn1`, `eu-central-1`, `europe-west3-b` bzw. `germanywestcentral` |
-| `SERVER_IMAGE` | Betriebssystem-Image; bei AWS, GCP und Azure `ubuntu-<Version>` (AWS auch `ami-…`, GCP auch `projects/…`, Azure auch `Herausgeber:Angebot:SKU:Version`) | `ubuntu-26.04` (Hetzner), sonst `ubuntu-24.04` |
+| `SERVER_TYPE` | Servertyp (Hetzner), Instanztyp (AWS), Maschinentyp (GCP) bzw. VM-Größe (Azure) (Kubernetes und Docker Compose: `<CPUs>x<GiB>`, etwa `2x4`) | `cpx32`, `t3.large`, `e2-standard-2`, `Standard_D2s_v5` bzw. `2x4` (Kubernetes, Docker Compose) |
+| `SERVER_LOCATION` | Standort (Hetzner), Region oder Zone (AWS, z. B. `eu-central-1b`), Zone (GCP, z. B. `europe-west3-b`) bzw. Region (Azure, z. B. `germanywestcentral`) (Kubernetes: der Kontext der `kubeconfig`, Pflicht; Docker Compose: der Docker-Kontext, `default` ist der lokale Daemon, Pflicht) | `fsn1`, `eu-central-1`, `europe-west3-b` bzw. `germanywestcentral` |
+| `SERVER_IMAGE` | Betriebssystem-Image (bei Kubernetes und Docker Compose nicht benutzt: dort gilt `K8S_IMAGE` bzw. `COMPOSE_IMAGE`); bei AWS, GCP und Azure `ubuntu-<Version>` (AWS auch `ami-…`, GCP auch `projects/…`, Azure auch `Herausgeber:Angebot:SKU:Version`) | `ubuntu-26.04` (Hetzner), sonst `ubuntu-24.04` |
 | `AWS_PROFILE` | AWS-Profil für die Anmeldung (nur AWS) | Standardkette |
 | `AWS_SUBNET_ID`, `AWS_VPC_ID` | Subnetz bzw. VPC für den Server (nur AWS) | Default-VPC |
 | `AWS_ROOT_GB` | Größe der Systemplatte in GB (nur AWS) | `50` |
@@ -1063,7 +1063,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `DNS_PROVIDER` | Wer den DNS-Namen anlegt: `cloudflare` oder `none` (kein Eintrag, keine Domain, kein Cloudflare); wird nur aus den Einstellungsdateien gelesen | `cloudflare` |
 | `DNS_DOMAIN` | Ihre Domain; Pflichtangabe mit Cloudflare | leer |
 | `SSH_KEY` | Pfad Ihres Login-Schlüssels | `~/.ssh/hetzner-build` |
-| `SSH_ALLOWED_CIDRS` | Netze, die Port 22 erreichen dürfen (gilt nicht für Pods) | `0.0.0.0/0,::/0` |
+| `SSH_ALLOWED_CIDRS` | Netze, die Port 22 erreichen dürfen (gilt nicht für Pods und Container) | `0.0.0.0/0,::/0` |
 | `IPAD_SSH_PUBLIC_KEY_FILE` | Öffentlicher Schlüssel des iPads | leer |
 | `VIPER_HOMEBREW` | Homebrew (`brew`) auf dem Server installieren: `1` oder `0` | `1` |
 | `VIPER_BREW_TAPS` | Homebrew-Taps (`owner/repo` oder `owner/repo=URL`), mit Leerzeichen getrennt | leer |
