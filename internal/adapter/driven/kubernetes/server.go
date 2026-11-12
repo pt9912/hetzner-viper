@@ -386,3 +386,49 @@ func (c *Client) DeleteServer(ctx context.Context, id string) error {
 	}
 	return c.deleteVolumes(ctx, name)
 }
+
+var _ cloud.Leftovers = (*Client)(nil)
+
+// Leftovers names the Secret and the volumes that a machine of that name has left in the namespace while its
+// StatefulSet is gone: an interrupted viper down, or a StatefulSet removed by hand.
+func (c *Client) Leftovers(ctx context.Context, name string) ([]string, error) {
+	cs, err := c.client()
+	if err != nil {
+		return nil, err
+	}
+	if sts, err := c.statefulSet(ctx, name); err != nil || sts != nil {
+		return nil, err
+	}
+	ns := c.opts.namespace()
+	var out []string
+	if sec, err := cs.CoreV1().Secrets(ns).Get(ctx, secretName(name), metav1.GetOptions{}); err == nil && ours(sec.ObjectMeta) {
+		out = append(out, "secret "+sec.Name)
+	}
+	for _, v := range []struct{ claim, what string }{{pvcName(name), "home directory"}, {brewName(name), "Homebrew"}} {
+		if p, err := cs.CoreV1().PersistentVolumeClaims(ns).Get(ctx, v.claim, metav1.GetOptions{}); err == nil && ours(p.ObjectMeta) {
+			out = append(out, fmt.Sprintf("volume %s (%s, %s)", p.Name, v.what, p.Spec.Resources.Requests.Storage().String()))
+		}
+	}
+	return out, nil
+}
+
+// DeleteLeftovers deletes the Secret and the volumes of a machine that does not exist any more.
+func (c *Client) DeleteLeftovers(ctx context.Context, name string) error {
+	cs, err := c.client()
+	if err != nil {
+		return err
+	}
+	if sts, err := c.statefulSet(ctx, name); err != nil || sts != nil {
+		if err == nil {
+			err = fmt.Errorf("the machine %s exists: viper down deletes it", name)
+		}
+		return err
+	}
+	ns := c.opts.namespace()
+	if sec, err := cs.CoreV1().Secrets(ns).Get(ctx, secretName(name), metav1.GetOptions{}); err == nil && ours(sec.ObjectMeta) {
+		if err := cs.CoreV1().Secrets(ns).Delete(ctx, sec.Name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+	return c.deleteVolumes(ctx, name)
+}

@@ -48,9 +48,13 @@ var ErrNetworkInUse = errors.New("the private network still has servers attached
 // AsNATS finds the NATS capability of a provider, looking through wrappers that hold the provider
 // (they have an Unwrap method, like errors do), and sets *target to it. It is false if the provider
 // cannot hold NATS groups.
-func AsNATS(p any, target *NATSProvider) bool {
+func AsNATS(p any, target *NATSProvider) bool { return As(p, target) }
+
+// As finds the capability T of a provider, looking through wrappers that hold the provider (they have an Unwrap
+// method), and sets *target to it. It is false if the provider has none.
+func As[T any](p any, target *T) bool {
 	for p != nil {
-		if n, ok := p.(NATSProvider); ok {
+		if n, ok := p.(T); ok {
 			*target = n
 			return true
 		}

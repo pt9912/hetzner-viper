@@ -212,39 +212,75 @@ func destroy(ctx context.Context, c *model.Machine, d Deps, lg runlog.Log, srv *
 }
 
 // notFound: possibly the wrong cloud project (token): touch nothing without confirmation, and
-// delete DNS only if it still points to the IP this machine had.
+// delete DNS only if it still points to the IP this machine had. What the provider has left of the machine (the
+// volumes of a pod whose StatefulSet is gone) is named and deleted with the rest.
 func notFound(ctx context.Context, c *model.Machine, d Deps, lg runlog.Log, out, errOut io.Writer) int {
 	fmt.Fprintf(out, "Server %s not found in this %s project.\n", c.ServerName, d.Cloud.Name())
 	oldIP := readTrim(c.IPState)
-	left := false
-	for _, f := range stateFiles(c) {
-		if _, err := os.Lstat(f); err == nil {
-			left = true
-		}
-	}
-	if !left {
+	local := hasLocalFiles(c)
+	remote, deleteRemote := providerLeftovers(ctx, c, d, errOut)
+	if !local && len(remote) == 0 {
 		fmt.Fprintln(out, "Nothing left to clean up.")
 		lg.Final("nothing to clean up (server not found, no local files)")
 		return 0
 	}
-	dnsPart := ""
-	if oldIP != "" {
-		dnsPart = fmt.Sprintf(", DNS record %s -> %s", c.DNSHost, oldIP)
+	if local {
+		dnsPart := ""
+		if oldIP != "" {
+			dnsPart = fmt.Sprintf(", DNS record %s -> %s", c.DNSHost, oldIP)
+		}
+		fmt.Fprintf(out, "Leftovers: local SSH config and pinned host key%s.\n", dnsPart)
 	}
-	fmt.Fprintf(out, "Leftovers: local SSH config and pinned host key%s.\n", dnsPart)
+	if len(remote) > 0 {
+		fmt.Fprintf(out, "Leftovers at %s: %s. The data on them is lost.\n", d.Cloud.Name(), strings.Join(remote, ", "))
+	}
 	if d.Ask("Type CLEANUP to remove them: ") != "CLEANUP" {
 		fmt.Fprintln(out, "Cancelled")
 		lg.Final("cancelled (server not found, no CLEANUP)")
 		return 1
 	}
-	if oldIP != "" {
-		d.deleteDNS(ctx, c, oldIP, out, errOut)
-	} else {
-		fmt.Fprintf(out, "No recorded IP: DNS record %s left untouched.\n", c.DNSHost)
+	if len(remote) > 0 {
+		if err := deleteRemote(ctx, c.ServerName); err != nil {
+			fmt.Fprintf(errOut, "deleting the leftovers of %s failed: %s\n", c.ServerName, d.Cloud.Describe(err))
+			lg.Final("failed (leftovers at the provider)")
+			return 1
+		}
+		fmt.Fprintf(out, "Leftovers of %s at %s deleted.\n", c.ServerName, d.Cloud.Name())
 	}
-	d.cleanupLocal(c, errOut)
+	if local {
+		if oldIP != "" {
+			d.deleteDNS(ctx, c, oldIP, out, errOut)
+		} else if c.HasDNS() {
+			fmt.Fprintf(out, "No recorded IP: DNS record %s left untouched.\n", c.DNSHost)
+		}
+		d.cleanupLocal(c, errOut)
+	}
 	lg.Final("cleaned up (server not found in the project)")
 	return 0
+}
+
+// hasLocalFiles tells whether this computer still has files of the machine (ssh config, pin, state).
+func hasLocalFiles(c *model.Machine) bool {
+	for _, f := range stateFiles(c) {
+		if _, err := os.Lstat(f); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// providerLeftovers asks the provider, if it can have leftovers of a machine, what is left of this one, and returns how to
+// delete it.
+func providerLeftovers(ctx context.Context, c *model.Machine, d Deps, errOut io.Writer) ([]string, func(context.Context, string) error) {
+	var lo cloud.Leftovers
+	if !cloud.As(d.Cloud, &lo) {
+		return nil, nil
+	}
+	remote, err := lo.Leftovers(ctx, c.ServerName)
+	if err != nil {
+		fmt.Fprintf(errOut, "WARNING: leftovers of %s at %s could not be looked for: %s\n", c.ServerName, d.Cloud.Name(), d.Cloud.Describe(err))
+	}
+	return remote, lo.DeleteLeftovers
 }
 
 var unsavedRe = regexp.MustCompile(`(?m)^UNSAVED WORK`)

@@ -25,28 +25,31 @@ const cleanReport = "== /Development ==\n== tmux sessions ==\n== end of check ==
 const unsavedReport = "== /Development/r ==\n M file.txt\n== tmux sessions ==\nUNSAVED WORK: uncommitted, unpushed, stashed or unversioned data exists and will be lost.\n== end of check ==\n"
 
 type world struct {
-	t            *testing.T
-	c            *model.Machine
-	lg           *runlog.Log
-	server       *model.Server
-	listErr      error
-	deleteErr    error
-	deleted      []string
-	dnsErr       error
-	dnsCalls     []string
-	sshErr       string // stderr of the reachability check; "" = reachable
-	report       string
-	reportErr    error
-	reportStderr string
-	hostKey      string
-	answers      []string
-	prompts      []string
-	calls        [][]string
-	stdins       []string
-	includes     []string
-	includeErr   error
-	out, errb    bytes.Buffer
-	state        string
+	leftovers                        []string // what the provider has left of the machine
+	leftoversErr, deleteLeftoversErr error
+	leftoversDeleted                 int
+	t                                *testing.T
+	c                                *model.Machine
+	lg                               *runlog.Log
+	server                           *model.Server
+	listErr                          error
+	deleteErr                        error
+	deleted                          []string
+	dnsErr                           error
+	dnsCalls                         []string
+	sshErr                           string // stderr of the reachability check; "" = reachable
+	report                           string
+	reportErr                        error
+	reportStderr                     string
+	hostKey                          string
+	answers                          []string
+	prompts                          []string
+	calls                            [][]string
+	stdins                           []string
+	includes                         []string
+	includeErr                       error
+	out, errb                        bytes.Buffer
+	state                            string
 }
 
 func newWorld(t *testing.T) *world {
@@ -110,6 +113,15 @@ func (h hz) ServerByName(context.Context, string) (*model.Server, error) {
 func (h hz) DeleteServer(_ context.Context, id string) error {
 	h.w.deleted = append(h.w.deleted, id)
 	return h.w.deleteErr
+}
+
+// Leftovers makes the provider one that can have something left of a machine (a pod machine).
+func (h hz) Leftovers(context.Context, string) ([]string, error) {
+	return h.w.leftovers, h.w.leftoversErr
+}
+func (h hz) DeleteLeftovers(context.Context, string) error {
+	h.w.leftoversDeleted++
+	return h.w.deleteLeftoversErr
 }
 
 type dnsFake struct{ w *world }
@@ -595,5 +607,40 @@ func TestRemoteScriptFindsWhatWouldBeLost(t *testing.T) {
 	git(t, repo, "reset", "-q", "--hard", "HEAD~1")
 	if out := runRemote(t, home, filepath.Join(home, "missing")); !strings.Contains(out, "ERROR: workspace") || !strings.Contains(out, "UNSAVED WORK") {
 		t.Errorf("missing workspace:\n%s", out)
+	}
+}
+
+func TestAbsentServerWithLeftoversAtTheProviderDeletesThemAfterCLEANUP(t *testing.T) {
+	w := newWorld(t)
+	w.server = nil
+	w.leftovers = []string{"secret claude-web-ssh", "volume claude-web-home (home directory, 20Gi)"}
+	code, _ := w.run(false, "yes")
+	if code != 1 || w.leftoversDeleted != 0 {
+		t.Fatalf("nothing is deleted without CLEANUP: %d %d", code, w.leftoversDeleted)
+	}
+	has(t, w.out.String(), "Leftovers at Hetzner: secret claude-web-ssh, volume claude-web-home (home directory, 20Gi). The data on them is lost.", "Cancelled")
+	w.out.Reset()
+	code, _ = w.run(false, "CLEANUP")
+	if code != 0 || w.leftoversDeleted != 1 {
+		t.Fatalf("%d %d", code, w.leftoversDeleted)
+	}
+	has(t, w.out.String(), "Leftovers of claude-web at Hetzner deleted.")
+	if len(w.dnsCalls) != 0 {
+		t.Errorf("there is no local file and no DNS record: %v", w.dnsCalls)
+	}
+}
+
+func TestAbsentServerWithFailingDeletionOfLeftoversSaysSoAndKeepsTheLocalFiles(t *testing.T) {
+	w := newWorld(t)
+	w.server = nil
+	w.allLocal()
+	w.leftovers = []string{"volume claude-web-home"}
+	w.deleteLeftoversErr = errors.New("boom")
+	code, _ := w.run(false, "CLEANUP")
+	if code != 1 {
+		t.Fatalf("%d", code)
+	}
+	if _, err := os.Stat(w.c.IDState); err != nil {
+		t.Error("the local files stay while the provider's leftovers are not gone")
 	}
 }

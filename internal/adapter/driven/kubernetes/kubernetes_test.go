@@ -465,3 +465,41 @@ func TestAPullSecretIsNamedInThePodAndCheckedByThePreflight(t *testing.T) {
 		t.Errorf("%v", s.Spec.Template.Spec.ImagePullSecrets)
 	}
 }
+
+func TestLeftoversOfAMachineWithoutAStatefulSetAreNamedAndDeleted(t *testing.T) {
+	c := newCluster()
+	k := client(c, kubernetes.Options{Namespace: "w"})
+	ctx := context.Background()
+	srv, err := k.CreateServer(ctx, spec("claude-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := k.Leftovers(ctx, "claude-a"); err != nil || len(got) != 0 {
+		t.Errorf("the machine exists, so nothing is left over: %v %v", got, err)
+	}
+	if err := k.DeleteLeftovers(ctx, "claude-a"); err == nil || !strings.Contains(err.Error(), "exists") {
+		t.Errorf("the volumes of a machine that exists are not deleted: %v", err)
+	}
+	// somebody removes the StatefulSet by hand
+	_ = c.cs.AppsV1().StatefulSets("w").Delete(ctx, "claude-a", metav1.DeleteOptions{})
+	_ = c.cs.Tracker().Delete(corev1.SchemeGroupVersion.WithResource("pods"), "w", "claude-a-0")
+	_ = srv
+	// something of the same name that is not ours is not named and not touched
+	_, _ = c.cs.CoreV1().Secrets("w").Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "claude-b-ssh", Namespace: "w"}}, metav1.CreateOptions{})
+	got, err := k.Leftovers(ctx, "claude-a")
+	if err != nil || len(got) != 3 || !strings.Contains(strings.Join(got, ";"), "volume claude-a-home (home directory, 20Gi)") || !strings.Contains(strings.Join(got, ";"), "volume claude-a-brew (Homebrew, 10Gi)") {
+		t.Fatalf("%v %v", got, err)
+	}
+	if other, _ := k.Leftovers(ctx, "claude-b"); len(other) != 0 {
+		t.Errorf("a Secret that is not ours: %v", other)
+	}
+	if err := k.DeleteLeftovers(ctx, "claude-a"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := k.Leftovers(ctx, "claude-a"); len(got) != 0 {
+		t.Errorf("%v", got)
+	}
+	if _, err := c.cs.CoreV1().Secrets("w").Get(ctx, "claude-b-ssh", metav1.GetOptions{}); err != nil {
+		t.Errorf("the other Secret stays: %v", err)
+	}
+}
