@@ -106,7 +106,7 @@ D6 **Einstellungen:** `PROVIDER=compose`; `SERVER_LOCATION` ist der Docker-Konte
 
 **Vorschläge aus der Prüfung, noch nicht entschieden (in Meilenstein 0 zu klären):**
 
-D7 **Zustand der NATS-Rolle:** kleine Volumes mit Labels, ein Wechsel legt das neue an und löscht das alte (Empfehlung nach der zweiten Prüfung; ein Netz geht nicht, §5); Alternative: im Server-Container. In Meilenstein 0 zu bestätigen.
+D7 **Zustand der NATS-Rolle:** kleine Volumes mit Labels, ein Wechsel legt das neue an und löscht das alte (Empfehlung nach der zweiten Prüfung; ein Netz geht nicht, §5); Alternative: im Server-Container. In Meilenstein 0 bestätigt (§15).
 *(Kein Beschluss nötig:)* **Ein entfernter Docker-Host gehört nicht zu Version 1** (§7.7). Das folgt aus den Secrets als Bind-Mounts, nicht aus einer Wahl.
 D9 **Privilegierter `dind`-Dienst:** der Preflight meldet es als **Fehler**, solange `COMPOSE_DOCKER` nicht ausdrücklich gesetzt ist (auf einem geteilten Docker-Host gibt der Dienst Root auf dem Host).
 
@@ -114,7 +114,7 @@ D9 **Privilegierter `dind`-Dienst:** der Preflight meldet es als **Fehler**, sol
 
 | # | Titel | Inhalt |
 |---|---|---|
-| 0 | Verifikation | Belegt sind schon (§13, §14): Secrets in der langen Schreibweise, der Transport (mit der Abhilfe `wait -n; kill`), das Gruppennetz als Sperre, Alias an einem `external`-Netz, die Eigenadresse aus `fib_trie`, der `dind`-Dienst und sein Verhalten beim Neustart. **Noch zu zeigen:** **1.** Zustand als Volumes, ein Wechsel, die Liste mit Filter (D7). **2.** Ein Rechner **nur** am Gruppennetz hat Internet. **3.** Der Transport mit einem echten `sshd` im Container und einer lange stehenden Sitzung. **4.** `viper up` auf einer laufenden Maschine startet nur (`--no-recreate`) und repariert den Docker-Dienst. **5.** Ein `dind`-Dienst mit dem echten Image `docker:dind` und `service_healthy`. |
+| 0 | Verifikation (erledigt, §15) | Belegt sind schon (§13, §14): Secrets in der langen Schreibweise, der Transport (mit der Abhilfe `wait -n; kill`), das Gruppennetz als Sperre, Alias an einem `external`-Netz, die Eigenadresse aus `fib_trie`, der `dind`-Dienst und sein Verhalten beim Neustart. **Noch zu zeigen:** **1.** Zustand als Volumes, ein Wechsel, die Liste mit Filter (D7). **2.** Ein Rechner **nur** am Gruppennetz hat Internet. **3.** Der Transport mit einem echten `sshd` im Container und einer lange stehenden Sitzung. **4.** `viper up` auf einer laufenden Maschine startet nur (`--no-recreate`) und repariert den Docker-Dienst. **5.** Ein `dind`-Dienst mit dem echten Image `docker:dind` und `service_healthy`. |
 | 1 | Adapter | `compose`-Adapter gegen einen Fake des `docker`-Aufrufs: Datei erzeugen, `up`, `rm`, Leftovers, Preflight |
 | 2 | Anbindung | Einstellungen, `sshconfig`, `viper docker-proxy`, Preflight |
 | 3 | Echter Lauf | lokales Docker: `up`, `check`, `ssh`, Docker im Rechner, Neustart des Containers (Daten bleiben), `down`; Handbuch |
@@ -169,3 +169,19 @@ Ein zweiter unabhängiger Agent hat den überarbeiteten Plan geprüft und wieder
 **Belegt:** ein `external`-Netz mit `aliases` am Server-Dienst löst von einem anderen Container den Namen auf; das Entfernen eines Netzes, an dem noch ein Container hängt, scheitert (die Sperre für das letzte Mitglied hält); das Anheften des Host-Schlüssels ist wie bei Kubernetes (`HostKeyAlias`, `KnownPin`, `HostName` = Servername, DNS none) und braucht keine Änderung.
 
 **Offen:** `ListGroupMachines` mit Filtern, ein Rechner nur am Gruppennetz, der Transport mit echtem `sshd`, der Neustart des ganzen Hosts (nicht reproduzierbar hier), `service_healthy` mit dem echten `docker:dind`, ein ganzer Lauf von `viper up --group` (kein Binary, keine Schlüssel in der Prüfung).
+
+
+## 15 Ergebnis von Meilenstein 0 (Stand 12.11.2026)
+
+Alle Versuche liefen gegen den verschachtelten Docker-Daemon dieses Dev-Containers (dockerd 29.9.3, Compose 5.7.0) mit dem echten Rechner-Image und `docker:dind`. Alle angelegten Objekte (`m0-*`) sind wieder entfernt.
+
+| # | Versuch | Ergebnis |
+|---|---|---|
+| 1 | Zustand als Volumes mit Labels (D7) | *[V]* `volume create` ist idempotent, Liste mit Label-Filter und Wechsel (neu anlegen, altes löschen) funktionieren; kein Lock nötig. **D7 ist bestätigt.** |
+| 2 | Rechner nur am Gruppennetz | *[V]* hat Internet. |
+| 3 | Transport mit echtem `sshd` | *[V]* Anmeldung, `scp` von 5 MB (Prüfsumme gleich), Sitzung 75 s ohne Eingabe (`ServerAliveInterval 15`), `docker run` im Rechner über `DOCKER_HOST`. Nach normalem Ende und nach `kill -9` auf den `ssh`-Client bleiben **keine** Transportprozesse im Container. **Korrektur am Einzeiler:** der zweite `cat` muss `cat <&0 >&3 &` heißen; in einer nicht interaktiven Shell bekommen Hintergrundjobs sonst `/dev/null` als Eingabe, die Verbindung bricht sofort mit „Connection closed by UNKNOWN port 65535“. |
+| 4a | `up -d --no-recreate` auf laufender Maschine | *[V]* derselbe Container (gleiche ID). Auch nach geänderter Datei (`cpus`) bleibt er mit `--no-recreate` unverändert; eine Änderung der Größe greift also nur über `down` und neues `up` (Daten bleiben in den Volumes). |
+| 4b | Neustart des Rechner-Containers (`docker restart m`) | *[V]* der `dind`-Dienst behält das alte Netz-Namensraum und verliert `eth0` (nur `lo`, `docker0`); `compose up -d` repariert das **nicht**. `docker restart <m>-docker` stellt `eth0` wieder her, `dockerd` wird wieder `healthy`. Viper muss das erkennen (Sidecar ohne `eth0` oder Health nicht `healthy`) und den Sidecar neu starten (§7). |
+| 5 | Echtes `docker:dind` mit Healthcheck | *[V]* `up -d --wait` in 4,9 s, beide Container laufen, Sidecar `healthy`. Der Rechner kann nicht von `service_healthy` des Sidecars abhängen (der Sidecar hängt am Netz des Rechners); die Abhängigkeit geht nur vom Sidecar zum Rechner. |
+
+**Folgen für den Plan:** D7 gilt (Volumes als Zustand). Im Transport ist `cat <&0 >&3` zu verwenden. `viper up` auf vorhandener Maschine startet mit `--no-recreate` und prüft danach den Sidecar. Noch offen: D9, ein ganzer Lauf von `viper up --group` (erst ab Meilenstein 3), Neustart des ganzen Hosts (hier nicht reproduzierbar).
