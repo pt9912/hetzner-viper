@@ -108,7 +108,7 @@ Eigener Abschnitt, weil er am meisten ändert, und **eigener Meilenstein am Schl
 * Cluster anlegen oder verwalten (`k3d cluster create` bleibt Sache des Nutzers); Helm, Operatoren, Ingress, Zusatzdienste.
 * Mehrere Architekturen und ein Image-Register; das Image kommt aus `make image`, bei k3d per `k3d image import`, sonst aus dem eingestellten Register.
 * GPU, Knotenwahl, Tolerations (nur `K8S_NODE_SELECTOR` später, auf Anfrage).
-* Docker-in-Docker: nicht im ersten Schritt (D5). `sudo` im Pod: gibt es nicht; was die VM mit `sudo` einrichtet, steckt fertig im Image (§14).
+* Docker ohne privilegierten Container: geht nach den Tests nicht (§15). `sudo` im Pod: gibt es nicht; was die VM mit `sudo` einrichtet, steckt fertig im Image (§14, §15).
 * Preise in `viper find`.
 
 ## 9 Entscheidungen
@@ -117,7 +117,7 @@ D1 **Zugang:** `sshd` im Pod und `ProxyCommand` (Empfehlung) statt `kubectl exec
 D2 **StatefulSet** (Empfehlung) statt Pod: stabiler Name, Volume gebunden, Neustart durch den Cluster.
 D3 **Volume:** ein PVC für `/home/builder` und das Arbeitsverzeichnis, von `viper` selbst angelegt und mit `down` ausdrücklich gelöscht (Empfehlung; es folgt dem heutigen „alle Daten werden zerstört“). Das Einstiegsprogramm legt bei leerem Volume die Dateien des Heimverzeichnisses an.
 D4 **`client-go` und `viper k8s-proxy`** (Empfehlung) statt `kubectl`.
-D5 **Docker auf der Maschine:** zunächst aus (`VIPER_DOCKER=0`, Standard nur bei diesem Anbieter; die Einstellung gibt es noch nicht, §5 Punkt 3); Docker-in-Docker später, wenn gewünscht.
+D5 **Docker auf der Maschine (Anforderung: muss gehen, §15):** `K8S_DOCKER=dind|remote|none`. **`dind`** (Standard in k3d und eigenen Clustern): ein privilegierter Docker-Daemon als zweiter Container im Pod, der Maschinen-Container bleibt ohne root und erreicht ihn über `DOCKER_HOST=tcp://127.0.0.1:2375`; der Namespace braucht Pod Security `privileged`. **`remote`**: `DOCKER_HOST` zeigt auf einen Daemon außerhalb des Pods (für Cluster, die privilegierte Pods verbieten; Sicherheit liegt dort). **`none`**: kein Docker (Cluster mit „restricted“). Die Einstellung `VIPER_DOCKER` (Docker ist Pflicht) entsteht in §5 Punkt 3 und folgt aus `K8S_DOCKER`.
 D6 **NATS:** als letzter Meilenstein, nicht Teil der ersten Abnahme.
 D7 **Image-Verteilung:** `make image` und `k3d image import`; für andere Cluster ein Register der Wahl in `K8S_IMAGE`.
 D8 **Namen der Einstellungen:** `K8S_*` (zu bestätigen).
@@ -190,3 +190,36 @@ Gelaufen mit `k3d` v5.9.0 (k3s v1.35.5) in dieser Umgebung; Cluster und Test-Ima
 **Noch offen:** VS Code Remote-SSH über den Proxy (ohne grafische Oberfläche nicht prüfbar), `code-server`, Claude Code und Homebrew im Image, Docker im Pod, wie lange das NATS-Zertifikat im Cluster gilt (31 Tage heute) und wie es erneuert wird.
 
 **Änderung am Entwurf:** Das Image und der Pod laufen **ohne root und ohne `sudo`**; `sshd` hört auf Port 2222. Der `ProxyCommand` und die SSH-Konfiguration nennen diesen Port. Das ersetzt die Annahme in §3, der Pod brauche Rechte für `sshd`, und nimmt die Grenze „Pod Security restricted“ aus §8.
+
+## 15 Root, Homebrew und Docker (Stand 12.11.2026)
+
+Frage: Kommen wir in den Containern ohne root aus, geht Homebrew, und Docker **muss** gehen. Getestet in k3d mit Pod Security `restricted` bzw. `privileged`; Cluster und Images sind wieder gelöscht.
+
+**Ohne root:**
+
+| Wer braucht heute root oder `sudo` *[V, `grep sudo` in Skripten und `provision.go`]* | im Pod |
+|---|---|
+| `natsinstall.sh`, `natscli.sh` (`sudo install` nach `/usr/local/bin`) | `nats-server` und `nats` sind im Image |
+| `natsunit.sh`, `natsconfig.sh` (`systemd`-Einheit, `systemctl reload`) | `nats-server` läuft als Prozess unter dem Prozessverwalter; Neuladen mit Signal (`SIGHUP`) statt `systemctl` |
+| `swap.sh` | entfällt |
+| `provision.go` `sudo install -d … /Development`, `code-server` (`.deb`, `systemctl`) | Verzeichnis legt das Einstiegsprogramm an; `code-server` entfällt oder kommt als Benutzerinstallation ins Image (VS Code Remote-SSH braucht ihn nicht) |
+| `check/probe.sh` (`sudo sshd -T`) | für Container eine eigene Prüfung (Konfigurationsdatei lesen) |
+| Claude Code (`install.sh`) | **geht ohne root** (läuft schon als `builder`) |
+
+**Ergebnis: Ja, zur Laufzeit ist kein root nötig.** Alles, was root braucht, gehört in den Bau des Images.
+
+**Homebrew:** **geht.** Das Image legt `/home/linuxbrew/.linuxbrew` als root an, übergibt es `builder` und installiert Homebrew als `builder` mit dem offiziellen Installer (1 Min 19 s beim Bauen). Im Pod mit Pod Security `restricted` (nicht root, keine Capabilities, kein `sudo`) installierte `brew install jq hello` Bottles zur Laufzeit; beides lief. Voraussetzung im Image: `build-essential`, `curl`, `git`, `file`, `procps`. Das Verzeichnis von Homebrew liegt im Image, nicht im Volume (sonst ginge es mit dem Volume verloren, wenn es neu gebunden wird; eine Entscheidung für Meilenstein 1).
+
+**Docker:**
+
+| Weg | Ergebnis |
+|---|---|
+| Rootless Docker ohne Rechte, `restricted` | **nein:** `rootlesskit` scheitert am Seccomp-Profil (`fork/exec /proc/self/exe`), mit `Unconfined` an `newuidmap` (braucht `SETUID`/`SETGID` und Privilegieneskalation) |
+| Rootless Docker mit `SETUID`, `SETGID`, `allowPrivilegeEscalation`, Seccomp und AppArmor `Unconfined`, Host-Netz (`--net=host`, `--bridge=none`, ohne `slirp4netns`, weil das `/dev/net/tun` braucht) | Daemon **startet** als uid 1000, aber **Container scheitern**: `error mounting "proc" … operation not permitted` (ein Pod maskiert `/proc`; nötig wären `procMount: Unmasked` und `hostUsers: false`, und die Bereichsgrenzen der Benutzer-IDs passen dann nicht zu `/etc/subuid`). Nicht weiter verfolgt. |
+| Rootful Docker im Benutzer-Namensraum (`hostUsers: false`, root im Namensraum, viele Capabilities) | **nein:** `/sys/fs/cgroup` ist schreibgeschützt (`mkdir … Read-only file system`) |
+| **Privilegierter `docker:dind`-Sidecar** | **ja.** `docker run hello-world` und `docker build` liefen. Die Maschine im selben Pod blieb ohne root, ohne Capabilities, mit Seccomp `RuntimeDefault`, `brew install docker` brachte den Client, `DOCKER_HOST=tcp://127.0.0.1:2375` reichte. Der Daemon braucht einige Sekunden nach dem Start des Pods (die Bereitschaftsprüfung des Pods muss auf ihn warten) |
+
+**Folgen:**
+1. Docker im Pod braucht heute einen **privilegierten Container**. Der Namespace braucht Pod Security `privileged`; ein kompromittierter Daemon ist Root auf dem Knoten. In k3d lokal ist das vertretbar, in geteilten Clustern nicht. Das Handbuch sagt es so.
+2. Wer das nicht darf, nimmt `remote` (ein Daemon außerhalb) oder `none`. Langfristig sind Sysbox, Kata oder die Benutzer-Namensräume der Cluster der Weg ohne Privileg; das hängt vom Cluster ab und ist nicht Teil dieses Plans.
+3. `K8S_DOCKER=dind` bestimmt auch den Sicherheitskontext des Pods und die Pod-Security-Stufe, auf die der Preflight prüft (§5 Punkt 7).
