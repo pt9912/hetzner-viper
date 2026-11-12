@@ -4,6 +4,9 @@ name: machine image
 # the volume of a cluster, NATS) and publishes it to the GitHub Container Registry: ghcr.io/<owner>/viper-machine:<tag>
 # and :latest. It runs when a release tag v* is pushed, or by hand for an existing tag:
 #   gh workflow run "machine image" -f tag=v0.18.0
+# A tag is never moved. If only the test (image/test.sh) or the workflow was wrong, build the image of the tag with the
+# files of a later commit: -f ref=main. The run stops if a file that goes into the image differs between the tag and
+# the ref, so the image is the one the tag describes.
 # The first push makes the package private; make it public once (GitHub: Packages > viper-machine > Package settings >
 # Change visibility), or every cluster needs an image pull secret.
 on:
@@ -14,6 +17,9 @@ on:
       tag:
         description: Existing release tag to build the image of
         required: true
+      ref:
+        description: 'Optional: take the files from this branch or commit instead of the tag (the image files must be equal)'
+        required: false
 
 permissions:
   contents: read
@@ -28,7 +34,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ env.TAG }}
+          ref: ${{ inputs.ref || env.TAG }}
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Check that the ref has the image files of the tag
+        if: inputs.ref != ''
+        run: |
+          set -euo pipefail
+          files="image/Dockerfile cloud-init.yaml image/seed.py image/sshd_config image/entry.sh image/nats-supervisor.sh"
+          if ! git diff --quiet "refs/tags/${TAG}" HEAD -- $files; then
+            echo "::error::the image files of ${TAG} and ${{ inputs.ref }} differ: the image would not be the one the tag describes"
+            git diff --stat "refs/tags/${TAG}" HEAD -- $files
+            exit 1
+          fi
+          echo "the image files of ${TAG} and ${{ inputs.ref }} are equal"
       - name: Build
         run: |
           set -euo pipefail
