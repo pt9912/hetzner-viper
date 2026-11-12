@@ -2,7 +2,7 @@
 
 **Ziel:** `PROVIDER=compose` richtet einen „Rechner“ als **Container** auf einem Docker-Host ein: dem eigenen Rechner oder einem entfernten (Docker-Kontext). `viper up` **erzeugt dazu die `compose.yaml`** (Dienste, Netze, Volumes, Secrets) und startet sie mit `docker compose up`; `viper down` beendet sie wieder. Wie bei Kubernetes braucht es kein Cloud-Konto, aber auch keinen Cluster: nur Docker.
 
-**Stand:** Entwurf, einmal unabhängig geprüft (mit Versuchen auf dem lokalen Docker-Host); die Befunde sind eingearbeitet (§13) und ändern den Plan bei den Secrets, den Labels, den Netzen, dem Docker-Sidecar und dem Zugang. Nichts ist umgesetzt.
+**Stand:** Entwurf, Entscheidungen D1 bis D6 getroffen (§9), einmal unabhängig geprüft (mit Versuchen auf dem lokalen Docker-Host); die Befunde sind eingearbeitet (§13) und ändern den Plan bei den Secrets, den Labels, den Netzen, dem Docker-Sidecar und dem Zugang. Nichts ist umgesetzt.
 
 **Kennzeichnung:** *[V]* heißt, im Code, in einem Test oder in einem Lauf bestätigt. *[?]* heißt Vermutung; jede solche Stelle wird in Meilenstein 0 geprüft, bevor etwas darauf gebaut wird. **(zu bestätigen)** markiert Annahmen, die eine Entscheidung brauchen (§9).
 
@@ -91,13 +91,18 @@ Empfehlung **A**: wie bei Kubernetes, keine Ports, kein Host-Zustand *[(zu best�
 
 ## 9 Entscheidungen
 
-D1 **Anbietername:** `compose` (nicht `docker`: der Anbieter ist „Docker-Host über Compose“, `docker` läse man als der Daemon im Rechner).
-D2 **Eine Maschine = ein Projekt** (Empfehlung); Gruppen teilen nur das Netz der NATS-Gruppe, nicht die Datei. Alternative: ein Projekt je Gruppe (eine `compose.yaml` mit allen Diensten), was dem Satz „viper up erzeugt das Compose-YAML und fährt Services und Netze hoch“ näher liegt, aber das gleichzeitige Schreiben aus §7.2 mitbringt.
-D3 **Zugang:** `viper docker-proxy` mit `docker exec` (Empfehlung), keine veröffentlichten Ports.
-D4 **Docker im Rechner:** wie `K8S_DOCKER`: `dind` (Standard, ein privilegierter Dienst), `remote`, `none`; `COMPOSE_DOCKER`.
-D5 **Eigene Dienste** (Datenbank, Redis, …): `COMPOSE_EXTRA_FILE` nennt eine zweite Compose-Datei des Nutzers, die `viper` mit `-f` hinter die eigene stellt und im selben Projekt/Netz startet; `viper` prüft nur, dass sie lesbar ist. Nicht im ersten Schritt.
-D6 **Einstellungen:** `COMPOSE_IMAGE`, `COMPOSE_DISK`… sinngemäß wie `K8S_*` (zu bestätigen).
-D7 **Zustand der NATS-Rolle:** ein Objekt je Zustand mit Name als Sperre (Empfehlung) oder im Server-Container (§5).
+**Entschieden am 12.11.2026 (D1 bis D6; die Empfehlungen aus der Prüfung bestätigt):**
+
+D1 **Anbietername:** `compose` (nicht `docker`: der Anbieter ist „Docker-Host über Compose“; `docker` läse man als der Daemon im Rechner).
+D2 **Eine Maschine = ein Projekt** (`viper-<präfix>-<maschine>`). Gruppen teilen nur das Netz der NATS-Gruppe, nicht die Datei. Die Prüfung hat bestätigt, dass ein Projekt je Gruppe nicht geht: gleichzeitiges `docker compose up` desselben Projekts scheitert an Namenskonflikten. Eine Dateisperre je Projekt im Zustandsverzeichnis schützt `up` und `down` derselben Maschine.
+D3 **Zugang:** `viper docker-proxy <maschine>` mit `docker exec -i … bash` und `/dev/tcp` als `ProxyCommand`; keine veröffentlichten Ports.
+D4 **Docker im Rechner:** `COMPOSE_DOCKER=dind|remote|none`, Standard `dind` (ein zweiter, privilegierter Dienst mit geteiltem Netzwerk, nur auf Loopback), `remote` (Daemon außerhalb, `COMPOSE_DOCKER_HOST`), `none`.
+D5 **Eigene Dienste** (Datenbank, Redis, …) per `COMPOSE_EXTRA_FILE`: **nicht in Version 1.** Der Plan hält die Stelle frei (eine zweite Datei mit `-f` hinter der eigenen im selben Projekt).
+D6 **Einstellungen:** `PROVIDER=compose`; `SERVER_LOCATION` ist der Docker-Kontext (`default` für den lokalen, ohne Standard); `COMPOSE_IMAGE` (Pflicht, ohne Standard); `SERVER_TYPE` ist `<CPUs>x<GiB>` (Standard `2x4`); `COMPOSE_DOCKER`, `COMPOSE_DOCKER_HOST`, `COMPOSE_DOCKER_IMAGE` (Standard `docker:dind`); `WORKSPACE_DIR` unter `/home/builder/` (Standard `/home/builder/work`). Eine Größe der Volumes gibt es nicht (benannte Volumes sind nicht begrenzt), also keine Einstellung dafür.
+
+**Vorschläge aus der Prüfung, noch nicht entschieden (in Meilenstein 0 zu klären):**
+
+D7 **Zustand der NATS-Rolle:** ein Objekt je Zustand mit Namen als Sperre (Empfehlung) oder im Server-Container (§5).
 D8 **Entfernter Docker-Host:** nicht in Version 1 (§7.7).
 D9 **Privilegierter `dind`-Dienst:** der Preflight meldet es als **Fehler**, solange `COMPOSE_DOCKER` nicht ausdrücklich gesetzt ist (auf einem geteilten Docker-Host gibt der Dienst Root auf dem Host).
 
