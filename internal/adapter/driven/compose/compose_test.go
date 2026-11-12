@@ -989,3 +989,28 @@ func TestStateVolumesOfDifferentGroupsAndMachinesNeverShareAName(t *testing.T) {
 		t.Fatalf("two machines, %d state volumes: %v", n, h.volumes)
 	}
 }
+
+func TestAStaleStateOfAMachineThatWasCutOffDoesNotPassToANewOne(t *testing.T) {
+	h := newHost()
+	c, _ := newClient(t, h)
+	ctx := context.Background()
+	_, _, _ = c.EnsurePrivateNetwork(ctx, "g", "default")
+	srv, err := c.CreateServer(ctx, natsSpec("web", "g", "client"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = c.UpdateNATSMetadata(ctx, srv.ID, model.NATSMetadata{Group: "g", Role: model.NATSClient, State: model.NATSReady})
+	h.volumes["web-home"]["mark"] = "data"
+	delete(h.containers, "web") // the container is gone, nobody asked for the data to go
+	delete(h.containers, "web-docker")
+	srv, err = c.CreateServer(ctx, natsSpec("web", "g", "client"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, err := c.NATSMetadataOf(ctx, srv.ID); err != nil || m == nil || m.State != model.NATSProvisioning {
+		t.Fatalf("the new machine took the old state: %+v %v", m, err)
+	}
+	if h.volumes["web-home"]["mark"] != "data" {
+		t.Fatal("the data volume went with the stale state")
+	}
+}

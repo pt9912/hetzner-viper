@@ -335,7 +335,26 @@ func (c *Client) dropStale(ctx context.Context, name string) error {
 			return err
 		}
 	}
+	// The NATS state describes the container. Without one it is stale, whatever the mark says (a down that was cut off
+	// leaves it): a new machine must not take it for its own. The data volumes are another matter and stay.
+	if err := c.removeStateVolumes(ctx, name); err != nil {
+		return err
+	}
 	return os.RemoveAll(c.projectDir(name))
+}
+
+// removeStateVolumes deletes the NATS state volumes of the machine.
+func (c *Client) removeStateVolumes(ctx context.Context, name string) error {
+	states, err := c.stateVolumes(ctx, name)
+	if err != nil {
+		return err
+	}
+	for _, v := range states {
+		if _, err := c.docker(ctx, "volume", "rm", "--", v); err != nil && !notFound(err) {
+			return &cloud.OpError{Op: "deleting the stale NATS state " + v, Write: true, Err: err}
+		}
+	}
+	return nil
 }
 
 // removeSidecar removes the container of the Docker service if viper made it and the machine is gone.

@@ -260,4 +260,4 @@ Ein unabhängiger Reviewer hat die Änderungen der Meilensteine 1 bis 4 gelesen 
 8. **Zustands-Volumes mit gleichem Namen** (Gruppe `a` + Rechner `b-c` gegen Gruppe `a-b` + Rechner `c`): Trenner `_` statt `-`.
 9. **Kleinigkeiten:** `EnsureRunning` nimmt die Sperre vor dem Lesen; ein angehaltener `dind`-Dienst bei laufender Maschine wird gestartet.
 
-Nicht behoben: Nach einem abgebrochenen `viper down` kann ein Zustands-Volume `ready` stehen bleiben, bis die neue Maschine mit gleichem Namen ihren Zustand schreibt (klein, `natsSetup` überschreibt es).
+Zuerst offen, dann behoben: Nach einem abgebrochenen `viper down` konnte ein Zustands-Volume `ready` stehen bleiben, bis die neue Maschine mit gleichem Namen ihren Zustand schrieb. Der Zustand beschreibt den Container; ohne Container ist er veraltet, und `CreateServer` entfernt ihn jetzt immer (die Daten-Volumes bleiben, wie zuvor, nur mit der Marke `deleting` weg). Ein eigener Befehl zum Aufräumen (`viper doctor`) ist dafür nicht nötig: `viper up` räumt beim Anlegen auf, `viper down` nennt und löscht Reste (`CLEANUP`).
