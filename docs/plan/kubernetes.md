@@ -120,7 +120,7 @@ D2 **StatefulSet** mit einem Replikat statt Pod, **mit einem von `viper` selbst 
 D3 **Volume:** ein PVC für `/home/builder`, am Arbeitsverzeichnis (`WORKSPACE_DIR`) per `subPath` eingebunden; Größe `K8S_DISK_GB` (Standard 20); mit `down` ausdrücklich gelöscht, nach der Abfrage „DELETE“; ein Rest eines halb gescheiterten `down` wird beim nächsten `up` oder `down` aufgeräumt. Das Einstiegsprogramm setzt Besitzer und Rechte des Heimverzeichnisses und legt bei leerem Volume die Dateien aus dem Image an (§17).
 D4 **`client-go` für den Adapter, `viper k8s-proxy <maschine>` für den Zugang** (Port-Forward, Standard-Ein-/Ausgabe, kein `kubectl` nötig). Rückfall, falls der Port-Forward über Stdin/Stdout Probleme macht: `kubectl exec -i … -- nc localhost 2222` (in Meilenstein 0 belegt).
 D5 **Docker:** `K8S_DOCKER=dind|remote|none` (§15). **Standard in k3d und eigenen Clustern: `dind`**, ein privilegierter Docker-Daemon als zweiter Container im Pod; der Maschinen-Container bleibt ohne root. Das Handbuch nennt die Grenze (privilegierter Container, Namespace mit Pod Security `privileged`). `VIPER_DOCKER` („Docker ist Pflicht“) folgt aus `K8S_DOCKER`.
-D6 **NATS:** letzter Meilenstein (M5), nicht Teil der ersten Abnahme; bis dahin verweigert `settingsfile` NATS bei diesem Anbieter mit klarer Meldung.
+D6 **NATS:** gehört zur **Abnahme** (die Agenten koordinieren sich darüber). Die Programme sind schon im Image (§17). Der Rest (Dienst ohne `systemd`, Zertifikat mit Dienstnamen, NetworkPolicy als Gruppennetz) ist Meilenstein 5 und kommt nach dem echten Lauf ohne NATS (M4), weil er auf Adapter und Anbindung aufbaut. Bis dahin verweigert `settingsfile` NATS bei diesem Anbieter mit klarer Meldung.
 D7 **Image:** `make image` baut `viper-machine:<version>`; bei k3d `k3d image import`; bei anderen Clustern `K8S_IMAGE` aus einem Register der Wahl. Ein veröffentlichtes Image gibt es zunächst nicht. Basis mit Digest festgelegt. Zuerst `amd64`; `arm64` kommt mit Meilenstein 6 (§16).
 D8 **Einstellungen:** `PROVIDER=kubernetes`; **`SERVER_LOCATION` ist der Kontext der `kubeconfig`, ohne Standard** (Schutz vor einem Lauf im falschen Cluster); `SERVER_TYPE` ist `<cpu>x<ram>` (Standard `2x4`); `K8S_NAMESPACE` (Standard `viper`, wird beschriftet angelegt, wenn er fehlt, und von `viper` nie gelöscht); `K8S_IMAGE` (Pflicht); `K8S_STORAGE_CLASS` (Standard des Clusters); `K8S_DISK_GB` (Standard 20); `K8S_DOCKER`. Es gibt **kein** `K8S_CONTEXT`.
 
@@ -139,6 +139,7 @@ D8 **Einstellungen:** `PROVIDER=kubernetes`; **`SERVER_LOCATION` ist der Kontext
 ## 11 Definition of Done
 
 * Meilenstein 4 mit echtem Lauf in k3d, `go test -race ./...` und der Linter grün, `gofmt` geprüft.
+* **Meilenstein 5 mit echtem Lauf in k3d:** eine NATS-Gruppe aus drei Pods, `viper nats send`/`broadcast`/`request` und `viper check`.
 * Handbuch und `architektur.md` nennen den Anbieter, seine Einstellungen, die Grenzen (kein DNS, keine IPv4, kein Docker ohne Zusatz) und die Aussage über die Qualität.
 * Ein Cluster, den `viper` nicht angelegt hat, bleibt unverändert: nach `down` ist kein Objekt mit `viper-managed=true` übrig.
 
@@ -271,6 +272,23 @@ Dateien: `image/Dockerfile`, `image/entry.sh`, `image/sshd_config`, `image/seed.
 **Offen / für später:**
 * **Größe 2,6 GB.** Das meiste sind `build-essential`, Homebrew und Claude; kleiner wird es nur durch Weglassen (etwa `build-essential`, wenn Homebrew nur Bottles braucht). Für den ersten Schritt akzeptiert.
 * Nur `amd64` (D7); `arm64` mit Meilenstein 6.
-* `nats-server` und `nats` sind noch nicht im Image (Meilenstein 5).
 * `code-server` fehlt (nicht nötig für VS Code Remote-SSH, §15).
 * Der Test läuft nicht in `make check`/CI (er braucht Docker und dauert Minuten); er ist ein eigenes Ziel.
+
+### 17.1 Nachtrag: NATS im Image und Abgleich mit cloud-init
+
+`nats-server` (v2.15.2) und das Werkzeug `nats` (v0.5.1) sind im Image, in `/usr/local/bin`, mit denselben Versionen und Prüfsummen wie auf einer VM (`amd64` und `arm64`, per `TARGETARCH`). Die Prüfsummen stehen im `Dockerfile` und im Go-Code (`internal/natsserver`); der Test `TestTheImagePinsTheSameNATSReleasesAsTheCode` schlägt fehl, wenn sie auseinanderlaufen. `make image-test` hat jetzt **38 Prüfungen, alle grün**, darunter: beide Versionen, ein `nats-server` als `builder` ohne Rechte, der dem `nats`-Werkzeug antwortet, und die Skripte `natsinstall.sh` und `natscli.sh` von `viper` laufen unverändert und melden „is installed“ (sie brauchen so kein `sudo`). Der MCP-Server `viper-nats-mcp` kommt wie auf einer VM von `viper up` nach `~/.viper-nats` (kein root nötig).
+
+Abgleich mit dem, was `cloud-init.yaml` einrichtet:
+
+| `cloud-init.yaml` | im Image |
+|---|---|
+| Pakete `gnupg git gh make build-essential curl ca-certificates tmux jq openssh-server psmisc procps file` | alle enthalten (zusätzlich `python3`, `tini`) |
+| Docker Engine, containerd, Buildx, Compose | **Client**, Buildx und Compose; der Daemon ist der Sidecar oder ein entfernter (D5) |
+| Benutzer `builder`, `sudo`, Gruppe `docker` | `builder` (uid 1000); **kein `sudo`**, keine Gruppe nötig |
+| `sshd`-Härtung | dieselbe Datei, aus `cloud-init.yaml` übernommen (`seed.py`) |
+| `.tmux.conf`, VS-Code-Einstellungen | dieselben Dateien, übernommen |
+| Claude Code (`install.sh`) | enthalten |
+| Updates, Neustart, Host-Schlüssel, Authorized Keys | entfallen bzw. kommen als Secret (§3) |
+| `code-server` (von `viper up` installiert, nicht von cloud-init) | fehlt; VS Code Remote-SSH braucht ihn nicht |
+| Homebrew (von `viper up` installiert) | enthalten |

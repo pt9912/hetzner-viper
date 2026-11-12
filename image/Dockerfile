@@ -8,6 +8,17 @@ ARG UBUNTU=ubuntu:26.04@sha256:065aa8626841f16057b78b027b464cd59c4fac36c204c72dc
 FROM ${UBUNTU}
 ENV DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8
 
+# The NATS programs that viper puts on the machines of a NATS group (internal/natsserver: Version, CLIVersion and the
+# checksums). They are the same releases with the same sums as on a VM; internal/natsserver/image_test.go fails when
+# these lines and the Go code differ. Set by docker for the platform being built (amd64, arm64).
+ARG TARGETARCH
+ARG NATS_SERVER_VERSION=v2.15.2
+ARG NATS_SERVER_SHA256_AMD64=67cb8e10bc6f0c4b47f75a728529a20953dbae2a4f9a4a52ae8517d65ae303ff
+ARG NATS_SERVER_SHA256_ARM64=bc2c788dcbf2849af749564e06a0d48c19bced851f2d68a2e21c54d078949b28
+ARG NATS_CLI_VERSION=v0.5.1
+ARG NATS_CLI_SHA256_AMD64=f8a3e106deebed7afe736b7090359bda3aa62a04b310440bedc1d11a93c0ab4f
+ARG NATS_CLI_SHA256_ARM64=91c661f1173ee9bfe07514eef55a29d25ac7757a0868c179e825eba976073adc
+
 # the packages of cloud-init.yaml (without the ones only a VM needs), tini as PID 1, python3-yaml for image/seed.py
 RUN apt-get update && apt-get install -y --no-install-recommends \
       gnupg git gh make build-essential curl ca-certificates tmux jq openssh-server psmisc procps file \
@@ -25,6 +36,26 @@ RUN set -eu; \
     apt-get update; \
     apt-get install -y --no-install-recommends docker-ce-cli docker-buildx-plugin docker-compose-plugin; \
     rm -rf /var/lib/apt/lists/*
+
+# nats-server and the nats tool in /usr/local/bin, where the scripts of viper look (they skip the download when the
+# version is the one they want, so they need no sudo here). Checked against the sums above before anything is unpacked.
+RUN set -eu; \
+    case "$TARGETARCH" in \
+      amd64) srv_sum="$NATS_SERVER_SHA256_AMD64"; cli_sum="$NATS_CLI_SHA256_AMD64" ;; \
+      arm64) srv_sum="$NATS_SERVER_SHA256_ARM64"; cli_sum="$NATS_CLI_SHA256_ARM64" ;; \
+      *) echo "no NATS release pinned for $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    tmp=$(mktemp -d); \
+    curl -fsSL --retry 3 -o "$tmp/srv.tgz" "https://github.com/nats-io/nats-server/releases/download/${NATS_SERVER_VERSION}/nats-server-${NATS_SERVER_VERSION}-linux-${TARGETARCH}.tar.gz"; \
+    echo "$srv_sum  $tmp/srv.tgz" | sha256sum -c --quiet -; \
+    tar -xzf "$tmp/srv.tgz" -C "$tmp" --strip-components=1 --wildcards '*/nats-server'; \
+    install -m 0755 "$tmp/nats-server" /usr/local/bin/nats-server; \
+    curl -fsSL --retry 3 -o "$tmp/cli.zip" "https://github.com/nats-io/natscli/releases/download/${NATS_CLI_VERSION}/nats-${NATS_CLI_VERSION#v}-linux-${TARGETARCH}.zip"; \
+    echo "$cli_sum  $tmp/cli.zip" | sha256sum -c --quiet -; \
+    python3 -m zipfile -e "$tmp/cli.zip" "$tmp/cli"; \
+    install -m 0755 "$(find "$tmp/cli" -type f -name nats | head -n 1)" /usr/local/bin/nats; \
+    rm -rf "$tmp"; \
+    nats-server --version; nats --version
 
 # builder, the work directory and the place of Homebrew (the installer needs sudo only to make it)
 RUN (id ubuntu >/dev/null 2>&1 && userdel -r ubuntu || true) \

@@ -4,6 +4,9 @@
 # certificate. usage: image/test.sh [image]   (make image-test)
 set -euo pipefail
 image="${1:-viper-machine:test}"
+here=$(cd "$(dirname "$0")" && pwd)
+srv_version=$(sed -n 's/^ARG NATS_SERVER_VERSION=//p' "$here/Dockerfile")
+cli_version=$(sed -n 's/^ARG NATS_CLI_VERSION=//p' "$here/Dockerfile")
 t=$(mktemp -d); export t; name="viper-machine-test-$$"
 trap 'docker rm -f "$name" "$name-2" >/dev/null 2>&1 || true; rm -rf "$t"' EXIT
 ok=0; bad=0
@@ -46,6 +49,12 @@ check "sudo is not available" bash -c "! docker exec $name sudo -n true"
 for tool in git gh make gcc tmux jq docker brew claude; do
   check "tool: $tool" sshc 2222 "bash -lc 'command -v $tool'"
 done
+check "nats-server is the pinned release ($srv_version)" sshc 2222 "[ \"\$(nats-server --version)\" = 'nats-server: $srv_version' ]"
+check "the nats tool is the pinned release ($cli_version)" sshc 2222 "nats --version | grep -qxF '${cli_version#v}'"
+check "a nats-server starts as builder and answers the nats tool" sshc 2222 'nats-server -a 127.0.0.1 -p 14222 >/tmp/nats-test.log 2>&1 & p=$!; sleep 1; nats --server nats://127.0.0.1:14222 pub x hi >/dev/null; r=$?; kill $p; exit $r'
+# the scripts of viper that install them on a VM must find them and do nothing (they would need sudo to install)
+check "viper's natsinstall.sh finds nats-server installed" bash -c "$(declare -f sshc); sshc 2222 \"bash -s -- $srv_version https://x.invalid/x 0\" < $here/../internal/usecase/start/scripts/natsinstall.sh | grep -q 'is installed'"
+check "viper's natscli.sh finds the nats tool installed" bash -c "$(declare -f sshc); sshc 2222 \"bash -s -- $cli_version https://x.invalid/x 0\" < $here/../internal/usecase/start/scripts/natscli.sh | grep -q 'is installed'"
 check "docker client and plugins" sshc 2222 "bash -lc 'docker --version && docker buildx version && docker compose version'"
 check "home was seeded: tmux and VS Code settings" sshc 2222 'test -f ~/.tmux.conf && test -f ~/.vscode-server/data/Machine/settings.json'
 check "the work directory is writable" sshc 2222 'touch /Development/x && rm /Development/x'
