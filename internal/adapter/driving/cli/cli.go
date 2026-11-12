@@ -15,9 +15,9 @@ type options struct {
 	machine, repo, cmd, dir string
 	group                   string // run for all machines of groups/<group>.env
 	// viper nats
-	args               []string // the words after the command: the subcommand, the group, the text
-	to, topic, from    string
-	timeout            time.Duration
+	args                    []string // the words after the command: the subcommand, the group, the text
+	to, topic, from         string
+	timeout                 time.Duration
 	query, asJSON, yes, all bool
 	// set by the group commands for the run of one machine, not by the command line
 	onServerCreated           func()
