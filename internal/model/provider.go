@@ -24,7 +24,9 @@ type ProviderInfo struct {
 const DefaultProvider = "hetzner"
 
 // ProviderNames are the names PROVIDER takes.
-func ProviderNames() []string { return []string{"aws", "azure", "gcp", "hetzner", "kubernetes"} }
+func ProviderNames() []string {
+	return []string{"aws", "azure", "compose", "gcp", "hetzner", "kubernetes"}
+}
 
 // LookupProvider is what viper knows of the provider of that name; ok is false for an unknown one.
 func LookupProvider(name string) (info ProviderInfo, ok bool) {
@@ -37,6 +39,9 @@ func LookupProvider(name string) (info ProviderInfo, ok bool) {
 	case "kubernetes":
 		// the cluster is the context of the kubeconfig (SERVER_LOCATION, no default); the image is K8S_IMAGE (no default)
 		return ProviderInfo{DiskSetting: "K8S_DISK_GB", Size: "2x4", Container: true, NATS: true}, true
+	case "compose":
+		// the Docker host is the Docker context (SERVER_LOCATION, no default); the image is COMPOSE_IMAGE (no default)
+		return ProviderInfo{Size: "2x4", Container: true}, true
 	case "gcp":
 		// the credentials come from Google's application default credentials; the project is a setting
 		return ProviderInfo{DiskSetting: "GCP_ROOT_GB", Credentials: []string{"GCP_PROJECT"}, Secrets: []string{"GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_OAUTH_ACCESS_TOKEN"}, Size: "e2-standard-2", Region: "europe-west3-b", Image: "ubuntu-24.04", NATS: true}, true

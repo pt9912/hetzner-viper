@@ -222,8 +222,8 @@ func (r *runner) announceServer(ctx context.Context, srv *model.Server) (int, er
 		r.eprintf("%s\n", d.SSH.IncludeWarning(c))
 	}
 	if srv.ViaAPI {
-		// no address and no DNS name: viper reaches the pod through the API of the cluster (viper k8s-proxy)
-		r.printf("The machine is the pod %s; viper reaches it through the API of the cluster, not by an address.\n", srv.Name)
+		// no address and no DNS name: viper reaches the container through the API of the cluster or the Docker host (viper k8s-proxy, docker-proxy)
+		r.printf("The machine is the container %s; viper reaches it through the API of its host, not by an address.\n", srv.Name)
 		return 0, nil
 	}
 	// The DNS name is for people (iPad, other clients); the scripts connect by IP and need not wait for it.

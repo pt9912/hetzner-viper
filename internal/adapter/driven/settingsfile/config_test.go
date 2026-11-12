@@ -256,7 +256,7 @@ func TestLoadTakesCloudflareAsTheDefaultDNSAndChecksTheValue(t *testing.T) {
 func TestLoadRejectsAnUnknownProvider(t *testing.T) {
 	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
 	_, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nPROVIDER=nope\n", ""), "web", env, false)
-	if err == nil || err.Error() != "PROVIDER: unknown provider nope (one of: aws, azure, gcp, hetzner, kubernetes)" {
+	if err == nil || err.Error() != "PROVIDER: unknown provider nope (one of: aws, azure, compose, gcp, hetzner, kubernetes)" {
 		t.Errorf("got %v", err)
 	}
 }
@@ -551,5 +551,35 @@ func TestLoadReadsTheSettingsOfTheKubernetesProvider(t *testing.T) {
 	c, err = settingsfile.Load(setupDir(t, base+"SERVER_LOCATION=x\nK8S_IMAGE=i\nNATS_ENABLED=true\nNATS_GROUP=g\n", ""), "web", env, false)
 	if err != nil || !c.NATS.Enabled || c.NATS.Group != "g" {
 		t.Errorf("NATS: %+v %v", c.NATS, err)
+	}
+}
+
+func TestLoadReadsTheSettingsOfTheComposeProvider(t *testing.T) {
+	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
+	base := "PROVIDER=compose\nDNS_PROVIDER=none\n"
+	c, err := settingsfile.Load(setupDir(t, base+"SERVER_LOCATION=default\nCOMPOSE_IMAGE=viper-machine:v1\n", ""), "web", env, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Provider != "compose" || c.ServerLocation != "default" || c.ServerImage != "viper-machine:v1" || c.ServerType != "2x4" || !c.IsContainer() ||
+		c.WorkspaceDir != settingsfile.ContainerWorkspace || c.ProxyVerb() != "docker-proxy" || c.DockerMode() != "dind" {
+		t.Errorf("%+v", c)
+	}
+	for name, tc := range map[string]struct{ settings, want string }{
+		"no host and no image": {base, "Missing settings: SERVER_LOCATION COMPOSE_IMAGE"},
+		"no image":             {base + "SERVER_LOCATION=default\n", "Missing settings: COMPOSE_IMAGE"},
+		"context with a dash":  {base + "SERVER_LOCATION=--host=x\nCOMPOSE_IMAGE=i\n", "SERVER_LOCATION: the name of a Docker context"},
+		"DNS":                  {"PROVIDER=compose\nDNS_DOMAIN=example.com\nSERVER_LOCATION=x\nCOMPOSE_IMAGE=i\n", "DNS_PROVIDER=none is needed for PROVIDER=compose"},
+		"docker mode":          {base + "SERVER_LOCATION=x\nCOMPOSE_IMAGE=i\nCOMPOSE_DOCKER=podman\n", "COMPOSE_DOCKER: dind, remote or none: podman"},
+		"remote without host":  {base + "SERVER_LOCATION=x\nCOMPOSE_IMAGE=i\nCOMPOSE_DOCKER=remote\n", "COMPOSE_DOCKER=remote needs COMPOSE_DOCKER_HOST"},
+		"docker host":          {base + "SERVER_LOCATION=x\nCOMPOSE_IMAGE=i\nCOMPOSE_DOCKER=remote\nCOMPOSE_DOCKER_HOST=tcp://nohost\n", "COMPOSE_DOCKER_HOST: tcp://host:port"},
+		"image":                {base + "SERVER_LOCATION=x\nCOMPOSE_IMAGE=-bad\n", "COMPOSE_IMAGE: an image reference"},
+		"work directory":       {base + "SERVER_LOCATION=x\nCOMPOSE_IMAGE=i\nWORKSPACE_DIR=/work\n", "WORKSPACE_DIR: for PROVIDER=compose a directory below /home/builder"},
+		"swap":                 {base + "SERVER_LOCATION=x\nCOMPOSE_IMAGE=i\nVIPER_SWAP=1\n", "VIPER_SWAP"},
+	} {
+		_, err := settingsfile.Load(setupDir(t, tc.settings, ""), "web", env, false)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: got %v, want %q", name, err, tc.want)
+		}
 	}
 }

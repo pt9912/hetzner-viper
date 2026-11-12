@@ -116,7 +116,7 @@ D9 **Privilegierter `dind`-Dienst:** der Preflight meldet es als **Fehler**, sol
 |---|---|---|
 | 0 | Verifikation (erledigt, §15) | Belegt sind schon (§13, §14): Secrets in der langen Schreibweise, der Transport (mit der Abhilfe `wait -n; kill`), das Gruppennetz als Sperre, Alias an einem `external`-Netz, die Eigenadresse aus `fib_trie`, der `dind`-Dienst und sein Verhalten beim Neustart. **Noch zu zeigen:** **1.** Zustand als Volumes, ein Wechsel, die Liste mit Filter (D7). **2.** Ein Rechner **nur** am Gruppennetz hat Internet. **3.** Der Transport mit einem echten `sshd` im Container und einer lange stehenden Sitzung. **4.** `viper up` auf einer laufenden Maschine startet nur (`--no-recreate`) und repariert den Docker-Dienst. **5.** Ein `dind`-Dienst mit dem echten Image `docker:dind` und `service_healthy`. |
 | 1 | Adapter (erledigt, §16) | `compose`-Adapter gegen einen Fake des `docker`-Aufrufs: Datei erzeugen, `up`, `rm`, Leftovers, Preflight |
-| 2 | Anbindung | Einstellungen, `sshconfig`, `viper docker-proxy`, Preflight |
+| 2 | Anbindung (erledigt, §17) | Einstellungen, `sshconfig`, `viper docker-proxy`, Preflight |
 | 3 | Echter Lauf | lokales Docker: `up`, `check`, `ssh`, Docker im Rechner, Neustart des Containers (Daten bleiben), `down`; Handbuch |
 | 4 | NATS | Gruppennetz, Name im Zertifikat, Zustand der Labels; Lauf mit drei Containern |
 
@@ -197,3 +197,16 @@ Der Adapter `internal/adapter/driven/compose` ist da (ohne NATS und ohne Anbindu
 * `EnsureRunning` (noch nicht angebunden, Meilenstein 2) startet eine angehaltene Maschine und startet den `dind`-Dienst neu, wenn ihm `eth0` fehlt (§15, 4b).
 * `Validate`: Docker erreichbar, Kontext ist ein lokaler Daemon (`unix://` oder `npipe://`), Compose-Plugin, Image vorhanden, Größe, `dind` (D9: Fehler, solange `COMPOSE_DOCKER` nicht ausdrücklich gesetzt ist), Warnung bei 20 oder mehr Netzen.
 * Tests gegen einen Fake des `docker`-Aufrufs, der Container und Volumes aus der erzeugten Datei nachbildet (16 Tests). Zusätzlich ein einmaliger Lauf gegen das echte Docker dieser Umgebung (Validate, Anlegen, Neustart, Reparatur, Löschen, keine Reste), der nicht im Repository bleibt.
+
+
+## 17 Ergebnis von Meilenstein 2 (Stand 12.11.2026)
+
+Der Anbieter ist angebunden; ein echter Lauf (Meilenstein 3) steht noch aus.
+
+* **Anbieter `compose`** in `model.LookupProvider` (Container, Standardgröße `2x4`, **ohne NATS**, bis Meilenstein 4) und in `ProviderNames`; `app.NewProvider` baut den Adapter mit `system.Run`.
+* **Einstellungen** (`settingsfile.checkCompose`): `SERVER_LOCATION` und `COMPOSE_IMAGE` sind Pflicht ohne Standard (der Kontext darf nicht mit `-` beginnen), `DNS_PROVIDER=none`, `COMPOSE_DOCKER` (`dind`, `remote`, `none`; `remote` verlangt `COMPOSE_DOCKER_HOST`), `COMPOSE_DOCKER_IMAGE`, `WORKSPACE_DIR` unter `/home/builder/`, kein `VIPER_SWAP`, kein `VIPER_CODE_SERVER`. `SERVER_IMAGE` ist `COMPOSE_IMAGE`.
+* **`viper docker-proxy <maschine>`** neben `viper k8s-proxy`: `compose.Client.Proxy` startet `docker --context … exec -i <container> bash -c <Einzeiler>`, mit dem Einzeiler aus §15 (`cat <&0 >&3`, `wait -n; kill`). Ein Fehler von `docker exec` landet mit dem Text von Docker in der Meldung, nichts außer den SSH-Daten auf der Standardausgabe. Jeder der beiden Befehle lehnt eine Maschine des anderen Anbieters ab.
+* **`sshconfig`** schreibt `docker-proxy` statt `k8s-proxy` (`Machine.ProxyVerb`).
+* **Gemeinsame Stellen** statt fester Kubernetes-Texte: `Machine.DockerMode`, `Machine.Where` (Frage vor `viper down`), `Machine.DockerLogHint`; „a container“ statt „a pod“ in `check` und `start`.
+* **Neue Fähigkeit `cloud.Starter`** (`EnsureRunning`): `viper up` auf einer vorhandenen Maschine ruft sie auf (startet eine angehaltene Maschine, repariert den Docker-Dienst nach `docker restart`); ein Fehler bricht `up` ab. Kubernetes hat sie nicht.
+* **Tests:** Einstellungen (11 Fälle), `sshconfig`, `start` (mit und ohne Fehler beim Starten); der Proxy selbst braucht einen echten Container und wird in Meilenstein 3 geprüft.

@@ -66,7 +66,39 @@ func (m *Machine) WorkDir(repoURL string) string {
 	return m.WorkspaceDir + "/" + path.Base(strings.TrimSuffix(repoURL, ".git"))
 }
 
-// IsContainer tells whether the machine is a container (PROVIDER=kubernetes) and not a VM.
+// ProxyVerb is the command of viper that is the ProxyCommand of the ssh config of a container.
+func (m *Machine) ProxyVerb() string {
+	if m.Provider == "compose" {
+		return "docker-proxy"
+	}
+	return "k8s-proxy"
+}
+
+// DockerMode is how a container gets its Docker (dind, remote or none).
+func (m *Machine) DockerMode() string {
+	if m.Provider == "compose" {
+		return m.Setting("COMPOSE_DOCKER", "dind")
+	}
+	return m.Setting("K8S_DOCKER", "dind")
+}
+
+// Where says in words where a container is, for the question before viper down.
+func (m *Machine) Where() string {
+	if m.Provider == "compose" {
+		return "container, Docker context " + m.ServerLocation
+	}
+	return "pod, " + m.Setting("K8S_NAMESPACE", "viper")
+}
+
+// DockerLogHint says where to look when Docker does not answer in a container.
+func (m *Machine) DockerLogHint() string {
+	if m.Provider == "compose" {
+		return "docker --context " + m.ServerLocation + " logs " + m.ServerName + "-docker"
+	}
+	return "kubectl -n " + m.Setting("K8S_NAMESPACE", "viper") + " logs " + m.ServerName + "-0 -c dockerd"
+}
+
+// IsContainer tells whether the machine is a container (PROVIDER=kubernetes or compose) and not a VM.
 func (m *Machine) IsContainer() bool {
 	info, _ := LookupProvider(m.Provider)
 	return info.Container

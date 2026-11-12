@@ -71,21 +71,22 @@ func isValueFlag(n string) bool {
 // commands are the commands of viper by name.
 func commands() map[string]command {
 	return map[string]command{
-		"setup":      {usage: "", machine: noMachine, run: nativeSetup},
-		"preflight":  {usage: "<machine> [--repo URL] | --group G [--repo URL] [--parallel N]", machine: needMachine, flags: []string{"repo", "group", "parallel"}, run: nativePreflight},
-		"up":         {usage: "<machine> [--repo URL] [--no-code] | --group G [--repo URL] [--parallel N]", machine: needMachine, flags: []string{"repo", "no-code", "group", "parallel"}, run: nativeUp},
-		"check":      {usage: "<machine> | --group G [--parallel N]", machine: needMachine, flags: []string{"group", "parallel"}, run: nativeCheck},
-		"ssh":        {usage: "<machine> [--cmd COMMAND | --tmux] | --group G --cmd COMMAND [--parallel N]", machine: needMachine, flags: []string{"cmd", "tmux", "group", "parallel"}, run: nativeSSH},
-		"down":       {usage: "<machine> [--force] | --group G [--force] [--parallel N]", machine: needMachine, flags: []string{"force", "group", "parallel"}, run: nativeDown},
-		"vscode":     {usage: "<machine>", machine: needMachine, run: nativeVSCode},
-		"dns":        {usage: "<machine>", machine: needMachine, run: nativeDNS},
-		"find":       {usage: "[--cpu N] [--ram GB] [--disk GB] [--arch x86|arm] [--location L] [--provider P] [--vat PERCENT]", machine: noMachine, flags: []string{"cpu", "ram", "disk", "arch", "location", "provider", "vat"}, run: nativeFind},
-		"log":        {usage: "[<machine>] [--full]", machine: maybeMachine, flags: []string{"full"}, run: nativeLog},
-		"nats":       {usage: "peers|listen|send|broadcast|request|init|revoke GROUP [TEXT|-] [--from MACHINE] [--to MACHINE] [--topic T[,T...]] [--timeout S] [--query] [--all] [--json] [--yes]", machine: restArgs, flags: []string{"to", "topic", "from", "timeout", "query", "all", "json", "yes"}, run: nativeNats},
-		"image":      {usage: "build [--tag NAME:TAG] [--k3d CLUSTER]", machine: restArgs, flags: []string{"tag", "k3d"}, run: nativeImage},
-		"k8s-proxy":  {usage: "<machine>", machine: needMachine, run: nativeK8sProxy},
-		"mcp-binary": {usage: "--arch amd64|arm64", machine: noMachine, flags: []string{"arch"}, run: nativeMCPBinary},
-		"version":    {usage: "", machine: noMachine},
+		"setup":        {usage: "", machine: noMachine, run: nativeSetup},
+		"preflight":    {usage: "<machine> [--repo URL] | --group G [--repo URL] [--parallel N]", machine: needMachine, flags: []string{"repo", "group", "parallel"}, run: nativePreflight},
+		"up":           {usage: "<machine> [--repo URL] [--no-code] | --group G [--repo URL] [--parallel N]", machine: needMachine, flags: []string{"repo", "no-code", "group", "parallel"}, run: nativeUp},
+		"check":        {usage: "<machine> | --group G [--parallel N]", machine: needMachine, flags: []string{"group", "parallel"}, run: nativeCheck},
+		"ssh":          {usage: "<machine> [--cmd COMMAND | --tmux] | --group G --cmd COMMAND [--parallel N]", machine: needMachine, flags: []string{"cmd", "tmux", "group", "parallel"}, run: nativeSSH},
+		"down":         {usage: "<machine> [--force] | --group G [--force] [--parallel N]", machine: needMachine, flags: []string{"force", "group", "parallel"}, run: nativeDown},
+		"vscode":       {usage: "<machine>", machine: needMachine, run: nativeVSCode},
+		"dns":          {usage: "<machine>", machine: needMachine, run: nativeDNS},
+		"find":         {usage: "[--cpu N] [--ram GB] [--disk GB] [--arch x86|arm] [--location L] [--provider P] [--vat PERCENT]", machine: noMachine, flags: []string{"cpu", "ram", "disk", "arch", "location", "provider", "vat"}, run: nativeFind},
+		"log":          {usage: "[<machine>] [--full]", machine: maybeMachine, flags: []string{"full"}, run: nativeLog},
+		"nats":         {usage: "peers|listen|send|broadcast|request|init|revoke GROUP [TEXT|-] [--from MACHINE] [--to MACHINE] [--topic T[,T...]] [--timeout S] [--query] [--all] [--json] [--yes]", machine: restArgs, flags: []string{"to", "topic", "from", "timeout", "query", "all", "json", "yes"}, run: nativeNats},
+		"image":        {usage: "build [--tag NAME:TAG] [--k3d CLUSTER]", machine: restArgs, flags: []string{"tag", "k3d"}, run: nativeImage},
+		"k8s-proxy":    {usage: "<machine>", machine: needMachine, run: nativeK8sProxy},
+		"docker-proxy": {usage: "<machine>", machine: needMachine, run: nativeDockerProxy},
+		"mcp-binary":   {usage: "--arch amd64|arm64", machine: noMachine, flags: []string{"arch"}, run: nativeMCPBinary},
+		"version":      {usage: "", machine: noMachine},
 	}
 }
 

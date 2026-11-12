@@ -78,7 +78,7 @@ func viperPath() (string, error) {
 	return resolved, nil
 }
 
-// proxyCommand is the ProxyCommand of a container: this program, k8s-proxy, the settings directory and the machine.
+// proxyCommand is the ProxyCommand of a container: this program, its proxy command (k8s-proxy or docker-proxy), the settings directory and the machine.
 // ssh expands % in it and splits it like a shell would, so the parts are quoted and % is doubled; names with a quote or
 // a line break are refused (they could add directives to the file).
 func proxyCommand(c *model.Machine) (string, error) {
@@ -91,7 +91,7 @@ func proxyCommand(c *model.Machine) (string, error) {
 		return "", err
 	}
 	// on Windows the paths have backslashes, which the quoting below would have to refuse; Windows takes slashes too
-	parts := []string{filepath.ToSlash(exe), "k8s-proxy", "--dir", filepath.ToSlash(dir), c.Name}
+	parts := []string{filepath.ToSlash(exe), c.ProxyVerb(), "--dir", filepath.ToSlash(dir), c.Name}
 	for i, p := range parts {
 		if strings.ContainsAny(p, "\"\n\r\\'$`") {
 			return "", fmt.Errorf("the ProxyCommand cannot hold %q (a quote, a backslash, a dollar sign, a backtick or a line break)", p)

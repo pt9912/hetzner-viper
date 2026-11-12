@@ -97,7 +97,7 @@ func Run(ctx context.Context, c *model.Machine, force bool, d Deps, lg runlog.Lo
 	}
 	where := ip
 	if srv.ViaAPI {
-		where = "pod, " + c.Setting("K8S_NAMESPACE", "viper")
+		where = c.Where()
 	}
 	fmt.Fprintf(errOut, "\nServer %s (%s) and ALL its data (including %s) will be DESTROYED.\n", c.ServerName, where, strings.Join(wss, " "))
 	if d.Ask("Type DELETE to continue: ") != "DELETE" {

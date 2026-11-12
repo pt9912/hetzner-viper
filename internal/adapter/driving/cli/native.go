@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -291,9 +290,14 @@ func exportLines(provider, dnsProvider string) string {
 	return b.String()
 }
 
-// nativeK8sProxy is the ProxyCommand of the ssh config of a machine that is a pod: it connects standard input and
-// output to the ssh port of the pod through the API of the cluster. Nothing else may go to standard output.
-func nativeK8sProxy(o *options) error {
+// nativeK8sProxy and nativeDockerProxy are the ProxyCommand of the ssh config of a machine that is a container (k8s-proxy or
+// docker-proxy): it connects standard input and output to the ssh port of the container through the API of the cluster
+// or of the Docker host. Nothing else may go to standard output.
+func nativeK8sProxy(o *options) error { return runProxy(o, "k8s-proxy") }
+
+func nativeDockerProxy(o *options) error { return runProxy(o, "docker-proxy") }
+
+func runProxy(o *options, verb string) error {
 	env, err := o.host().Env()
 	if err != nil {
 		return err
@@ -302,11 +306,11 @@ func nativeK8sProxy(o *options) error {
 	if err != nil {
 		return err
 	}
-	if !c.IsContainer() {
-		return fmt.Errorf("viper k8s-proxy: %s is not a machine in a Kubernetes cluster (PROVIDER=%s)", o.machine, c.Provider)
+	if !c.IsContainer() || c.ProxyVerb() != verb {
+		return fmt.Errorf("viper %s: %s is not a machine of this kind (PROVIDER=%s)", verb, o.machine, c.Provider)
 	}
 	if o.host().Services.Proxy == nil {
-		return errors.New("viper k8s-proxy: this build has no proxy")
+		return fmt.Errorf("viper %s: this build has no proxy", verb)
 	}
 	ctx, stop := notifyContext(context.Background())
 	defer stop()

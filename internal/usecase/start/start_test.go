@@ -417,6 +417,40 @@ func TestARestartOfARunningMachineIsIdempotent(t *testing.T) {
 	}
 }
 
+// starterHz is a provider that can start a stopped machine (a container).
+type starterHz struct {
+	hz
+	started *[]string
+	err     error
+}
+
+func (s starterHz) EnsureRunning(_ context.Context, name string) error {
+	*s.started = append(*s.started, name)
+	return s.err
+}
+
+func TestAnExistingMachineIsStartedByAProviderThatCanStartIt(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		w := newWorld(t, "")
+		w.server = &model.Server{ID: "42", Name: "claude-web", IPv4: "203.0.113.7", Created: w.now.Add(-time.Hour)}
+		var started []string
+		d := w.deps()
+		st := starterHz{hz: hz{w: w}, started: &started}
+		if fail {
+			st.err = errors.New("the Docker service would not start")
+		}
+		d.Cloud = st
+		code, err := start.Run(context.Background(), w.c, "", d, w.lg, &w.out, &w.err)
+		w.lg.Close(err, code)
+		if len(started) != 1 || started[0] != "claude-web" {
+			t.Fatalf("started %v", started)
+		}
+		if fail && (code == 0 || !strings.Contains(w.all(), "would not start")) {
+			t.Errorf("a failed start went on: %d\n%s", code, w.all())
+		}
+	}
+}
+
 // --- waiting for the server
 
 func TestSshNeverReachableFails(t *testing.T) {

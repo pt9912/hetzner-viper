@@ -318,6 +318,23 @@ func TestWriteConfigKeepsALinkAndRemovesOldTemporaryFiles(t *testing.T) {
 	}
 }
 
+func TestAComposeContainerIsReachedThroughDockerProxy(t *testing.T) {
+	c := podConfig(t, "web")
+	c.Provider = "compose"
+	if err := files().WriteConfig(c, ""); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(c.SSHConfig)
+	for _, want := range []string{"    Port 2222\n", "\" \"docker-proxy\" \"--dir\" \""} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("missing %q in\n%s", want, b)
+		}
+	}
+	if strings.Contains(string(b), "k8s-proxy") {
+		t.Errorf("a compose container is not reached through the cluster proxy:\n%s", b)
+	}
+}
+
 func podConfig(t *testing.T, name string) *model.Machine {
 	t.Helper()
 	home, dir := t.TempDir(), t.TempDir()

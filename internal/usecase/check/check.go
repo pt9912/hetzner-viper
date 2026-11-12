@@ -329,7 +329,7 @@ func serverChecks(r *report, c *model.Machine, val map[string]string, workdir, r
 
 func cloudInitChecks(r *report, c *model.Machine, v func(string) string) {
 	if c.IsContainer() {
-		r.ok("a pod: no cloud-init, the image has everything")
+		r.ok("a container: no cloud-init, the image has everything")
 		return
 	}
 	switch v("cloudinit") {

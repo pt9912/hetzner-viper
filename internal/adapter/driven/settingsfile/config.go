@@ -349,8 +349,11 @@ func derivePaths(c *model.Machine, home string) {
 // of the container (K8S_IMAGE) and its work directory on its volume: it has no root to make a directory elsewhere.
 func imageAndWorkspace(c *model.Machine, prov model.ProviderInfo) (image, workspace string) {
 	image, workspace = or(c.Get("SERVER_IMAGE"), prov.Image), or(c.Get("WORKSPACE_DIR"), "/Development")
-	if c.Provider == "kubernetes" {
+	switch c.Provider {
+	case "kubernetes":
 		image = c.Get("K8S_IMAGE")
+	case "compose":
+		image = c.Get("COMPOSE_IMAGE")
 	}
 	if prov.Container {
 		workspace = or(c.Get("WORKSPACE_DIR"), ContainerWorkspace)
@@ -432,6 +435,74 @@ func checkKubernetes(c *model.Machine) error {
 	return nil
 }
 
+// checkComposeValues checks the settings of a container on a Docker host that are a name or an address.
+func checkComposeValues(c *model.Machine) error {
+	for _, v := range []struct {
+		name string
+		re   *regexp.Regexp
+		what string
+	}{
+		{"COMPOSE_IMAGE", imageRefRe, "an image reference without blanks or quotes"},
+		{"COMPOSE_DOCKER_IMAGE", imageRefRe, "an image reference without blanks or quotes"},
+		{"COMPOSE_DOCKER_HOST", dockerHostRe, "tcp://host:port, unix:///path or ssh://host"},
+	} {
+		if val := c.Get(v.name); val != "" && !v.re.MatchString(val) {
+			return fmt.Errorf("%s: %s: %s", v.name, v.what, val)
+		}
+	}
+	return nil
+}
+
+// checkComposeDocker checks COMPOSE_DOCKER and what goes with it.
+func checkComposeDocker(c *model.Machine) error {
+	switch c.Get("COMPOSE_DOCKER") {
+	case "", "dind", "none":
+	case "remote":
+		if c.Get("COMPOSE_DOCKER_HOST") == "" {
+			return errors.New("COMPOSE_DOCKER=remote needs COMPOSE_DOCKER_HOST (where the Docker daemon is, like tcp://host:2375)")
+		}
+	default:
+		return fmt.Errorf("COMPOSE_DOCKER: dind, remote or none: %s", c.Get("COMPOSE_DOCKER"))
+	}
+	return nil
+}
+
+// checkCompose reports what a machine on a Docker host needs (docs/plan/compose.md): the Docker context, the image, no DNS
+// (a container has no public address) and a work directory that is on its volume.
+func checkCompose(c *model.Machine) error {
+	var missing []string
+	for _, name := range []string{"SERVER_LOCATION", "COMPOSE_IMAGE"} {
+		if c.Get(name) == "" {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("Missing settings: %s (PROVIDER=compose: SERVER_LOCATION is the Docker context, \"default\" for the local daemon, COMPOSE_IMAGE the image of the machine, which viper image build makes; viper takes no default so that nothing is made on the wrong host or from the wrong image)", strings.Join(missing, " "))
+	}
+	if strings.HasPrefix(c.Get("SERVER_LOCATION"), "-") || strings.ContainsAny(c.Get("SERVER_LOCATION"), " \t\n\r\"'") {
+		return fmt.Errorf("SERVER_LOCATION: the name of a Docker context: %s", c.Get("SERVER_LOCATION"))
+	}
+	if DNSProviderOf(map[string]string{"DNS_PROVIDER": c.Get("DNS_PROVIDER")}) != model.DNSNone {
+		return errors.New("DNS_PROVIDER=none is needed for PROVIDER=compose: a container has no public address to name")
+	}
+	if err := checkComposeValues(c); err != nil {
+		return err
+	}
+	if v := c.Get("VIPER_SWAP"); v != "" && v != "0" {
+		return errors.New("VIPER_SWAP: a container has no swap file to make (PROVIDER=compose)")
+	}
+	if c.Get("VIPER_CODE_SERVER") == "1" {
+		return errors.New("VIPER_CODE_SERVER: code-server needs root and systemd, which a container does not have (PROVIDER=compose); VS Code Remote-SSH works without it")
+	}
+	if err := checkComposeDocker(c); err != nil {
+		return err
+	}
+	if ws := c.Setting("WORKSPACE_DIR", ContainerWorkspace); !strings.HasPrefix(ws, "/home/builder/") || strings.Contains(ws, "..") {
+		return fmt.Errorf("WORKSPACE_DIR: for PROVIDER=compose a directory below /home/builder, which is the volume of the container (default %s); set it for this machine in machines/%s.env.local or in its group file: %s", ContainerWorkspace, c.Name, ws)
+	}
+	return nil
+}
+
 // applyProviders sets the cloud provider and the DNS provider of the machine and the domain that
 // follows from them, and checks what they need. It returns what is known of the cloud provider.
 func applyProviders(c *model.Machine, vars map[string]string, needTokens bool) (model.ProviderInfo, error) {
@@ -451,8 +522,13 @@ func applyProviders(c *model.Machine, vars map[string]string, needTokens bool) (
 		}
 	}
 	c.DNSProvider = DNSProviderOf(vars)
-	if c.Provider == "kubernetes" {
+	switch c.Provider {
+	case "kubernetes":
 		if err := checkKubernetes(c); err != nil {
+			return prov, err
+		}
+	case "compose":
+		if err := checkCompose(c); err != nil {
 			return prov, err
 		}
 	}

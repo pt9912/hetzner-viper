@@ -85,7 +85,7 @@ func (r *runner) verifyStatus(ctx context.Context, status string) (int, error) {
 	}
 	if dockerWanted(c) && !hasLine(status, "docker=ok") {
 		if c.IsContainer() {
-			return r.fail("Docker does not answer in the pod (K8S_DOCKER=%s): look at the container dockerd: kubectl -n %s logs %s-0 -c dockerd. Server retained.", c.Setting("K8S_DOCKER", "dind"), c.Setting("K8S_NAMESPACE", "viper"), c.ServerName)
+			return r.fail("Docker does not answer in the container (%s): look at the log of the Docker daemon: %s. Server retained.", c.DockerMode(), c.DockerLogHint())
 		}
 		return r.fail("Docker is not running; see /var/log/cloud-init-output.log on the server. Server retained.")
 	}

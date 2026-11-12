@@ -86,6 +86,13 @@ func (r *runner) server(ctx context.Context, ca, keyName, ipadKeyFile string) (s
 		r.existed = true
 		id := existing.ID
 		r.d.SSH.ForgetStalePin(c, id, r.out)
+		var st cloud.Starter
+		if cloud.As(r.d.Cloud, &st) {
+			if err := st.EnsureRunning(ctx, c.ServerName); err != nil {
+				code, err := r.opFail(&cloud.OpError{Op: "starting the machine", Write: true, Err: err})
+				return nil, false, code, err
+			}
+		}
 		r.lg.Event("reusing server id=%s", id)
 		// "reused" means set up by a completed run; a server whose first run was interrupted may
 		// still be booting (transient ssh errors, the reboot after its updates still to come)
@@ -171,7 +178,7 @@ func (r *runner) probe() string {
 
 // dockerWanted tells whether the machine must have a running Docker: always on a VM, on a pod unless K8S_DOCKER=none.
 func dockerWanted(c *model.Machine) bool {
-	return !c.IsContainer() || c.Setting("K8S_DOCKER", "dind") != "none"
+	return !c.IsContainer() || c.DockerMode() != "none"
 }
 
 func hasLine(s, line string) bool {

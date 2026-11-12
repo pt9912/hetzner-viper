@@ -50,7 +50,7 @@ func nativeImage(o *options) error {
 		}
 		fmt.Fprintf(h.Stdout, "The image is in the k3d cluster %s.\n", o.k3d)
 	}
-	fmt.Fprintf(h.Stdout, "Image %s is ready. Use it with K8S_IMAGE=%s in the settings of the machine.\n", tag, tag)
+	fmt.Fprintf(h.Stdout, "Image %s is ready. Use it with K8S_IMAGE=%s (PROVIDER=kubernetes) or COMPOSE_IMAGE=%s (PROVIDER=compose, on the local Docker host) in the settings of the machine.\n", tag, tag, tag)
 	if o.k3d == "" {
 		fmt.Fprintln(h.Stdout, "A cluster pulls it from a registry: push it there (docker push) and name the registry's reference in K8S_IMAGE; k3d: add --k3d CLUSTER.")
 	}

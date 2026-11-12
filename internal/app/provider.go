@@ -8,9 +8,11 @@ import (
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/aws"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/azure"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/compose"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/gcp"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/hetzner"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/kubernetes"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/system"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
 )
@@ -40,6 +42,8 @@ func NewProvider(m *model.Machine) Provider {
 		})}
 	case "kubernetes":
 		return Provider{kubernetes.New(kubernetesOptions(m))}
+	case "compose":
+		return Provider{compose.New(composeOptions(m), system.Run)}
 	case "gcp":
 		root, _ := strconv.Atoi(m.Get("GCP_ROOT_GB"))
 		return Provider{gcp.New(gcp.Options{Project: m.Get("GCP_PROJECT"), Zone: m.ServerLocation, Network: m.Get("GCP_NETWORK"), Subnet: m.Get("GCP_SUBNET"), RootGB: int64(root), NATSPort: m.NATS.Port})}
@@ -102,7 +106,17 @@ func kubernetesOptions(m *model.Machine) kubernetes.Options {
 	}
 }
 
-// Proxy connects stdin and stdout to the ssh port of a machine in a Kubernetes cluster (viper k8s-proxy).
+// composeOptions are the settings of a machine on a Docker host.
+func composeOptions(m *model.Machine) compose.Options {
+	return compose.Options{Context: m.ServerLocation, Image: m.ServerImage, StateDir: m.StateDir,
+		Docker: m.Get("COMPOSE_DOCKER"), DockerExplicit: m.Get("COMPOSE_DOCKER") != "",
+		DockerHost: m.Get("COMPOSE_DOCKER_HOST"), DockerImage: m.Get("COMPOSE_DOCKER_IMAGE"), NATSPort: m.NATS.Port}
+}
+
+// Proxy connects stdin and stdout to the ssh port of a container (viper k8s-proxy, viper docker-proxy).
 func Proxy(ctx context.Context, m *model.Machine, in io.Reader, out io.Writer) error {
+	if m.Provider == "compose" {
+		return compose.New(composeOptions(m), system.Run).Proxy(ctx, m.ServerName, in, out)
+	}
 	return kubernetes.New(kubernetesOptions(m)).Proxy(ctx, m.ServerName, in, out)
 }
