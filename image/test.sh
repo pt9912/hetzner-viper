@@ -34,7 +34,12 @@ sshc() { ssh -p "$1" -i "$t/user" -o IdentitiesOnly=yes -o UserKnownHostsFile="$
 # wait_ssh PORT [SECONDS]: the first start over an empty volume copies Homebrew onto it, which takes minutes on a slow disk
 wait_ssh() {
   for _ in $(seq 1 "${2:-30}"); do sshc "$1" true 2>/dev/null && return 0; sleep 1; done
-  docker logs --tail 20 $(docker ps -aq --filter "publish=$1") 2>&1 | sed 's/^/        container: /' >&2 || true
+  # what the containers of this test say (a container that has ended is found by its name, not by its port), and the room left
+  for c in $(docker ps -aq --filter "name=$name"); do
+    echo "        container $(docker inspect --format '{{.Name}} {{.State.Status}} exit={{.State.ExitCode}}' "$c"):" >&2
+    docker logs --tail 20 "$c" 2>&1 | sed 's/^/        | /' >&2 || true
+  done
+  df -h /tmp /var/lib/docker 2>&1 | sed 's/^/        df: /' >&2 || true
   return 1
 }
 
