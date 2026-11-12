@@ -7,8 +7,9 @@ name: machine image
 # A tag is never moved. If only the test (image/test.sh) or the workflow was wrong, build the image of the tag with the
 # files of a later commit: -f ref=main. The run stops if a file that goes into the image differs between the tag and
 # the ref, so the image is the one the tag describes.
-# The first push makes the package private; make it public once (GitHub: Packages > viper-machine > Package settings >
-# Change visibility), or every cluster needs an image pull secret.
+# The package ghcr.io/<owner>/viper-machine is public (checked with an anonymous request for v0.18.0), so a cluster pulls
+# it without an image pull secret. If it is ever private (GitHub: Packages > viper-machine > Package settings > Change
+# visibility), every cluster needs a pull secret (K8S_IMAGE_PULL_SECRET).
 on:
   push:
     tags: ['v[0-9]*']
