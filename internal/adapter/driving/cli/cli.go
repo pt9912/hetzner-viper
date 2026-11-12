@@ -79,7 +79,7 @@ func commands() map[string]command {
 		"dns":        {usage: "<machine>", machine: needMachine, run: nativeDNS},
 		"find":       {usage: "[--cpu N] [--ram GB] [--disk GB] [--arch x86|arm] [--location L] [--provider P] [--vat PERCENT]", machine: noMachine, flags: []string{"cpu", "ram", "disk", "arch", "location", "provider", "vat"}, run: nativeFind},
 		"log":        {usage: "[<machine>] [--full]", machine: maybeMachine, flags: []string{"full"}, run: nativeLog},
-		"nats":       {usage: "peers|listen|send|broadcast|request|init|revoke GROUP [TEXT|-] [--from MACHINE] [--to MACHINE] [--topic T] [--timeout S] [--query] [--all] [--json] [--yes]", machine: restArgs, flags: []string{"to", "topic", "from", "timeout", "query", "all", "json", "yes"}, run: nativeNats},
+		"nats":       {usage: "peers|listen|send|broadcast|request|init|revoke GROUP [TEXT|-] [--from MACHINE] [--to MACHINE] [--topic T[,T...]] [--timeout S] [--query] [--all] [--json] [--yes]", machine: restArgs, flags: []string{"to", "topic", "from", "timeout", "query", "all", "json", "yes"}, run: nativeNats},
 		"mcp-binary": {usage: "--arch amd64|arm64", machine: noMachine, flags: []string{"arch"}, run: nativeMCPBinary},
 		"version":    {usage: "", machine: noMachine},
 	}

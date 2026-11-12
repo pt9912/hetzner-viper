@@ -51,6 +51,9 @@ func validateTarget(c driving.NATSCommand, from string) error {
 	case "peers":
 		return nil
 	case "listen":
+		if c.Topic != "" && len(topicList(c.Topic)) == 0 {
+			return errors.New("topic: no name in the list")
+		}
 		for _, t := range topicList(c.Topic) {
 			if err := checkName("topic", t); err != nil {
 				return err

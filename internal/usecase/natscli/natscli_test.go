@@ -197,6 +197,9 @@ func TestListenTakesSeveralTopicsAndBroadcastOnlyOne(t *testing.T) {
 	if err := natscli.Validate(driving.NATSCommand{Name: "broadcast", Topic: "a,b", Text: "x"}, "alpha"); err == nil {
 		t.Error("broadcast to two topics")
 	}
+	if err := natscli.Validate(driving.NATSCommand{Name: "listen", Topic: ","}, "alpha"); err == nil {
+		t.Error("a list without a name would show nothing")
+	}
 	if err := natscli.Validate(driving.NATSCommand{Name: "listen", Topic: "news,a b"}, "alpha"); err == nil {
 		t.Error("a bad name in the list")
 	}

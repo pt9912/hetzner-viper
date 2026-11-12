@@ -238,7 +238,7 @@ func natsRun(ctx context.Context, o *options, c driving.NATSCommand, sender stri
 		if o.asJSON {
 			writeJSONLine(stdout, e)
 		} else if e.Via != "presence" {
-			fmt.Fprintln(stdout, natsLine(e))
+			fmt.Fprintln(stdout, natsLine(e, sender))
 		}
 	}
 	res, err := o.host().Services.NATS.Run(ctx, remote, sender, c, stderr, show)
@@ -305,9 +305,10 @@ func reportPeers(o *options, res driving.NATSResult, stdout io.Writer) {
 	}
 }
 
-func natsLine(e model.NATSLine) string {
+// natsLine is a message as text; "from -> to" only for a message that is not for the sender of the command (listen --all).
+func natsLine(e model.NATSLine, sender string) string {
 	where := e.From
-	if e.To != "" && e.Via == "out" {
+	if e.To != "" && e.To != sender && e.Via == "out" {
 		where += " -> " + e.To
 	}
 	if e.Topic != "" {
