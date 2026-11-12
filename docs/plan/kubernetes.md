@@ -2,7 +2,7 @@
 
 **Ziel:** `PROVIDER=kubernetes` startet eine „Maschine“ als **Pod** in einem beliebigen Kubernetes-Cluster (k3d lokal, aber auch GKE, EKS, AKS, Hetzner-Cluster), statt als VM bei einem Cloud-Anbieter. `viper up`, `down`, `check`, `ssh`, `vscode` und die Gruppen sollen dort so arbeiten wie bei den anderen Anbietern. Der Anbieter ist der **Cluster**, nicht die Cloud darunter: `viper` braucht nur eine `kubeconfig`.
 
-**Stand:** Entwurf, einmal unabhängig gegen den Code geprüft; die Befunde sind eingearbeitet (§12) und ändern den Plan an mehreren Stellen (die „Naht“ SSH, die Server-ID, NATS-Labels, Docker, Sicherheitskontext, `ProxyCommand`). Meilenstein 0 ist teilweise gelaufen (§13); sonst ist nichts umgesetzt.
+**Stand:** Entwurf, Entscheidungen D1 bis D8 getroffen (§9), einmal unabhängig gegen den Code geprüft; die Befunde sind eingearbeitet (§12) und ändern den Plan an mehreren Stellen (die „Naht“ SSH, die Server-ID, NATS-Labels, Docker, Sicherheitskontext, `ProxyCommand`). Meilenstein 0 ist teilweise gelaufen (§13); sonst ist nichts umgesetzt.
 
 **Kennzeichnung:** *[V]* heißt, im Code oder in einem Plan bestätigt. *[?]* heißt Vermutung; jede solche Stelle wird in Meilenstein 0 geprüft, bevor etwas darauf gebaut wird. **(zu bestätigen)** markiert Arbeitsannahmen, die eine Entscheidung brauchen (§9).
 
@@ -113,14 +113,16 @@ Eigener Abschnitt, weil er am meisten ändert, und **eigener Meilenstein am Schl
 
 ## 9 Entscheidungen
 
-D1 **Zugang:** `sshd` im Pod und `ProxyCommand` (Empfehlung) statt `kubectl exec` in jedem Skript *[Empfehlung, Begründung §2 Regel 1]*.
-D2 **StatefulSet** (Empfehlung) statt Pod: stabiler Name, Volume gebunden, Neustart durch den Cluster.
-D3 **Volume:** ein PVC für `/home/builder` und das Arbeitsverzeichnis, von `viper` selbst angelegt und mit `down` ausdrücklich gelöscht (Empfehlung; es folgt dem heutigen „alle Daten werden zerstört“). Das Einstiegsprogramm legt bei leerem Volume die Dateien des Heimverzeichnisses an.
-D4 **`client-go` und `viper k8s-proxy`** (Empfehlung) statt `kubectl`.
-D5 **Docker auf der Maschine (Anforderung: muss gehen, §15):** `K8S_DOCKER=dind|remote|none`. **`dind`** (Standard in k3d und eigenen Clustern): ein privilegierter Docker-Daemon als zweiter Container im Pod, der Maschinen-Container bleibt ohne root und erreicht ihn über `DOCKER_HOST=tcp://127.0.0.1:2375`; der Namespace braucht Pod Security `privileged`. **`remote`**: `DOCKER_HOST` zeigt auf einen Daemon außerhalb des Pods (für Cluster, die privilegierte Pods verbieten; Sicherheit liegt dort). **`none`**: kein Docker (Cluster mit „restricted“). Die Einstellung `VIPER_DOCKER` (Docker ist Pflicht) entsteht in §5 Punkt 3 und folgt aus `K8S_DOCKER`.
-D6 **NATS:** als letzter Meilenstein, nicht Teil der ersten Abnahme.
-D7 **Image-Verteilung:** `make image` und `k3d image import`; für andere Cluster ein Register der Wahl in `K8S_IMAGE`.
-D8 **Namen der Einstellungen:** `K8S_*` (zu bestätigen).
+**Entschieden am 12.11.2026** (Vorschläge des Anwenders bestätigt; die Ergebnisse von Meilenstein 0 und der Risikountersuchung, §13 bis §16, sprechen dafür):
+
+D1 **Zugang:** `sshd` im Pod und `ProxyCommand` durch die API statt `kubectl exec` in jedem Skript. `sshd` läuft als `builder` auf **Port 2222** (§14). VS Code Remote-SSH über den Proxy wird am Anfang von Meilenstein 3 geprüft.
+D2 **StatefulSet** mit einem Replikat statt Pod, **mit einem von `viper` selbst angelegten PVC** (als vorhandenes Volume eingebunden, nicht über `volumeClaimTemplates`): so hat das Volume eine klare Lebensdauer.
+D3 **Volume:** ein PVC für `/home/builder`, am Arbeitsverzeichnis (`WORKSPACE_DIR`) per `subPath` eingebunden; Größe `K8S_DISK_GB` (Standard 20); mit `down` ausdrücklich gelöscht, nach der Abfrage „DELETE“; ein Rest eines halb gescheiterten `down` wird beim nächsten `up` oder `down` aufgeräumt. Das Einstiegsprogramm setzt Besitzer und Rechte des Heimverzeichnisses und legt bei leerem Volume die Dateien aus dem Image an (§17).
+D4 **`client-go` für den Adapter, `viper k8s-proxy <maschine>` für den Zugang** (Port-Forward, Standard-Ein-/Ausgabe, kein `kubectl` nötig). Rückfall, falls der Port-Forward über Stdin/Stdout Probleme macht: `kubectl exec -i … -- nc localhost 2222` (in Meilenstein 0 belegt).
+D5 **Docker:** `K8S_DOCKER=dind|remote|none` (§15). **Standard in k3d und eigenen Clustern: `dind`**, ein privilegierter Docker-Daemon als zweiter Container im Pod; der Maschinen-Container bleibt ohne root. Das Handbuch nennt die Grenze (privilegierter Container, Namespace mit Pod Security `privileged`). `VIPER_DOCKER` („Docker ist Pflicht“) folgt aus `K8S_DOCKER`.
+D6 **NATS:** letzter Meilenstein (M5), nicht Teil der ersten Abnahme; bis dahin verweigert `settingsfile` NATS bei diesem Anbieter mit klarer Meldung.
+D7 **Image:** `make image` baut `viper-machine:<version>`; bei k3d `k3d image import`; bei anderen Clustern `K8S_IMAGE` aus einem Register der Wahl. Ein veröffentlichtes Image gibt es zunächst nicht. Basis mit Digest festgelegt. Zuerst `amd64`; `arm64` kommt mit Meilenstein 6 (§16).
+D8 **Einstellungen:** `PROVIDER=kubernetes`; **`SERVER_LOCATION` ist der Kontext der `kubeconfig`, ohne Standard** (Schutz vor einem Lauf im falschen Cluster); `SERVER_TYPE` ist `<cpu>x<ram>` (Standard `2x4`); `K8S_NAMESPACE` (Standard `viper`, wird beschriftet angelegt, wenn er fehlt, und von `viper` nie gelöscht); `K8S_IMAGE` (Pflicht); `K8S_STORAGE_CLASS` (Standard des Clusters); `K8S_DISK_GB` (Standard 20); `K8S_DOCKER`. Es gibt **kein** `K8S_CONTEXT`.
 
 ## 10 Meilensteine
 
