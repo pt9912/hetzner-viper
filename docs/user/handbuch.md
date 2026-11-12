@@ -208,7 +208,9 @@ Sie können `viper` auch ohne Cloud-Konto ausprobieren und nutzen: Der Rechner i
 
 #### Vorgehen
 
-1. **Image bauen:** `viper image build` (für k3d: erst `k3d cluster create viper`, dann `viper image build --k3d viper`). Das dauert beim ersten Mal einige Minuten. Die Ausgabe nennt den Namen des Images.
+1. **Image beschaffen**, auf einem von zwei Wegen:
+   * **Laden** (schnell): `docker pull ghcr.io/pt9912/viper-machine:v0.18.0`, mit der Version, die `viper version` meldet. Das Image ist öffentlich und mehrere GB groß, es gibt es nur für **amd64** (auf Apple Silicon und anderen arm64-Rechnern bauen Sie es selbst). Der Name ist `ghcr.io/pt9912/viper-machine:v0.18.0`. Bei k3d kommt es danach mit `k3d image import ghcr.io/pt9912/viper-machine:v0.18.0 -c viper` in den Cluster (vorher `k3d cluster create viper`).
+   * **Bauen:** `viper image build` (für k3d: erst `k3d cluster create viper`, dann `viper image build --k3d viper`). Das dauert beim ersten Mal einige Minuten. Die Ausgabe nennt den Namen des Images.
 2. **Einstellungen** in `machines/lokal.env.local`:
 
    Docker Compose:
@@ -418,7 +420,7 @@ Mit `PROVIDER=kubernetes` ist ein „Rechner“ ein **Pod** in einem Kubernetes-
 
 #### Vorgehen
 
-1. **Image bauen.** `viper image build` baut das Image mit Docker aus den Dateien, die in `viper` stecken; Sie brauchen weder das Repository noch `make`. Das dauert beim ersten Mal einige Minuten, und das Image ist mehrere GB groß. Bei **k3d** kommt es mit `viper image build --k3d viper` gleich in den Cluster `viper`. Bei jedem anderen Cluster laden Sie es mit `docker push` in ein Register, das der Cluster erreicht. Verlangt das Register eine Anmeldung, legen Sie im Namespace ein Secret an (`kubectl -n viper create secret docker-registry regcred --docker-server=… --docker-username=… --docker-password=…`) und tragen seinen Namen in Schritt 2 als `K8S_IMAGE_PULL_SECRET` ein. Die Ausgabe nennt den Namen des Images; ihn tragen Sie in Schritt 2 als `K8S_IMAGE` ein (`--tag NAME:TAG` wählt einen eigenen).
+1. **Image bauen.** `viper image build` baut das Image mit Docker aus den Dateien, die in `viper` stecken; Sie brauchen weder das Repository noch `make`. Das dauert beim ersten Mal einige Minuten, und das Image ist mehrere GB groß. Statt zu bauen können Sie das veröffentlichte, öffentliche Image `ghcr.io/pt9912/viper-machine:<Version>` nehmen (die Version, die `viper version` meldet; nur amd64): Tragen Sie seinen Namen in Schritt 2 als `K8S_IMAGE` ein; bei k3d laden Sie es vorher mit `docker pull` und `k3d image import <name> -c viper` in den Cluster. Bei **k3d** kommt das gebaute Image mit `viper image build --k3d viper` gleich in den Cluster `viper`. Bei jedem anderen Cluster laden Sie es mit `docker push` in ein Register, das der Cluster erreicht. Verlangt das Register eine Anmeldung, legen Sie im Namespace ein Secret an (`kubectl -n viper create secret docker-registry regcred --docker-server=… --docker-username=… --docker-password=…`) und tragen seinen Namen in Schritt 2 als `K8S_IMAGE_PULL_SECRET` ein. Die Ausgabe nennt den Namen des Images; ihn tragen Sie in Schritt 2 als `K8S_IMAGE` ein (`--tag NAME:TAG` wählt einen eigenen).
 2. **Einstellungen** in `machines/<rechner>.env.local` oder in der Gruppendatei (nicht in der allgemeinen `.env.local`):
 
    ```
@@ -456,7 +458,7 @@ Mit `PROVIDER=compose` ist ein „Rechner“ ein **Container** auf dem Docker-Ho
 
 #### Vorgehen
 
-1. **Image bauen:** `viper image build`. Das Image liegt danach im Docker-Host und braucht kein Register. Die Ausgabe nennt den Namen; er kommt in Schritt 2 als `COMPOSE_IMAGE` hinein (`--tag NAME:TAG` wählt einen eigenen).
+1. **Image beschaffen:** Entweder bauen: `viper image build`. Das Image liegt danach im Docker-Host und braucht kein Register; die Ausgabe nennt den Namen (`--tag NAME:TAG` wählt einen eigenen). Oder laden: `docker pull ghcr.io/pt9912/viper-machine:<Version>` mit der Version, die `viper version` meldet (öffentlich, mehrere GB, nur amd64). Der Name kommt in Schritt 2 als `COMPOSE_IMAGE` hinein.
 2. **Einstellungen** in `machines/<rechner>.env.local` oder in der Gruppendatei (nicht in der allgemeinen `.env.local`):
 
    ```
@@ -1513,4 +1515,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.94 | nach v0.17.0 | Neu: Kubernetes als Anbieter (`PROVIDER=kubernetes`): Rechner als Pods, `viper image build`, `viper k8s-proxy`, Einstellungen `K8S_*`, NATS-Gruppen im Cluster. |
 | 1.95 | nach v0.17.0 | Neu: Docker Compose als Anbieter (`PROVIDER=compose`): Rechner als Container auf dem lokalen Docker-Host, `viper docker-proxy`, Einstellungen `COMPOSE_*` (mit NATS-Gruppen). |
 | 1.96 | v0.18.0 | Release v0.18.0: die Änderungen 1.86 bis 1.95 (`viper preflight --group`, `viper nats`, NATS-Gruppen bei AWS, Google Cloud und Azure, Kubernetes und Docker Compose als Anbieter). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.18.0`. |
-| 1.97 | nach v0.18.0 | Der Standard von `WORKSPACE_DIR` ist für alle Anbieter `/home/builder/work` (bisher ein Verzeichnis außerhalb des Heimverzeichnisses, das nur VMs anlegen konnten). Wer sich auf den früheren Standard verlassen hat, setzt `WORKSPACE_DIR` ausdrücklich; `viper down` prüft vorhandene Rechner weiter in den Verzeichnissen, mit denen sie gestartet wurden. Neu: der Abschnitt „Lokal arbeiten, ohne Cloud-Konto (Docker Compose oder k3d)“ in Kapitel 3, im Überblick (Kapitel 2) ein Hinweis darauf und die Zeile zu `viper image build`. |
+| 1.97 | nach v0.18.0 | Der Standard von `WORKSPACE_DIR` ist für alle Anbieter `/home/builder/work` (bisher ein Verzeichnis außerhalb des Heimverzeichnisses, das nur VMs anlegen konnten). Wer sich auf den früheren Standard verlassen hat, setzt `WORKSPACE_DIR` ausdrücklich; `viper down` prüft vorhandene Rechner weiter in den Verzeichnissen, mit denen sie gestartet wurden. Neu: der Abschnitt „Lokal arbeiten, ohne Cloud-Konto (Docker Compose oder k3d)“ in Kapitel 3, im Überblick (Kapitel 2) ein Hinweis darauf und die Zeile zu `viper image build`; das Image kann auch mit `docker pull` geladen werden (öffentlich, nur amd64). |
