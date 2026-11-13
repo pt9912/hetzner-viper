@@ -84,7 +84,8 @@ jobs:
           set -euo pipefail
           owner="${GITHUB_REPOSITORY_OWNER,,}"   # registry names are lowercase
           echo "IMAGE=ghcr.io/${owner}/viper-machine" >> "$GITHUB_ENV"
-          docker build -f image/Dockerfile -t "ghcr.io/${owner}/viper-machine:${TAG}-${ARCH}" .
+          # no provenance and no SBOM attestation: it would be a third entry "unknown/unknown" in the list of platforms of the image
+          docker build --provenance=false --sbom=false -f image/Dockerfile -t "ghcr.io/${owner}/viper-machine:${TAG}-${ARCH}" .
       - name: Test
         run: image/test.sh "${IMAGE}:${TAG}-${ARCH}"
       - name: Log in to ghcr.io
