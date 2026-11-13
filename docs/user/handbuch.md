@@ -211,7 +211,7 @@ Sie können `viper` auch ohne Cloud-Konto ausprobieren und nutzen: Der Rechner i
 1. **Image beschaffen.** Mit einem **Release** von `viper` (`viper version` zeigt `v0.18.0` o. ä., ohne Zusatz) können Sie diesen Schritt überspringen: Ohne `COMPOSE_IMAGE` bzw. `K8S_IMAGE` nimmt `viper` das veröffentlichte Image seiner Version, `ghcr.io/pt9912/viper-machine:<Version>`; Compose und ein k3d-Cluster laden es selbst. Eine selbst gebaute Entwicklerversion hat kein veröffentlichtes Image, dort ist der Name Pflicht. Sonst auf einem von zwei Wegen:
    * **Laden** (schnell): `docker pull ghcr.io/pt9912/viper-machine:v0.18.0`, mit der Version, die `viper version` meldet. Bei Docker Compose können Sie das Laden `viper up` überlassen: Der Name in `COMPOSE_IMAGE` genügt. Das Image ist öffentlich und mehrere GB groß; das Image gibt es für **amd64 und arm64**, Docker wählt die passende Architektur. Der Name ist `ghcr.io/pt9912/viper-machine:v0.18.0`. Bei k3d (vorher `k3d cluster create viper`) lädt der Cluster das öffentliche Image beim ersten Start selbst, das dauert etwa eine halbe Minute; Sie müssen es nicht einspielen. **Jeder Knoten lädt es für sich**, auf dem ein Rechner läuft: Hat der Cluster mehrere Knoten, laden Sie es mehrmals aus dem Internet. Dann spielen Sie das geladene Image mit `k3d image import ghcr.io/pt9912/viper-machine:v0.18.0 -c viper` ein (kopiert es auf alle Knoten, ohne Download) oder nutzen eine gemeinsame Registry (unten).
    * **Bauen:** `viper image build` (für k3d: erst `k3d cluster create viper`, dann `viper image build --k3d viper`). Das dauert beim ersten Mal einige Minuten. Die Ausgabe nennt den Namen des Images.
-2. **Einstellungen** in `machines/lokal.env.local`:
+2. **Einstellungen** in `machines/lokal.env.local` (die Zeile mit dem Image brauchen Sie nur für eine Entwicklerversion oder ein eigenes Image; mit einem Release lassen Sie sie weg):
 
    Docker Compose:
 
@@ -219,7 +219,7 @@ Sie können `viper` auch ohne Cloud-Konto ausprobieren und nutzen: Der Rechner i
    PROVIDER=compose
    DNS_PROVIDER=none
    SERVER_LOCATION=default
-   COMPOSE_IMAGE=<Name aus Schritt 1>
+   # COMPOSE_IMAGE=<Name aus Schritt 1>   (bei einem Release von viper weglassen)
    COMPOSE_DOCKER=dind
    SERVER_TYPE=2x4
    ```
@@ -230,7 +230,7 @@ Sie können `viper` auch ohne Cloud-Konto ausprobieren und nutzen: Der Rechner i
    PROVIDER=kubernetes
    DNS_PROVIDER=none
    SERVER_LOCATION=k3d-viper
-   K8S_IMAGE=<Name aus Schritt 1>
+   # K8S_IMAGE=<Name aus Schritt 1>   (bei einem Release von viper weglassen)
    SERVER_TYPE=2x4
    ```
 3. `viper preflight lokal`, dann `viper up lokal`, danach `viper ssh lokal` und `viper check lokal`. Zum Aufräumen: `viper down lokal`.
@@ -451,11 +451,11 @@ Mit `PROVIDER=kubernetes` ist ein „Rechner“ ein **Pod** in einem Kubernetes-
    PROVIDER=kubernetes
    DNS_PROVIDER=none
    SERVER_LOCATION=k3d-viper
-   K8S_IMAGE=<name aus Schritt 1>
+   # K8S_IMAGE=<Name aus Schritt 1>   (bei einem Release von viper weglassen)
    SERVER_TYPE=2x4
    ```
 
-   `SERVER_LOCATION` ist der Kontext der `kubeconfig` und Pflicht; `SERVER_TYPE` ist `<CPUs>x<GiB Speicher>`. Weitere Einstellungen und Standardwerte: Kapitel 4, „Kubernetes: Einstellungen“.
+   `SERVER_LOCATION` ist der Kontext der `kubeconfig` und Pflicht; `K8S_IMAGE` ist nur für eine Entwicklerversion oder ein eigenes Image nötig (mit einem Release lassen Sie die Zeile weg); `SERVER_TYPE` ist `<CPUs>x<GiB Speicher>`. Weitere Einstellungen und Standardwerte: Kapitel 4, „Kubernetes: Einstellungen“.
 3. `viper preflight <rechner>`, dann `viper up <rechner> [--repo URL]`. Danach arbeiten Sie wie bei jedem Rechner: `viper ssh <rechner>`, `viper vscode <rechner>`, `viper check <rechner>`. Zum Löschen: `viper down <rechner>`.
 
 #### Ergebnis
@@ -489,12 +489,12 @@ Mit `PROVIDER=compose` ist ein „Rechner“ ein **Container** auf dem Docker-Ho
    PROVIDER=compose
    DNS_PROVIDER=none
    SERVER_LOCATION=default
-   COMPOSE_IMAGE=<name aus Schritt 1>
+   # COMPOSE_IMAGE=<Name aus Schritt 1>   (bei einem Release von viper weglassen)
    COMPOSE_DOCKER=dind
    SERVER_TYPE=2x4
    ```
 
-   `SERVER_LOCATION` ist der Docker-Kontext (`default` ist der lokale Daemon) und Pflicht, ohne Standard. `SERVER_TYPE` ist `<CPUs>x<GiB Speicher>`. `COMPOSE_DOCKER=dind` müssen Sie ausdrücklich eintragen: Der Docker im Rechner ist ein **privilegierter** Container, und der Preflight meldet sonst einen Fehler (siehe Hinweise).
+   `SERVER_LOCATION` ist der Docker-Kontext (`default` ist der lokale Daemon) und Pflicht, ohne Standard. `COMPOSE_IMAGE` ist nur für eine Entwicklerversion oder ein eigenes Image nötig (mit einem Release lassen Sie die Zeile weg). `SERVER_TYPE` ist `<CPUs>x<GiB Speicher>`. `COMPOSE_DOCKER=dind` müssen Sie ausdrücklich eintragen: Der Docker im Rechner ist ein **privilegierter** Container, und der Preflight meldet sonst einen Fehler (siehe Hinweise).
 3. `viper preflight <rechner>`, dann `viper up <rechner> [--repo URL]`. Danach `viper ssh <rechner>`, `viper vscode <rechner>`, `viper check <rechner>`. Zum Löschen: `viper down <rechner>`.
 
 #### Ergebnis
