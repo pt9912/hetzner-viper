@@ -40,8 +40,9 @@ type Machine struct {
 	StateDir, SSHDir, SSHConfig, KnownPin                string
 
 	// state files of the machine, all keyed by the server name
-	IPState, IDState, WorkspaceState, ReadyState, RepoState string
-	EventsLog, LogDir                                       string
+	// GroupState holds the group the machine was started in (viper up): it is managed there until viper down.
+	IPState, IDState, WorkspaceState, ReadyState, RepoState, GroupState string
+	EventsLog, LogDir                                                   string
 }
 
 // Get returns a setting, "" if it is not set.

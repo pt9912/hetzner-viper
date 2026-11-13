@@ -133,6 +133,9 @@ func Run(ctx context.Context, c *model.Machine, repoArg string, d Deps, lg runlo
 	if code != 0 || err != nil {
 		return code, err
 	}
+	if c.Group != "" { // best effort: from now on the machine is managed in this group, until viper down
+		_ = os.WriteFile(c.GroupState, []byte(c.Group+"\n"), 0o600)
+	}
 	// a new server has role and network from its creation; one that was there without a group gets
 	// them in natsSetup, which signals then
 	if !r.existed || r.nats == nil {

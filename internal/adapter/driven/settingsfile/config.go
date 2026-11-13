@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -93,6 +94,63 @@ func Prefix(dir, machine string, env settings.Env) (string, error) {
 // Load reads .env.local and machines/<machine>.env.local of dir and checks the settings. With
 // needTokens it requires the three API credentials as well (all commands that call an API).
 func Load(dir, machine string, env settings.Env, needTokens bool) (*model.Machine, error) {
+	c, err := load(dir, machine, env, needTokens)
+	var ce choiceError
+	if err != nil && env.Group == "" && errors.As(err, &ce) && len(ce.groups) > 1 {
+		// several groups name the machine and none was said: the one it was started in applies
+		if g := startedIn(dir, machine, env, ce.groups); g != "" {
+			env.Group = g
+			return Load(dir, machine, env, needTokens)
+		}
+	}
+	if err == nil {
+		err = runsElsewhere(dir, c, env)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// startedIn is the group, of those that name the machine, that it was started in and still runs in ("" if none or
+// not one alone).
+func startedIn(dir, machine string, env settings.Env, groups []string) string {
+	found := ""
+	for _, g := range groups {
+		e := env
+		e.Group = g
+		if c, err := load(dir, machine, e, false); err == nil && readTrim(c.GroupState) == g {
+			if found != "" {
+				return ""
+			}
+			found = g
+		}
+	}
+	return found
+}
+
+// runsElsewhere refuses a machine that was started in another group: it is one server, managed in the group it was
+// started in, until viper down. A group that no longer names it does not hold it.
+func runsElsewhere(dir string, c *model.Machine, env settings.Env) error {
+	rec := readTrim(c.GroupState)
+	if rec == "" || c.Group == "" || rec == c.Group {
+		return nil
+	}
+	if g, err := LoadGroup(dir, rec, env); err != nil || !slices.Contains(g.Machines, c.Name) {
+		return nil
+	}
+	return choiceError{error: fmt.Errorf("The machine %s runs in the group %s (it was started there) and is managed there: add --in-group %s. To start it in the group %s: viper down %s --in-group %s first", c.Name, rec, rec, c.Group, c.Name, rec)}
+}
+
+func readTrim(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+func load(dir, machine string, env settings.Env, needTokens bool) (*model.Machine, error) {
 	if machine == "" {
 		return nil, errors.New("Machine name required")
 	}
@@ -351,6 +409,7 @@ func derivePaths(c *model.Machine, home string) {
 	c.WorkspaceState = filepath.Join(c.StateDir, "workspace-"+c.ServerName)
 	c.ReadyState = filepath.Join(c.StateDir, "ready-"+c.ServerName)
 	c.RepoState = filepath.Join(c.StateDir, "repo-"+c.ServerName)
+	c.GroupState = filepath.Join(c.StateDir, "group-"+c.ServerName)
 	c.EventsLog = filepath.Join(c.StateDir, "events.log")
 	c.LogDir = filepath.Join(c.StateDir, "logs")
 }

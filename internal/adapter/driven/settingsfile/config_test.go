@@ -733,3 +733,54 @@ func TestThePrefixOfAMachineInSeveralGroupsFollowsTheChoice(t *testing.T) {
 		t.Errorf("one group is found alone and needs no choice: %+v %v", c, err)
 	}
 }
+
+// A machine is managed in the group it was started in: viper up leaves a mark, the other commands find the group from it
+// (no --in-group needed), another group is refused until viper down removes the mark.
+func TestAMachineIsManagedInTheGroupItWasStartedIn(t *testing.T) {
+	dir := setupDir(t, "DNS_DOMAIN=example.com\n", "")
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "groups"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range map[string]string{"dev": "GROUP_MACHINES=web\n", "test": "GROUP_MACHINES=web\n"} {
+		if err := os.WriteFile(filepath.Join(dir, "groups", name+".env"), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	load := func(group string) (*model.Machine, error) {
+		return settingsfile.Load(dir, "web", settings.Env{Lookup: envOf(nil), Home: home, Group: group}, false)
+	}
+	c, err := load("dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := load(""); err == nil || !strings.Contains(err.Error(), "named in the groups") {
+		t.Fatalf("no mark yet: the caller has to choose: %v", err)
+	}
+	if err := os.MkdirAll(c.StateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(c.GroupState, []byte("dev\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c, err := load(""); err != nil || c.Group != "dev" || !c.GroupChosen {
+		t.Errorf("the group it was started in applies without --in-group: %v %+v", err, c)
+	}
+	if _, err := load("test"); err == nil || !strings.Contains(err.Error(), "runs in the group dev") || !strings.Contains(err.Error(), "viper down web --in-group dev") {
+		t.Errorf("another group is refused with the way out: %v", err)
+	}
+	if _, err := load("dev"); err != nil {
+		t.Errorf("the group it runs in: %v", err)
+	}
+	// the group no longer names the machine: the mark holds nothing
+	if err := os.WriteFile(filepath.Join(dir, "groups", "dev.env"), []byte("GROUP_MACHINES=api\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c, err := load("test"); err != nil || c.Group != "test" {
+		t.Errorf("a stale mark of a group that no longer names the machine is ignored: %v", err)
+	}
+	// the mark goes with viper down
+	if err := os.Remove(c.GroupState); err != nil {
+		t.Fatal(err)
+	}
+}

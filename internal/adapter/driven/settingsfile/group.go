@@ -28,7 +28,10 @@ type membership struct {
 // choiceError is a failure of the choice between groups: the machine is named in several and none was chosen, or the
 // chosen group does not exist or does not name the machine. Things that only read a part of the settings (the prefix of
 // the log files) must not swallow it.
-type choiceError struct{ error }
+type choiceError struct {
+	error
+	groups []string // several groups name the machine and none was chosen: these
+}
 
 func (e choiceError) Unwrap() error { return e.error }
 
@@ -128,7 +131,7 @@ func memberOf(dir, machine string, env settings.Env) (membership, error) {
 	case 1:
 		m.name, m.file = files[0], GroupFileOf(dir, files[0])
 	default:
-		return m, choiceError{fmt.Errorf("The machine %s is named in the groups %s: say which one applies with --in-group, like viper up %s --in-group %s", machine, strings.Join(files, ", "), machine, files[0])}
+		return m, choiceError{error: fmt.Errorf("The machine %s is named in the groups %s: say which one applies with --in-group, like viper up %s --in-group %s", machine, strings.Join(files, ", "), machine, files[0]), groups: files}
 	}
 	return m, nil
 }
@@ -139,10 +142,10 @@ func memberOf(dir, machine string, env settings.Env) (membership, error) {
 func memberIn(dir, machine string, env settings.Env) (membership, error) {
 	grp, err := LoadGroup(dir, env.Group, env)
 	if err != nil {
-		return membership{}, choiceError{err}
+		return membership{}, choiceError{error: err}
 	}
 	if !slices.Contains(grp.Machines, machine) {
-		return membership{}, choiceError{fmt.Errorf("The machine %s is not in the group %s (groups/%s.env names %s)", machine, env.Group, env.Group, strings.Join(grp.Machines, ", "))}
+		return membership{}, choiceError{error: fmt.Errorf("The machine %s is not in the group %s (groups/%s.env names %s)", machine, env.Group, env.Group, strings.Join(grp.Machines, ", "))}
 	}
 	others := 0
 	for _, n := range groupFiles(dir) {

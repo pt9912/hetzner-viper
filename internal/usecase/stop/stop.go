@@ -59,7 +59,7 @@ func (d Deps) cleanupLocal(c *model.Machine, errOut io.Writer) {
 }
 
 func stateFiles(c *model.Machine) []string {
-	return []string{c.SSHConfig, c.KnownPin, c.IPState, c.IDState, c.WorkspaceState, c.ReadyState, c.RepoState}
+	return []string{c.SSHConfig, c.KnownPin, c.IPState, c.IDState, c.WorkspaceState, c.ReadyState, c.RepoState, c.GroupState}
 }
 
 func (d Deps) deleteDNS(ctx context.Context, c *model.Machine, ip string, out, errOut io.Writer) {
