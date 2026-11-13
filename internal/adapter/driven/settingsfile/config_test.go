@@ -649,3 +649,46 @@ func TestTheImageOfAReleaseIsTheDefaultOfK8sImageAndComposeImage(t *testing.T) {
 		t.Errorf("%v %q", err, c.Get("K8S_IMAGE"))
 	}
 }
+
+// A machine may be named in several groups. Which group's settings apply is said by the caller (viper up web --in-group dev);
+// without it, a machine in several groups is an error that says how to choose.
+func TestAMachineInSeveralGroupsIsLookedAtInTheGroupTheCallerNames(t *testing.T) {
+	dir := setupDir(t, "DNS_DOMAIN=example.com\n", "")
+	if err := os.MkdirAll(filepath.Join(dir, "groups"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, text string) {
+		if err := os.WriteFile(filepath.Join(dir, "groups", name+".env"), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("dev", "GROUP_MACHINES=web,api\nNATS_ENABLED=true\n")
+	write("test", "GROUP_MACHINES=web\n")
+	load := func(machine, group string) (*model.Machine, error) {
+		return settingsfile.Load(dir, machine, settings.Env{Lookup: envOf(nil), Home: "/h", Group: group}, false)
+	}
+	if _, err := load("web", ""); err == nil || !strings.Contains(err.Error(), "named in the groups dev, test") || !strings.Contains(err.Error(), "--in-group") {
+		t.Errorf("without a choice: %v", err)
+	}
+	c, err := load("web", "dev")
+	if err != nil || c.Group != "dev" || !c.NATS.Enabled || c.NATS.Group != "dev" {
+		t.Errorf("in dev: %+v %v", c, err)
+	}
+	c, err = load("web", "test")
+	if err != nil || c.Group != "test" || c.NATS.Enabled {
+		t.Errorf("in test: the settings of test, which has no NATS: %+v %v", c, err)
+	}
+	if _, err := load("web", "nope"); err == nil || !strings.Contains(err.Error(), "No group nope") {
+		t.Errorf("a group that does not exist: %v", err)
+	}
+	if _, err := load("api", "test"); err == nil || !strings.Contains(err.Error(), "The machine api is not in the group test") {
+		t.Errorf("a machine that the group does not name: %v", err)
+	}
+	// a machine in one group needs no choice, and a choice of that group is fine
+	if c, err := load("api", ""); err != nil || c.Group != "dev" {
+		t.Errorf("%+v %v", c, err)
+	}
+	if c, err := load("api", "dev"); err != nil || c.Group != "dev" {
+		t.Errorf("%+v %v", c, err)
+	}
+}

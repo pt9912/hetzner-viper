@@ -34,6 +34,7 @@ type natsGroup struct {
 
 func loadNatsGroup(o *options, env settings.Env, group string) (*natsGroup, error) {
 	o.group = group
+	env.Group = group // the machines of the group are looked at in it, whatever other group names them
 	g, err := groupMachines(o, env)
 	if err != nil {
 		return nil, err

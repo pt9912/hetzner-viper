@@ -36,7 +36,7 @@ func openVSCode(o *options, env settings.Env) error {
 }
 
 func nativeVSCode(o *options) error {
-	env, err := o.host().Env()
+	env, err := o.env()
 	if err != nil {
 		return err
 	}

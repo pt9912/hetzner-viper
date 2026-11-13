@@ -236,7 +236,7 @@ func showLog(o *options, env settings.Env, out io.Writer) error {
 }
 
 func nativeLog(o *options) error {
-	env, err := o.host().Env()
+	env, err := o.env()
 	if err != nil {
 		return err
 	}
@@ -244,7 +244,7 @@ func nativeLog(o *options) error {
 }
 
 func nativeSetup(o *options) error {
-	env, err := o.host().Env()
+	env, err := o.env()
 	if err != nil {
 		return err
 	}
@@ -252,7 +252,7 @@ func nativeSetup(o *options) error {
 }
 
 func nativeSSH(o *options) error {
-	env, err := o.host().Env()
+	env, err := o.env()
 	if err != nil {
 		return err
 	}
@@ -269,7 +269,7 @@ func nativeSSH(o *options) error {
 }
 
 func nativeDNS(o *options) error {
-	env, err := o.host().Env()
+	env, err := o.env()
 	if err != nil {
 		return err
 	}
@@ -298,7 +298,7 @@ func nativeK8sProxy(o *options) error { return runProxy(o, "k8s-proxy") }
 func nativeDockerProxy(o *options) error { return runProxy(o, "docker-proxy") }
 
 func runProxy(o *options, verb string) error {
-	env, err := o.host().Env()
+	env, err := o.env()
 	if err != nil {
 		return err
 	}

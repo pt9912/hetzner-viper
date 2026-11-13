@@ -43,7 +43,7 @@ func runPreflight(ctx context.Context, o *options, env settings.Env, stdout, std
 }
 
 func nativePreflight(o *options) error {
-	env, err := o.host().Env()
+	env, err := o.env()
 	if err != nil {
 		return err
 	}

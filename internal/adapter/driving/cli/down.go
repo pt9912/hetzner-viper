@@ -94,7 +94,7 @@ func nativeDown(o *options) error {
 	if err := o.host().need("ssh"); err != nil {
 		return err
 	}
-	env, err := o.host().Env()
+	env, err := o.env()
 	if err != nil {
 		return err
 	}

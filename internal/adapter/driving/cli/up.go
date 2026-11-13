@@ -62,7 +62,7 @@ func nativeUp(o *options) error {
 			return err
 		}
 	}
-	env, err := o.host().Env()
+	env, err := o.env()
 	if err != nil {
 		return err
 	}

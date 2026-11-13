@@ -24,7 +24,7 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/port/driving"
 )
 
-func TestGroupOptionsAreParsedAndExcludeAMachine(t *testing.T) {
+func TestGroupOptionsAreParsedAndInGroupNamesTheGroupOfOneMachine(t *testing.T) {
 	name, o, err := cli.Parse([]string{"check", "--group", "dev", "--parallel", "3"})
 	if err != nil || name != "check" || o.Group != "dev" || o.Parallel != 3 || o.Machine != "" {
 		t.Fatalf("%v %+v", err, o)
@@ -32,12 +32,21 @@ func TestGroupOptionsAreParsedAndExcludeAMachine(t *testing.T) {
 	if _, _, err := cli.Parse([]string{"ssh", "--group=dev", "--cmd", "uptime"}); err != nil {
 		t.Error(err)
 	}
+	// --in-group: one machine, with the settings of that group; --group alone: all machines of the group
+	for _, args := range [][]string{{"check", "web", "--in-group", "dev"}, {"up", "web", "--in-group", "dev"}, {"ssh", "web", "--in-group", "dev", "--cmd", "x"}, {"down", "web", "--in-group=dev"},
+		{"preflight", "web", "--in-group", "dev"}, {"dns", "web", "--in-group", "dev"}, {"vscode", "web", "--in-group", "dev"}, {"k8s-proxy", "web", "--in-group", "dev"}, {"docker-proxy", "web", "--in-group", "dev"}, {"log", "web", "--in-group", "dev"}} {
+		if _, o, err := cli.Parse(args); err != nil || o.Machine != "web" || o.Group != "" || o.Within != "dev" {
+			t.Errorf("%v: %+v %v", args, o, err)
+		}
+	}
 	for _, args := range [][]string{
-		{"check", "web", "--group", "dev"},
 		{"check", "--parallel", "0", "--group", "dev"},
 		{"check", "--parallel", "x", "--group", "dev"},
 		{"check"},
 		{"find", "--group", "dev"},
+		{"check", "web", "--group", "dev"}, // a machine and --group exclude each other
+		{"check", "--in-group", "dev"},     // --in-group goes with one machine
+		{"check", "--group", "dev", "--in-group", "dev"},
 	} {
 		if _, _, err := cli.Parse(args); err == nil {
 			t.Errorf("%v must be refused", args)

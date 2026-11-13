@@ -47,7 +47,7 @@ func runFind(ctx context.Context, o *options, env settings.Env, stdout, stderr i
 }
 
 func nativeFind(o *options) error {
-	env, err := o.host().Env()
+	env, err := o.env()
 	if err != nil {
 		return err
 	}

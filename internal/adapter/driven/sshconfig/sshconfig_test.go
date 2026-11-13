@@ -318,6 +318,26 @@ func TestWriteConfigKeepsALinkAndRemovesOldTemporaryFiles(t *testing.T) {
 	}
 }
 
+func TestTheProxyCommandNamesTheGroupTheMachineWasSetUpIn(t *testing.T) {
+	c := podConfig(t, "web")
+	c.Group = "dev"
+	if err := files().WriteConfig(c, ""); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(c.SSHConfig)
+	if !strings.Contains(string(b), `"--in-group" "dev" "web"`) {
+		t.Errorf("a machine that several groups name needs the group to find its settings:\n%s", b)
+	}
+	c.Group = ""
+	if err := files().WriteConfig(c, ""); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(c.SSHConfig)
+	if strings.Contains(string(b), "--in-group") {
+		t.Errorf("a machine in no group has none:\n%s", b)
+	}
+}
+
 func TestAComposeContainerIsReachedThroughDockerProxy(t *testing.T) {
 	c := podConfig(t, "web")
 	c.Provider = "compose"

@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 )
 
 type options struct {
@@ -30,6 +32,7 @@ type options struct {
 	parallel                  int                 // how many machines of a group at the same time (0: the default)
 	force, full, noCode, tmux bool
 	registry                  string // viper down: delete or keep a registry viper made ("" asks)
+	within                    string // the group a single machine is looked at in (viper up web --in-group dev)
 	// the need of viper find
 	cpu, disk                int
 	ram                      float64
@@ -63,7 +66,7 @@ var errHelp = errors.New("help")
 // isValueFlag reports whether the option takes a value.
 func isValueFlag(n string) bool {
 	switch n {
-	case "repo", "cmd", "dir", "group", "parallel", "cpu", "ram", "disk", "arch", "location", "provider", "vat", "to", "topic", "from", "timeout", "tag", "k3d":
+	case "repo", "cmd", "dir", "group", "in-group", "parallel", "cpu", "ram", "disk", "arch", "location", "provider", "vat", "to", "topic", "from", "timeout", "tag", "k3d":
 		return true
 	}
 	return false
@@ -73,19 +76,19 @@ func isValueFlag(n string) bool {
 func commands() map[string]command {
 	return map[string]command{
 		"setup":        {usage: "", machine: noMachine, run: nativeSetup},
-		"preflight":    {usage: "<machine> [--repo URL] | --group G [--repo URL] [--parallel N]", machine: needMachine, flags: []string{"repo", "group", "parallel"}, run: nativePreflight},
-		"up":           {usage: "<machine> [--repo URL] [--no-code] | --group G [--repo URL] [--parallel N]", machine: needMachine, flags: []string{"repo", "no-code", "group", "parallel"}, run: nativeUp},
-		"check":        {usage: "<machine> | --group G [--parallel N]", machine: needMachine, flags: []string{"group", "parallel"}, run: nativeCheck},
-		"ssh":          {usage: "<machine> [--cmd COMMAND | --tmux] | --group G --cmd COMMAND [--parallel N]", machine: needMachine, flags: []string{"cmd", "tmux", "group", "parallel"}, run: nativeSSH},
-		"down":         {usage: "<machine> [--force] [--delete-registry|--keep-registry] | --group G [--force] [--delete-registry|--keep-registry] [--parallel N]", machine: needMachine, flags: []string{"force", "group", "parallel", "delete-registry", "keep-registry"}, run: nativeDown},
-		"vscode":       {usage: "<machine>", machine: needMachine, run: nativeVSCode},
-		"dns":          {usage: "<machine>", machine: needMachine, run: nativeDNS},
+		"preflight":    {usage: "<machine> [--in-group G] [--repo URL] | --group G [--repo URL] [--parallel N]", machine: needMachine, flags: []string{"repo", "group", "in-group", "parallel"}, run: nativePreflight},
+		"up":           {usage: "<machine> [--in-group G] [--repo URL] [--no-code] | --group G [--repo URL] [--parallel N]", machine: needMachine, flags: []string{"repo", "no-code", "group", "in-group", "parallel"}, run: nativeUp},
+		"check":        {usage: "<machine> [--in-group G] | --group G [--parallel N]", machine: needMachine, flags: []string{"group", "in-group", "parallel"}, run: nativeCheck},
+		"ssh":          {usage: "<machine> [--in-group G] [--cmd COMMAND | --tmux] | --group G --cmd COMMAND [--parallel N]", machine: needMachine, flags: []string{"cmd", "tmux", "group", "in-group", "parallel"}, run: nativeSSH},
+		"down":         {usage: "<machine> [--in-group G] [--force] [--delete-registry|--keep-registry] | --group G [--force] [--delete-registry|--keep-registry] [--parallel N]", machine: needMachine, flags: []string{"force", "group", "in-group", "parallel", "delete-registry", "keep-registry"}, run: nativeDown},
+		"vscode":       {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeVSCode},
+		"dns":          {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeDNS},
 		"find":         {usage: "[--cpu N] [--ram GB] [--disk GB] [--arch x86|arm] [--location L] [--provider P] [--vat PERCENT]", machine: noMachine, flags: []string{"cpu", "ram", "disk", "arch", "location", "provider", "vat"}, run: nativeFind},
-		"log":          {usage: "[<machine>] [--full]", machine: maybeMachine, flags: []string{"full"}, run: nativeLog},
+		"log":          {usage: "[<machine> [--in-group G]] [--full]", machine: maybeMachine, flags: []string{"full", "in-group"}, run: nativeLog},
 		"nats":         {usage: "peers|listen|send|broadcast|request|init|revoke GROUP [TEXT|-] [--from MACHINE] [--to MACHINE] [--topic T[,T...]] [--timeout S] [--query] [--all] [--json] [--yes]", machine: restArgs, flags: []string{"to", "topic", "from", "timeout", "query", "all", "json", "yes"}, run: nativeNats},
 		"image":        {usage: "build [--tag NAME:TAG] [--k3d CLUSTER]", machine: restArgs, flags: []string{"tag", "k3d"}, run: nativeImage},
-		"k8s-proxy":    {usage: "<machine>", machine: needMachine, run: nativeK8sProxy},
-		"docker-proxy": {usage: "<machine>", machine: needMachine, run: nativeDockerProxy},
+		"k8s-proxy":    {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeK8sProxy},
+		"docker-proxy": {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeDockerProxy},
 		"mcp-binary":   {usage: "--arch amd64|arm64", machine: noMachine, flags: []string{"arch"}, run: nativeMCPBinary},
 		"version":      {usage: "", machine: noMachine},
 	}
@@ -150,7 +153,10 @@ func setMachine(o *options, name string, c command, positional []string) error {
 		o.machine = positional[0]
 	}
 	if o.group != "" && o.machine != "" {
-		return fmt.Errorf("viper %s: a machine and --group exclude each other\n%s", name, usageLine(name))
+		return fmt.Errorf("viper %s: a machine and --group exclude each other (--group G is all machines of the group; one machine as the group G has it: viper %s %s --in-group %s)\n%s", name, name, o.machine, o.group, usageLine(name))
+	}
+	if o.within != "" && o.machine == "" {
+		return fmt.Errorf("viper %s: --in-group G goes with one machine (all machines of a group: --group G)\n%s", name, usageLine(name))
 	}
 	if c.machine == needMachine && o.machine == "" && o.group == "" {
 		return fmt.Errorf("%s", usageLine(name))
@@ -272,6 +278,15 @@ func setNumber(o *options, name, flag, v string) error {
 }
 
 // setValue stores the value of an option that takes one.
+// setGroup reads --group (all machines of a group) and --in-group (one machine, as that group has it).
+func setGroup(o *options, flag, v string) {
+	if flag == "group" {
+		o.group = v
+		return
+	}
+	o.within = v
+}
+
 func setValue(o *options, name, flag, v string) error {
 	switch flag {
 	case "repo":
@@ -288,8 +303,8 @@ func setValue(o *options, name, flag, v string) error {
 		o.provider = v
 	case "vat":
 		return setVAT(o, name, v)
-	case "group":
-		o.group = v
+	case "group", "in-group":
+		setGroup(o, flag, v)
 	case "to", "topic", "from", "timeout", "tag", "k3d":
 		return setNatsValue(o, name, flag, v)
 	case "parallel":
@@ -351,4 +366,15 @@ func setVAT(o *options, name, v string) error {
 	}
 	o.vat, o.hasVAT = x, true
 	return nil
+}
+
+// env is the environment of the settings. A machine that is looked at in a group (viper up web --in-group dev), or that is a
+// member of the group the command works on, gets that group named, which decides between several groups that name it.
+func (o *options) env() (settings.Env, error) {
+	e, err := o.host().Env()
+	e.Group = o.within
+	if o.group != "" {
+		e.Group = o.group
+	}
+	return e, err
 }

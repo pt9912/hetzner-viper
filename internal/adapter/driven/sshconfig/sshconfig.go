@@ -92,7 +92,11 @@ func proxyCommand(c *model.Machine) (string, error) {
 		return "", err
 	}
 	// on Windows the paths have backslashes, which the quoting below would have to refuse; Windows takes slashes too
-	parts := []string{filepath.ToSlash(exe), c.ProxyVerb(), "--dir", filepath.ToSlash(dir), c.Name}
+	parts := []string{filepath.ToSlash(exe), c.ProxyVerb(), "--dir", filepath.ToSlash(dir)}
+	if c.Group != "" { // the group the machine was set up in: a machine that several groups name needs it to find its settings
+		parts = append(parts, "--in-group", c.Group)
+	}
+	parts = append(parts, c.Name)
 	for i, p := range parts {
 		if strings.ContainsAny(p, "\"\n\r\\'$`") {
 			return "", fmt.Errorf("the ProxyCommand cannot hold %q (a quote, a backslash, a dollar sign, a backtick or a line break)", p)

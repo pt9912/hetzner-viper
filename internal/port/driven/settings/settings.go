@@ -12,6 +12,9 @@ type Env struct {
 	// Version is the version of viper ("v0.18.0"; "dev" or "v0.18.0-3-gabc" for a build that is not a release). The machine
 	// image of a release is published under it, which makes it the default of K8S_IMAGE and COMPOSE_IMAGE.
 	Version string
+	// Group is the group a machine is looked at in ("" if the settings find it). A machine may be named in several groups;
+	// then the group says whose settings apply (viper up web --group dev). It must name the machine.
+	Group string
 }
 
 // Getenv is the value of an environment variable, "" if it is not set.

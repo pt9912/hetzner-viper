@@ -48,6 +48,7 @@ func runGroupDown(ctx context.Context, o *options, env settings.Env, in io.Reade
 	}
 	taskOf := func(m string) driving.GroupTask {
 		mo := *o
+		mo.within = o.group
 		mo.machine, mo.group, mo.ask = m, "", askFor(m)
 		return driving.GroupTask{Machine: m, Run: ws.task(m, func(ctx context.Context, out, errOut io.Writer) error {
 			return runDown(ctx, &mo, env, nil, out, errOut)
