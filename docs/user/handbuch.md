@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.110  
+Version: 1.111  
 Software-Version: v0.21.0  
 Stand: 13.11.2026  
 
@@ -1562,3 +1562,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.108 | v0.21.0 | Release v0.21.0: die Änderungen 1.103 bis 1.107 (Preflight prüft `k3d`; UTF-8-Sprachumgebung im Image; freier Platz des Heimverzeichnisses in `viper check`; MCP-Werkzeug `topics`; `viper nats topics`). |
 | 1.109 | nach v0.21.0 | `viper nats topics` zeigt zuerst die festen Themen aus den Einstellungen (`NATS_MCP_TOPICS`) je Rechner, ohne dass eine Sitzung laufen muss. |
 | 1.110 | nach v0.21.0 | Ein Rechner in mehreren Gruppen wird in der Gruppe verwaltet, in der er gestartet wurde (`viper up` merkt sie sich bis `viper down`): `ssh`, `check`, `down` usw. brauchen dann kein `--in-group`, eine andere Gruppe wird abgelehnt. |
+| 1.111 | nach v0.21.0 | Nachtrag zu 1.110: auch `viper log` findet die Gruppe, in der der Rechner läuft; `viper nats` lässt einen Rechner, der in einer anderen Gruppe läuft, mit einem Hinweis aus, statt abzubrechen. |

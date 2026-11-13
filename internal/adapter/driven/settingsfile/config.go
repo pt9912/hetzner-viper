@@ -82,6 +82,10 @@ func Prefix(dir, machine string, env settings.Env) (string, error) {
 	grp, err := memberOf(dir, machine, env)
 	var ce choiceError
 	if errors.As(err, &ce) {
+		if g := startedIn(dir, machine, env, ce.groups); env.Group == "" && g != "" { // the group it runs in applies
+			env.Group = g
+			return Prefix(dir, machine, env)
+		}
 		return "", ce.error
 	}
 	if err == nil && grp.file != "" {
@@ -139,7 +143,7 @@ func runsElsewhere(dir string, c *model.Machine, env settings.Env) error {
 	if g, err := LoadGroup(dir, rec, env); err != nil || !slices.Contains(g.Machines, c.Name) {
 		return nil
 	}
-	return choiceError{error: fmt.Errorf("The machine %s runs in the group %s (it was started there) and is managed there: add --in-group %s. To start it in the group %s: viper down %s --in-group %s first", c.Name, rec, rec, c.Group, c.Name, rec)}
+	return &model.ElsewhereError{Machine: c.Name, Running: rec, Asked: c.Group}
 }
 
 func readTrim(path string) string {

@@ -766,6 +766,9 @@ func TestAMachineIsManagedInTheGroupItWasStartedIn(t *testing.T) {
 	if c, err := load(""); err != nil || c.Group != "dev" || !c.GroupChosen {
 		t.Errorf("the group it was started in applies without --in-group: %v %+v", err, c)
 	}
+	if p, err := settingsfile.Prefix(dir, "web", settings.Env{Lookup: envOf(nil), Home: home}); err != nil || p != "claude" {
+		t.Errorf("the prefix of a machine that runs in a group is found without --in-group (viper log): %q %v", p, err)
+	}
 	if _, err := load("test"); err == nil || !strings.Contains(err.Error(), "runs in the group dev") || !strings.Contains(err.Error(), "viper down web --in-group dev") {
 		t.Errorf("another group is refused with the way out: %v", err)
 	}

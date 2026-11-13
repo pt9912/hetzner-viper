@@ -42,6 +42,11 @@ func loadNatsGroup(o *options, env settings.Env, group string) (*natsGroup, erro
 	ng := &natsGroup{name: group, order: g.Machines, ms: map[string]natsMachine{}}
 	for _, name := range g.Machines {
 		c, err := o.host().Services.Settings.Load(settingsDir(o), name, env, false)
+		var away *model.ElsewhereError
+		if errors.As(err, &away) { // it runs as a machine of another group: it is not reachable as one of this
+			fmt.Fprintf(o.host().Stderr, "Note: %s runs in the group %s and is left out of %s.\n", name, away.Running, group)
+			continue
+		}
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
