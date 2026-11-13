@@ -148,7 +148,7 @@ func TestStopUnreachableNeedsForce(t *testing.T) {
 }
 
 func (e *Env) leftover(name string) string {
-	return filepath.Join(e.Home, ".local", "state", "hetzner-claude", "servers", "claude", name)
+	return filepath.Join(e.Home, ".local", "state", "viper", "servers", "claude", name)
 }
 
 func TestStopOfAbsentServerAsksBeforeCleanup(t *testing.T) {

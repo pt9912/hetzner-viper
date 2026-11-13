@@ -125,7 +125,7 @@ func TestGatewayUrlWithCredentialsIsNotShown(t *testing.T) {
 		t.Error("the credential is shown")
 	}
 	for _, f := range []string{"events.log", "logs/claude-web.log"} {
-		b, _ := os.ReadFile(filepath.Join(e.Home, ".local", "state", "hetzner-claude", f))
+		b, _ := os.ReadFile(filepath.Join(e.Home, ".local", "state", "viper", f))
 		if strings.Contains(string(b), "gw_secret_5") {
 			t.Errorf("in %s", f)
 		}

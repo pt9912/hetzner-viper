@@ -153,7 +153,7 @@ func TestLoadDerivesNamesAndPaths(t *testing.T) {
 		c.ServerName: "lab-web", c.SSHAlias: "hetzner-lab-web", c.DNSHost: "lab-web.example.com", c.KeyName: "lab-login",
 		c.FirewallName: "lab-ssh", c.SSHKey: "/home/me/.ssh/k", c.ServerType: "cpx52", c.ServerLocation: "fsn1", c.ServerImage: "ubuntu-26.04",
 		c.WorkspaceDir: settingsfile.DefaultWorkspace, c.SSHConfig: "/home/me/.ssh/config_hetzner_lab-web",
-		c.KnownPin: "/home/me/.ssh/known_hosts_hetzner_lab-web", c.StateDir: "/home/me/.local/state/hetzner-claude",
+		c.KnownPin: "/home/me/.ssh/known_hosts_hetzner_lab-web", c.StateDir: "/home/me/.local/state/viper",
 	} {
 		if got != want {
 			t.Errorf("got %q, want %q", got, want)
@@ -793,7 +793,7 @@ func TestAMachineIsManagedInTheGroupItWasStartedIn(t *testing.T) {
 func TestStateFilesLieInTheDirectoryOfThePrefixAndOldOnesMoveThere(t *testing.T) {
 	dir := setupDir(t, "DNS_DOMAIN=example.com\nSERVER_PREFIX=lab\n", "")
 	home := t.TempDir()
-	root := filepath.Join(home, ".local", "state", "hetzner-claude")
+	root := filepath.Join(home, ".local", "state", "viper")
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}

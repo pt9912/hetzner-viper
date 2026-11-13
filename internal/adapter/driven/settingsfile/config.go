@@ -424,7 +424,7 @@ func derivePaths(c *model.Machine, home string) {
 	c.KeyName = c.ServerPrefix + "-login"
 	c.FirewallName = c.ServerPrefix + "-ssh"
 	c.SSHDir = filepath.Join(home, ".ssh")
-	c.StateDir = filepath.Join(home, ".local", "state", "hetzner-claude")
+	c.StateDir = model.StateDir(home)
 	c.MachineStateDir = filepath.Join(c.StateDir, "servers", c.ServerPrefix) // the files of the machines of one prefix lie together
 	c.SSHConfig = filepath.Join(c.SSHDir, "config_hetzner_"+c.ServerName)
 	c.KnownPin = filepath.Join(c.SSHDir, "known_hosts_hetzner_"+c.ServerName)

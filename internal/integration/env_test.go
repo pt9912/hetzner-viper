@@ -326,13 +326,13 @@ func (e *Env) Down(name string, force bool, answers ...string) Result {
 
 // Events is events.log of the computer.
 func (e *Env) Events() string {
-	b, _ := os.ReadFile(filepath.Join(e.Home, ".local", "state", "hetzner-claude", "events.log"))
+	b, _ := os.ReadFile(filepath.Join(e.Home, ".local", "state", "viper", "events.log"))
 	return string(b)
 }
 
 // Log is the transcript of the machine.
 func (e *Env) Log(server string) string {
-	b, _ := os.ReadFile(filepath.Join(e.Home, ".local", "state", "hetzner-claude", "logs", server+".log"))
+	b, _ := os.ReadFile(filepath.Join(e.Home, ".local", "state", "viper", "logs", server+".log"))
 	return string(b)
 }
 

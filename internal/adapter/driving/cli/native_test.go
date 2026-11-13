@@ -162,7 +162,7 @@ func TestLogReadsThePrefixAndShowsTheMachine(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("DNS_DOMAIN=example.com\nSERVER_PREFIX=cs # c\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	state := filepath.Join(home, ".local", "state", "hetzner-claude")
+	state := filepath.Join(home, ".local", "state", "viper")
 	if err := os.MkdirAll(filepath.Join(state, "logs"), 0o700); err != nil {
 		t.Fatal(err)
 	}

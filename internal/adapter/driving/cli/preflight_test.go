@@ -83,7 +83,7 @@ func TestPreflightLogsTheRunAndItsOutcome(t *testing.T) {
 	if !strings.Contains(out.String(), "Preflight OK.") {
 		t.Errorf("output %q", out.String())
 	}
-	state := filepath.Join(home, ".local", "state", "hetzner-claude")
+	state := filepath.Join(home, ".local", "state", "viper")
 	events, _ := os.ReadFile(filepath.Join(state, "events.log"))
 	if !strings.HasSuffix(string(events), " claude-web               preflight preflight OK\n") {
 		t.Errorf("events %q", events)
@@ -101,7 +101,7 @@ func TestPreflightProblemsGiveExitStatus1(t *testing.T) {
 	if cli.ExitCode(err) != 1 || !strings.Contains(out.String(), "Preflight: 1 problem(s); nothing was created.") {
 		t.Fatalf("%v / %q", err, out.String())
 	}
-	events, _ := os.ReadFile(filepath.Join(home, ".local", "state", "hetzner-claude", "events.log"))
+	events, _ := os.ReadFile(filepath.Join(home, ".local", "state", "viper", "events.log"))
 	if !strings.HasSuffix(string(events), "preflight preflight: 1 problem(s)\n") || strings.Contains(string(events), "FAILED") {
 		t.Errorf("events %q", events)
 	}
@@ -115,7 +115,7 @@ func TestPreflightNeedsTheSettingsBeforeAnything(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "Missing settings: HCLOUD_TOKEN CLOUDFLARE_API_TOKEN CLOUDFLARE_ZONE_ID") {
 		t.Errorf("got %v", err)
 	}
-	if _, serr := os.Stat(filepath.Join(home, ".local", "state", "hetzner-claude")); serr == nil {
+	if _, serr := os.Stat(filepath.Join(home, ".local", "state", "viper")); serr == nil {
 		t.Error("nothing is logged for a run that did not start")
 	}
 }
@@ -146,7 +146,7 @@ func (s serverHetzner) ServerByName(context.Context, string) (*model.Server, err
 
 func TestCheckLogsTheRunAndItsOutcome(t *testing.T) {
 	env, home, o := preflightSetup(t, true)
-	state := filepath.Join(home, ".local", "state", "hetzner-claude")
+	state := filepath.Join(home, ".local", "state", "viper")
 	var probeOK = true
 	o.Host.Services.Check = func(c *model.Machine) driving.Check {
 		return check.Service{Deps: check.Deps{
@@ -212,7 +212,7 @@ func (dnsDeleter) Delete(context.Context, string, string) (string, error) {
 
 func TestDownReadsItsAnswersFromAPipeAndLogsTheOutcome(t *testing.T) {
 	env, home, o := preflightSetup(t, true)
-	state := filepath.Join(home, ".local", "state", "hetzner-claude")
+	state := filepath.Join(home, ".local", "state", "viper")
 	var deleted []string
 	o.Host.Services.Down = func(c *model.Machine, do driving.DownOptions) driving.Down {
 		return stop.Service{Deps: stop.Deps{
@@ -277,7 +277,7 @@ func TestUpStopsAtPreflightProblemsAndLogsThem(t *testing.T) {
 	if !strings.Contains(errb.String(), "Preflight: 1 problem(s); nothing was created.") {
 		t.Errorf("err %q", errb.String())
 	}
-	events, _ := os.ReadFile(filepath.Join(home, ".local", "state", "hetzner-claude", "events.log"))
+	events, _ := os.ReadFile(filepath.Join(home, ".local", "state", "viper", "events.log"))
 	if !strings.Contains(string(events), " up        start (cpx32, fsn1, ubuntu-26.04)\n") || !strings.HasSuffix(string(events), "up        FAILED (exit 1; see logs/claude-web.log)\n") {
 		t.Errorf("events %q", events)
 	}
@@ -306,7 +306,7 @@ func (f failIfCreated) CreateServer(context.Context, model.ServerSpec) (*model.S
 
 func TestInterruptionAtAPromptIsLoggedNotAFailure(t *testing.T) {
 	env, home, o := preflightSetup(t, true)
-	state := filepath.Join(home, ".local", "state", "hetzner-claude")
+	state := filepath.Join(home, ".local", "state", "viper")
 	var deleted []string
 	o.Host.Services.Down = func(c *model.Machine, do driving.DownOptions) driving.Down {
 		return stop.Service{Deps: stop.Deps{

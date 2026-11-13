@@ -227,7 +227,7 @@ func dnsName(o *options, env settings.Env, out io.Writer) error {
 // showLog shows the events of all machines or one machine, or its complete output.
 func showLog(o *options, env settings.Env, out io.Writer) error {
 	home := env.Home
-	state := filepath.Join(home, ".local", "state", "hetzner-claude")
+	state := model.StateDir(home)
 	server := ""
 	if o.machine != "" {
 		prefix, err := o.host().Services.Settings.Prefix(settingsDir(o), o.machine, env)

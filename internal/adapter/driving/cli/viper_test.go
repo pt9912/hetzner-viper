@@ -247,7 +247,7 @@ func TestDnsNameWithoutDNSGivesTheAddress(t *testing.T) {
 	if err := cli.DNSName(opts, env, &out); err != nil || !strings.Contains(out.String(), "no address is recorded for lab-web") {
 		t.Errorf("not running: %q %v", out.String(), err)
 	}
-	state := filepath.Join(home, ".local", "state", "hetzner-claude")
+	state := filepath.Join(home, ".local", "state", "viper")
 	if err := os.MkdirAll(state, 0o700); err != nil {
 		t.Fatal(err)
 	}

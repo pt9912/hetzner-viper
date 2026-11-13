@@ -124,3 +124,35 @@ func TestOperatorKeyFileMovesAnOldKey(t *testing.T) {
 		t.Error("the old key is still there")
 	}
 }
+
+// The state directory of versions up to v0.21.1 is moved to ~/.local/state/viper as a whole.
+func TestStateDirMovesTheOldDirectory(t *testing.T) {
+	home := t.TempDir()
+	old := filepath.Join(home, ".local", "state", "hetzner-claude")
+	if err := os.MkdirAll(filepath.Join(old, "servers", "claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(old, "events.log"), []byte("x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := model.StateDir(home)
+	if want := filepath.Join(home, ".local", "state", "viper"); dir != want {
+		t.Fatalf("%s, want %s", dir, want)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "events.log")); err != nil || string(b) != "x\n" {
+		t.Errorf("not moved: %q %v", b, err)
+	}
+	if _, err := os.Stat(old); err == nil {
+		t.Error("the old directory is still there")
+	}
+	// a second call and a new directory next to an old one: nothing is merged or lost
+	if err := os.MkdirAll(old, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if model.StateDir(home) != dir {
+		t.Error("changed")
+	}
+	if _, err := os.Stat(old); err != nil {
+		t.Error("an old directory next to a new one is left alone")
+	}
+}

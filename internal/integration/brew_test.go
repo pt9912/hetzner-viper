@@ -131,7 +131,7 @@ func TestCredentialsInTapURLsAreRefusedAndNeverShownOrLogged(t *testing.T) {
 	r.Has(t, "credentials in the tap URL (acme/tools=https://***@git.example.invalid/tools.git)")
 	r.HasNot(t, "tap_secret_7")
 	for _, f := range []string{"events.log", "logs/claude-web.log"} {
-		b, _ := os.ReadFile(filepath.Join(e.Home, ".local", "state", "hetzner-claude", f))
+		b, _ := os.ReadFile(filepath.Join(e.Home, ".local", "state", "viper", f))
 		if strings.Contains(string(b), "tap_secret_7") {
 			t.Errorf("the secret is in %s", f)
 		}

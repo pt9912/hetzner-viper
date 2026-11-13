@@ -87,7 +87,7 @@ func TestCodeServerPasswordNeverInArgvLogsOrUserData(t *testing.T) {
 		}
 	}
 	for _, f := range []string{"events.log", "logs/claude-web.log"} {
-		b, _ := os.ReadFile(filepath.Join(e.Home, ".local", "state", "hetzner-claude", f))
+		b, _ := os.ReadFile(filepath.Join(e.Home, ".local", "state", "viper", f))
 		if strings.Contains(string(b), "secret-pw-0042") {
 			t.Errorf("in %s", f)
 		}

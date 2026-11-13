@@ -189,7 +189,7 @@ func TestUpAndDownAreLogged(t *testing.T) {
 		t.Errorf("nested preflight logged %d times", n)
 	}
 	for _, f := range []string{"events.log", "logs/claude-web.log"} {
-		if m := mode(t, filepath.Join(e.Home, ".local", "state", "hetzner-claude", f)); m != 0o600 {
+		if m := mode(t, filepath.Join(e.Home, ".local", "state", "viper", f)); m != 0o600 {
 			t.Errorf("%s mode %v", f, m)
 		}
 	}
@@ -236,7 +236,7 @@ func TestLogsContainNoTokens(t *testing.T) {
 	e.MustUp("web", "")
 	e.Check("web")
 	e.Down("web", false, "DELETE")
-	err := filepath.Walk(filepath.Join(e.Home, ".local", "state", "hetzner-claude"), func(p string, info os.FileInfo, err error) error {
+	err := filepath.Walk(filepath.Join(e.Home, ".local", "state", "viper"), func(p string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return err
 		}
