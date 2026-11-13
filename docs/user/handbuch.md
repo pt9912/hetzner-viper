@@ -1,7 +1,7 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.117  
-Software-Version: v0.21.1  
+Version: 1.118  
+Software-Version: v0.21.2  
 Stand: 13.11.2026  
 
 ## 1. Einleitung
@@ -89,9 +89,9 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.20.1_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.20.1_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
 2. Prüfen Sie die Datei und machen Sie sie ausführbar:
    ```bash
-   grep viper_v0.21.1_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
-   chmod +x viper_v0.21.1_linux_amd64
-   mv viper_v0.21.1_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
+   grep viper_v0.21.2_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
+   chmod +x viper_v0.21.2_linux_amd64
+   mv viper_v0.21.2_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
    ```
 3. Prüfen Sie die Installation: `viper version`.
 
@@ -209,7 +209,7 @@ Sie können `viper` auch ohne Cloud-Konto ausprobieren und nutzen: Der Rechner i
 #### Vorgehen
 
 1. **Image beschaffen.** Diesen Schritt können Sie überspringen: Ohne `COMPOSE_IMAGE` bzw. `K8S_IMAGE` nimmt `viper` das veröffentlichte Image seiner Version, `ghcr.io/pt9912/viper-machine:<Version>`; Compose und ein k3d-Cluster laden es selbst. Für ein eigenes Image oder eine andere Version gehen Sie auf einem von zwei Wegen:
-   * **Laden** (schnell): `docker pull ghcr.io/pt9912/viper-machine:v0.21.1`, mit der Version, die `viper version` meldet. Bei Docker Compose können Sie das Laden `viper up` überlassen: Der Name in `COMPOSE_IMAGE` genügt. Das Image ist öffentlich und mehrere GB groß; das Image gibt es für **amd64 und arm64**, Docker wählt die passende Architektur. Der Name ist `ghcr.io/pt9912/viper-machine:v0.20.1`. Bei k3d (vorher `k3d cluster create viper`) lädt der Cluster das öffentliche Image beim ersten Start selbst, das dauert etwa eine halbe Minute; Sie müssen es nicht einspielen. **Jeder Knoten lädt es für sich**, auf dem ein Rechner läuft: Hat der Cluster mehrere Knoten, laden Sie es mehrmals aus dem Internet. Dann spielen Sie das geladene Image mit `k3d image import ghcr.io/pt9912/viper-machine:v0.20.1 -c viper` ein (kopiert es auf alle Knoten, ohne Download) oder nutzen eine gemeinsame Registry (unten).
+   * **Laden** (schnell): `docker pull ghcr.io/pt9912/viper-machine:v0.21.2`, mit der Version, die `viper version` meldet. Bei Docker Compose können Sie das Laden `viper up` überlassen: Der Name in `COMPOSE_IMAGE` genügt. Das Image ist öffentlich und mehrere GB groß; das Image gibt es für **amd64 und arm64**, Docker wählt die passende Architektur. Der Name ist `ghcr.io/pt9912/viper-machine:v0.20.1`. Bei k3d (vorher `k3d cluster create viper`) lädt der Cluster das öffentliche Image beim ersten Start selbst, das dauert etwa eine halbe Minute; Sie müssen es nicht einspielen. **Jeder Knoten lädt es für sich**, auf dem ein Rechner läuft: Hat der Cluster mehrere Knoten, laden Sie es mehrmals aus dem Internet. Dann spielen Sie das geladene Image mit `k3d image import ghcr.io/pt9912/viper-machine:v0.20.1 -c viper` ein (kopiert es auf alle Knoten, ohne Download) oder nutzen eine gemeinsame Registry (unten).
    * **Bauen:** `viper image build` (für k3d: erst `k3d cluster create viper`, dann `viper image build --k3d viper`). Das dauert beim ersten Mal einige Minuten. Die Ausgabe nennt den Namen des Images.
 2. **Einstellungen** in `machines/lokal.env.local` (die Zeile mit dem Image brauchen Sie nur für ein selbst gebautes oder anderes Image):
 
@@ -247,7 +247,7 @@ Löschen Sie Cluster oft oder haben Sie Cluster mit mehreren Knoten, lädt sonst
 PROVIDER=kubernetes
 DNS_PROVIDER=none
 SERVER_LOCATION=k3d-viper
-K8S_IMAGE=ghcr.io/pt9912/viper-machine:v0.21.1
+K8S_IMAGE=ghcr.io/pt9912/viper-machine:v0.21.2
 K3D_REGISTRY=viper-registry
 K3D_CLUSTER_CREATE=1
 K3D_AGENTS=2
@@ -1571,3 +1571,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.115 | nach v0.21.1 | Die Zustandsdateien liegen in `~/.local/state/hetzner-claude/servers/<präfix>/` (statt `<präfix>/`), der Schlüssel des Betreibers in `groups/<gruppe>/operator.nk` (statt `nats/<gruppe>/`): So kann kein `SERVER_PREFIX` mit `nats`, `logs` oder `compose` mit den anderen Ordnern zusammenfallen. Dateien aus v0.21.0 und v0.21.1 zieht `viper` selbst um. |
 | 1.116 | nach v0.21.1 | Das Zustandsverzeichnis heißt `~/.local/state/viper` (vorher `~/.local/state/hetzner-claude`); `viper` zieht das alte Verzeichnis beim nächsten Befehl als Ganzes um. |
 | 1.117 | nach v0.21.1 | Der Kommentar an den DNS-Einträgen von `viper` heißt `managed by viper` (vorher `managed by hetzner-claude`); alte Einträge bleiben seine eigenen und bekommen den neuen Kommentar beim nächsten Schreiben. |
+| 1.118 | v0.21.2 | Release v0.21.2: die Änderungen 1.114 bis 1.117 (`viper nats --file`; Zustandsverzeichnis `~/.local/state/viper` mit `servers/` und `groups/`; DNS-Kommentar `managed by viper`). |
