@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +17,7 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/sshconfig"
 	"github.com/pt9912/hetzner-viper/internal/model"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
 	portsettings "github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"github.com/pt9912/hetzner-viper/internal/port/driving"
 	"github.com/pt9912/hetzner-viper/internal/servertest"
@@ -642,5 +645,96 @@ func TestAbsentServerWithFailingDeletionOfLeftoversSaysSoAndKeepsTheLocalFiles(t
 	}
 	if _, err := os.Stat(w.c.IDState); err != nil {
 		t.Error("the local files stay while the provider's leftovers are not gone")
+	}
+}
+
+// infraHz is a provider that made something besides the machines, which goes with the last one: a cluster (it goes) and a
+// registry (the user decides).
+type infraHz struct {
+	hz
+	left    []cloud.InfrastructureItem
+	removed *[][]string
+	err     error
+}
+
+func (i infraHz) InfrastructureLeft(context.Context, string) []cloud.InfrastructureItem {
+	return i.left
+}
+
+func (i infraHz) RemoveInfrastructure(_ context.Context, out io.Writer, keys []string) error {
+	*i.removed = append(*i.removed, keys)
+	fmt.Fprintf(out, "removed %v\n", keys)
+	return i.err
+}
+
+func k3dItems() []cloud.InfrastructureItem {
+	return []cloud.InfrastructureItem{{Key: "cluster", What: "the k3d cluster viper"}, {Key: "registry", What: "the k3d registry k3d-reg", Optional: true}}
+}
+
+func downWith(t *testing.T, registry string, left []cloud.InfrastructureItem, answers ...string) (w *world, removed [][]string, code int) {
+	t.Helper()
+	w = newWorld(t)
+	w.allLocal()
+	w.answers = answers
+	d := w.deps()
+	d.Registry = registry
+	d.Cloud = infraHz{hz: hz{w: w}, left: left, removed: &removed}
+	code, err := stop.Run(context.Background(), w.c, false, d, w.lg, &w.out, &w.errb)
+	w.lg.Close(err, code)
+	return w, removed, code
+}
+
+func TestTheClusterGoesWithTheLastMachineAndTheRegistryIsAskedAbout(t *testing.T) {
+	// the user says yes to the registry
+	w, removed, code := downWith(t, "", k3dItems(), "DELETE", "DELETE")
+	if code != 0 || len(removed) != 1 || strings.Join(removed[0], ",") != "cluster,registry" {
+		t.Fatalf("%d %v\n%s", code, removed, w.all())
+	}
+	has(t, w.errb.String(), "As the last machine it takes what viper made for it: the k3d cluster viper.",
+		"You decide about the k3d registry k3d-reg afterwards (--delete-registry or --keep-registry answers in advance).")
+	if !strings.Contains(strings.Join(w.prompts, "|"), "Delete the k3d registry k3d-reg too? It holds the image for other clusters. Type DELETE to delete it") {
+		t.Errorf("the registry is asked about: %q", w.prompts)
+	}
+	// any other answer, and no answer, keeps it
+	for _, answer := range [][]string{{"DELETE", "no"}, {"DELETE"}} {
+		w, removed, code = downWith(t, "", k3dItems(), answer...)
+		if code != 0 || len(removed) != 1 || strings.Join(removed[0], ",") != "cluster" || !strings.Contains(w.out.String(), "The k3d registry k3d-reg stays") {
+			t.Errorf("%v: %d %v\n%s", answer, code, removed, w.all())
+		}
+	}
+}
+
+func TestTheOptionsAnswerTheQuestionAboutTheRegistryInAdvance(t *testing.T) {
+	w, removed, _ := downWith(t, "delete", k3dItems(), "DELETE")
+	if len(removed) != 1 || strings.Join(removed[0], ",") != "cluster,registry" || len(w.prompts) != 1 {
+		t.Errorf("--delete-registry asks nothing more: %v %q", removed, w.prompts)
+	}
+	has(t, w.errb.String(), "the k3d registry k3d-reg goes too (--delete-registry).")
+	w, removed, _ = downWith(t, "keep", k3dItems(), "DELETE")
+	if len(removed) != 1 || strings.Join(removed[0], ",") != "cluster" || len(w.prompts) != 1 {
+		t.Errorf("--keep-registry asks nothing more: %v %q", removed, w.prompts)
+	}
+	// nothing made by viper: nothing is said or asked
+	w, removed, _ = downWith(t, "", nil, "DELETE")
+	if len(removed) != 1 || len(removed[0]) != 0 || len(w.prompts) != 1 {
+		t.Errorf("%v %q", removed, w.prompts)
+	}
+}
+
+func TestNothingIsRemovedWithoutDELETEAndAFailureOnlyWarns(t *testing.T) {
+	_, removed, code := downWith(t, "", k3dItems(), "no")
+	if code != 1 || len(removed) != 0 {
+		t.Fatalf("cancelled, and %v removed (code %d)", removed, code)
+	}
+	w := newWorld(t)
+	w.allLocal()
+	w.answers = []string{"DELETE"}
+	var rm [][]string
+	d := w.deps()
+	d.Registry = "keep"
+	d.Cloud = infraHz{hz: hz{w: w}, left: k3dItems(), removed: &rm, err: errors.New("k3d is busy")}
+	code, err := stop.Run(context.Background(), w.c, false, d, w.lg, &w.out, &w.errb)
+	if code != 0 || err != nil || len(w.deleted) != 1 || !strings.Contains(w.errb.String(), "WARNING: removing what viper made for the machine failed: k3d is busy") {
+		t.Errorf("the machine is deleted and the failure is a warning: %d %v\n%s", code, err, w.all())
 	}
 }

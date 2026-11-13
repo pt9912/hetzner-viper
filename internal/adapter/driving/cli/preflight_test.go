@@ -399,3 +399,31 @@ func TestNoCodeIsPassedToTheUseCase(t *testing.T) {
 		}
 	}
 }
+
+func TestDownTakesTheOptionsAboutTheRegistryAndRefusesBoth(t *testing.T) {
+	for flag, want := range map[string]string{"--delete-registry": "delete", "--keep-registry": "keep", "": ""} {
+		args := []string{"down", "web"}
+		if flag != "" {
+			args = append(args, flag)
+		}
+		_, o, err := cli.Parse(args)
+		if err != nil || o.Registry != want {
+			t.Errorf("%q: registry %q, %v", flag, o.Registry, err)
+		}
+	}
+	if _, _, err := cli.Parse([]string{"down", "web", "--delete-registry", "--keep-registry"}); err == nil || !strings.Contains(err.Error(), "exclude each other") {
+		t.Errorf("both options: %v", err)
+	}
+	// the option reaches the use case
+	env, _, o := preflightSetup(t, true)
+	var got string
+	o.Registry = "keep"
+	o.Host.Services.Down = func(c *model.Machine, do driving.DownOptions) driving.Down {
+		got = do.Registry
+		return plainDown{}
+	}
+	var out, errb bytes.Buffer
+	if err := cli.RunDown(context.Background(), o, env, strings.NewReader(""), &out, &errb); err != nil || got != "keep" {
+		t.Errorf("%v registry %q\n%s%s", err, got, out.String(), errb.String())
+	}
+}

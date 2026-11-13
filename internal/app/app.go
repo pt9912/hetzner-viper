@@ -145,6 +145,8 @@ func Down(c *model.Machine, o driving.DownOptions) stop.Service {
 		Run:   system.Run,
 		Ask:   o.Ask,
 		SSH:   sshconfig.Files{},
+
+		Registry: o.Registry,
 	}}
 }
 

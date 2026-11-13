@@ -11,12 +11,14 @@ import (
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/kubernetes"
 	"github.com/pt9912/hetzner-viper/internal/model"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
 )
 
 // k3dHost is a docker and a k3d that answer from a state: whether the registry runs, whether it exists but is stopped,
 // whether the cluster is there and uses the registry, and whether the image is in Docker.
 type k3dHost struct {
 	registry, stopped, cluster, usesRegistry, imageLocal bool
+	registryNets                                         string // the networks the registry is on, besides the bridge
 	calls                                                []string
 }
 
@@ -37,10 +39,16 @@ func (h *k3dHost) run(_ context.Context, _, name string, args ...string) (string
 			return "", "", nil
 		}
 		return no("container: k3d-reg")
-	case name == "k3d" && args[0] == "registry":
+	case name == "k3d" && args[0] == "registry" && args[1] == "create":
 		h.registry = true
+	case name == "k3d" && args[0] == "cluster" && args[1] == "delete":
+		h.cluster, h.usesRegistry = false, false
 	case name == "k3d" && args[0] == "cluster":
 		h.cluster, h.usesRegistry = true, true
+	case name == "k3d" && args[0] == "registry" && args[1] == "delete":
+		h.registry = false
+	case name == "docker" && args[0] == "inspect" && strings.Contains(strings.Join(args, " "), "NetworkSettings"):
+		return h.registryNets, "", nil
 	case name == "docker" && args[0] == "inspect":
 		if !h.cluster {
 			return no("object: k3d-viper-server-0")
@@ -201,5 +209,94 @@ func TestAServerOfAK3dClusterThatDoesNotExistYetIsNoServerAndNoError(t *testing.
 	}
 	if h.called("docker inspect") != 1 {
 		t.Errorf("the cluster was looked for: %v", h.calls)
+	}
+}
+
+func keysOf(items []cloud.InfrastructureItem) string {
+	var k []string
+	for _, it := range items {
+		k = append(k, it.Key)
+	}
+	return strings.Join(k, ",")
+}
+
+func TestTheClusterAndTheRegistryViperMadeGoWithTheLastMachineOnly(t *testing.T) {
+	ctx := context.Background()
+	h := &k3dHost{}
+	c := newCluster()
+	k := k3dClient(t, c, h, kubernetes.Options{K3DCreateCluster: true})
+	if err := k.PrepareImage(ctx, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"claude-alpha", "claude-beta"} {
+		if _, err := k.CreateServer(ctx, spec(n)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if left := k.InfrastructureLeft(ctx, "claude-alpha"); left != nil {
+		t.Errorf("another machine is still there: %v", left)
+	}
+	if err := k.DeleteServer(ctx, "uid-claude-beta"); err != nil {
+		t.Fatal(err)
+	}
+	if err := k.RemoveInfrastructure(ctx, &bytes.Buffer{}, []string{"cluster", "registry"}); err != nil || h.called("k3d cluster delete") != 0 {
+		t.Fatalf("one machine is left, and the cluster went: %v %v", err, h.calls)
+	}
+	left := k.InfrastructureLeft(ctx, "claude-alpha")
+	if keysOf(left) != "cluster,registry" || left[0].Optional || !left[1].Optional || !strings.Contains(left[1].What, "k3d-reg") {
+		t.Fatalf("the cluster goes, the registry is the user's to decide: %+v", left)
+	}
+	if err := k.DeleteServer(ctx, "uid-claude-alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if keysOf(k.InfrastructureLeft(ctx, "")) != "cluster,registry" {
+		t.Errorf("after the delete the same is left")
+	}
+	// the user keeps the registry
+	var out bytes.Buffer
+	if err := k.RemoveInfrastructure(ctx, &out, []string{"cluster"}); err != nil {
+		t.Fatal(err)
+	}
+	if h.called("k3d cluster delete viper") != 1 || h.called("k3d registry delete") != 0 || !strings.Contains(out.String(), "cluster viper, which viper made, is deleted") {
+		t.Fatalf("%v\n%s", h.calls, out.String())
+	}
+	// the cluster is gone and the registry is still offered, until the user decides to delete it
+	if got := k.InfrastructureLeft(ctx, ""); keysOf(got) != "registry" {
+		t.Errorf("the registry that nothing uses is offered: %+v", got)
+	}
+	if err := k.RemoveInfrastructure(ctx, &out, []string{"registry"}); err != nil || h.called("k3d registry delete k3d-reg") != 1 {
+		t.Fatalf("%v %v", err, h.calls)
+	}
+	if got := k.InfrastructureLeft(ctx, ""); got != nil {
+		t.Errorf("nothing is left to offer: %+v", got)
+	}
+}
+
+func TestARegistryThatAnotherClusterUsesStaysAndWhatWasNotMadeByViperIsNeverRemoved(t *testing.T) {
+	ctx := context.Background()
+	h := &k3dHost{registryNets: "bridge k3d-viper k3d-other "}
+	c := newCluster()
+	k := k3dClient(t, c, h, kubernetes.Options{K3DCreateCluster: true})
+	if err := k.PrepareImage(ctx, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if left := k.InfrastructureLeft(ctx, "claude-alpha"); keysOf(left) != "cluster" {
+		t.Fatalf("only the cluster goes: %+v", left)
+	}
+	if err := k.RemoveInfrastructure(ctx, &bytes.Buffer{}, []string{"cluster", "registry"}); err != nil || h.called("k3d cluster delete viper") != 1 || h.called("k3d registry delete") != 0 {
+		t.Errorf("a registry that another cluster uses stays, even if asked for: %v %v", err, h.calls)
+	}
+
+	// a cluster and a registry that were there before are the user's
+	h = &k3dHost{registry: true, cluster: true, usesRegistry: true, imageLocal: true}
+	k = k3dClient(t, newCluster(), h, kubernetes.Options{})
+	if err := k.PrepareImage(ctx, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if left := k.InfrastructureLeft(ctx, "claude-alpha"); left != nil {
+		t.Errorf("%v", left)
+	}
+	if err := k.RemoveInfrastructure(ctx, &bytes.Buffer{}, []string{"cluster", "registry"}); err != nil || h.called("k3d cluster delete") != 0 || h.called("k3d registry delete") != 0 {
+		t.Errorf("something that viper did not make was removed: %v %v", err, h.calls)
 	}
 }

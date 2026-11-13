@@ -30,7 +30,7 @@ func runDown(ctx context.Context, o *options, env settings.Env, in io.Reader, st
 	if ask == nil {
 		ask = newAsker(ctx, in, l.Err())
 	}
-	down := o.host().Services.Down(c, driving.DownOptions{Ask: ask})
+	down := o.host().Services.Down(c, driving.DownOptions{Ask: ask, Registry: o.registry})
 	code, err := down.Down(ctx, c, o.force, l, l.Out(), l.Err())
 	switch {
 	case ctx.Err() != nil:

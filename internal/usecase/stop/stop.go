@@ -39,6 +39,8 @@ type Deps struct {
 	// Ask shows a prompt and returns the answer line ("" at the end of the input).
 	Ask func(prompt string) string
 	SSH sshconfig.Store
+	// Registry is "delete", "keep" or "" (ask): what happens to a registry that viper made when the last machine goes.
+	Registry string
 }
 
 func readTrim(path string) string {
@@ -100,6 +102,7 @@ func Run(ctx context.Context, c *model.Machine, force bool, d Deps, lg runlog.Lo
 		where = c.Where()
 	}
 	fmt.Fprintf(errOut, "\nServer %s (%s) and ALL its data (including %s) will be DESTROYED.\n", c.ServerName, where, strings.Join(wss, " "))
+	announceInfrastructure(ctx, c, d, errOut)
 	if d.Ask("Type DELETE to continue: ") != "DELETE" {
 		fmt.Fprintln(out, "Cancelled")
 		lg.Final("cancelled (no DELETE)")
@@ -112,8 +115,81 @@ func Run(ctx context.Context, c *model.Machine, force bool, d Deps, lg runlog.Lo
 	code, err = destroy(ctx, c, d, lg, srv, skip, out, errOut)
 	if code == 0 && err == nil {
 		grp.after(ctx)
+		removeInfrastructure(ctx, d, out, errOut)
 	}
 	return code, err
+}
+
+// announceInfrastructure says what a provider made for its machines goes with this one, if it is the last, and what the
+// user will be asked about.
+func announceInfrastructure(ctx context.Context, c *model.Machine, d Deps, errOut io.Writer) {
+	var infra cloud.Infrastructure
+	if !cloud.As(d.Cloud, &infra) {
+		return
+	}
+	var goes, asks []string
+	for _, it := range infra.InfrastructureLeft(ctx, c.ServerName) {
+		if it.Optional {
+			asks = append(asks, it.What)
+		} else {
+			goes = append(goes, it.What)
+		}
+	}
+	if len(goes) > 0 {
+		fmt.Fprintf(errOut, "As the last machine it takes what viper made for it: %s.\n", strings.Join(goes, " and "))
+	}
+	if len(asks) > 0 {
+		switch d.Registry {
+		case "delete":
+			fmt.Fprintf(errOut, "%s goes too (--delete-registry).\n", strings.Join(asks, " and "))
+		case "keep":
+			fmt.Fprintf(errOut, "%s stays (--keep-registry).\n", strings.Join(asks, " and "))
+		default:
+			fmt.Fprintf(errOut, "You decide about %s afterwards (--delete-registry or --keep-registry answers in advance).\n", strings.Join(asks, " and "))
+		}
+	}
+}
+
+// removeInfrastructure lets a provider take away what it made for its machines (a k3d cluster and its registry) with the
+// last one. What the user decides (the registry holds the image for other clusters) is asked, unless an option answered;
+// without an answer it stays. A failure is a warning: the machine is deleted.
+func removeInfrastructure(ctx context.Context, d Deps, out, errOut io.Writer) {
+	var infra cloud.Infrastructure
+	if !cloud.As(d.Cloud, &infra) {
+		return
+	}
+	var keys []string
+	for _, it := range infra.InfrastructureLeft(ctx, "") {
+		switch {
+		case !it.Optional:
+			keys = append(keys, it.Key)
+		case wantsRemoved(d, it):
+			keys = append(keys, it.Key)
+		default:
+			fmt.Fprintf(out, "%s stays (it holds the image for other clusters).\n", capitalize(it.What))
+		}
+	}
+	if err := infra.RemoveInfrastructure(ctx, out, keys); err != nil {
+		fmt.Fprintf(errOut, "WARNING: removing what viper made for the machine failed: %v\n", err)
+	}
+}
+
+// wantsRemoved is the decision about an item the user decides: by option, else by question; no answer means keep.
+func wantsRemoved(d Deps, it cloud.InfrastructureItem) bool {
+	switch d.Registry {
+	case "delete":
+		return true
+	case "keep":
+		return false
+	}
+	return d.Ask("Delete "+it.What+" too? It holds the image for other clusters. Type DELETE to delete it, anything else keeps it: ") == "DELETE"
+}
+
+func capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 // checkAndProbe checks that ssh works and, if it does, what would be lost. skip is true if --force

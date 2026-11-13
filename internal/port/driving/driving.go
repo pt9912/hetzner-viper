@@ -56,6 +56,9 @@ type GroupRoler interface {
 type DownOptions struct {
 	// Ask shows a prompt and returns the answer line ("" at the end of the input).
 	Ask func(prompt string) string
+	// Registry says what happens to a registry that viper made for the machines when the last one is deleted: "delete",
+	// "keep", or "" to ask. The registry holds the image for other clusters, so it is the user's to decide.
+	Registry string
 }
 
 // Check runs the read-only checks of a running machine and returns the number of problems. A

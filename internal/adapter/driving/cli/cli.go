@@ -29,6 +29,7 @@ type options struct {
 	ask                       func(string) string // the answers of a group: one reader, one prompt at a time
 	parallel                  int                 // how many machines of a group at the same time (0: the default)
 	force, full, noCode, tmux bool
+	registry                  string // viper down: delete or keep a registry viper made ("" asks)
 	// the need of viper find
 	cpu, disk                int
 	ram                      float64
@@ -76,7 +77,7 @@ func commands() map[string]command {
 		"up":           {usage: "<machine> [--repo URL] [--no-code] | --group G [--repo URL] [--parallel N]", machine: needMachine, flags: []string{"repo", "no-code", "group", "parallel"}, run: nativeUp},
 		"check":        {usage: "<machine> | --group G [--parallel N]", machine: needMachine, flags: []string{"group", "parallel"}, run: nativeCheck},
 		"ssh":          {usage: "<machine> [--cmd COMMAND | --tmux] | --group G --cmd COMMAND [--parallel N]", machine: needMachine, flags: []string{"cmd", "tmux", "group", "parallel"}, run: nativeSSH},
-		"down":         {usage: "<machine> [--force] | --group G [--force] [--parallel N]", machine: needMachine, flags: []string{"force", "group", "parallel"}, run: nativeDown},
+		"down":         {usage: "<machine> [--force] [--delete-registry|--keep-registry] | --group G [--force] [--delete-registry|--keep-registry] [--parallel N]", machine: needMachine, flags: []string{"force", "group", "parallel", "delete-registry", "keep-registry"}, run: nativeDown},
 		"vscode":       {usage: "<machine>", machine: needMachine, run: nativeVSCode},
 		"dns":          {usage: "<machine>", machine: needMachine, run: nativeDNS},
 		"find":         {usage: "[--cpu N] [--ram GB] [--disk GB] [--arch x86|arm] [--location L] [--provider P] [--vat PERCENT]", machine: noMachine, flags: []string{"cpu", "ram", "disk", "arch", "location", "provider", "vat"}, run: nativeFind},
@@ -198,6 +199,16 @@ func manualLines(v string) string {
 		"                      current:      " + manualBase + "main" + path + "\n"
 }
 
+// setRegistry reads --delete-registry and --keep-registry of viper down, which exclude each other.
+func setRegistry(o *options, name, flag string) error {
+	want := strings.TrimSuffix(flag, "-registry")
+	if o.registry != "" && o.registry != want {
+		return fmt.Errorf("viper %s: --delete-registry and --keep-registry exclude each other", name)
+	}
+	o.registry = want
+	return nil
+}
+
 // parseFlag handles the option args[*i] (starting with "--"); a value in the next argument advances *i.
 func parseFlag(o *options, name string, args []string, i *int, allowed map[string]bool) error {
 	n, v, hasValue := strings.Cut(args[*i][2:], "=")
@@ -219,6 +230,8 @@ func parseFlag(o *options, name string, args []string, i *int, allowed map[strin
 	switch n {
 	case "force":
 		o.force = true
+	case "delete-registry", "keep-registry":
+		return setRegistry(o, name, n)
 	case "full":
 		o.full = true
 	case "no-code":

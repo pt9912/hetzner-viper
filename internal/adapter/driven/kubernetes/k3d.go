@@ -8,7 +8,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/pt9912/hetzner-viper/internal/filelock"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
@@ -20,7 +23,10 @@ import (
 // use the registry from its start (k3d cluster create --registry-use); viper makes it that way if K3D_CLUSTER_CREATE=1 and
 // it is missing. A cluster that does not use the registry gets the image with k3d image import instead.
 
-var _ cloud.ImagePreparer = (*Client)(nil)
+var (
+	_ cloud.ImagePreparer  = (*Client)(nil)
+	_ cloud.Infrastructure = (*Client)(nil)
+)
 
 const k3dRegistryPort = "5000" // inside the Docker network; the nodes pull k3d-<name>:5000/...
 
@@ -78,6 +84,7 @@ func (c *Client) ensureRegistry(ctx context.Context, out io.Writer) (string, err
 	if _, err := c.tool(ctx, "k3d", "registry", "create", c.opts.K3DRegistry); err != nil {
 		return "", err
 	}
+	c.markMade("registry", c.opts.K3DRegistry)
 	if p := c.registryPort(ctx); p != "" {
 		return p, nil
 	}
@@ -160,6 +167,7 @@ func (c *Client) ensureCluster(ctx context.Context, cluster string, out io.Write
 	if _, err := c.tool(ctx, "k3d", args...); err != nil {
 		return err
 	}
+	c.markMade("cluster", cluster)
 	return nil
 }
 
@@ -183,5 +191,118 @@ func (c *Client) deliver(ctx context.Context, cluster, port string, out io.Write
 	}
 	c.opts.Image = c.opts.registryContainer() + ":" + k3dRegistryPort + "/" + name
 	fmt.Fprintf(out, "The image is in the k3d registry %s; the pods pull %s.\n", c.opts.registryContainer(), c.opts.Image)
+	return nil
+}
+
+// What viper made is marked by a file in the state directory, and only that is removed with the last machine: a cluster or a
+// registry that was there before is the user's.
+func (c *Client) madeFile(kind, name string) string {
+	return filepath.Join(c.opts.StateDir, "k3d-"+kind+"-"+name+".made")
+}
+
+func (c *Client) markMade(kind, name string) { _ = os.WriteFile(c.madeFile(kind, name), nil, 0o600) }
+
+func (c *Client) made(kind, name string) bool {
+	_, err := os.Stat(c.madeFile(kind, name))
+	return err == nil
+}
+
+// machinesLeft counts the machines viper made in the cluster, in every namespace, not counting the one named.
+func (c *Client) machinesLeft(ctx context.Context, except string) (int, error) {
+	cs, err := c.client()
+	if err != nil {
+		return 0, err
+	}
+	list, err := cs.AppsV1().StatefulSets(metav1.NamespaceAll).List(ctx, metav1.ListOptions{LabelSelector: labelManaged + "=true"})
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for i := range list.Items {
+		if list.Items[i].Name != except {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// registryUsedByOthers is whether a cluster other than this one is attached to the registry: the registry is on the network
+// of every cluster that uses it (k3d-<cluster>), besides the bridge.
+func (c *Client) registryUsedByOthers(ctx context.Context, cluster string) bool {
+	out, err := c.tool(ctx, "docker", "inspect", "--format", "{{range $name, $_ := .NetworkSettings.Networks}}{{$name}} {{end}}", c.opts.registryContainer())
+	if err != nil {
+		return true // cannot tell: leave it
+	}
+	for _, n := range strings.Fields(out) {
+		if strings.HasPrefix(n, "k3d-") && n != "k3d-"+cluster {
+			return true
+		}
+	}
+	return false
+}
+
+// Keys of the infrastructure items.
+const (
+	infraCluster  = "cluster"
+	infraRegistry = "registry"
+)
+
+// InfrastructureLeft names the cluster and the registry that viper made and that go with the last machine of the cluster.
+// The cluster goes with it; the registry is the user's to decide (it holds the image for other clusters). A registry is
+// offered only when the cluster that uses it is gone or goes: one that a cluster still uses stays.
+func (c *Client) InfrastructureLeft(ctx context.Context, machine string) []cloud.InfrastructureItem {
+	cluster := c.opts.k3dCluster()
+	if cluster == "" {
+		return nil
+	}
+	gone := !c.clusterExists(ctx)
+	var items []cloud.InfrastructureItem
+	if !gone {
+		if !c.made("cluster", cluster) {
+			return nil
+		}
+		if n, err := c.machinesLeft(ctx, machine); err != nil || n > 0 {
+			return nil
+		}
+		items = append(items, cloud.InfrastructureItem{Key: infraCluster, What: "the k3d cluster " + cluster})
+	}
+	if c.made("registry", c.opts.K3DRegistry) && c.registryPort(ctx) != "" && !c.registryUsedByOthers(ctx, cluster) {
+		items = append(items, cloud.InfrastructureItem{Key: infraRegistry, What: "the k3d registry " + c.opts.registryContainer(), Optional: true})
+	}
+	return items
+}
+
+// RemoveInfrastructure deletes what the keys name and viper made: the cluster, if no machine of viper is left in it, and the
+// registry, if no other cluster uses it.
+func (c *Client) RemoveInfrastructure(ctx context.Context, out io.Writer, keys []string) error {
+	cluster := c.opts.k3dCluster()
+	if cluster == "" || len(keys) == 0 {
+		return nil
+	}
+	if err := os.MkdirAll(c.opts.StateDir, 0o700); err != nil {
+		return err
+	}
+	unlock, err := filelock.Lock(filepath.Join(c.opts.StateDir, c.opts.registryContainer()+".lock"))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if slices.Contains(keys, infraCluster) && c.made("cluster", cluster) && c.clusterExists(ctx) {
+		if n, err := c.machinesLeft(ctx, ""); err != nil || n > 0 {
+			return err
+		}
+		if _, err := c.tool(ctx, "k3d", "cluster", "delete", cluster); err != nil {
+			return err
+		}
+		_ = os.Remove(c.madeFile("cluster", cluster))
+		fmt.Fprintf(out, "The k3d cluster %s, which viper made, is deleted (last machine).\n", cluster)
+	}
+	if slices.Contains(keys, infraRegistry) && c.made("registry", c.opts.K3DRegistry) && !c.registryUsedByOthers(ctx, cluster) {
+		if _, err := c.tool(ctx, "k3d", "registry", "delete", c.opts.registryContainer()); err != nil {
+			return err
+		}
+		_ = os.Remove(c.madeFile("registry", c.opts.K3DRegistry))
+		fmt.Fprintf(out, "The k3d registry %s, which viper made, is deleted.\n", c.opts.registryContainer())
+	}
 	return nil
 }
