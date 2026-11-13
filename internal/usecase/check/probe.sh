@@ -64,4 +64,5 @@ if [ -f "${VIPER_REBOOT_FILE:-/var/run/reboot-required}" ]; then echo reboot=req
 sshd_cfg=$(sudo -n sshd -T 2>/dev/null || sshd -T -f "$HOME/.viper/sshd/config" 2>/dev/null)
 echo "sshd=$(printf '%s\n' "$sshd_cfg" | grep -iE '^(passwordauthentication|permitrootlogin|authenticationmethods) ' | sort | tr '\n' ';')"
 echo "mem=$(free -m | awk '/^Mem:/ {print $7 " MB available of " $2 " MB"}')"
-echo "disk=$(df -h / | awk 'NR == 2 {print $4 " free of " $2}')"
+# the home directory: on a VM it is on /, in a pod or container it is the volume the work is on (K8S_DISK_GB), not the disk of the node
+echo "disk=$(df -h "$HOME" | awk 'NR == 2 {print $4 " free of " $2}')"

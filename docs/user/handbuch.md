@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.104  
+Version: 1.105  
 Software-Version: v0.20.1  
 Stand: 13.11.2026  
 
@@ -465,7 +465,7 @@ Mit `PROVIDER=kubernetes` ist ein „Rechner“ ein **Pod** in einem Kubernetes-
 #### Hinweise und Warnungen
 
 * **Zugang:** Der Pod hat weder Adresse noch DNS-Namen; `viper` verbindet sich über die API des Clusters. `ssh`, `scp`, `viper ssh` und SSH-Tunnel funktionieren wie sonst.
-* **Daten:** Das Heimverzeichnis mit Arbeitsverzeichnis und Repository und das Verzeichnis von Homebrew liegen auf je einem Volume. Sie überstehen das Ersetzen des Pods, auch was Sie mit `brew install` nachinstalliert haben. `viper down` löscht beide mit allen Daten, nach der Abfrage `DELETE`.
+* **Daten:** Das Heimverzeichnis mit Arbeitsverzeichnis und Repository und das Verzeichnis von Homebrew liegen auf je einem Volume. Sie überstehen das Ersetzen des Pods, auch was Sie mit `brew install` nachinstalliert haben. `viper down` löscht beide mit allen Daten, nach der Abfrage `DELETE`. `df -h` ohne Pfad zeigt die Volumes nicht, wenn sie auf demselben Gerät liegen wie das Wurzelverzeichnis (bei k3d und Docker der Fall): `df -h /home/builder /home/linuxbrew` zeigt sie, `viper check` nennt den freien Platz des Heimverzeichnisses.
 * **Docker (`K8S_DOCKER`):** Standard ist `dind`, ein Docker-Daemon als zweiter, **privilegierter** Container im Pod. Wer ihn übernimmt, hat Root auf dem Knoten: Nutzen Sie das in k3d oder einem eigenen Cluster, nicht in einem geteilten. Wo privilegierte Pods verboten sind, nehmen Sie `remote` (ein Daemon außerhalb, `K8S_DOCKER_HOST`) oder `none` (kein Docker).
 * **NATS-Gruppen** funktionieren wie sonst. Der Server der Gruppe ist im Cluster unter `viper-nats-<gruppe>.<namespace>.svc` erreichbar. Ersetzt der Cluster seinen Pod, arbeiten die Clients ohne neue Anmeldung weiter. **Der Schutz des Ports im Netz setzt voraus, dass der Cluster NetworkPolicies durchsetzt** (k3d tut es; bei anderen Clustern hängt es vom Netz-Plugin ab).
 * Startet ein Pod nicht oder bleiben Reste im Cluster, hilft Kapitel 7.
@@ -1554,3 +1554,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.102 | v0.20.1 | Release v0.20.1: die Änderungen 1.100 und 1.101 (Einleitung für Pods und Container; NATS-Gruppe in k3d ohne vorhandenen Cluster; `viper check` bei `K8S_DOCKER=none`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ und die Beispiele für das Image nennen jetzt `v0.20.1`. |
 | 1.103 | nach v0.20.1 | Der Preflight prüft bei `K3D_REGISTRY`, ob das Programm `k3d` da ist, wenn `viper up` die Registry oder den Cluster anlegen muss, und meldet sonst einen Fehler mit dem Hinweis, wie man es installiert. |
 | 1.104 | nach v0.20.1 | Behoben: Im Image der Pods und Container haben die SSH-Sitzungen die Sprachumgebung `C.UTF-8` (`btop` und `tmux` meldeten „No UTF-8 locale detected“). Kapitel 7 nennt die Abhilfe für vorhandene Rechner. |
+| 1.105 | nach v0.20.1 | `viper check` zeigt den freien Platz des Heimverzeichnisses statt des Wurzelverzeichnisses: bei Pods und Containern ist das das Volume, auf dem die Arbeit liegt (`K8S_DISK_GB`), nicht die Platte des Knotens. Auf einer VM ändert sich nichts. |
