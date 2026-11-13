@@ -800,11 +800,20 @@ func TestStateFilesLieInTheDirectoryOfThePrefixAndOldOnesMoveThere(t *testing.T)
 	if err := os.WriteFile(filepath.Join(root, "id-lab-web"), []byte("42\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(root, "lab"), 0o700); err != nil { // the layout of v0.21.1
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "lab", "ready-lab-web"), []byte("42\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	c, err := settingsfile.Load(dir, "web", settings.Env{Lookup: envOf(nil), Home: home}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join(root, "lab", "id-lab-web"); c.IDState != want {
+	if b, err := os.ReadFile(c.ReadyState); err != nil || strings.TrimSpace(string(b)) != "42" {
+		t.Errorf("the file of v0.21.1 was not moved: %q %v", b, err)
+	}
+	if want := filepath.Join(root, "servers", "lab", "id-lab-web"); c.IDState != want {
 		t.Fatalf("%s, want %s", c.IDState, want)
 	}
 	b, err := os.ReadFile(c.IDState)

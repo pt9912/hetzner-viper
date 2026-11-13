@@ -1,6 +1,8 @@
 package model_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -98,5 +100,27 @@ func TestMCPAllowedToolsFollowTheMode(t *testing.T) {
 	}
 	if got := model.MCPAllowedTools("anything"); got != nil {
 		t.Errorf("an unknown mode allows nothing: %v", got)
+	}
+}
+
+// A key that an older version put in nats/<group>/ is found in groups/<group>/.
+func TestOperatorKeyFileMovesAnOldKey(t *testing.T) {
+	dir := t.TempDir()
+	old := filepath.Join(dir, "nats", "dev", "operator.nk")
+	if err := os.MkdirAll(filepath.Dir(old), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(old, []byte("seed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := model.OperatorKeyFile(dir, "dev")
+	if want := filepath.Join(dir, "groups", "dev", "operator.nk"); path != want {
+		t.Fatalf("%s, want %s", path, want)
+	}
+	if b, err := os.ReadFile(path); err != nil || string(b) != "seed\n" {
+		t.Errorf("the key was not moved: %q %v", b, err)
+	}
+	if _, err := os.Stat(old); err == nil {
+		t.Error("the old key is still there")
 	}
 }

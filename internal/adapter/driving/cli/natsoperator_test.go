@@ -60,7 +60,7 @@ func operatorKey(t *testing.T, dir string, env settings.Env) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return filepath.Join(c.StateDir, "nats", "dev", "operator.nk")
+	return filepath.Join(c.StateDir, "groups", "dev", "operator.nk")
 }
 
 func TestInitMakesTheKeyOnceAndRegistersItAndRevokeRemovesBoth(t *testing.T) {

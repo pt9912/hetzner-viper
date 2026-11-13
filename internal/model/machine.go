@@ -38,7 +38,7 @@ type Machine struct {
 
 	ServerName, SSHAlias, DNSHost, KeyName, FirewallName string
 	StateDir, SSHDir, SSHConfig, KnownPin                string
-	// MachineStateDir is StateDir/<prefix>: the state files of the machines of one prefix.
+	// MachineStateDir is StateDir/servers/<prefix>: the state files of the servers of one prefix.
 	MachineStateDir string
 
 	// state files of the machine, all keyed by the server name

@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -15,9 +16,18 @@ func NATSServiceHost(group, namespace string) string {
 	return "viper-nats-" + group + "." + namespace + ".svc"
 }
 
-// OperatorKeyFile is where the seed of the operator of a NATS group is kept on this computer.
+// OperatorKeyFile is where the seed of the operator of a NATS group is kept on this computer:
+// <state>/groups/<group>/operator.nk. A key that an older version put in <state>/nats/<group>/ is moved there
+// (best effort) when it is asked for.
 func OperatorKeyFile(stateDir, group string) string {
-	return filepath.Join(stateDir, "nats", group, "operator.nk")
+	path := filepath.Join(stateDir, "groups", group, "operator.nk")
+	old := filepath.Join(stateDir, "nats", group, "operator.nk")
+	if _, err := os.Stat(path); err != nil {
+		if _, err := os.Stat(old); err == nil && os.MkdirAll(filepath.Dir(path), 0o700) == nil {
+			_ = os.Rename(old, path)
+		}
+	}
+	return path
 }
 
 // NATSRole is what a machine does in its NATS group.

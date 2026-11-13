@@ -117,17 +117,20 @@ func Load(dir, machine string, env settings.Env, needTokens bool) (*model.Machin
 	return c, nil
 }
 
-// moveOldState moves the state files that older versions kept in the state directory itself into the directory of the
-// prefix (best effort: a file that cannot be moved is read from its new place and found missing, as if it was never there).
+// moveOldState moves the state files that older versions kept in the state directory itself (v0.21.0 and before) or in
+// a directory of the prefix there (v0.21.1) into servers/<prefix> (best effort: a file that cannot be moved is read from
+// its new place and found missing, as if it was never there).
 func moveOldState(c *model.Machine) {
 	_ = os.MkdirAll(c.MachineStateDir, 0o700)
 	for _, f := range []string{c.IPState, c.IDState, c.WorkspaceState, c.ReadyState, c.RepoState, c.GroupState} {
-		old := filepath.Join(c.StateDir, filepath.Base(f))
 		if _, err := os.Stat(f); err == nil {
 			continue
 		}
-		if _, err := os.Stat(old); err == nil {
-			_ = os.Rename(old, f)
+		for _, old := range []string{filepath.Join(c.StateDir, c.ServerPrefix, filepath.Base(f)), filepath.Join(c.StateDir, filepath.Base(f))} {
+			if _, err := os.Stat(old); err == nil {
+				_ = os.Rename(old, f)
+				break
+			}
 		}
 	}
 }
@@ -422,7 +425,7 @@ func derivePaths(c *model.Machine, home string) {
 	c.FirewallName = c.ServerPrefix + "-ssh"
 	c.SSHDir = filepath.Join(home, ".ssh")
 	c.StateDir = filepath.Join(home, ".local", "state", "hetzner-claude")
-	c.MachineStateDir = filepath.Join(c.StateDir, c.ServerPrefix) // the files of the machines of one prefix lie together
+	c.MachineStateDir = filepath.Join(c.StateDir, "servers", c.ServerPrefix) // the files of the machines of one prefix lie together
 	c.SSHConfig = filepath.Join(c.SSHDir, "config_hetzner_"+c.ServerName)
 	c.KnownPin = filepath.Join(c.SSHDir, "known_hosts_hetzner_"+c.ServerName)
 	c.IPState = filepath.Join(c.MachineStateDir, "ip-"+c.ServerName)
