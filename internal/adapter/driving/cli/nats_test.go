@@ -199,7 +199,7 @@ func TestNatsTopicsListsTheTopicsOfEachMachine(t *testing.T) {
 {"event":"message","from":"delta","via":"topics","type":"topics","text":""}
 `}
 	out, _, err := runNats(t, dir, env, ssh, "", cli.Opts{Args: []string{"topics", "dev"}})
-	for _, want := range []string{"- beta: news, ops", "- gamma: has not said", "- delta: no topic", "news <- beta", "ops <- beta"} {
+	for _, want := range []string{"Set in the settings (NATS_MCP_TOPICS) for the group dev:", "- beta: news, ops", "- gamma: has not said", "- delta: no topic", "news <- beta", "ops <- beta"} {
 		if err != nil || !strings.Contains(out, want) {
 			t.Errorf("%q missing: %v\n%s", want, err, out)
 		}
@@ -213,6 +213,21 @@ func TestNatsTopicsListsTheTopicsOfEachMachine(t *testing.T) {
 	}
 	if _, _, err := runNats(t, dir, env, ssh, "", cli.Opts{Args: []string{"topics", "dev"}, Topic: "x"}); err == nil {
 		t.Error("--topic is not used by topics")
+	}
+}
+
+func TestNatsTopicsShowsTheTopicsOfTheSettingsWithoutAnyMachineAnswering(t *testing.T) {
+	dir, env := natsGroup(t, "NATS_MCP_TOPICS=build,news\n")
+	ssh := &natsSSH{out: `{"event":"ready","me":"alpha","group":"dev"}` + "\n"}
+	out, _, err := runNats(t, dir, env, ssh, "", cli.Opts{Args: []string{"topics", "dev"}})
+	for _, want := range []string{"- alpha: build, news", "- beta: build, news", "- gamma: build, news", "No other machine said that it is there"} {
+		if err != nil || !strings.Contains(out, want) {
+			t.Errorf("%q missing: %v\n%s", want, err, out)
+		}
+	}
+	out, _, err = runNats(t, dir, env, ssh, "", cli.Opts{Args: []string{"topics", "dev"}, JSON: true})
+	if err != nil || !strings.Contains(out, `"event":"configured","from":"alpha"`) || !strings.Contains(out, `"text":"build news"`) {
+		t.Errorf("%v %q", err, out)
 	}
 }
 

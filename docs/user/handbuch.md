@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.108  
+Version: 1.109  
 Software-Version: v0.21.0  
 Stand: 13.11.2026  
 
@@ -723,7 +723,7 @@ Mit `viper nats` sprechen Sie die Rechner einer NATS-Gruppe von Ihrem eigenen Re
 ```bash
 viper nats peers     entwicklung                          # wer hat sich gemeldet (hört 35 Sekunden)
 viper nats peers     entwicklung --query                  # schneller (8 Sekunden), siehe Hinweise
-viper nats topics    entwicklung [--query]                # wer empfängt welche Themen (jede Maschine mit ihren Themen, dann jedes Thema mit seinen Maschinen)
+viper nats topics    entwicklung [--query]                # erst die festen Themen aus den Einstellungen (NATS_MCP_TOPICS), dann die, die laufende Maschinen abonniert haben
 viper nats send      entwicklung "Bitte pushen" --to beta
 viper nats broadcast entwicklung "Release um 15 Uhr" --topic news
 viper nats request   entwicklung "Wie ist der Stand?" --to beta --timeout 60
@@ -734,7 +734,7 @@ echo "langer Text" | viper nats send entwicklung - --to beta   # Text von der St
 
 * **Absender:** Ohne eigenen Schlüssel (siehe „Als Betreiber senden“ unten) kommt Ihre Nachricht von einer **Maschine der Gruppe** an, mit deren Schlüssel und Rechten; `viper` nimmt ohne `--from` die erste Maschine der Gruppe, die startklar ist und nicht der Empfänger ist. Mit `--from <maschine>` wählen Sie sie selbst. Die erste Ausgabezeile nennt den Absender („Sender: alpha …“).
 * `--json` gibt je Ereignis eine JSON-Zeile aus.
-* `--timeout` bei `request` (Standard 30 Sekunden, 1 bis 120) und bei `peers` (wie lange zugehört wird). `topics` hört wie `peers` zu; eine Maschine, die ihre Themen nicht meldet (ein älteres `viper-nats-mcp`, oder die Meldung kommt noch), steht als „has not said“ da, nicht als Maschine ohne Themen.
+* `--timeout` bei `request` (Standard 30 Sekunden, 1 bis 120) und bei `peers` (wie lange zugehört wird). `topics` zeigt zuerst die festen Themen aus den Einstellungen (`NATS_MCP_TOPICS` in Gruppen- und Rechnerdateien, je Rechner mit `NATS_MCP=true`), ohne dass dort eine Sitzung laufen muss. Danach hört es wie `peers` zu und nennt die Themen, die laufende Maschinen nach eigener Aussage abonniert haben (auch die mit `subscribe` hinzugefügten); eine Maschine ohne laufende Sitzung ist dort, wie bei `peers`, nicht zu sehen. eine Maschine, die ihre Themen nicht meldet (ein älteres `viper-nats-mcp`, oder die Meldung kommt noch), steht als „has not said“ da, nicht als Maschine ohne Themen.
 
 #### Ergebnis
 
@@ -1560,3 +1560,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.106 | nach v0.20.1 | Neu: das MCP-Werkzeug `topics` listet die Themen (die eigenen und die, die die anderen Maschinen der Gruppe empfangen); die Maschinen melden ihre Themen auf einem eigenen Subjekt, ältere `viper-nats-mcp` bleiben dabei unberührt. `NATS_MCP_AUTOALLOW=read` erlaubt jetzt auch `topics` (nach einem `viper up`). |
 | 1.107 | nach v0.20.1 | Neu: `viper nats topics GRUPPE` zeigt auf Ihrem Rechner, welche Maschine welche Themen empfängt. |
 | 1.108 | v0.21.0 | Release v0.21.0: die Änderungen 1.103 bis 1.107 (Preflight prüft `k3d`; UTF-8-Sprachumgebung im Image; freier Platz des Heimverzeichnisses in `viper check`; MCP-Werkzeug `topics`; `viper nats topics`). |
+| 1.109 | nach v0.21.0 | `viper nats topics` zeigt zuerst die festen Themen aus den Einstellungen (`NATS_MCP_TOPICS`) je Rechner, ohne dass eine Sitzung laufen muss. |

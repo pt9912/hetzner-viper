@@ -143,6 +143,9 @@ func runNats(ctx context.Context, o *options, env settings.Env, in io.Reader, st
 	if args.cmd.To != "" && g.ms[args.cmd.To].cfg == nil {
 		return fmt.Errorf("%s is not a machine of the group %s", args.cmd.To, args.group)
 	}
+	if args.cmd.Name == "topics" {
+		reportConfiguredTopics(o, g, stdout)
+	}
 	ctx, stop := notifyContext(ctx)
 	defer stop()
 	if o.from == g.operator || (o.from == "" && exists(g.keyFile())) {
@@ -292,6 +295,36 @@ func natsReport(o *options, c driving.NATSCommand, res driving.NATSResult, stdou
 	return nil
 }
 
+// reportConfiguredTopics prints the topics the settings give each machine (NATS_MCP_TOPICS): they are known without a
+// session on the machine and are subscribed whenever its MCP server runs.
+func reportConfiguredTopics(o *options, g *natsGroup, stdout io.Writer) {
+	if !o.asJSON {
+		fmt.Fprintf(stdout, "Set in the settings (NATS_MCP_TOPICS) for the group %s:\n", g.name)
+	}
+	found := false
+	for _, name := range g.order {
+		m := g.ms[name].cfg
+		if m == nil || !m.NATS.Enabled || !m.NATS.MCP {
+			continue
+		}
+		found = true
+		switch {
+		case o.asJSON:
+			writeJSONLine(stdout, model.NATSLine{Event: "configured", From: name, Text: strings.Join(m.NATS.MCPTopics, " ")})
+		case len(m.NATS.MCPTopics) == 0:
+			fmt.Fprintf(stdout, "- %s: no topic\n", name)
+		default:
+			fmt.Fprintf(stdout, "- %s: %s\n", name, strings.Join(m.NATS.MCPTopics, ", "))
+		}
+	}
+	if !found && !o.asJSON {
+		fmt.Fprintln(stdout, "- no machine of the group has NATS_MCP=true")
+	}
+	if !o.asJSON {
+		fmt.Fprintln(stdout)
+	}
+}
+
 func reportPeers(o *options, res driving.NATSResult, stdout io.Writer) {
 	if o.asJSON {
 		for _, p := range res.Peers {
@@ -321,7 +354,7 @@ func reportTopics(o *options, res driving.NATSResult, stdout io.Writer) {
 		fmt.Fprintf(stdout, "No other machine said that it is there (heard by %s).\n", res.Sender)
 		return
 	}
-	fmt.Fprintf(stdout, "Topics (heard by %s):\n", res.Sender)
+	fmt.Fprintf(stdout, "Subscribed now, as the running machines say (heard by %s):\n", res.Sender)
 	by := map[string][]string{}
 	for _, p := range res.Peers {
 		switch {
