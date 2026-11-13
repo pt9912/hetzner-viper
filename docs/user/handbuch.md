@@ -209,7 +209,7 @@ Sie können `viper` auch ohne Cloud-Konto ausprobieren und nutzen: Der Rechner i
 #### Vorgehen
 
 1. **Image beschaffen**, auf einem von zwei Wegen:
-   * **Laden** (schnell): `docker pull ghcr.io/pt9912/viper-machine:v0.18.0`, mit der Version, die `viper version` meldet. Das Image ist öffentlich und mehrere GB groß, es gibt es für **amd64 und arm64**, Docker wählt die passende Architektur. Der Name ist `ghcr.io/pt9912/viper-machine:v0.18.0`. Bei k3d (vorher `k3d cluster create viper`) lädt der Cluster das öffentliche Image beim ersten Start selbst, das dauert etwa eine halbe Minute; Sie müssen es nicht einspielen. Wollen Sie das geladene Image nutzen, spielen Sie es mit `k3d image import ghcr.io/pt9912/viper-machine:v0.18.0 -c viper` ein.
+   * **Laden** (schnell): `docker pull ghcr.io/pt9912/viper-machine:v0.18.0`, mit der Version, die `viper version` meldet. Das Image ist öffentlich und mehrere GB groß; das Image gibt es für **amd64 und arm64**, Docker wählt die passende Architektur. Der Name ist `ghcr.io/pt9912/viper-machine:v0.18.0`. Bei k3d (vorher `k3d cluster create viper`) lädt der Cluster das öffentliche Image beim ersten Start selbst, das dauert etwa eine halbe Minute; Sie müssen es nicht einspielen. Wollen Sie das geladene Image nutzen, spielen Sie es mit `k3d image import ghcr.io/pt9912/viper-machine:v0.18.0 -c viper` ein.
    * **Bauen:** `viper image build` (für k3d: erst `k3d cluster create viper`, dann `viper image build --k3d viper`). Das dauert beim ersten Mal einige Minuten. Die Ausgabe nennt den Namen des Images.
 2. **Einstellungen** in `machines/lokal.env.local`:
 
