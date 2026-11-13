@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -53,6 +54,9 @@ func (c *Client) tool(ctx context.Context, name string, args ...string) (string,
 		return "", errors.New("no way to run " + name)
 	}
 	out, errOut, err := c.opts.Run(ctx, "", name, args...)
+	if programMissing(err) {
+		return out, notInstalledError{fmt.Sprintf("%s is not installed or not on the PATH%s", name, map[string]string{"k3d": ": viper up needs it to make the k3d registry and cluster (install it, for example brew install k3d, or make them yourself: k3d registry create, k3d cluster create --registry-use)"}[name])}
+	}
 	if err != nil {
 		msg := strings.TrimSpace(errOut)
 		if msg == "" {
@@ -61,6 +65,17 @@ func (c *Client) tool(ctx context.Context, name string, args ...string) (string,
 		return out, fmt.Errorf("%s %s: %s", name, strings.Join(args[:min(len(args), 2)], " "), msg)
 	}
 	return out, nil
+}
+
+// notInstalledError is the failure of a program that is not there, as tool words it.
+type notInstalledError struct{ msg string }
+
+func (e notInstalledError) Error() string { return e.msg }
+
+// programMissing says whether the program could not be started because it is not there (what exec says, or what tool made of it).
+func programMissing(err error) bool {
+	var ni notInstalledError
+	return err != nil && (errors.As(err, &ni) || errors.Is(err, exec.ErrNotFound) || strings.Contains(err.Error(), "executable file not found"))
 }
 
 // notThere says whether docker answered that the object does not exist. Any other failure (the daemon is down, docker is

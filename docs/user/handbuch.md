@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.102  
+Version: 1.103  
 Software-Version: v0.20.1  
 Stand: 13.11.2026  
 
@@ -257,7 +257,7 @@ K3D_AGENTS=2
 * `K3D_CLUSTER_CREATE=1`: `viper up` legt auch den Cluster an, wenn er fehlt, und zwar mit dieser Registry (`k3d cluster create <cluster> --registry-use k3d-<name>:5000`). Ohne die Einstellung bricht `viper up` mit der Anleitung ab, wie Sie den Cluster selbst anlegen. Standard: `0`.
 * `K3D_AGENTS`: wie viele Agent-Knoten ein Cluster bekommt, den `viper` anlegt (0 bis 16, Standard `0`: nur ein Server-Knoten).
 
-`viper up` führt dann der Reihe nach aus: Registry anlegen oder (angehalten) starten, Cluster anlegen (nur mit `K3D_CLUSTER_CREATE=1`), das Image aus Docker nehmen oder mit `docker pull` laden, in die Registry schieben, und die Pods starten mit dem Namen aus der Registry. Alles steht in der Ausgabe von `viper up`. Bei einer Gruppe geschieht das einmal, die Rechner warten aufeinander. `viper preflight` sagt vorher, was passieren wird. Die Knoten holen das Image aus der Registry im lokalen Docker-Netz, ohne Download aus dem Internet; kopiert und entpackt wird auf jedem Knoten weiterhin (bei drei Knoten je 15 bis 29 Sekunden).
+Dafür muss das Programm `k3d` auf Ihrem Computer installiert sein (`brew install k3d`); der Preflight prüft es und meldet sonst einen Fehler, bevor etwas angelegt wird. Ist die Registry schon da und nutzt der Cluster sie, braucht `viper` `k3d` nicht. `viper up` führt dann der Reihe nach aus: Registry anlegen oder (angehalten) starten, Cluster anlegen (nur mit `K3D_CLUSTER_CREATE=1`), das Image aus Docker nehmen oder mit `docker pull` laden, in die Registry schieben, und die Pods starten mit dem Namen aus der Registry. Alles steht in der Ausgabe von `viper up`. Bei einer Gruppe geschieht das einmal, die Rechner warten aufeinander. `viper preflight` sagt vorher, was passieren wird. Die Knoten holen das Image aus der Registry im lokalen Docker-Netz, ohne Download aus dem Internet; kopiert und entpackt wird auf jedem Knoten weiterhin (bei drei Knoten je 15 bis 29 Sekunden).
 
 Ein Cluster, der schon da ist und ohne die Registry angelegt wurde, bekommt sie nachträglich nicht (k3d kann das nicht). Dann spielt `viper up` das Image mit `k3d image import` in alle Knoten ein, sagt es und nennt die Lösung: den Cluster neu anlegen, am einfachsten mit `K3D_CLUSTER_CREATE=1`. 
 
@@ -1547,3 +1547,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.100 | nach v0.20.0 | Einleitung: Zweck, Voraussetzungen, Kosten, Datenverlust und Sicherheit nennen auch Pods und Container (kein Cloud-Konto nötig, Docker nur für diese Wege, Volumes, `builder` ohne Root). |
 | 1.101 | nach v0.20.0 | Behoben: `viper up` legt bei einer NATS-Gruppe in k3d den Cluster (und die Registry) an, bevor es das Netz der Gruppe macht; bisher scheiterte der Start mit „context k3d-… does not exist“. `viper check` meldet bei `K8S_DOCKER=none` oder `COMPOSE_DOCKER=none` kein fehlendes Docker mehr als Fehler. |
 | 1.102 | v0.20.1 | Release v0.20.1: die Änderungen 1.100 und 1.101 (Einleitung für Pods und Container; NATS-Gruppe in k3d ohne vorhandenen Cluster; `viper check` bei `K8S_DOCKER=none`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ und die Beispiele für das Image nennen jetzt `v0.20.1`. |
+| 1.103 | nach v0.20.1 | Der Preflight prüft bei `K3D_REGISTRY`, ob das Programm `k3d` da ist, wenn `viper up` die Registry oder den Cluster anlegen muss, und meldet sonst einen Fehler mit dem Hinweis, wie man es installiert. |

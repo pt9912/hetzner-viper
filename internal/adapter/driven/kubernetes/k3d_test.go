@@ -24,12 +24,16 @@ type k3dHost struct {
 	clusterGen, registryGen                              int  // who made them: the ID of a container changes when it is made again
 	dockerDown                                           bool // the daemon does not answer
 	createFails, halfMade                                bool // k3d cluster create fails, and leaves the cluster half made
+	noK3d                                                bool // the program k3d is not installed
 }
 
 func (h *k3dHost) run(_ context.Context, _, name string, args ...string) (string, string, error) {
 	h.calls = append(h.calls, name+" "+strings.Join(args, " "))
 	no := func(what string) (string, string, error) {
 		return "", "Error: No such " + what, errors.New("exit status 1")
+	}
+	if h.noK3d && name == "k3d" {
+		return "", "", errors.New(`exec: "k3d": executable file not found in $PATH`)
 	}
 	if h.dockerDown && name == "docker" {
 		return "", "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?", errors.New("exit status 1")
@@ -521,5 +525,40 @@ func TestAMachineOfTheSameNameInAnotherNamespaceIsAnotherMachine(t *testing.T) {
 	}
 	if left := a.InfrastructureLeft(ctx, "claude-alpha"); left != nil {
 		t.Errorf("the machine of the same name in namespace b is still there: %+v", left)
+	}
+}
+
+func TestAMissingK3dProgramIsSaidByThePreflightAndNotLeftToTheStart(t *testing.T) {
+	ctx := context.Background()
+	check := model.Check{Spec: spec("claude-alpha"), ServerName: "claude-alpha"}
+	// no cluster, no registry, and no k3d to make them
+	h := &k3dHost{noK3d: true, imageLocal: true}
+	k := k3dClient(t, newCluster(), h, kubernetes.Options{K3DCreateCluster: true})
+	f := k.Validate(ctx, check)
+	if !strings.Contains(texts(f), "k3d is not installed or not on the PATH") || !strings.Contains(texts(f), "brew install k3d") {
+		t.Errorf("%s", texts(f))
+	}
+	hasFail := false
+	for _, x := range f {
+		hasFail = hasFail || x.Level == model.Fail
+	}
+	if !hasFail {
+		t.Error("the preflight says all is well and the start will fail")
+	}
+	err := k.PrepareImage(ctx, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "k3d is not installed or not on the PATH") || strings.Contains(err.Error(), "executable file not found") {
+		t.Errorf("the start says it in words, not with the error of exec: %v", err)
+	}
+	// everything there already: k3d is not needed, so it is not asked for
+	h = &k3dHost{noK3d: true, registry: true, cluster: true, usesRegistry: true, imageLocal: true}
+	f = k3dClient(t, newCluster(), h, kubernetes.Options{}).Validate(ctx, check)
+	if strings.Contains(texts(f), "k3d is not installed") {
+		t.Errorf("a cluster that has everything needs no k3d: %s", texts(f))
+	}
+	// a registry that does not run needs it, even if the cluster is there
+	h = &k3dHost{noK3d: true, cluster: true, usesRegistry: true, imageLocal: true}
+	f = k3dClient(t, newCluster(), h, kubernetes.Options{}).Validate(ctx, check)
+	if !strings.Contains(texts(f), "k3d is not installed") {
+		t.Errorf("%s", texts(f))
 	}
 }

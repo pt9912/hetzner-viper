@@ -219,6 +219,7 @@ func (c *Client) checkK3dCluster(ctx context.Context, f *findings) bool {
 		return true
 	}
 	f.add(model.Info, "the k3d cluster %s does not exist: viper up makes it with the registry %s (%d agent nodes)", cluster, c.opts.registryContainer(), c.opts.K3DAgents)
+	c.checkK3dProgram(ctx, f)
 	c.checkK3dImage(ctx, f)
 	return true
 }
@@ -231,12 +232,26 @@ func (c *Client) checkK3dRegistry(ctx context.Context, f *findings) {
 	switch {
 	case c.registryPort(ctx) == "":
 		f.add(model.Info, "the k3d registry %s does not run: viper up makes or starts it", c.opts.registryContainer())
+		c.checkK3dProgram(ctx, f)
 	case c.clusterUsesRegistry(ctx):
 		f.add(model.OK, "the k3d registry %s runs and the cluster uses it", c.opts.registryContainer())
 	default:
 		f.add(model.Warn, "the k3d cluster %s was made without --registry-use %s:%s: the image goes into its nodes with k3d image import (make the cluster again to use the registry)", c.opts.k3dCluster(), c.opts.registryContainer(), k3dRegistryPort)
+		c.checkK3dProgram(ctx, f)
 	}
 	c.checkK3dImage(ctx, f)
+}
+
+// checkK3dProgram: viper up makes the registry and the cluster, and puts the image in a cluster without the registry, with
+// the program k3d. Without it the start would fail after the checks said all is well.
+func (c *Client) checkK3dProgram(ctx context.Context, f *findings) {
+	_, err := c.tool(ctx, "k3d", "version")
+	switch {
+	case programMissing(err):
+		f.add(model.Fail, "%s", err.Error())
+	case err != nil:
+		f.add(model.Warn, "k3d does not answer: %s", c.Describe(err))
+	}
 }
 
 func (c *Client) checkK3dImage(ctx context.Context, f *findings) {
