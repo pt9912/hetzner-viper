@@ -530,20 +530,23 @@ func TestLoadReadsTheSettingsOfTheKubernetesProvider(t *testing.T) {
 		t.Errorf("%+v", c)
 	}
 	for name, tc := range map[string]struct{ settings, want string }{
-		"no cluster and no image": {base, "Missing settings: SERVER_LOCATION K8S_IMAGE"},
-		"no image":                {base + "SERVER_LOCATION=x\n", "Missing settings: K8S_IMAGE"},
-		"DNS":                     {"PROVIDER=kubernetes\nDNS_DOMAIN=example.com\nSERVER_LOCATION=x\nK8S_IMAGE=i\n", "DNS_PROVIDER=none is needed for PROVIDER=kubernetes"},
-		"docker mode":             {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_DOCKER=podman\n", "K8S_DOCKER: dind, remote or none: podman"},
-		"work directory":          {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nWORKSPACE_DIR=/work\n", "WORKSPACE_DIR: for PROVIDER=kubernetes a directory below /home/builder"},
-		"namespace":               {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_NAMESPACE=My_Space\n", "K8S_NAMESPACE: the name of a namespace"},
-		"docker host":             {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_DOCKER=remote\nK8S_DOCKER_HOST=tcp://nohost\n", "K8S_DOCKER_HOST: tcp://host:port"},
-		"work directory above":    {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nWORKSPACE_DIR=/home/builder/../x\n", "WORKSPACE_DIR: for PROVIDER=kubernetes a directory below /home/builder"},
-		"pull secret":             {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_IMAGE_PULL_SECRET=Reg_Cred\n", "K8S_IMAGE_PULL_SECRET: the name of a Secret"},
-		"homebrew volume size":    {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_BREW_GB=big\n", "K8S_BREW_GB must be a whole number of GB between 1 and 16384: big"},
-		"volume size":             {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_DISK_GB=0\n", "K8S_DISK_GB must be a whole number of GB between 1 and 16384: 0"},
-		"k3d registry name":       {base + "SERVER_LOCATION=k3d-x\nK8S_IMAGE=i\nK3D_REGISTRY=my_reg\n", "K3D_REGISTRY: the name of a k3d registry"},
-		"k3d create":              {base + "SERVER_LOCATION=k3d-x\nK8S_IMAGE=i\nK3D_CLUSTER_CREATE=yes\n", "K3D_CLUSTER_CREATE: 0 or 1: yes"},
-		"k3d agents":              {base + "SERVER_LOCATION=k3d-x\nK8S_IMAGE=i\nK3D_AGENTS=99\n", "K3D_AGENTS must be a whole number of agent nodes between 0 and 16: 99"},
+		"no cluster and no image":  {base, "Missing settings: SERVER_LOCATION K8S_IMAGE"},
+		"no image":                 {base + "SERVER_LOCATION=x\n", "Missing settings: K8S_IMAGE"},
+		"DNS":                      {"PROVIDER=kubernetes\nDNS_DOMAIN=example.com\nSERVER_LOCATION=x\nK8S_IMAGE=i\n", "DNS_PROVIDER=none is needed for PROVIDER=kubernetes"},
+		"docker mode":              {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_DOCKER=podman\n", "K8S_DOCKER: dind, remote or none: podman"},
+		"work directory":           {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nWORKSPACE_DIR=/work\n", "WORKSPACE_DIR: for PROVIDER=kubernetes a directory below /home/builder"},
+		"namespace":                {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_NAMESPACE=My_Space\n", "K8S_NAMESPACE: the name of a namespace"},
+		"docker host":              {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_DOCKER=remote\nK8S_DOCKER_HOST=tcp://nohost\n", "K8S_DOCKER_HOST: tcp://host:port"},
+		"work directory above":     {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nWORKSPACE_DIR=/home/builder/../x\n", "WORKSPACE_DIR: for PROVIDER=kubernetes a directory below /home/builder"},
+		"pull secret":              {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_IMAGE_PULL_SECRET=Reg_Cred\n", "K8S_IMAGE_PULL_SECRET: the name of a Secret"},
+		"homebrew volume size":     {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_BREW_GB=big\n", "K8S_BREW_GB must be a whole number of GB between 1 and 16384: big"},
+		"volume size":              {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_DISK_GB=0\n", "K8S_DISK_GB must be a whole number of GB between 1 and 16384: 0"},
+		"k3d registry name":        {base + "SERVER_LOCATION=k3d-x\nK8S_IMAGE=i\nK3D_REGISTRY=my_reg\n", "K3D_REGISTRY: the name of a k3d registry"},
+		"image as an option":       {base + "SERVER_LOCATION=x\nK8S_IMAGE=-q\n", "K8S_IMAGE: an image reference"},
+		"context as an option":     {base + "SERVER_LOCATION=-x\nK8S_IMAGE=i\n", "SERVER_LOCATION: the context of the kubeconfig"},
+		"k3d cluster as an option": {base + "SERVER_LOCATION=k3d--x\nK8S_IMAGE=i\n", "SERVER_LOCATION: the context of the kubeconfig"},
+		"k3d create":               {base + "SERVER_LOCATION=k3d-x\nK8S_IMAGE=i\nK3D_CLUSTER_CREATE=yes\n", "K3D_CLUSTER_CREATE: 0 or 1: yes"},
+		"k3d agents":               {base + "SERVER_LOCATION=k3d-x\nK8S_IMAGE=i\nK3D_AGENTS=99\n", "K3D_AGENTS must be a whole number of agent nodes between 0 and 16: 99"},
 	} {
 		_, err := settingsfile.Load(setupDir(t, tc.settings, ""), "web", env, false)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {

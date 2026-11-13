@@ -203,7 +203,15 @@ func (c *Client) checkPullSecret(ctx context.Context, cs kubernetes.Interface, f
 // returns true if the rest of the checks cannot be made: the cluster is missing (viper up makes it, or says how).
 func (c *Client) checkK3dCluster(ctx context.Context, f *findings) bool {
 	cluster := c.opts.k3dCluster()
-	if cluster == "" || c.clusterExists(ctx) {
+	if cluster == "" {
+		return false
+	}
+	exists, err := c.clusterExists(ctx)
+	if err != nil {
+		f.add(model.Fail, "docker could not say whether the k3d cluster %s exists: %s", cluster, c.Describe(err))
+		return true
+	}
+	if exists {
 		return false
 	}
 	if !c.opts.K3DCreateCluster {

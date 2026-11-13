@@ -386,6 +386,22 @@ var (
 // container and needs no root on a VM. A container accepts no other place.
 const DefaultWorkspace = "/home/builder/work"
 
+// checkKubernetesNames checks the image and the context, which go into docker, k3d and kubeconfig calls: neither may be
+// taken for an option.
+func checkKubernetesNames(c *model.Machine) error {
+	if v := c.Get("K8S_IMAGE"); !imageRefRe.MatchString(v) {
+		return fmt.Errorf("K8S_IMAGE: an image reference without blanks or quotes, not beginning with a dash: %s", v)
+	}
+	loc := c.Get("SERVER_LOCATION")
+	if strings.HasPrefix(loc, "-") || (strings.HasPrefix(loc, "k3d-") && !k3dClusterNameRe.MatchString(strings.TrimPrefix(loc, "k3d-"))) {
+		return fmt.Errorf("SERVER_LOCATION: the context of the kubeconfig (for k3d k3d-<cluster> with a cluster name of letters, digits, - . _): %s", loc)
+	}
+	return nil
+}
+
+// k3dClusterNameRe is the name of a k3d cluster in the context k3d-<cluster>.
+var k3dClusterNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`)
+
 // checkK3dValues checks the settings of a k3d cluster: the registry viper makes for the image, whether viper makes the
 // cluster, and how many agent nodes it gets. They are settings of the machine (or of its group), like all others; a
 // machine that is not in a k3d cluster ignores them.
@@ -448,6 +464,9 @@ func checkKubernetes(c *model.Machine) error {
 	}
 	if DNSProviderOf(map[string]string{"DNS_PROVIDER": c.Get("DNS_PROVIDER")}) != model.DNSNone {
 		return errors.New("DNS_PROVIDER=none is needed for PROVIDER=kubernetes: a pod has no public address to name")
+	}
+	if err := checkKubernetesNames(c); err != nil {
+		return err
 	}
 	if err := checkKubernetesValues(c); err != nil {
 		return err

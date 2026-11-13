@@ -128,6 +128,7 @@ type Client struct {
 
 	mu       sync.Mutex
 	prepared bool   // PrepareImage has run
+	lease    string // the lease file of a machine that is about to be made
 	source   string // the image as K8S_IMAGE names it, before PrepareImage replaced it
 	cs       kubernetes.Interface
 	cfg      *rest.Config // nil for a client made over a given clientset

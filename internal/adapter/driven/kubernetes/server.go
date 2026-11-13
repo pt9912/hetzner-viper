@@ -92,8 +92,14 @@ func serverOf(sts *appsv1.StatefulSet, pod *corev1.Pod) *model.Server {
 
 // ServerByName returns the server of that name, nil if there is none.
 func (c *Client) ServerByName(ctx context.Context, name string) (*model.Server, error) {
-	if c.opts.k3dCluster() != "" && !c.clusterExists(ctx) {
-		return nil, nil // a k3d cluster that viper up is going to make has no servers, and no API to ask
+	if c.opts.k3dCluster() != "" {
+		exists, err := c.clusterExists(ctx)
+		if err != nil {
+			return nil, err // docker could not say: not "there is no server", which would offer to clean up a machine that runs
+		}
+		if !exists {
+			return nil, nil // a k3d cluster that viper up is going to make has no servers, and no API to ask
+		}
 	}
 	sts, err := c.statefulSet(ctx, name)
 	if err != nil || sts == nil {
@@ -132,6 +138,7 @@ func (c *Client) ensureNamespace(ctx context.Context) error {
 
 // CreateServer makes the Secret, the volume and the StatefulSet and waits until the pod is ready.
 func (c *Client) CreateServer(ctx context.Context, s model.ServerSpec) (*model.Server, error) {
+	defer c.releaseLease() // the machine exists from here on, or was not made: the lease from PrepareImage is not needed
 	cs, err := c.client()
 	if err != nil {
 		return nil, err

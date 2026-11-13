@@ -9,7 +9,8 @@ name: machine image
 #   gh workflow run "machine image" -f tag=v0.18.0
 # A tag is never moved. If only the test (image/test.sh) or the workflow was wrong, build the image of the tag with the
 # files of a later commit: -f ref=main. The run stops if a file that goes into the image differs between the tag and
-# the ref, so the image is the one the tag describes.
+# the ref, so the image is the one the tag describes. The ref is resolved to one commit first, so that both architectures are
+# built from the same files.
 # The package ghcr.io/<owner>/viper-machine is public (checked with an anonymous request for v0.18.0), so a cluster pulls
 # it without an image pull secret. If it is ever private (GitHub: Packages > viper-machine > Package settings > Change
 # visibility), every cluster needs a pull secret (K8S_IMAGE_PULL_SECRET).
@@ -30,7 +31,37 @@ permissions:
   packages: write
 
 jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      REF: ${{ inputs.ref }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || inputs.tag || github.ref_name }}
+          fetch-depth: 0
+          fetch-tags: true
+      - id: sha
+        name: Resolve the files to one commit, and check them against the tag
+        run: |
+          set -euo pipefail
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [ -n "${REF}" ]; then
+            # everything that goes into the image: the Dockerfile reads these (the test and the workflow do not)
+            if ! git diff --quiet "refs/tags/${TAG}" HEAD -- image ':!image/test.sh' cloud-init.yaml; then
+              echo "::error::the image files of ${TAG} and ${REF} differ: the image would not be the one the tag describes"
+              git diff --stat "refs/tags/${TAG}" HEAD -- image ':!image/test.sh' cloud-init.yaml
+              exit 1
+            fi
+            echo "the image files of ${TAG} and ${REF} are equal"
+          fi
+
   image:
+    needs: resolve
     strategy:
       fail-fast: false
       matrix:
@@ -47,20 +78,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref || env.TAG }}
-          fetch-depth: 0
-          fetch-tags: true
-      - name: Check that the ref has the image files of the tag
-        if: inputs.ref != ''
-        run: |
-          set -euo pipefail
-          files="image/Dockerfile cloud-init.yaml image/seed.py image/sshd_config image/entry.sh image/nats-supervisor.sh"
-          if ! git diff --quiet "refs/tags/${TAG}" HEAD -- $files; then
-            echo "::error::the image files of ${TAG} and ${{ inputs.ref }} differ: the image would not be the one the tag describes"
-            git diff --stat "refs/tags/${TAG}" HEAD -- $files
-            exit 1
-          fi
-          echo "the image files of ${TAG} and ${{ inputs.ref }} are equal"
+          ref: ${{ needs.resolve.outputs.sha }}
       - name: Build
         run: |
           set -euo pipefail
@@ -89,7 +107,7 @@ jobs:
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           image="ghcr.io/${owner}/viper-machine"
           tags=("-t" "${image}:${TAG}")
-          # latest follows the release that was just tagged, not an old tag built by hand
-          if [ "${GITHUB_EVENT_NAME}" = push ]; then tags+=("-t" "${image}:latest"); fi
+          # latest follows the release that was just tagged: not an old tag built by hand, not a prerelease (v1.0.0-rc1)
+          if [ "${GITHUB_EVENT_NAME}" = push ] && [[ "${TAG}" != *-* ]]; then tags+=("-t" "${image}:latest"); fi
           docker buildx imagetools create "${tags[@]}" "${image}:${TAG}-amd64" "${image}:${TAG}-arm64"
           docker buildx imagetools inspect "${image}:${TAG}"
