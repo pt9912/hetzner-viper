@@ -38,6 +38,8 @@ type Machine struct {
 
 	ServerName, SSHAlias, DNSHost, KeyName, FirewallName string
 	StateDir, SSHDir, SSHConfig, KnownPin                string
+	// MachineStateDir is StateDir/<prefix>: the state files of the machines of one prefix.
+	MachineStateDir string
 
 	// state files of the machine, all keyed by the server name
 	// GroupState holds the group the machine was started in (viper up): it is managed there until viper down.

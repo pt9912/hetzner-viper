@@ -787,3 +787,31 @@ func TestAMachineIsManagedInTheGroupItWasStartedIn(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The state files of the machines lie in a directory of their prefix; the ones that older versions kept in the state
+// directory itself are moved there when the machine is loaded.
+func TestStateFilesLieInTheDirectoryOfThePrefixAndOldOnesMoveThere(t *testing.T) {
+	dir := setupDir(t, "DNS_DOMAIN=example.com\nSERVER_PREFIX=lab\n", "")
+	home := t.TempDir()
+	root := filepath.Join(home, ".local", "state", "hetzner-claude")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "id-lab-web"), []byte("42\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := settingsfile.Load(dir, "web", settings.Env{Lookup: envOf(nil), Home: home}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(root, "lab", "id-lab-web"); c.IDState != want {
+		t.Fatalf("%s, want %s", c.IDState, want)
+	}
+	b, err := os.ReadFile(c.IDState)
+	if err != nil || strings.TrimSpace(string(b)) != "42" {
+		t.Errorf("the old file was not moved: %q %v", b, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "id-lab-web")); err == nil {
+		t.Error("the old file is still in the state directory")
+	}
+}

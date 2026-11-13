@@ -22,7 +22,7 @@ func (e *Env) probes() int {
 }
 
 func (e *Env) state(name string) string {
-	b, _ := os.ReadFile(filepath.Join(e.Home, ".local", "state", "hetzner-claude", name))
+	b, _ := os.ReadFile(filepath.Join(e.Home, ".local", "state", "hetzner-claude", "claude", name))
 	return strings.TrimSpace(string(b))
 }
 
@@ -206,7 +206,7 @@ func TestMissingPinIsRecordedAfterTheCAVerifiedTheConnection(t *testing.T) {
 	if err := os.Remove(filepath.Join(e.Home, ".ssh", "known_hosts_hetzner_claude-web")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(filepath.Join(e.Home, ".local", "state", "hetzner-claude", "id-claude-web")); err != nil {
+	if err := os.Remove(filepath.Join(e.Home, ".local", "state", "hetzner-claude", "claude", "id-claude-web")); err != nil {
 		t.Fatal(err)
 	}
 	e.Srv.SetHostKey("ssh-ed25519 AAAAserverkey root@host\n")
@@ -710,7 +710,7 @@ func TestReadyMarkerOnTheServerCountsForAnotherComputer(t *testing.T) {
 	if got := strings.TrimSpace(e.ServerFile(".config/viper/ready")); got != e.state("id-claude-web") || got == "" {
 		t.Fatalf("server marker %q, id %q", got, e.state("id-claude-web"))
 	}
-	_ = os.Remove(filepath.Join(e.Home, ".local", "state", "hetzner-claude", "ready-claude-web")) // like a second computer
+	_ = os.Remove(filepath.Join(e.Home, ".local", "state", "hetzner-claude", "claude", "ready-claude-web")) // like a second computer
 	e.Srv.Write("reboot-required", "")
 	e.Srv.Write("reboot-required.keep", "")
 	n := e.probes()
@@ -796,7 +796,7 @@ func TestHomebrewInstallerRunsWhenBrewIsMissing(t *testing.T) {
 func TestOldServerCountsAsSetUpOnAnotherComputer(t *testing.T) {
 	e := New(t, "")
 	e.MustUp("web", "")
-	if err := os.Remove(filepath.Join(e.Home, ".local", "state", "hetzner-claude", "ready-claude-web")); err != nil {
+	if err := os.Remove(filepath.Join(e.Home, ".local", "state", "hetzner-claude", "claude", "ready-claude-web")); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(filepath.Join(e.Srv.Home, ".config/viper/ready")); err != nil {

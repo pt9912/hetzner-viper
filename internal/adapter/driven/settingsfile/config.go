@@ -113,7 +113,23 @@ func Load(dir, machine string, env settings.Env, needTokens bool) (*model.Machin
 	if err != nil {
 		return nil, err
 	}
+	moveOldState(c)
 	return c, nil
+}
+
+// moveOldState moves the state files that older versions kept in the state directory itself into the directory of the
+// prefix (best effort: a file that cannot be moved is read from its new place and found missing, as if it was never there).
+func moveOldState(c *model.Machine) {
+	_ = os.MkdirAll(c.MachineStateDir, 0o700)
+	for _, f := range []string{c.IPState, c.IDState, c.WorkspaceState, c.ReadyState, c.RepoState, c.GroupState} {
+		old := filepath.Join(c.StateDir, filepath.Base(f))
+		if _, err := os.Stat(f); err == nil {
+			continue
+		}
+		if _, err := os.Stat(old); err == nil {
+			_ = os.Rename(old, f)
+		}
+	}
 }
 
 // startedIn is the group, of those that name the machine, that it was started in and still runs in ("" if none or
@@ -406,14 +422,15 @@ func derivePaths(c *model.Machine, home string) {
 	c.FirewallName = c.ServerPrefix + "-ssh"
 	c.SSHDir = filepath.Join(home, ".ssh")
 	c.StateDir = filepath.Join(home, ".local", "state", "hetzner-claude")
+	c.MachineStateDir = filepath.Join(c.StateDir, c.ServerPrefix) // the files of the machines of one prefix lie together
 	c.SSHConfig = filepath.Join(c.SSHDir, "config_hetzner_"+c.ServerName)
 	c.KnownPin = filepath.Join(c.SSHDir, "known_hosts_hetzner_"+c.ServerName)
-	c.IPState = filepath.Join(c.StateDir, "ip-"+c.ServerName)
-	c.IDState = filepath.Join(c.StateDir, "id-"+c.ServerName)
-	c.WorkspaceState = filepath.Join(c.StateDir, "workspace-"+c.ServerName)
-	c.ReadyState = filepath.Join(c.StateDir, "ready-"+c.ServerName)
-	c.RepoState = filepath.Join(c.StateDir, "repo-"+c.ServerName)
-	c.GroupState = filepath.Join(c.StateDir, "group-"+c.ServerName)
+	c.IPState = filepath.Join(c.MachineStateDir, "ip-"+c.ServerName)
+	c.IDState = filepath.Join(c.MachineStateDir, "id-"+c.ServerName)
+	c.WorkspaceState = filepath.Join(c.MachineStateDir, "workspace-"+c.ServerName)
+	c.ReadyState = filepath.Join(c.MachineStateDir, "ready-"+c.ServerName)
+	c.RepoState = filepath.Join(c.MachineStateDir, "repo-"+c.ServerName)
+	c.GroupState = filepath.Join(c.MachineStateDir, "group-"+c.ServerName)
 	c.EventsLog = filepath.Join(c.StateDir, "events.log")
 	c.LogDir = filepath.Join(c.StateDir, "logs")
 }
