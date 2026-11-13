@@ -67,6 +67,8 @@ check "a nats-server starts as builder and answers the nats tool" sshc 2222 'nat
 # the scripts of viper that install them on a VM must find them and do nothing (they would need sudo to install)
 check "viper's natsinstall.sh finds nats-server installed" bash -c "$(declare -f sshc); sshc 2222 \"bash -s -- $srv_version https://x.invalid/x 0\" < $here/../internal/usecase/start/scripts/natsinstall.sh | grep -q 'is installed'"
 check "viper's natscli.sh finds the nats tool installed" bash -c "$(declare -f sshc); sshc 2222 \"bash -s -- $cli_version https://x.invalid/x 0\" < $here/../internal/usecase/start/scripts/natscli.sh | grep -q 'is installed'"
+check "a session has a UTF-8 locale (btop and tmux need one)" bash -c "[ \"\$($(declare -f sshc); sshc 2222 'locale charmap')\" = UTF-8 ]"
+check "a locale the client sends that the image lacks does not take it away (SendEnv LANG LC_*)" bash -c "export LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8; $(declare -f sshc); [ \"\$(sshc 2222 'locale charmap; echo \$LANG')\" = \"\$(printf 'UTF-8\nC.UTF-8')\" ]"
 check "DOCKER_HOST reaches the sessions of sshd (SetEnv)" sshc 2222 '[ "$DOCKER_HOST" = tcp://127.0.0.1:2375 ]'
 check "docker client and plugins" sshc 2222 "bash -lc 'docker --version && docker buildx version && docker compose version'"
 check "home was seeded: tmux and VS Code settings" sshc 2222 'test -f ~/.tmux.conf && test -f ~/.vscode-server/data/Machine/settings.json'

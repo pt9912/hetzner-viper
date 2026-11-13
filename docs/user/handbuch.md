@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.103  
+Version: 1.104  
 Software-Version: v0.20.1  
 Stand: 13.11.2026  
 
@@ -1253,6 +1253,11 @@ Der DNS-Eintrag ist ein A-Record ohne Cloudflare-Proxy, weil dieser SSH nicht we
 **Ursache:** Der Container des Rechners wurde allein neu gestartet (`docker restart`, Absturz, Neustart des Hosts); der zweite Container mit dem Docker-Daemon hängt dann am alten Netz.
 **Lösung:** `viper up <rechner>` erkennt das, startet den zweiten Container neu und wartet, bis der Daemon antwortet.
 
+### Meldung: "No UTF-8 locale detected!" (btop, tmux) in einem Pod oder Container
+
+**Ursache:** Das Image der Maschine, mit der der Pod oder Container angelegt wurde, hat in den SSH-Sitzungen keine UTF-8-Sprachumgebung gesetzt (ältere Versionen). Das Image kennt nur `C.UTF-8`; schickt Ihr Terminal eine andere (zum Beispiel `de_DE.UTF-8`), die es dort nicht gibt, fallen Programme auf ASCII zurück.
+**Lösung:** Sofort: `export LANG=C.UTF-8 LC_ALL=C.UTF-8` in der Sitzung (oder `btop --force-utf`). Dauerhaft: Ein Image ab dieser Korrektur setzt `C.UTF-8` für alle Sitzungen fest. Ein vorhandener Pod oder Container behält sein altes Image: Legen Sie den Rechner mit `viper down` und `viper up` neu an (Daten gehen dabei verloren, sichern Sie vorher), nachdem Sie auf eine neuere Version von `viper` oder ein neu gebautes Image (`viper image build`) umgestellt haben. Auf einer VM tritt das nicht auf.
+
 ### Meldung: "SSH not reachable; server retained."
 
 **Ursache:** Der Server ist nach etwa 20 Minuten nicht per SSH erreichbar. Mögliche Gründe: Die Firewall blockiert Ihr Netz, oder der Server startet nicht. (Ein nicht vertrauenswürdiger Host-Schlüssel oder ein abgelehnter Login-Schlüssel hat eigene Meldungen, siehe unten.)  
@@ -1548,3 +1553,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.101 | nach v0.20.0 | Behoben: `viper up` legt bei einer NATS-Gruppe in k3d den Cluster (und die Registry) an, bevor es das Netz der Gruppe macht; bisher scheiterte der Start mit „context k3d-… does not exist“. `viper check` meldet bei `K8S_DOCKER=none` oder `COMPOSE_DOCKER=none` kein fehlendes Docker mehr als Fehler. |
 | 1.102 | v0.20.1 | Release v0.20.1: die Änderungen 1.100 und 1.101 (Einleitung für Pods und Container; NATS-Gruppe in k3d ohne vorhandenen Cluster; `viper check` bei `K8S_DOCKER=none`). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ und die Beispiele für das Image nennen jetzt `v0.20.1`. |
 | 1.103 | nach v0.20.1 | Der Preflight prüft bei `K3D_REGISTRY`, ob das Programm `k3d` da ist, wenn `viper up` die Registry oder den Cluster anlegen muss, und meldet sonst einen Fehler mit dem Hinweis, wie man es installiert. |
+| 1.104 | nach v0.20.1 | Behoben: Im Image der Pods und Container haben die SSH-Sitzungen die Sprachumgebung `C.UTF-8` (`btop` und `tmux` meldeten „No UTF-8 locale detected“). Kapitel 7 nennt die Abhilfe für vorhandene Rechner. |

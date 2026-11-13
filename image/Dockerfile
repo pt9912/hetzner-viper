@@ -103,6 +103,7 @@ COPY --chmod=0755 image/entry.sh /opt/viper/entry.sh
 COPY --chmod=0755 image/nats-supervisor.sh /opt/viper/nats-supervisor.sh
 
 USER 1000
-ENV PATH=/home/linuxbrew/.linuxbrew/bin:/home/builder/.local/bin:$PATH
+# the locale of the container itself (docker exec, the processes entry.sh starts); the sessions of sshd get theirs from SetEnv
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8 PATH=/home/linuxbrew/.linuxbrew/bin:/home/builder/.local/bin:$PATH
 EXPOSE 2222
 ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/opt/viper/entry.sh"]

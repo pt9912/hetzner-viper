@@ -78,6 +78,9 @@ for name in DOCKER_HOST POD_IP; do
   case "$value" in *[[:space:]\"]*) fail "$name has a blank or a quote in it" ;; esac
   setenv="$setenv $name=$value"
 done
+# The only locale of the image is C.UTF-8. A client sends its own (de_DE.UTF-8 with SendEnv LANG LC_*), which is not there and
+# leaves btop, tmux and others in ASCII ("No UTF-8 locale detected"); SetEnv has the last word over what the client sends.
+setenv="$setenv LANG=C.UTF-8 LC_ALL=C.UTF-8"
 [ -z "$setenv" ] || echo "SetEnv$setenv" >> "$cfg"
 
 # the pod is the NATS server of its group: nats-server runs here as a process, without systemd
