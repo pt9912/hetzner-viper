@@ -161,6 +161,38 @@ func TestNatsTextFromStdinAndOptionChecks(t *testing.T) {
 	}
 }
 
+func TestNatsTextFromAFile(t *testing.T) {
+	dir, env := natsGroup(t, "")
+	ssh := &natsSSH{out: `{"event":"sent"}` + "\n"}
+	file := filepath.Join(t.TempDir(), "text.md")
+	if err := os.WriteFile(file, []byte("line one\nline two\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runNats(t, dir, env, ssh, "", cli.Opts{Args: []string{"broadcast", "dev"}, Topic: "news", File: file}); err != nil || ssh.stdin[0] != "line one\nline two" {
+		t.Errorf("%v %q", err, ssh.stdin)
+	}
+	if _, _, err := runNats(t, dir, env, ssh, "from stdin\n", cli.Opts{Args: []string{"broadcast", "dev"}, Topic: "news", File: "-"}); err != nil || ssh.stdin[1] != "from stdin" {
+		t.Errorf("%v %q", err, ssh.stdin)
+	}
+	before := len(ssh.calls)
+	for _, p := range []cli.Opts{
+		{Args: []string{"broadcast", "dev", "x"}, Topic: "news", File: file},      // text and file
+		{Args: []string{"broadcast", "dev"}, Topic: "news", File: file + ".none"}, // no such file
+		{Args: []string{"peers", "dev"}, File: file},                              // --file is not used
+	} {
+		if _, _, err := runNats(t, dir, env, ssh, "", p); err == nil || len(ssh.calls) != before {
+			t.Errorf("%+v was accepted (%v)", p, err)
+		}
+	}
+	big := filepath.Join(t.TempDir(), "big.txt")
+	if err := os.WriteFile(big, []byte(strings.Repeat("x", 20000)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runNats(t, dir, env, ssh, "", cli.Opts{Args: []string{"broadcast", "dev"}, Topic: "news", File: big}); err == nil || len(ssh.calls) != before {
+		t.Errorf("a file over the limit was sent: %v", err)
+	}
+}
+
 func TestNatsPeersAndRequestAndNoMachineThatCanSpeak(t *testing.T) {
 	dir, env := natsGroup(t, "")
 	ssh := &natsSSH{out: `{"event":"ready","me":"alpha","group":"dev"}

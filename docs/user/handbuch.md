@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.113  
+Version: 1.114  
 Software-Version: v0.21.1  
 Stand: 13.11.2026  
 
@@ -730,9 +730,11 @@ viper nats request   entwicklung "Wie ist der Stand?" --to beta --timeout 60
 viper nats listen    entwicklung [--topic news]           # bis Strg-C; --topic mehrfach oder mit Komma: --topic news,build
 viper nats listen    entwicklung --all                    # zusätzlich die Direktnachrichten zwischen den anderen Rechnern
 echo "langer Text" | viper nats send entwicklung - --to beta   # Text von der Standardeingabe
+viper nats broadcast entwicklung --topic news --file mitteilung.md   # Text aus einer Datei (--file - liest die Standardeingabe)
 ```
 
 * **Absender:** Ohne eigenen Schlüssel (siehe „Als Betreiber senden“ unten) kommt Ihre Nachricht von einer **Maschine der Gruppe** an, mit deren Schlüssel und Rechten; `viper` nimmt ohne `--from` die erste Maschine der Gruppe, die startklar ist und nicht der Empfänger ist. Mit `--from <maschine>` wählen Sie sie selbst. Die erste Ausgabezeile nennt den Absender („Sender: alpha …“).
+* **Langer Text:** Statt des Textes können Sie bei `send`, `broadcast` und `request` mit `--file DATEI` eine Datei angeben (höchstens 16 KiB; ein abschließender Zeilenumbruch gehört nicht zum Text). Text und `--file` zusammen sind ein Fehler.
 * `--json` gibt je Ereignis eine JSON-Zeile aus.
 * `--timeout` bei `request` (Standard 30 Sekunden, 1 bis 120) und bei `peers` (wie lange zugehört wird). `topics` zeigt zuerst die festen Themen aus den Einstellungen (`NATS_MCP_TOPICS` in Gruppen- und Rechnerdateien, je Rechner mit `NATS_MCP=true`), ohne dass dort eine Sitzung laufen muss. Danach hört es wie `peers` zu und nennt die Themen, die laufende Maschinen nach eigener Aussage abonniert haben (auch die mit `subscribe` hinzugefügten); eine Maschine ohne laufende Sitzung ist dort, wie bei `peers`, nicht zu sehen. eine Maschine, die ihre Themen nicht meldet (ein älteres `viper-nats-mcp`, oder die Meldung kommt noch), steht als „has not said“ da, nicht als Maschine ohne Themen.
 
@@ -1565,3 +1567,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.111 | nach v0.21.0 | Nachtrag zu 1.110: auch `viper log` findet die Gruppe, in der der Rechner läuft; `viper nats` lässt einen Rechner, der in einer anderen Gruppe läuft, mit einem Hinweis aus, statt abzubrechen. |
 | 1.112 | nach v0.21.0 | Die Zustandsdateien der Rechner (`id-…`, `ip-…`, `ready-…` usw.) liegen in `~/.local/state/hetzner-claude/<präfix>/`; Dateien einer älteren Version zieht `viper` beim nächsten Befehl für den Rechner dorthin um. Protokolle, `events.log` und NATS-Schlüssel bleiben im Zustandsverzeichnis. |
 | 1.113 | v0.21.1 | Release v0.21.1: die Änderungen 1.109 bis 1.112 (`viper nats topics` zeigt die festen Themen; ein Rechner wird in der Gruppe verwaltet, in der er gestartet wurde; Zustandsdateien je Präfix). |
+| 1.114 | nach v0.21.1 | `viper nats send`, `broadcast` und `request` lesen den Text auf Wunsch aus einer Datei (`--file DATEI`). |

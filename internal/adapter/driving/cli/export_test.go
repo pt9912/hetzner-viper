@@ -27,7 +27,7 @@ type Opts struct {
 	HasVAT                    bool
 	Host                      *Host
 	Args                      []string
-	To, Topic, From           string
+	To, Topic, From, File     string
 	Timeout                   time.Duration
 	Query, All, JSON, Yes     bool
 	Registry                  string
@@ -35,7 +35,7 @@ type Opts struct {
 }
 
 func (p *Opts) options() *options {
-	o := &options{cpu: p.CPU, disk: p.Disk, ram: p.RAM, arch: p.Arch, location: p.Location, provider: p.Provider, vat: p.VAT, hasVAT: p.HasVAT, noJitter: p.NoJitter, group: p.Group, parallel: p.Parallel, machine: p.Machine, repo: p.Repo, cmd: p.Cmd, dir: p.Dir, force: p.Force, full: p.Full, noCode: p.NoCode, tmux: p.Tmux, h: p.Host, args: p.Args, to: p.To, topic: p.Topic, from: p.From, timeout: p.Timeout, query: p.Query, all: p.All, asJSON: p.JSON, yes: p.Yes}
+	o := &options{cpu: p.CPU, disk: p.Disk, ram: p.RAM, arch: p.Arch, location: p.Location, provider: p.Provider, vat: p.VAT, hasVAT: p.HasVAT, noJitter: p.NoJitter, group: p.Group, parallel: p.Parallel, machine: p.Machine, repo: p.Repo, cmd: p.Cmd, dir: p.Dir, force: p.Force, full: p.Full, noCode: p.NoCode, tmux: p.Tmux, h: p.Host, args: p.Args, to: p.To, topic: p.Topic, from: p.From, file: p.File, timeout: p.Timeout, query: p.Query, all: p.All, asJSON: p.JSON, yes: p.Yes}
 	o.registry, o.within = p.Registry, p.Within
 	return o
 }
@@ -43,7 +43,7 @@ func (p *Opts) options() *options {
 // Parse reads the command line.
 func Parse(args []string) (string, Opts, error) {
 	name, o, err := parse(args)
-	p := Opts{NoJitter: o.noJitter, Group: o.group, Parallel: o.parallel, Machine: o.machine, Repo: o.repo, Cmd: o.cmd, Dir: o.dir, Force: o.force, Full: o.full, NoCode: o.noCode, Tmux: o.tmux, CPU: o.cpu, Disk: o.disk, RAM: o.ram, Arch: o.arch, Location: o.location, Provider: o.provider, VAT: o.vat, HasVAT: o.hasVAT, Host: o.h, Args: o.args, To: o.to, Topic: o.topic, From: o.from, Timeout: o.timeout, Query: o.query, All: o.all, JSON: o.asJSON, Yes: o.yes}
+	p := Opts{NoJitter: o.noJitter, Group: o.group, Parallel: o.parallel, Machine: o.machine, Repo: o.repo, Cmd: o.cmd, Dir: o.dir, Force: o.force, Full: o.full, NoCode: o.noCode, Tmux: o.tmux, CPU: o.cpu, Disk: o.disk, RAM: o.ram, Arch: o.arch, Location: o.location, Provider: o.provider, VAT: o.vat, HasVAT: o.hasVAT, Host: o.h, Args: o.args, To: o.to, Topic: o.topic, From: o.from, File: o.file, Timeout: o.timeout, Query: o.query, All: o.all, JSON: o.asJSON, Yes: o.yes}
 	p.Registry, p.Within = o.registry, o.within
 	return name, p, err
 }

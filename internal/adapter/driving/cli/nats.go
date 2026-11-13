@@ -41,10 +41,7 @@ func parseNatsArgs(o *options, stdin io.Reader) (natsArgs, error) {
 	}
 	switch sub {
 	case "send", "broadcast", "request":
-		if len(rest) != 1 {
-			return natsArgs{}, fmt.Errorf("viper nats %s needs the text (or - for stdin)\n%s", sub, usage)
-		}
-		text, err := natsText(rest[0], stdin)
+		text, err := natsTextOf(o, sub, rest, stdin, usage)
 		if err != nil {
 			return natsArgs{}, err
 		}
@@ -66,16 +63,16 @@ func parseNatsArgs(o *options, stdin io.Reader) (natsArgs, error) {
 // checkNatsOptions refuses an option the subcommand does not use, so a typo does not go unnoticed.
 func checkNatsOptions(o *options, sub string) error {
 	use := map[string][]string{
-		"send":      {"to"},
-		"request":   {"to", "timeout"},
-		"broadcast": {"topic"},
+		"send":      {"to", "file"},
+		"request":   {"to", "timeout", "file"},
+		"broadcast": {"topic", "file"},
 		"peers":     {"timeout", "query"},
 		"topics":    {"timeout", "query"},
 		"listen":    {"topic", "all"},
 		"init":      {},
 		"revoke":    {},
 	}[sub]
-	given := map[string]bool{"to": o.to != "", "topic": o.topic != "", "timeout": o.timeout != 0, "query": o.query, "all": o.all}
+	given := map[string]bool{"to": o.to != "", "topic": o.topic != "", "timeout": o.timeout != 0, "query": o.query, "all": o.all, "file": o.file != ""}
 	for opt, set := range given {
 		if set && !slices.Contains(use, opt) {
 			return fmt.Errorf("viper nats %s: --%s is not used by this subcommand\n%s", sub, opt, usageLine("nats"))
@@ -90,6 +87,27 @@ func checkNatsOptions(o *options, sub string) error {
 }
 
 // natsText is the text of a message: the word itself, or stdin for "-" (one final new line is not part of it).
+func natsTextOf(o *options, sub string, rest []string, stdin io.Reader, usage string) (string, error) {
+	if o.file != "" { // the text is in a file (- is stdin)
+		if len(rest) != 0 {
+			return "", fmt.Errorf("viper nats %s: the text is either a word or --file, not both\n%s", sub, usage)
+		}
+		if o.file == "-" {
+			return natsText("-", stdin)
+		}
+		f, err := os.Open(o.file)
+		if err != nil {
+			return "", fmt.Errorf("viper nats %s: %w", sub, err)
+		}
+		defer f.Close()
+		return natsText("-", f)
+	}
+	if len(rest) != 1 {
+		return "", fmt.Errorf("viper nats %s needs the text (or - for stdin, or --file FILE)\n%s", sub, usage)
+	}
+	return natsText(rest[0], stdin)
+}
+
 func natsText(word string, stdin io.Reader) (string, error) {
 	if word != "-" {
 		return word, nil
@@ -99,7 +117,7 @@ func natsText(word string, stdin io.Reader) (string, error) {
 		return "", err
 	}
 	if len(b) > natsmcp.DefaultMaxText {
-		return "", fmt.Errorf("the text on stdin has more than %d bytes", natsmcp.DefaultMaxText)
+		return "", fmt.Errorf("the text has more than %d bytes", natsmcp.DefaultMaxText)
 	}
 	return strings.TrimSuffix(string(b), "\n"), nil
 }
