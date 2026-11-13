@@ -385,3 +385,8 @@ Ein unabhängiger Agent hat den Code von Meilenstein 1 bis zum Pull-Secret gepr�
 * **Weitere:** `DeleteServer` löscht das Secret nur mit dem Label; der Service der Gruppe muss `viper` gehören; Secret mit Modus 0440; ein `ErrImagePull` allein beendet das Warten nicht mehr (nur `ImagePullBackOff`); die PID-Datei von `nats-server` wird gegen `/proc/<pid>/cmdline` geprüft und beim Start des Prozessverwalters entfernt; Image-Tag mit Registry-Port; Einstellungen `K8S_NAMESPACE`, `K8S_STORAGE_CLASS`, `K8S_DOCKER_IMAGE`, `K8S_DOCKER_HOST` und `..` in `WORKSPACE_DIR` werden geprüft; der Workflow setzt `latest` nur bei einem Tag-Push.
 
 **Offen aus der Prüfung:** Der Sidecar hat keine Ressourcen (eine ResourceQuota, die Grenzen verlangt, lehnt den Pod ab); es gibt keinen Test für `Proxy` und den Port-Forward ohne Cluster (die Läufe in k3d decken ihn ab); das Image wird nur für `amd64` gebaut; der Host-Schlüssel liegt auch auf dem Home-Volume (Kopie für `sshd`).
+
+
+## Nachtrag (13.11.2026): veröffentlichtes Image in k3d
+
+Geprüft mit zwei neuen k3d-Clustern und dem öffentlichen Image `ghcr.io/pt9912/viper-machine:v0.18.0`: (a) ohne Einspielen lädt der Cluster das Image beim ersten Start selbst (Pod bereit nach 42 s, das Laden des Images 25 s), (b) `docker pull` und `k3d image import <name> -c <cluster>` (rund eine Minute) und danach `viper up` laufen durch. Beide Male „Ready“, die Cluster und Rechner sind wieder gelöscht. Nur `amd64`.
