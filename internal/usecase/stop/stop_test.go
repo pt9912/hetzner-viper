@@ -661,7 +661,11 @@ func (i infraHz) InfrastructureLeft(context.Context, string) []cloud.Infrastruct
 	return i.left
 }
 
-func (i infraHz) RemoveInfrastructure(_ context.Context, out io.Writer, keys []string) error {
+func (i infraHz) RemoveInfrastructure(_ context.Context, out io.Writer, choose func([]cloud.InfrastructureItem) []string) error {
+	if len(i.left) == 0 {
+		return nil // nothing left: nobody is asked
+	}
+	keys := choose(i.left)
 	*i.removed = append(*i.removed, keys)
 	fmt.Fprintf(out, "removed %v\n", keys)
 	return i.err
@@ -698,7 +702,7 @@ func TestTheClusterGoesWithTheLastMachineAndTheRegistryIsAskedAbout(t *testing.T
 	// any other answer, and no answer, keeps it
 	for _, answer := range [][]string{{"DELETE", "no"}, {"DELETE"}} {
 		w, removed, code = downWith(t, "", k3dItems(), answer...)
-		if code != 0 || len(removed) != 1 || strings.Join(removed[0], ",") != "cluster" || !strings.Contains(w.out.String(), "The k3d registry k3d-reg stays") {
+		if code != 0 || len(removed) != 1 || strings.Join(removed[0], ",") != "cluster" {
 			t.Errorf("%v: %d %v\n%s", answer, code, removed, w.all())
 		}
 	}
@@ -716,7 +720,7 @@ func TestTheOptionsAnswerTheQuestionAboutTheRegistryInAdvance(t *testing.T) {
 	}
 	// nothing made by viper: nothing is said or asked
 	w, removed, _ = downWith(t, "", nil, "DELETE")
-	if len(removed) != 1 || len(removed[0]) != 0 || len(w.prompts) != 1 {
+	if len(removed) != 0 || len(w.prompts) != 1 {
 		t.Errorf("%v %q", removed, w.prompts)
 	}
 }

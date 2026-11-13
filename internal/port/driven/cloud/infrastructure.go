@@ -13,8 +13,10 @@ type Infrastructure interface {
 	// still counted (the question before viper down); with "" the machines are gone (what to remove after the delete).
 	// Nothing if more machines remain or if viper made nothing.
 	InfrastructureLeft(ctx context.Context, machine string) []InfrastructureItem
-	// RemoveInfrastructure removes the items with these keys, if no machine is left, and says on out what it removed.
-	RemoveInfrastructure(ctx context.Context, out io.Writer, keys []string) error
+	// RemoveInfrastructure looks, under a lock that machines deleted at the same time share, at what is left after the last
+	// machine and asks choose which of the items (by key) to remove; it removes those and says on out what it removed.
+	// choose is not called if nothing is left: of several machines that end together, only the first is asked.
+	RemoveInfrastructure(ctx context.Context, out io.Writer, choose func(items []InfrastructureItem) (keys []string)) error
 }
 
 // InfrastructureItem is one thing that goes with the last machine.

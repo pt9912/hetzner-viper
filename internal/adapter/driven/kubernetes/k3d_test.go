@@ -212,6 +212,19 @@ func TestAServerOfAK3dClusterThatDoesNotExistYetIsNoServerAndNoError(t *testing.
 	}
 }
 
+// all and only are the choices of the user: everything, or the one item.
+func all(items []cloud.InfrastructureItem) []string {
+	var k []string
+	for _, it := range items {
+		k = append(k, it.Key)
+	}
+	return k
+}
+
+func only(key string) func([]cloud.InfrastructureItem) []string {
+	return func([]cloud.InfrastructureItem) []string { return []string{key} }
+}
+
 func keysOf(items []cloud.InfrastructureItem) string {
 	var k []string
 	for _, it := range items {
@@ -239,7 +252,7 @@ func TestTheClusterAndTheRegistryViperMadeGoWithTheLastMachineOnly(t *testing.T)
 	if err := k.DeleteServer(ctx, "uid-claude-beta"); err != nil {
 		t.Fatal(err)
 	}
-	if err := k.RemoveInfrastructure(ctx, &bytes.Buffer{}, []string{"cluster", "registry"}); err != nil || h.called("k3d cluster delete") != 0 {
+	if err := k.RemoveInfrastructure(ctx, &bytes.Buffer{}, all); err != nil || h.called("k3d cluster delete") != 0 {
 		t.Fatalf("one machine is left, and the cluster went: %v %v", err, h.calls)
 	}
 	left := k.InfrastructureLeft(ctx, "claude-alpha")
@@ -252,23 +265,52 @@ func TestTheClusterAndTheRegistryViperMadeGoWithTheLastMachineOnly(t *testing.T)
 	if keysOf(k.InfrastructureLeft(ctx, "")) != "cluster,registry" {
 		t.Errorf("after the delete the same is left")
 	}
-	// the user keeps the registry
+	// the user keeps the registry: the cluster goes, the registry is the user's from now on and is not offered again
 	var out bytes.Buffer
-	if err := k.RemoveInfrastructure(ctx, &out, []string{"cluster"}); err != nil {
+	if err := k.RemoveInfrastructure(ctx, &out, only("cluster")); err != nil {
 		t.Fatal(err)
 	}
-	if h.called("k3d cluster delete viper") != 1 || h.called("k3d registry delete") != 0 || !strings.Contains(out.String(), "cluster viper, which viper made, is deleted") {
+	if h.called("k3d cluster delete viper") != 1 || h.called("k3d registry delete") != 0 ||
+		!strings.Contains(out.String(), "cluster viper, which viper made, is deleted") || !strings.Contains(out.String(), "it is yours now") {
 		t.Fatalf("%v\n%s", h.calls, out.String())
 	}
-	// the cluster is gone and the registry is still offered, until the user decides to delete it
-	if got := k.InfrastructureLeft(ctx, ""); keysOf(got) != "registry" {
-		t.Errorf("the registry that nothing uses is offered: %+v", got)
-	}
-	if err := k.RemoveInfrastructure(ctx, &out, []string{"registry"}); err != nil || h.called("k3d registry delete k3d-reg") != 1 {
-		t.Fatalf("%v %v", err, h.calls)
-	}
 	if got := k.InfrastructureLeft(ctx, ""); got != nil {
-		t.Errorf("nothing is left to offer: %+v", got)
+		t.Errorf("a registry the user keeps is offered again: %+v", got)
+	}
+}
+
+func TestBothGoWhenTheUserSaysSoAndOfTwoMachinesThatEndTogetherOnlyTheFirstIsAsked(t *testing.T) {
+	ctx := context.Background()
+	h := &k3dHost{}
+	k := k3dClient(t, newCluster(), h, kubernetes.Options{K3DCreateCluster: true})
+	if err := k.PrepareImage(ctx, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	asked := 0
+	both := func(items []cloud.InfrastructureItem) []string { asked++; return all(items) }
+	for i := 0; i < 2; i++ { // two machines end together
+		if err := k.RemoveInfrastructure(ctx, &bytes.Buffer{}, both); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if asked != 1 || h.called("k3d cluster delete viper") != 1 || h.called("k3d registry delete k3d-reg") != 1 {
+		t.Errorf("asked %d times: %v", asked, h.calls)
+	}
+	// and when the first keeps the registry, the second is not asked about it again
+	h = &k3dHost{}
+	k = k3dClient(t, newCluster(), h, kubernetes.Options{K3DCreateCluster: true})
+	if err := k.PrepareImage(ctx, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	asked = 0
+	keep := func([]cloud.InfrastructureItem) []string { asked++; return []string{"cluster"} }
+	for i := 0; i < 2; i++ {
+		if err := k.RemoveInfrastructure(ctx, &bytes.Buffer{}, keep); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if asked != 1 || h.called("k3d registry delete") != 0 {
+		t.Errorf("asked %d times: %v", asked, h.calls)
 	}
 }
 
@@ -283,7 +325,7 @@ func TestARegistryThatAnotherClusterUsesStaysAndWhatWasNotMadeByViperIsNeverRemo
 	if left := k.InfrastructureLeft(ctx, "claude-alpha"); keysOf(left) != "cluster" {
 		t.Fatalf("only the cluster goes: %+v", left)
 	}
-	if err := k.RemoveInfrastructure(ctx, &bytes.Buffer{}, []string{"cluster", "registry"}); err != nil || h.called("k3d cluster delete viper") != 1 || h.called("k3d registry delete") != 0 {
+	if err := k.RemoveInfrastructure(ctx, &bytes.Buffer{}, all); err != nil || h.called("k3d cluster delete viper") != 1 || h.called("k3d registry delete") != 0 {
 		t.Errorf("a registry that another cluster uses stays, even if asked for: %v %v", err, h.calls)
 	}
 
@@ -296,7 +338,7 @@ func TestARegistryThatAnotherClusterUsesStaysAndWhatWasNotMadeByViperIsNeverRemo
 	if left := k.InfrastructureLeft(ctx, "claude-alpha"); left != nil {
 		t.Errorf("%v", left)
 	}
-	if err := k.RemoveInfrastructure(ctx, &bytes.Buffer{}, []string{"cluster", "registry"}); err != nil || h.called("k3d cluster delete") != 0 || h.called("k3d registry delete") != 0 {
+	if err := k.RemoveInfrastructure(ctx, &bytes.Buffer{}, all); err != nil || h.called("k3d cluster delete") != 0 || h.called("k3d registry delete") != 0 {
 		t.Errorf("something that viper did not make was removed: %v %v", err, h.calls)
 	}
 }

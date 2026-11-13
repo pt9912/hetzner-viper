@@ -152,24 +152,23 @@ func announceInfrastructure(ctx context.Context, c *model.Machine, d Deps, errOu
 
 // removeInfrastructure lets a provider take away what it made for its machines (a k3d cluster and its registry) with the
 // last one. What the user decides (the registry holds the image for other clusters) is asked, unless an option answered;
-// without an answer it stays. A failure is a warning: the machine is deleted.
+// without an answer it stays. The provider asks us only if something is left, under a lock: of several machines that are
+// deleted together, one is asked. A failure is a warning: the machine is deleted.
 func removeInfrastructure(ctx context.Context, d Deps, out, errOut io.Writer) {
 	var infra cloud.Infrastructure
 	if !cloud.As(d.Cloud, &infra) {
 		return
 	}
-	var keys []string
-	for _, it := range infra.InfrastructureLeft(ctx, "") {
-		switch {
-		case !it.Optional:
-			keys = append(keys, it.Key)
-		case wantsRemoved(d, it):
-			keys = append(keys, it.Key)
-		default:
-			fmt.Fprintf(out, "%s stays (it holds the image for other clusters).\n", capitalize(it.What))
+	choose := func(items []cloud.InfrastructureItem) []string {
+		var keys []string
+		for _, it := range items {
+			if !it.Optional || wantsRemoved(d, it) {
+				keys = append(keys, it.Key)
+			}
 		}
+		return keys
 	}
-	if err := infra.RemoveInfrastructure(ctx, out, keys); err != nil {
+	if err := infra.RemoveInfrastructure(ctx, out, choose); err != nil {
 		fmt.Fprintf(errOut, "WARNING: removing what viper made for the machine failed: %v\n", err)
 	}
 }
@@ -183,13 +182,6 @@ func wantsRemoved(d Deps, it cloud.InfrastructureItem) bool {
 		return false
 	}
 	return d.Ask("Delete "+it.What+" too? It holds the image for other clusters. Type DELETE to delete it, anything else keeps it: ") == "DELETE"
-}
-
-func capitalize(s string) string {
-	if s == "" {
-		return s
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 // checkAndProbe checks that ssh works and, if it does, what would be lost. skip is true if --force

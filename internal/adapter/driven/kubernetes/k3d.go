@@ -272,11 +272,12 @@ func (c *Client) InfrastructureLeft(ctx context.Context, machine string) []cloud
 	return items
 }
 
-// RemoveInfrastructure deletes what the keys name and viper made: the cluster, if no machine of viper is left in it, and the
-// registry, if no other cluster uses it.
-func (c *Client) RemoveInfrastructure(ctx context.Context, out io.Writer, keys []string) error {
+// RemoveInfrastructure takes the lock of the registry, which the machines that are deleted at the same time share, looks at
+// what is left and lets choose pick the items (by key) to remove: the cluster, if viper made it and no machine of viper is
+// left in it, and the registry, if viper made it and no other cluster uses it. choose is not called if nothing is left.
+func (c *Client) RemoveInfrastructure(ctx context.Context, out io.Writer, choose func([]cloud.InfrastructureItem) []string) error {
 	cluster := c.opts.k3dCluster()
-	if cluster == "" || len(keys) == 0 {
+	if cluster == "" {
 		return nil
 	}
 	if err := os.MkdirAll(c.opts.StateDir, 0o700); err != nil {
@@ -287,22 +288,59 @@ func (c *Client) RemoveInfrastructure(ctx context.Context, out io.Writer, keys [
 		return err
 	}
 	defer unlock()
-	if slices.Contains(keys, infraCluster) && c.made("cluster", cluster) && c.clusterExists(ctx) {
-		if n, err := c.machinesLeft(ctx, ""); err != nil || n > 0 {
-			return err
-		}
-		if _, err := c.tool(ctx, "k3d", "cluster", "delete", cluster); err != nil {
-			return err
-		}
-		_ = os.Remove(c.madeFile("cluster", cluster))
-		fmt.Fprintf(out, "The k3d cluster %s, which viper made, is deleted (last machine).\n", cluster)
+	items := c.InfrastructureLeft(ctx, "")
+	if len(items) == 0 {
+		return nil
 	}
-	if slices.Contains(keys, infraRegistry) && c.made("registry", c.opts.K3DRegistry) && !c.registryUsedByOthers(ctx, cluster) {
-		if _, err := c.tool(ctx, "k3d", "registry", "delete", c.opts.registryContainer()); err != nil {
+	keys := choose(items)
+	for _, it := range items {
+		if it.Optional && !slices.Contains(keys, it.Key) { // the user keeps it: it is theirs from now on, and nobody asks again
+			_ = os.Remove(c.madeFile("registry", c.opts.K3DRegistry))
+			fmt.Fprintf(out, "%s stays: it is yours now (viper does not ask again; k3d registry delete %s removes it).\n", capitalize(it.What), c.opts.registryContainer())
+		}
+	}
+	if slices.Contains(keys, infraCluster) {
+		if err := c.removeCluster(ctx, cluster, out); err != nil {
 			return err
 		}
-		_ = os.Remove(c.madeFile("registry", c.opts.K3DRegistry))
-		fmt.Fprintf(out, "The k3d registry %s, which viper made, is deleted.\n", c.opts.registryContainer())
+	}
+	if slices.Contains(keys, infraRegistry) {
+		if err := c.removeRegistry(ctx, cluster, out); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// removeCluster deletes the cluster if viper made it and it is there.
+func (c *Client) removeCluster(ctx context.Context, cluster string, out io.Writer) error {
+	if !c.made("cluster", cluster) || !c.clusterExists(ctx) {
+		return nil
+	}
+	if _, err := c.tool(ctx, "k3d", "cluster", "delete", cluster); err != nil {
+		return err
+	}
+	_ = os.Remove(c.madeFile("cluster", cluster))
+	fmt.Fprintf(out, "The k3d cluster %s, which viper made, is deleted (last machine).\n", cluster)
+	return nil
+}
+
+// removeRegistry deletes the registry if viper made it and no other cluster uses it.
+func (c *Client) removeRegistry(ctx context.Context, cluster string, out io.Writer) error {
+	if !c.made("registry", c.opts.K3DRegistry) || c.registryUsedByOthers(ctx, cluster) {
+		return nil
+	}
+	if _, err := c.tool(ctx, "k3d", "registry", "delete", c.opts.registryContainer()); err != nil {
+		return err
+	}
+	_ = os.Remove(c.madeFile("registry", c.opts.K3DRegistry))
+	fmt.Fprintf(out, "The k3d registry %s, which viper made, is deleted.\n", c.opts.registryContainer())
+	return nil
+}
+
+func capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
