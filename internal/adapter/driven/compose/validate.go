@@ -73,6 +73,10 @@ func (c *Client) checkImage(ctx context.Context, f *findings) {
 		return
 	}
 	if _, err := c.docker(ctx, "image", "inspect", "--format", "{{.Id}}", "--", c.opts.Image); err != nil {
+		if strings.Contains(c.opts.Image, "/") {
+			f.add(model.Info, "image %s is not on the Docker host: viper up pulls it (several GB)", c.opts.Image)
+			return
+		}
 		f.add(model.Fail, "image %s is not on the Docker host: viper image build builds it", c.opts.Image)
 		return
 	}

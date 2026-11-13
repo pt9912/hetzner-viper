@@ -19,6 +19,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/system"
 )
 
 // The names and ports the adapter and the image agree on.
@@ -59,6 +60,15 @@ type Options struct {
 	DockerHost  string // K8S_DOCKER_HOST: where a remote daemon is
 	DockerImage string // K8S_DOCKER_IMAGE: the image of the daemon of the sidecar
 	NATSPort    int
+	// K3DRegistry is K3D_REGISTRY: the name of a k3d registry that viper up makes (if it is missing) and puts the image
+	// into, so that the nodes of a k3d cluster pull it from there. Only for a context named k3d-<cluster>.
+	K3DRegistry string
+	// K3DCreateCluster is K3D_CLUSTER_CREATE: viper up makes the k3d cluster too, with that registry, if it is missing.
+	K3DCreateCluster bool
+	K3DAgents        int // K3D_AGENTS: the agent nodes of a cluster viper makes
+	// StateDir is where the lock of the registry is kept. Run runs docker and k3d.
+	StateDir string
+	Run      system.Runner
 	// Poll is how long to wait between two looks at an object (default 2 s); Timeout how long to wait for a pod.
 	Poll, Timeout time.Duration
 }
@@ -116,9 +126,11 @@ func (o Options) timeout() time.Duration {
 type Client struct {
 	opts Options
 
-	mu  sync.Mutex
-	cs  kubernetes.Interface
-	cfg *rest.Config // nil for a client made over a given clientset
+	mu       sync.Mutex
+	prepared bool   // PrepareImage has run
+	source   string // the image as K8S_IMAGE names it, before PrepareImage replaced it
+	cs       kubernetes.Interface
+	cfg      *rest.Config // nil for a client made over a given clientset
 }
 
 // New returns a client. It reads the kubeconfig when it is first used.

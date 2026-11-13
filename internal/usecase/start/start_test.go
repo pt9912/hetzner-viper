@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -427,6 +428,49 @@ type starterHz struct {
 func (s starterHz) EnsureRunning(_ context.Context, name string) error {
 	*s.started = append(*s.started, name)
 	return s.err
+}
+
+// prepHz is a provider that has to bring the image to where the machines run before it makes the first one.
+type prepHz struct {
+	hz
+	prepared *int
+	created  *bool
+	err      error
+}
+
+func (p prepHz) PrepareImage(_ context.Context, out io.Writer) error {
+	*p.prepared++
+	fmt.Fprintln(out, "preparing the image")
+	return p.err
+}
+
+func (p prepHz) CreateServer(ctx context.Context, s model.ServerSpec) (*model.Server, error) {
+	*p.created = *p.prepared > 0 // the image was prepared before the server was made
+	return p.hz.CreateServer(ctx, s)
+}
+
+func TestTheImageIsPreparedBeforeAServerIsMadeAndAFailureStopsTheStart(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		w := newWorld(t, "")
+		n, created := 0, false
+		d := w.deps()
+		p := prepHz{hz: hz{w: w}, prepared: &n, created: &created}
+		if fail {
+			p.err = errors.New("the registry would not start")
+		}
+		d.Cloud = p
+		code, err := start.Run(context.Background(), w.c, "", d, w.lg, &w.out, &w.err)
+		w.lg.Close(err, code)
+		if n != 1 {
+			t.Fatalf("prepared %d times", n)
+		}
+		if fail && (code == 0 || created || !strings.Contains(w.all(), "would not start")) {
+			t.Errorf("a failed preparation went on: %d created=%v\n%s", code, created, w.all())
+		}
+		if !fail && (code != 0 || !created || !strings.Contains(w.all(), "preparing the image")) {
+			t.Errorf("%d created=%v\n%s", code, created, w.all())
+		}
+	}
 }
 
 // A machine that was stopped has no address until it runs: the server read before EnsureRunning is stale.

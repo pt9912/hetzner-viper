@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/pt9912/hetzner-viper/internal/filelock"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
 )
@@ -197,6 +199,40 @@ func (c *Client) CreateServer(ctx context.Context, s model.ServerSpec) (*model.S
 func (c *Client) up(ctx context.Context, name string) error {
 	_, err := c.compose(ctx, name, "up", "-d", "--no-recreate", "--wait", "--wait-timeout", fmt.Sprint(int(c.opts.timeout().Seconds())))
 	return err
+}
+
+var _ cloud.ImagePreparer = (*Client)(nil)
+
+// PrepareImage pulls the image if the Docker host does not have it and its name says where it comes from (a registry host
+// in front: ghcr.io/...). An image that was built here (viper image build) has no such name and is not pulled. Machines of
+// a group start at the same time: the pull is done once.
+func (c *Client) PrepareImage(ctx context.Context, out io.Writer) error {
+	if c.opts.Image == "" {
+		return fmt.Errorf("COMPOSE_IMAGE is not set: the image of the machine")
+	}
+	unlock, err := c.lockImage()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if _, err := c.docker(ctx, "image", "inspect", "--format", "{{.Id}}", "--", c.opts.Image); err == nil {
+		return nil
+	}
+	if !strings.Contains(c.opts.Image, "/") {
+		return fmt.Errorf("the image %s is not on the Docker host and has no registry in its name to pull it from: viper image build builds it", c.opts.Image)
+	}
+	fmt.Fprintf(out, "The image %s is not on the Docker host: pulling it (several GB) ...\n", c.opts.Image)
+	if _, err := c.docker(ctx, "pull", "--", c.opts.Image); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Client) lockImage() (func(), error) {
+	if err := os.MkdirAll(filepath.Join(c.opts.StateDir, "compose"), 0o700); err != nil {
+		return nil, err
+	}
+	return filelock.Lock(filepath.Join(c.opts.StateDir, "compose", "image.lock"))
 }
 
 // EnsureRunning starts a machine that exists but is stopped, and repairs the Docker service of the machine if a restart
@@ -502,5 +538,5 @@ func (c *Client) lock(name string) (func(), error) {
 	if err := os.MkdirAll(c.projectDir(name), 0o700); err != nil {
 		return nil, err
 	}
-	return lockFile(filepath.Join(c.opts.StateDir, "compose", name+".lock"))
+	return filelock.Lock(filepath.Join(c.opts.StateDir, "compose", name+".lock"))
 }

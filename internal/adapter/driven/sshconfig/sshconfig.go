@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pt9912/hetzner-viper/internal/filelock"
 	"github.com/pt9912/hetzner-viper/internal/model"
 )
 
@@ -224,7 +225,7 @@ func include(c *model.Machine, add bool) error {
 		return err
 	}
 	_ = f.Close() // only opened to see that it is writable
-	unlock, err := lockFile(filepath.Join(c.StateDir, "ssh-config.lock"))
+	unlock, err := filelock.Lock(filepath.Join(c.StateDir, "ssh-config.lock"))
 	if err != nil {
 		return err
 	}

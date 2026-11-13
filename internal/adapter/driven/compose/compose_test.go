@@ -84,6 +84,9 @@ func (h *host) run(_ context.Context, _, name string, args ...string) (string, s
 		return "5.7.0\n", "", nil
 	case args[0] == "compose":
 		return h.compose(args)
+	case args[0] == "pull":
+		h.noImage = false
+		return "", "", nil
 	case args[0] == "image":
 		if h.noImage {
 			return nosuch("image", args[len(args)-1])
@@ -1012,5 +1015,41 @@ func TestAStaleStateOfAMachineThatWasCutOffDoesNotPassToANewOne(t *testing.T) {
 	}
 	if h.volumes["web-home"]["mark"] != "data" {
 		t.Fatal("the data volume went with the stale state")
+	}
+}
+
+func TestAnImageWithARegistryInItsNameIsPulledWhenTheHostLacksIt(t *testing.T) {
+	h := newHost()
+	h.noImage = true
+	c, _ := newClient(t, h, func(o *compose.Options) { o.Image = "ghcr.io/pt9912/viper-machine:v1" })
+	var out strings.Builder
+	if err := c.PrepareImage(context.Background(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if h.called("pull -- ghcr.io/pt9912/viper-machine:v1") != 1 || !strings.Contains(out.String(), "pulling it") {
+		t.Fatalf("%v\n%s", h.calls, out.String())
+	}
+	// it is there now: nothing more
+	n := len(h.calls)
+	if err := c.PrepareImage(context.Background(), &out); err != nil || h.called("pull") != 1 || len(h.calls) != n+1 {
+		t.Errorf("a second call pulled again: %v %v", err, h.calls)
+	}
+	// the preflight does not fail for it
+	h.noImage = true
+	f := c.Validate(context.Background(), model.Check{Spec: spec("web"), ServerName: "web"})
+	for _, x := range f {
+		if x.Level == model.Fail && strings.Contains(x.Text, "image") {
+			t.Errorf("an image that can be pulled is a failure: %v", x)
+		}
+	}
+}
+
+func TestAnImageBuiltHereIsNotPulledAndTheErrorSaysHowToMakeIt(t *testing.T) {
+	h := newHost()
+	h.noImage = true
+	c, _ := newClient(t, h) // viper-machine:test: no registry in the name
+	err := c.PrepareImage(context.Background(), &strings.Builder{})
+	if err == nil || !strings.Contains(err.Error(), "viper image build") || h.called("pull") != 0 {
+		t.Fatalf("%v %v", err, h.calls)
 	}
 }

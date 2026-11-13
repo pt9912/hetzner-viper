@@ -372,6 +372,24 @@ var (
 // container and needs no root on a VM. A container accepts no other place.
 const DefaultWorkspace = "/home/builder/work"
 
+// checkK3dValues checks the settings of a k3d cluster: the registry viper makes for the image, whether viper makes the
+// cluster, and how many agent nodes it gets. They are settings of the machine (or of its group), like all others; a
+// machine that is not in a k3d cluster ignores them.
+func checkK3dValues(c *model.Machine) error {
+	if v := c.Get("K3D_REGISTRY"); v != "" && !regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$`).MatchString(v) {
+		return fmt.Errorf("K3D_REGISTRY: the name of a k3d registry (letters, digits and -): %s", v)
+	}
+	if v := c.Get("K3D_CLUSTER_CREATE"); v != "" && v != "0" && v != "1" {
+		return fmt.Errorf("K3D_CLUSTER_CREATE: 0 or 1: %s", v)
+	}
+	if v := c.Get("K3D_AGENTS"); v != "" {
+		if n, err := strconv.Atoi(v); err != nil || n < 0 || n > 16 {
+			return fmt.Errorf("K3D_AGENTS must be a whole number of agent nodes between 0 and 16: %s", v)
+		}
+	}
+	return nil
+}
+
 // checkKubernetesValues checks the settings of a pod that are a name or a number.
 func checkKubernetesValues(c *model.Machine) error {
 	for _, v := range []struct {
@@ -390,6 +408,9 @@ func checkKubernetesValues(c *model.Machine) error {
 	}
 	if v := c.Get("K8S_IMAGE_PULL_SECRET"); v != "" && !secretNameRe.MatchString(v) {
 		return fmt.Errorf("K8S_IMAGE_PULL_SECRET: the name of a Secret (lowercase letters, digits, - and .): %s", v)
+	}
+	if err := checkK3dValues(c); err != nil {
+		return err
 	}
 	if v := c.Get("K8S_BREW_GB"); v != "" {
 		if n, err := strconv.Atoi(v); err != nil || n < 1 || n > 16384 {

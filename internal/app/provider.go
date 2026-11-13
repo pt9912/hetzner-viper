@@ -103,6 +103,8 @@ func kubernetesOptions(m *model.Machine) kubernetes.Options {
 	return kubernetes.Options{BrewGB: brew, PullSecret: m.Get("K8S_IMAGE_PULL_SECRET"),
 		Context: m.ServerLocation, Namespace: m.Get("K8S_NAMESPACE"), Image: m.ServerImage, StorageClass: m.Get("K8S_STORAGE_CLASS"),
 		DiskGB: disk, Docker: m.Get("K8S_DOCKER"), DockerHost: m.Get("K8S_DOCKER_HOST"), DockerImage: m.Get("K8S_DOCKER_IMAGE"), NATSPort: m.NATS.Port,
+		K3DRegistry: m.Get("K3D_REGISTRY"), K3DCreateCluster: m.Get("K3D_CLUSTER_CREATE") == "1", K3DAgents: atoi(m.Get("K3D_AGENTS")),
+		StateDir: m.StateDir, Run: system.Run,
 	}
 }
 
@@ -119,4 +121,10 @@ func Proxy(ctx context.Context, m *model.Machine, in io.Reader, out io.Writer) e
 		return compose.New(composeOptions(m), system.Run).Proxy(ctx, m.ServerName, in, out)
 	}
 	return kubernetes.New(kubernetesOptions(m)).Proxy(ctx, m.ServerName, in, out)
+}
+
+// atoi reads a setting that settingsfile has checked; a value that is no number counts as 0.
+func atoi(v string) int {
+	n, _ := strconv.Atoi(v)
+	return n
 }

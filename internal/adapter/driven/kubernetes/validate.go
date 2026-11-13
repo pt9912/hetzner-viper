@@ -24,6 +24,9 @@ func (f *findings) add(l model.Level, format string, a ...any) {
 // the image are set.
 func (c *Client) Validate(ctx context.Context, ch model.Check) []model.Finding {
 	var f findings
+	if c.checkK3dCluster(ctx, &f) {
+		return f
+	}
 	cs, err := c.client()
 	if err != nil {
 		f.add(model.Fail, "Kubernetes API not usable (kubeconfig, context, login, network): %s", c.Describe(err))
@@ -45,6 +48,7 @@ func (c *Client) Validate(ctx context.Context, ch model.Check) []model.Finding {
 	} else {
 		f.add(model.OK, "image %s", c.opts.Image)
 	}
+	c.checkK3dRegistry(ctx, &f)
 	c.checkNamespace(ctx, cs, &f)
 	c.checkPullSecret(ctx, cs, &f)
 	c.checkRights(ctx, cs, &f, ch.NATS)
@@ -192,5 +196,43 @@ func (c *Client) checkPullSecret(ctx context.Context, cs kubernetes.Interface, f
 		f.add(model.Fail, "K8S_IMAGE_PULL_SECRET: the Secret %s is of type %q, not a registry login (kubernetes.io/dockerconfigjson)", name, sec.Type)
 	default:
 		f.add(model.OK, "the Secret %s logs the cluster in to the registry", name)
+	}
+}
+
+// checkK3dCluster looks at the k3d cluster before the API is asked, which a cluster that is not there cannot answer. It
+// returns true if the rest of the checks cannot be made: the cluster is missing (viper up makes it, or says how).
+func (c *Client) checkK3dCluster(ctx context.Context, f *findings) bool {
+	cluster := c.opts.k3dCluster()
+	if cluster == "" || c.clusterExists(ctx) {
+		return false
+	}
+	if !c.opts.K3DCreateCluster {
+		f.add(model.Fail, "the k3d cluster %s does not exist: make it with k3d cluster create %s --registry-use %s:%s, or set K3D_CLUSTER_CREATE=1 and viper up makes it", cluster, cluster, c.opts.registryContainer(), k3dRegistryPort)
+		return true
+	}
+	f.add(model.Info, "the k3d cluster %s does not exist: viper up makes it with the registry %s (%d agent nodes)", cluster, c.opts.registryContainer(), c.opts.K3DAgents)
+	c.checkK3dImage(ctx, f)
+	return true
+}
+
+// checkK3dRegistry says what viper up will do about the registry and the image of a k3d cluster that exists.
+func (c *Client) checkK3dRegistry(ctx context.Context, f *findings) {
+	if c.opts.k3dCluster() == "" {
+		return
+	}
+	switch {
+	case c.registryPort(ctx) == "":
+		f.add(model.Info, "the k3d registry %s does not run: viper up makes or starts it", c.opts.registryContainer())
+	case c.clusterUsesRegistry(ctx):
+		f.add(model.OK, "the k3d registry %s runs and the cluster uses it", c.opts.registryContainer())
+	default:
+		f.add(model.Warn, "the k3d cluster %s was made without --registry-use %s:%s: the image goes into its nodes with k3d image import (make the cluster again to use the registry)", c.opts.k3dCluster(), c.opts.registryContainer(), k3dRegistryPort)
+	}
+	c.checkK3dImage(ctx, f)
+}
+
+func (c *Client) checkK3dImage(ctx context.Context, f *findings) {
+	if c.opts.Image != "" && !c.imageLocal(ctx, c.opts.Image) {
+		f.add(model.Info, "the image %s is not in Docker: viper up pulls it (several GB)", c.opts.Image)
 	}
 }

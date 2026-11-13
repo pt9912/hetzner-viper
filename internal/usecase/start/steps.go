@@ -72,6 +72,18 @@ func (r *runner) firewall(ctx context.Context) (int, error) {
 	return 0, nil
 }
 
+// prepareImage lets a provider that has to bring the image to where the machines run do it before the first one is made.
+func (r *runner) prepareImage(ctx context.Context) (int, error) {
+	var prep cloud.ImagePreparer
+	if !cloud.As(r.d.Cloud, &prep) {
+		return 0, nil
+	}
+	if err := prep.PrepareImage(ctx, r.out); err != nil {
+		return r.opFail(&cloud.OpError{Op: "preparing the image", Write: true, Err: err})
+	}
+	return 0, nil
+}
+
 // startExisting asks a provider that can start a machine to start the existing one (a container that was stopped), and
 // reads it again: a machine that was stopped has no address in its network until it runs.
 func (r *runner) startExisting(ctx context.Context, existing *model.Server) (*model.Server, int, error) {
@@ -89,6 +101,29 @@ func (r *runner) startExisting(ctx context.Context, existing *model.Server) (*mo
 	return existing, 0, nil
 }
 
+// reuse takes the server that exists: starts it if it is a stopped container and decides whether it counts as set up.
+func (r *runner) reuse(ctx context.Context, existing *model.Server) (srv *model.Server, reused bool, code int, err error) {
+	c := r.c
+	r.printf("Existing server: reusing it.\n")
+	r.existed = true
+	id := existing.ID
+	r.d.SSH.ForgetStalePin(c, id, r.out)
+	existing, code, err = r.startExisting(ctx, existing)
+	if err != nil || code != 0 {
+		return nil, false, code, err
+	}
+	r.lg.Event("reusing server id=%s", id)
+	// "reused" means set up by a completed run; a server whose first run was interrupted may
+	// still be booting (transient ssh errors, the reboot after its updates still to come)
+	reused = readTrim(c.ReadyState) == id
+	// a server older than 30 minutes is long past its first boot (also for another computer
+	// without the local marker): permanent ssh errors then end the wait at once
+	if !existing.Created.IsZero() && r.d.Now().Sub(existing.Created) > 30*time.Minute {
+		reused = true
+	}
+	return r.ipOrFail(existing, reused)
+}
+
 // server creates the server, with a host key signed by the host CA, or reuses the existing one.
 // reused is true if it counts as set up by a completed run.
 func (r *runner) server(ctx context.Context, ca, keyName, ipadKeyFile string) (srv *model.Server, reused bool, code int, err error) {
@@ -99,24 +134,11 @@ func (r *runner) server(ctx context.Context, ca, keyName, ipadKeyFile string) (s
 		return nil, false, code, err
 	}
 	if existing != nil {
-		r.printf("Existing server: reusing it.\n")
-		r.existed = true
-		id := existing.ID
-		r.d.SSH.ForgetStalePin(c, id, r.out)
-		existing, code, err = r.startExisting(ctx, existing)
-		if err != nil || code != 0 {
-			return nil, false, code, err
-		}
-		r.lg.Event("reusing server id=%s", id)
-		// "reused" means set up by a completed run; a server whose first run was interrupted may
-		// still be booting (transient ssh errors, the reboot after its updates still to come)
-		reused = readTrim(c.ReadyState) == id
-		// a server older than 30 minutes is long past its first boot (also for another computer
-		// without the local marker): permanent ssh errors then end the wait at once
-		if !existing.Created.IsZero() && r.d.Now().Sub(existing.Created) > 30*time.Minute {
-			reused = true
-		}
-		return r.ipOrFail(existing, reused)
+		return r.reuse(ctx, existing)
+	}
+
+	if code, err := r.prepareImage(ctx); err != nil || code != 0 {
+		return nil, false, code, err
 	}
 
 	login, err := os.ReadFile(c.SSHKey + ".pub")

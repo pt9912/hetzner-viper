@@ -45,7 +45,7 @@ Sie haben kein Cloud-Konto oder wollen erst einmal ausprobieren? Dann beginnen S
 |---|---|
 | `viper setup` | Legt Ihre `.env.local` (aus einer vorbereiteten Vorlage), Ihren Login-Schlüssel und die lokale Host-CA an (einmalig). |
 | `viper preflight <rechner>` | Prüft vorab nur lesend Einstellungen, Setup, Ihren Cloud-Anbieter, Cloudflare (falls verwendet) und GitHub. Legt nichts an. `viper up` führt es zuerst aus. |
-| `viper image build [--tag NAME:TAG] [--k3d CLUSTER] [--k3d-registry NAME]` | Baut das Image der Rechner für `PROVIDER=compose` und `PROVIDER=kubernetes` mit Docker (bei k3d gleich in den Cluster, oder mit `--k3d-registry` in eine k3d-Registry, die `viper` bei Bedarf anlegt). Nur für diese beiden Anbieter, siehe „Lokal arbeiten, ohne Cloud-Konto“. |
+| `viper image build [--tag NAME:TAG] [--k3d CLUSTER]` | Baut das Image der Rechner für `PROVIDER=compose` und `PROVIDER=kubernetes` mit Docker (bei k3d gleich in den Cluster). Nur für diese beiden Anbieter, siehe „Lokal arbeiten, ohne Cloud-Konto“. |
 | `viper up <rechner>` | Richtet einen Rechner ein, setzt den DNS-Eintrag, legt das Arbeitsverzeichnis an und klont das Repository. |
 | `viper check <rechner>` | Prüft einen laufenden Rechner nur lesend: DNS, Zugriff über den Namen wie ein anderes Gerät, Zustand des Servers. |
 | `viper ssh <rechner>` | Öffnet eine Shell auf dem Rechner oder führt mit `--cmd` einen Befehl aus, mit der SSH-Konfiguration des Rechners. Mit `--tmux` hängt sich die Verbindung an die tmux-Sitzung `claude` an (oder legt sie im Arbeitsverzeichnis an), dieselbe wie in den VS-Code-Terminals; `--tmux` braucht ein Terminal und lässt sich nicht mit `--cmd` kombinieren. |
@@ -209,7 +209,7 @@ Sie können `viper` auch ohne Cloud-Konto ausprobieren und nutzen: Der Rechner i
 #### Vorgehen
 
 1. **Image beschaffen**, auf einem von zwei Wegen:
-   * **Laden** (schnell): `docker pull ghcr.io/pt9912/viper-machine:v0.18.0`, mit der Version, die `viper version` meldet. Das Image ist öffentlich und mehrere GB groß; das Image gibt es für **amd64 und arm64**, Docker wählt die passende Architektur. Der Name ist `ghcr.io/pt9912/viper-machine:v0.18.0`. Bei k3d (vorher `k3d cluster create viper`) lädt der Cluster das öffentliche Image beim ersten Start selbst, das dauert etwa eine halbe Minute; Sie müssen es nicht einspielen. **Jeder Knoten lädt es für sich**, auf dem ein Rechner läuft: Hat der Cluster mehrere Knoten, laden Sie es mehrmals aus dem Internet. Dann spielen Sie das geladene Image mit `k3d image import ghcr.io/pt9912/viper-machine:v0.18.0 -c viper` ein (kopiert es auf alle Knoten, ohne Download) oder nutzen eine gemeinsame Registry (unten).
+   * **Laden** (schnell): `docker pull ghcr.io/pt9912/viper-machine:v0.18.0`, mit der Version, die `viper version` meldet. Bei Docker Compose können Sie das Laden `viper up` überlassen: Der Name in `COMPOSE_IMAGE` genügt. Das Image ist öffentlich und mehrere GB groß; das Image gibt es für **amd64 und arm64**, Docker wählt die passende Architektur. Der Name ist `ghcr.io/pt9912/viper-machine:v0.18.0`. Bei k3d (vorher `k3d cluster create viper`) lädt der Cluster das öffentliche Image beim ersten Start selbst, das dauert etwa eine halbe Minute; Sie müssen es nicht einspielen. **Jeder Knoten lädt es für sich**, auf dem ein Rechner läuft: Hat der Cluster mehrere Knoten, laden Sie es mehrmals aus dem Internet. Dann spielen Sie das geladene Image mit `k3d image import ghcr.io/pt9912/viper-machine:v0.18.0 -c viper` ein (kopiert es auf alle Knoten, ohne Download) oder nutzen eine gemeinsame Registry (unten).
    * **Bauen:** `viper image build` (für k3d: erst `k3d cluster create viper`, dann `viper image build --k3d viper`). Das dauert beim ersten Mal einige Minuten. Die Ausgabe nennt den Namen des Images.
 2. **Einstellungen** in `machines/lokal.env.local`:
 
@@ -239,16 +239,27 @@ Sie können `viper` auch ohne Cloud-Konto ausprobieren und nutzen: Der Rechner i
 
 `viper up` meldet „The machine is the container …“ (Compose) oder „… the pod …“ (k3d) und am Ende „Ready“. Auf dem Rechner laufen Docker, Homebrew und Claude Code wie auf einem Server in der Cloud; das Repository liegt unter `/home/builder/work`.
 
-#### Das Image einmal bauen und für alle Cluster nutzen (k3d-Registry)
+#### Registry und Cluster von `viper up` anlegen lassen (k3d)
 
-Löschen Sie Cluster oft oder haben Sie Cluster mit mehreren Knoten, lädt jeder Knoten das 3-GB-Image sonst einzeln aus dem Internet oder aus Ihrem Docker. Eine Registry von k3d hält es einmal vor; sie überlebt das Löschen von Clustern. `viper` legt sie bei Bedarf an:
+Löschen Sie Cluster oft oder haben Sie Cluster mit mehreren Knoten, lädt sonst jeder Knoten das 3-GB-Image einzeln aus dem Internet. Mit `K3D_REGISTRY` legt `viper up` eine Registry von k3d an (falls sie fehlt), schiebt das Image hinein, und die Pods laden es von dort. Es sind Einstellungen wie alle anderen: Sie stehen in `machines/<rechner>.env.local`, in der Gruppendatei `groups/<gruppe>.env` (dann für alle Rechner der Gruppe) oder in `.env.local`, und was in keiner Datei steht, nimmt `viper` aus der Umgebung (`export K3D_REGISTRY=…`). Eine Datei hat Vorrang vor der Umgebung, der Rechner vor der Gruppe vor `.env.local`.
 
-```bash
-viper image build --k3d-registry viper-registry
-k3d cluster create viper --agents 2 --registry-use k3d-viper-registry:5000
+```
+PROVIDER=kubernetes
+DNS_PROVIDER=none
+SERVER_LOCATION=k3d-viper
+K8S_IMAGE=ghcr.io/pt9912/viper-machine:v0.18.0
+K3D_REGISTRY=viper-registry
+K3D_CLUSTER_CREATE=1
+K3D_AGENTS=2
 ```
 
-Der erste Befehl baut das Image, legt die Registry `k3d-viper-registry` an, falls sie fehlt (einen angehaltenen Container startet er wieder; den Port wählt k3d frei), und schiebt das Image hinein. Er legt die Registry vor dem Bauen an: Fehlt `k3d`, sehen Sie es sofort. Die Ausgabe nennt den Namen für `K8S_IMAGE`, zum Beispiel `k3d-viper-registry:5000/viper-machine:v0.18.0`. Der Cluster aus dem zweiten Befehl, den `viper` nicht anlegt, holt das Image aus der Registry im lokalen Docker-Netz: Es gibt keinen Download aus dem Internet, jeder Knoten kopiert und entpackt es aber weiterhin (bei drei Knoten je 14 bis 26 Sekunden). Ein Cluster, der schon da ist, bekommt die Registry nicht nachträglich; legen Sie ihn mit `--registry-use` neu an. Das geladene Image von ghcr.io schieben Sie mit `docker tag ghcr.io/pt9912/viper-machine:v0.18.0 localhost:<Port>/viper-machine:v0.18.0` und `docker push` hinein (`docker port k3d-viper-registry 5000` zeigt den Port). `k3d registry delete k3d-viper-registry` entfernt die Registry samt Image.
+* `K3D_REGISTRY`: der Name der Registry (der Container heißt `k3d-<name>`). Ohne diese Einstellung ändert sich nichts. Sie gilt nur, wenn `SERVER_LOCATION` ein k3d-Kontext (`k3d-<cluster>`) ist; ein Rechner in einem anderen Cluster ignoriert sie.
+* `K3D_CLUSTER_CREATE=1`: `viper up` legt auch den Cluster an, wenn er fehlt, und zwar mit dieser Registry (`k3d cluster create <cluster> --registry-use k3d-<name>:5000`). Ohne die Einstellung bricht `viper up` mit der Anleitung ab, wie Sie den Cluster selbst anlegen. Standard: `0`.
+* `K3D_AGENTS`: wie viele Agent-Knoten ein Cluster bekommt, den `viper` anlegt (0 bis 16, Standard `0`: nur ein Server-Knoten).
+
+`viper up` führt dann der Reihe nach aus: Registry anlegen oder (angehalten) starten, Cluster anlegen (nur mit `K3D_CLUSTER_CREATE=1`), das Image aus Docker nehmen oder mit `docker pull` laden, in die Registry schieben, und die Pods starten mit dem Namen aus der Registry. Alles steht in der Ausgabe von `viper up`. Bei einer Gruppe geschieht das einmal, die Rechner warten aufeinander. `viper preflight` sagt vorher, was passieren wird. Die Knoten holen das Image aus der Registry im lokalen Docker-Netz, ohne Download aus dem Internet; kopiert und entpackt wird auf jedem Knoten weiterhin (bei drei Knoten je 15 bis 29 Sekunden).
+
+Ein Cluster, der schon da ist und ohne die Registry angelegt wurde, bekommt sie nachträglich nicht (k3d kann das nicht). Dann spielt `viper up` das Image mit `k3d image import` in alle Knoten ein, sagt es und nennt die Lösung: den Cluster neu anlegen, am einfachsten mit `K3D_CLUSTER_CREATE=1`. `viper` löscht keinen Cluster und keine Registry, auch nicht mit `viper down`: `k3d cluster delete <cluster>` und `k3d registry delete k3d-<name>` entfernen sie.
 
 #### Hinweise
 
@@ -469,7 +480,7 @@ Mit `PROVIDER=compose` ist ein „Rechner“ ein **Container** auf dem Docker-Ho
 
 #### Vorgehen
 
-1. **Image beschaffen:** Entweder bauen: `viper image build`. Das Image liegt danach im Docker-Host und braucht kein Register; die Ausgabe nennt den Namen (`--tag NAME:TAG` wählt einen eigenen). Oder laden: `docker pull ghcr.io/pt9912/viper-machine:<Version>` mit der Version, die `viper version` meldet (öffentlich, mehrere GB, amd64 und arm64). Der Name kommt in Schritt 2 als `COMPOSE_IMAGE` hinein.
+1. **Image beschaffen:** Entweder bauen: `viper image build`. Das Image liegt danach im Docker-Host und braucht kein Register; die Ausgabe nennt den Namen (`--tag NAME:TAG` wählt einen eigenen). Oder das veröffentlichte Image nehmen: `ghcr.io/pt9912/viper-machine:<Version>` mit der Version, die `viper version` meldet (öffentlich, mehrere GB, amd64 und arm64). Der Name kommt in Schritt 2 als `COMPOSE_IMAGE` hinein; fehlt das Image auf dem Docker-Host, lädt `viper up` es selbst mit `docker pull` (ein Name ohne Registry, wie ihn `viper image build` vergibt, wird nicht geladen).
 2. **Einstellungen** in `machines/<rechner>.env.local` oder in der Gruppendatei (nicht in der allgemeinen `.env.local`):
 
    ```
@@ -1063,6 +1074,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `COMPOSE_IMAGE` | Image der Rechner (nur `compose`, Pflichtangabe; `viper image build` baut es) | leer |
 | `COMPOSE_DOCKER`, `COMPOSE_DOCKER_HOST`, `COMPOSE_DOCKER_IMAGE` | Docker auf dem Rechner: `dind` (privilegierter zweiter Container), `remote` (Daemon unter `COMPOSE_DOCKER_HOST`) oder `none`; Image des zweiten Containers (nur `compose`) | `dind`, leer, `docker:dind` |
 | `K8S_NAMESPACE`, `K8S_STORAGE_CLASS`, `K8S_DISK_GB`, `K8S_BREW_GB` | Namespace, StorageClass, Größe des Volumes für das Heimverzeichnis und Größe des Volumes für Homebrew in GB (nur `kubernetes`) | `viper`, die des Clusters, `20` bzw. `10` |
+| `K3D_REGISTRY`, `K3D_CLUSTER_CREATE`, `K3D_AGENTS` | k3d (`SERVER_LOCATION=k3d-<cluster>`): Name der Registry, die `viper up` anlegt und mit dem Image füllt; `1`: `viper up` legt auch den fehlenden Cluster an; Zahl der Agent-Knoten dieses Clusters (0 bis 16) | leer, `0`, `0` |
 | `K8S_DOCKER`, `K8S_DOCKER_HOST`, `K8S_DOCKER_IMAGE` | Docker auf dem Rechner: `dind` (privilegierter Sidecar), `remote` (Daemon unter `K8S_DOCKER_HOST`) oder `none`; Image des Sidecars (nur `kubernetes`) | `dind`, leer, `docker:dind` |
 | `NATS_ENABLED` | `true`: der Rechner gehört zu einer NATS-Gruppe (nur Hetzner); `false` oder leer: aus | `false` |
 | `NATS_GROUP` | Name der NATS-Gruppe; Pflichtangabe mit `NATS_ENABLED=true`; 1 bis 31 Kleinbuchstaben, Ziffern, Bindestriche | leer |
@@ -1526,4 +1538,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.94 | nach v0.17.0 | Neu: Kubernetes als Anbieter (`PROVIDER=kubernetes`): Rechner als Pods, `viper image build`, `viper k8s-proxy`, Einstellungen `K8S_*`, NATS-Gruppen im Cluster. |
 | 1.95 | nach v0.17.0 | Neu: Docker Compose als Anbieter (`PROVIDER=compose`): Rechner als Container auf dem lokalen Docker-Host, `viper docker-proxy`, Einstellungen `COMPOSE_*` (mit NATS-Gruppen). |
 | 1.96 | v0.18.0 | Release v0.18.0: die Änderungen 1.86 bis 1.95 (`viper preflight --group`, `viper nats`, NATS-Gruppen bei AWS, Google Cloud und Azure, Kubernetes und Docker Compose als Anbieter). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ nennen jetzt `v0.18.0`. |
-| 1.97 | nach v0.18.0 | Der Standard von `WORKSPACE_DIR` ist für alle Anbieter `/home/builder/work` (bisher ein Verzeichnis außerhalb des Heimverzeichnisses, das nur VMs anlegen konnten). Wer sich auf den früheren Standard verlassen hat, setzt `WORKSPACE_DIR` ausdrücklich; `viper down` prüft vorhandene Rechner weiter in den Verzeichnissen, mit denen sie gestartet wurden. Neu: der Abschnitt „Lokal arbeiten, ohne Cloud-Konto (Docker Compose oder k3d)“ in Kapitel 3 (mit gemeinsamer k3d-Registry, die `viper image build --k3d-registry` anlegt und füllt), im Überblick (Kapitel 2) ein Hinweis darauf und die Zeile zu `viper image build`; das Image kann auch mit `docker pull` geladen werden (öffentlich, amd64 und arm64). Das Standard-Image `K8S_IMAGE`/`COMPOSE_IMAGE` gibt es weiterhin nicht: Sie tragen den Namen ein. |
+| 1.97 | nach v0.18.0 | Der Standard von `WORKSPACE_DIR` ist für alle Anbieter `/home/builder/work` (bisher ein Verzeichnis außerhalb des Heimverzeichnisses, das nur VMs anlegen konnten). Wer sich auf den früheren Standard verlassen hat, setzt `WORKSPACE_DIR` ausdrücklich; `viper down` prüft vorhandene Rechner weiter in den Verzeichnissen, mit denen sie gestartet wurden. Neu: der Abschnitt „Lokal arbeiten, ohne Cloud-Konto (Docker Compose oder k3d)“ in Kapitel 3 (mit gemeinsamer k3d-Registry für das Image), im Überblick (Kapitel 2) ein Hinweis darauf und die Zeile zu `viper image build`; das Image kann auch mit `docker pull` geladen werden (öffentlich, amd64 und arm64). Das Standard-Image `K8S_IMAGE`/`COMPOSE_IMAGE` gibt es weiterhin nicht: Sie tragen den Namen ein. Neu: `K3D_REGISTRY`, `K3D_CLUSTER_CREATE` und `K3D_AGENTS` (siehe „Registry und Cluster von `viper up` anlegen lassen“), und `viper up` lädt ein Compose-Image mit Registry-Namen selbst. |

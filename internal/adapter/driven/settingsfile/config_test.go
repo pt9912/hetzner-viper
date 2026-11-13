@@ -541,6 +541,9 @@ func TestLoadReadsTheSettingsOfTheKubernetesProvider(t *testing.T) {
 		"pull secret":             {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_IMAGE_PULL_SECRET=Reg_Cred\n", "K8S_IMAGE_PULL_SECRET: the name of a Secret"},
 		"homebrew volume size":    {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_BREW_GB=big\n", "K8S_BREW_GB must be a whole number of GB between 1 and 16384: big"},
 		"volume size":             {base + "SERVER_LOCATION=x\nK8S_IMAGE=i\nK8S_DISK_GB=0\n", "K8S_DISK_GB must be a whole number of GB between 1 and 16384: 0"},
+		"k3d registry name":       {base + "SERVER_LOCATION=k3d-x\nK8S_IMAGE=i\nK3D_REGISTRY=my_reg\n", "K3D_REGISTRY: the name of a k3d registry"},
+		"k3d create":              {base + "SERVER_LOCATION=k3d-x\nK8S_IMAGE=i\nK3D_CLUSTER_CREATE=yes\n", "K3D_CLUSTER_CREATE: 0 or 1: yes"},
+		"k3d agents":              {base + "SERVER_LOCATION=k3d-x\nK8S_IMAGE=i\nK3D_AGENTS=99\n", "K3D_AGENTS must be a whole number of agent nodes between 0 and 16: 99"},
 	} {
 		_, err := settingsfile.Load(setupDir(t, tc.settings, ""), "web", env, false)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -581,5 +584,32 @@ func TestLoadReadsTheSettingsOfTheComposeProvider(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: got %v, want %q", name, err, tc.want)
 		}
+	}
+}
+
+// The settings of a k3d cluster are settings like the others: a machine file beats its group file, which beats .env.local,
+// and what no file names comes from the environment.
+func TestK3dSettingsComeFromTheMachineTheGroupAndTheEnvironment(t *testing.T) {
+	base := "PROVIDER=kubernetes\nDNS_PROVIDER=none\nSERVER_LOCATION=k3d-viper\nK8S_IMAGE=i\n"
+	dir := setupDir(t, base+"K3D_REGISTRY=fromdotenv\n", "K3D_AGENTS=3\n")
+	if err := os.MkdirAll(filepath.Join(dir, "groups"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "groups", "dev.env"), []byte("GROUP_MACHINES=web\nK3D_REGISTRY=fromgroup\nK3D_CLUSTER_CREATE=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := settings.Env{Lookup: envOf(map[string]string{"K3D_AGENTS": "9", "K3D_REGISTRY": "fromshell"}), Home: "/h"}
+	c, err := settingsfile.Load(dir, "web", env, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Get("K3D_REGISTRY") != "fromgroup" || c.Get("K3D_CLUSTER_CREATE") != "1" || c.Get("K3D_AGENTS") != "3" {
+		t.Errorf("registry %q, create %q, agents %q", c.Get("K3D_REGISTRY"), c.Get("K3D_CLUSTER_CREATE"), c.Get("K3D_AGENTS"))
+	}
+	// only the shell: it counts too
+	dir = setupDir(t, base, "")
+	c, err = settingsfile.Load(dir, "web", env, false)
+	if err != nil || c.Get("K3D_REGISTRY") != "fromshell" || c.Get("K3D_AGENTS") != "9" {
+		t.Errorf("%v %q %q", err, c.Get("K3D_REGISTRY"), c.Get("K3D_AGENTS"))
 	}
 }
