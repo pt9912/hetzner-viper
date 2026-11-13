@@ -31,6 +31,7 @@ type host struct {
 	noEth0     map[string]bool // containers that have lost eth0
 	endpoint   string
 	noCompose  bool
+	noContext  bool // docker cannot find the context
 	noImage    bool
 	networks   int
 	nets       map[string]map[string]string // docker networks by name, with their labels
@@ -73,6 +74,8 @@ func (h *host) run(_ context.Context, _, name string, args ...string) (string, s
 	args = args[2:]
 	h.record(args)
 	switch {
+	case args[0] == "version" && h.noContext:
+		return "", "Failed to initialize: unable to resolve docker endpoint: context \"fsn1\": context not found: open meta.json: no such file or directory", errors.New("exit status 1")
 	case args[0] == "version":
 		return "29.9.3\n", "", nil
 	case args[0] == "context":
@@ -672,6 +675,21 @@ func TestValidate(t *testing.T) {
 	}
 	if !has(f, model.Warn, "25 networks") {
 		t.Errorf("no warning for many networks: %v", f)
+	}
+}
+
+func TestAnUnknownDockerContextIsExplained(t *testing.T) {
+	h := newHost()
+	h.noContext = true
+	c, _ := newClient(t, h)
+	f := c.Validate(context.Background(), model.Check{Spec: spec("web"), ServerName: "web"})
+	var fail, hint bool
+	for _, x := range f {
+		fail = fail || x.Level == model.Fail && strings.Contains(x.Text, "Docker not usable")
+		hint = hint || x.Level == model.Info && strings.Contains(x.Text, "SERVER_LOCATION is the Docker context")
+	}
+	if !fail || !hint {
+		t.Errorf("fail %v hint %v: %v", fail, hint, f)
 	}
 }
 

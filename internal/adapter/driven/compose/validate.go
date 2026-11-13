@@ -25,6 +25,9 @@ func (c *Client) Validate(ctx context.Context, ch model.Check) []model.Finding {
 	ver, err := c.docker(ctx, "version", "--format", "{{.Server.Version}}")
 	if err != nil {
 		f.add(model.Fail, "Docker not usable (is it running? context %q, your rights on the socket): %s", c.opts.Context, c.Describe(err))
+		if strings.Contains(err.Error(), "context not found") || strings.Contains(c.Describe(err), "context not found") {
+			f.add(model.Info, "SERVER_LOCATION is the Docker context here (default is the local daemon): set it for the machine or the group, a value of another provider (a Hetzner location from .env.local) does not work")
+		}
 		return f
 	}
 	f.add(model.OK, "Docker host %s answers (Docker %s)", c.opts.Context, strings.TrimSpace(ver))
