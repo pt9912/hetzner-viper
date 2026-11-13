@@ -73,6 +73,16 @@ Zwei Werkzeuge sind gepinnt:
 
 Beide laufen in Docker, auch im Devcontainer, damit der Weg der Releases überall derselbe ist.
 
+### Das Image der Maschinen
+
+Das Image `viper-machine` (`image/`) ist das der Anbieter `kubernetes` und `compose`.
+
+* `make image` baut es (`viper-machine:<Version>`), `make image-test` prüft es mit `image/test.sh` (48 Prüfungen: `sshd`, Host-Zertifikat, Werkzeuge, ein Volume wie im Cluster, NATS). Der Benutzer baut es mit `viper image build` aus den Dateien im Binary.
+* **Standard für `K8S_IMAGE` und `COMPOSE_IMAGE`:** das veröffentlichte Image der Version von `viper` (`model.DefaultMachineImage`, `ghcr.io/pt9912/viper-machine:<Version>`). Das gibt es nur für eine Release-Version (`vX.Y.Z` ohne Zusatz). Ein Build aus der Entwicklung (`make build` ohne `VERSION=vX.Y.Z`, `dev`, `v0.18.0-3-gabc`, `-dirty`) hat kein veröffentlichtes Image: Dort ist der Name Pflicht, und `viper image build` baut das Image aus den Dateien im Binary. Den Standard eines Release probieren Sie mit einem lokalen Build: `go build -ldflags "-X main.version=v0.18.0" ./cmd/viper`.
+* **Veröffentlichen:** Der Workflow `machine image` (`.github/workflows/image.yml`) baut und testet das Image bei jedem Tag `vX.Y.Z` je Architektur (amd64 auf `ubuntu-latest`, arm64 auf `ubuntu-24.04-arm`, ohne Emulation) und veröffentlicht es als ein Image mit beiden Architekturen: `ghcr.io/pt9912/viper-machine:<Version>` und `:latest`. Das Paket ist öffentlich.
+* **Ein Image zu einem vorhandenen Tag nachholen** (ein Tag wird nie verschoben): `gh workflow run "machine image" -f tag=vX.Y.Z -f ref=main` baut es mit den Dateien von `main`. Der Lauf bricht ab, wenn sich eine Datei, die ins Image kommt (`image/Dockerfile`, `cloud-init.yaml`, `image/seed.py`, `image/sshd_config`, `image/entry.sh`, `image/nats-supervisor.sh`), zwischen Tag und `ref` unterscheidet; das Image ist dann das, was das Tag beschreibt.
+* Der Test läuft auf den Runnern als anderer Benutzer als lokal (uid 1001, lokal oft 1000): Was er auf einem gemounteten Verzeichnis anlegt, muss `builder` (uid 1000) lesen und löschen können, und das Aufräumen am Ende gibt die Dateien dem aufrufenden Benutzer zurück.
+
 ## Tests
 
 Die Tests beschreibt [`architektur.md`](architektur.md#tests). Der Devcontainer enthält `bash`, `git`, `jq`, `ssh-keygen` und `shellcheck`; ein fehlendes Werkzeug lässt den Test fehlschlagen (`make test` setzt `VIPER_REQUIRE_TOOLS=1`), sonst überspringt er ihn.
