@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.99  
+Version: 1.100  
 Software-Version: v0.20.0  
 Stand: 13.11.2026  
 
@@ -8,7 +8,7 @@ Stand: 13.11.2026
 
 ### Zweck der Software
 
-Das Programm `viper` richtet mit einem Befehl einen entfernten Arbeitsrechner bei einem Cloud-Anbieter ein: Hetzner Cloud, AWS (Amazon EC2), Google Cloud oder Azure. Hetzner und AWS sind in echten Konten erprobt; bei Google Cloud und Azure ist das nicht belegt (Kapitel 4). Auf diesem Rechner arbeitet der Code-Agent Claude Code als „virtuelle Person“ (VIPER: VIrtual PERson) in Ihrem Repository. Sie arbeiten darauf über VS Code (Remote-SSH) oder über ein SSH-Terminal, zum Beispiel vom iPad.
+Das Programm `viper` richtet mit einem Befehl einen Arbeitsrechner ein: bei einem Cloud-Anbieter (Hetzner Cloud, AWS (Amazon EC2), Google Cloud oder Azure), als Pod in einem Kubernetes-Cluster oder als Container auf dem Docker-Host Ihres eigenen Computers. Die beiden letzten Wege brauchen kein Cloud-Konto und lassen sich lokal ausprobieren, auch mit einem k3d-Cluster (Abschnitt „Lokal arbeiten, ohne Cloud-Konto“). Hetzner und AWS sind in echten Konten erprobt; bei Google Cloud und Azure ist das nicht belegt (Kapitel 4). Kubernetes ist in k3d erprobt (nicht in EKS, GKE oder AKS), Docker Compose auf einem lokalen Linux-Docker-Host (nicht auf Docker Desktop). Auf diesem Rechner arbeitet der Code-Agent Claude Code als „virtuelle Person“ (VIPER: VIrtual PERson) in Ihrem Repository. Sie arbeiten darauf über VS Code (Remote-SSH) oder über ein SSH-Terminal, zum Beispiel vom iPad.
 
 Pro Git-Repository richten Sie einen eigenen Rechner ein. Beim Einrichten wird das Repository automatisch geklont. Wenn Sie fertig sind, löschen Sie den Rechner wieder. Alle Dateien auf dem Rechner werden dabei gelöscht. Sichern Sie Ihre Arbeit deshalb vorher mit `git push`.
 
@@ -21,19 +21,19 @@ Dieses Handbuch richtet sich an Entwicklerinnen und Entwickler, die auf einem Li
 Auf Ihrem lokalen Rechner (Linux, macOS oder Windows; Windows ist nur teilweise getestet, siehe „`viper` installieren“):
 
 * Das Programm `viper` (eine einzelne Datei aus dem Release, siehe „`viper` installieren“).
-* Der OpenSSH-Client mit `ssh`, `ssh-keygen`, `ssh-keyscan` und `scp`. Mehr brauchen Sie nicht: `hcloud`, `jq`, `curl`, Docker und `make` sind nicht nötig.
+* Der OpenSSH-Client mit `ssh`, `ssh-keygen`, `ssh-keyscan` und `scp`. Mehr brauchen Sie bei einem Cloud-Anbieter nicht: `hcloud`, `jq`, `curl`, Docker und `make` sind nicht nötig. Docker brauchen Sie nur für Rechner als Container oder Pod (der Docker-Host von `PROVIDER=compose`, das Image für `kubernetes`; bei k3d außerdem das Programm `k3d`).
 * Optional VS Code mit der Erweiterung **Remote-SSH**. Sie nutzt den OpenSSH-Client Ihres Rechners. Ohne VS Code verbinden Sie sich mit `viper ssh <rechner>`; VS Code öffnen Sie später mit `viper vscode <rechner>` erneut.
 
 Bei den Anbietern:
 
-* Ein Konto bei einem Cloud-Anbieter. Bei **Hetzner Cloud** ein Projekt mit einem **API-Token mit Lese- und Schreibrechten**, bei **AWS** eine Anmeldung (`aws login` oder SSO) mit Rechten für EC2; Google Cloud und Azure siehe Kapitel 4.
+* Ein Konto bei einem Cloud-Anbieter, außer Sie arbeiten mit Containern auf Ihrem Docker (`PROVIDER=compose`) oder in einem vorhandenen Kubernetes-Cluster (`PROVIDER=kubernetes`, etwa k3d); beides steht im Abschnitt „Lokal arbeiten, ohne Cloud-Konto“. Bei **Hetzner Cloud** ein Projekt mit einem **API-Token mit Lese- und Schreibrechten**, bei **AWS** eine Anmeldung (`aws login` oder SSO) mit Rechten für EC2; Google Cloud und Azure siehe Kapitel 4.
 * Eine Domain bei Cloudflare, wenn `viper` den DNS-Namen der Rechner anlegen soll (Standard). Dafür brauchen Sie einen **API-Token** mit den Rechten **Zone DNS Edit** und **Zone DNS Read** und die **Zone-ID** der Domain. Ohne Domain und Cloudflare arbeiten Sie mit `DNS_PROVIDER=none` (Kapitel 4): Dann erreichen Sie die Rechner über ihre Adresse.
 
-> **Kosten:** `viper` legt kostenpflichtige Ressourcen an. Der Anbieter kann zusätzlich die öffentliche IPv4-Adresse berechnen (Hetzner, AWS). Ein gelöschter Server verursacht keine weiteren Kosten.
+> **Kosten:** `viper` legt kostenpflichtige Ressourcen an. Der Anbieter kann zusätzlich die öffentliche IPv4-Adresse berechnen (Hetzner, AWS). Ein gelöschter Server verursacht keine weiteren Kosten. Container auf Ihrem Docker-Host und in einem lokalen k3d-Cluster kosten nichts außer den Mitteln Ihres Computers; ein Kubernetes-Cluster rechnet sein Betreiber nach eigenen Regeln ab.
 
-> **Datenverlust:** Es gibt keinen separaten Datenträger. Die Arbeitsdateien liegen auf der Platte des Servers und gehen beim Löschen verloren. Was nicht gepusht ist, ist weg.
+> **Datenverlust:** Es gibt keinen separaten Datenträger. Die Arbeitsdateien liegen auf der Platte des Servers und gehen beim Löschen verloren. Was nicht gepusht ist, ist weg. Bei einem Pod oder Container liegen das Heimverzeichnis und Homebrew auf Volumes, die das Ersetzen des Pods oder einen Neustart des Containers überstehen; `viper down` löscht sie mit allen Daten.
 
-> **Sicherheit:** Legen Sie API-Tokens nie in Git ab. Der Benutzer `builder` auf dem Server hat Root-Rechte (sudo ohne Passwort, Docker-Gruppe). Arbeiten Sie dort nur mit vertrauenswürdigen Repositories.
+> **Sicherheit:** Legen Sie API-Tokens nie in Git ab. Der Benutzer `builder` auf dem Server hat Root-Rechte (sudo ohne Passwort, Docker-Gruppe). Arbeiten Sie dort nur mit vertrauenswürdigen Repositories. In einem Pod oder Container hat `builder` kein Root und kein `sudo`; dafür läuft das Docker im Rechner standardmäßig in einem **privilegierten** Container, der Root auf dem Host bedeuten kann: Nutzen Sie das nur auf Ihrem eigenen Computer oder Cluster (Abschnitte zu Kubernetes und Docker Compose).
 
 ## 2. Erste Schritte
 
@@ -1544,3 +1544,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.97 | nach v0.18.0 | Neu: `K8S_IMAGE` und `COMPOSE_IMAGE` haben einen Standard, das veröffentlichte Image zu Ihrer Version von `viper` (`ghcr.io/pt9912/viper-machine:<Version>`); eintragen müssen Sie sie nur für ein selbst gebautes oder anderes Image. Der Standard von `WORKSPACE_DIR` ist für alle Anbieter `/home/builder/work` (bisher ein Verzeichnis außerhalb des Heimverzeichnisses, das nur VMs anlegen konnten). Wer sich auf den früheren Standard verlassen hat, setzt `WORKSPACE_DIR` ausdrücklich; `viper down` prüft vorhandene Rechner weiter in den Verzeichnissen, mit denen sie gestartet wurden. Neu: der Abschnitt „Lokal arbeiten, ohne Cloud-Konto (Docker Compose oder k3d)“ in Kapitel 3 (mit gemeinsamer k3d-Registry für das Image), im Überblick (Kapitel 2) ein Hinweis darauf und die Zeile zu `viper image build`; das Image kann auch mit `docker pull` geladen werden (öffentlich, amd64 und arm64). Das Standard-Image `K8S_IMAGE`/`COMPOSE_IMAGE` gibt es weiterhin nicht: Sie tragen den Namen ein. Neu: `K3D_REGISTRY`, `K3D_CLUSTER_CREATE` und `K3D_AGENTS` (siehe „Registry und Cluster von `viper up` anlegen lassen“; `viper down` löscht den von `viper` angelegten Cluster mit dem letzten Rechner und fragt nach der Registry, oder `--delete-registry`/`--keep-registry`), und `viper up` lädt ein Compose-Image mit Registry-Namen selbst. |
 | 1.98 | v0.19.0 | Release v0.19.0: die Änderung 1.97 (Standard-Image für `K8S_IMAGE` und `COMPOSE_IMAGE`, `K3D_REGISTRY`, `K3D_CLUSTER_CREATE` und `K3D_AGENTS` mit Registry und Cluster von `viper up`, `viper down` mit `--delete-registry` und `--keep-registry`, `viper up` lädt ein Compose-Image, Image für amd64 und arm64, neuer Standard von `WORKSPACE_DIR`, der Abschnitt „Lokal arbeiten, ohne Cloud-Konto“). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ und die Beispiele für das Image nennen jetzt `v0.19.0`. |
 | 1.99 | v0.20.0 | Release v0.20.0: Ein Rechner darf in mehreren Gruppen stehen; `--in-group G` sagt, wessen Einstellungen für einen einzelnen Rechner gelten (`--group G` bleibt „alle Rechner der Gruppe“), und `viper log` verlangt die Auswahl ebenfalls. Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ und die Beispiele für das Image nennen jetzt `v0.20.0`. |
+| 1.100 | nach v0.20.0 | Einleitung: Zweck, Voraussetzungen, Kosten, Datenverlust und Sicherheit nennen auch Pods und Container (kein Cloud-Konto nötig, Docker nur für diese Wege, Volumes, `builder` ohne Root). |
