@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
@@ -52,7 +53,7 @@ func parseNatsArgs(o *options, stdin io.Reader) (natsArgs, error) {
 		if len(rest) > 0 {
 			return natsArgs{}, fmt.Errorf("viper nats %s takes no text: %q\n%s", sub, rest[0], usage)
 		}
-	case "peers", "listen":
+	case "peers", "topics", "listen":
 		if len(rest) > 0 {
 			return natsArgs{}, fmt.Errorf("viper nats %s takes no text: %q\n%s", sub, rest[0], usage)
 		}
@@ -69,6 +70,7 @@ func checkNatsOptions(o *options, sub string) error {
 		"request":   {"to", "timeout"},
 		"broadcast": {"topic"},
 		"peers":     {"timeout", "query"},
+		"topics":    {"timeout", "query"},
 		"listen":    {"topic", "all"},
 		"init":      {},
 		"revoke":    {},
@@ -237,7 +239,7 @@ func natsRun(ctx context.Context, o *options, c driving.NATSCommand, sender stri
 	show := func(e model.NATSLine) {
 		if o.asJSON {
 			writeJSONLine(stdout, e)
-		} else if e.Via != "presence" {
+		} else if e.Via != "presence" && e.Via != "topics" {
 			fmt.Fprintln(stdout, natsLine(e, sender))
 		}
 	}
@@ -284,6 +286,8 @@ func natsReport(o *options, c driving.NATSCommand, res driving.NATSResult, stdou
 		fmt.Fprintln(stdout, res.Answer.Text)
 	case "peers":
 		reportPeers(o, res, stdout)
+	case "topics":
+		reportTopics(o, res, stdout)
 	}
 	return nil
 }
@@ -302,6 +306,43 @@ func reportPeers(o *options, res driving.NATSResult, stdout io.Writer) {
 	fmt.Fprintf(stdout, "Present (heard by %s):\n", res.Sender)
 	for _, p := range res.Peers {
 		fmt.Fprintf(stdout, "- %s\n", p.Name)
+	}
+}
+
+// reportTopics prints each machine with the topics it receives, and then each topic with its machines.
+func reportTopics(o *options, res driving.NATSResult, stdout io.Writer) {
+	if o.asJSON {
+		for _, p := range res.Peers {
+			writeJSONLine(stdout, model.NATSLine{Event: "peer", From: p.Name, Text: strings.Join(p.Topics, " ")})
+		}
+		return
+	}
+	if len(res.Peers) == 0 {
+		fmt.Fprintf(stdout, "No other machine said that it is there (heard by %s).\n", res.Sender)
+		return
+	}
+	fmt.Fprintf(stdout, "Topics (heard by %s):\n", res.Sender)
+	by := map[string][]string{}
+	for _, p := range res.Peers {
+		switch {
+		case !p.TopicsKnown:
+			fmt.Fprintf(stdout, "- %s: has not said (an older viper-nats-mcp, or its announcement has not come yet)\n", p.Name)
+		case len(p.Topics) == 0:
+			fmt.Fprintf(stdout, "- %s: no topic\n", p.Name)
+		default:
+			fmt.Fprintf(stdout, "- %s: %s\n", p.Name, strings.Join(p.Topics, ", "))
+		}
+		for _, t := range p.Topics {
+			by[t] = append(by[t], p.Name)
+		}
+	}
+	names := make([]string, 0, len(by))
+	for t := range by {
+		names = append(names, t)
+	}
+	sort.Strings(names)
+	for _, t := range names {
+		fmt.Fprintf(stdout, "  %s <- %s\n", t, strings.Join(by[t], ", "))
 	}
 }
 

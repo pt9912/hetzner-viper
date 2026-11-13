@@ -189,6 +189,33 @@ func TestNatsPeersAndRequestAndNoMachineThatCanSpeak(t *testing.T) {
 	}
 }
 
+func TestNatsTopicsListsTheTopicsOfEachMachine(t *testing.T) {
+	dir, env := natsGroup(t, "")
+	ssh := &natsSSH{out: `{"event":"ready","me":"alpha","group":"dev"}
+{"event":"message","from":"beta","via":"presence","type":"presence","state":"up"}
+{"event":"message","from":"beta","via":"topics","type":"topics","text":"news ops"}
+{"event":"message","from":"gamma","via":"presence","type":"presence","state":"up"}
+{"event":"message","from":"delta","via":"presence","type":"presence","state":"up"}
+{"event":"message","from":"delta","via":"topics","type":"topics","text":""}
+`}
+	out, _, err := runNats(t, dir, env, ssh, "", cli.Opts{Args: []string{"topics", "dev"}})
+	for _, want := range []string{"- beta: news, ops", "- gamma: has not said", "- delta: no topic", "news <- beta", "ops <- beta"} {
+		if err != nil || !strings.Contains(out, want) {
+			t.Errorf("%q missing: %v\n%s", want, err, out)
+		}
+	}
+	if !strings.Contains(strings.Join(ssh.calls[0], " "), "'watch' '--for'") {
+		t.Errorf("%v", ssh.calls[0])
+	}
+	out, _, err = runNats(t, dir, env, ssh, "", cli.Opts{Args: []string{"topics", "dev"}, JSON: true})
+	if err != nil || !strings.Contains(out, `"from":"beta"`) || !strings.Contains(out, `"text":"news ops"`) {
+		t.Errorf("%v %q", err, out)
+	}
+	if _, _, err := runNats(t, dir, env, ssh, "", cli.Opts{Args: []string{"topics", "dev"}, Topic: "x"}); err == nil {
+		t.Error("--topic is not used by topics")
+	}
+}
+
 func TestNatsJSONOutput(t *testing.T) {
 	dir, env := natsGroup(t, "")
 	ssh := &natsSSH{out: `{"event":"message","from":"beta","via":"pub","topic":"news","type":"msg","text":"hi"}` + "\n"}

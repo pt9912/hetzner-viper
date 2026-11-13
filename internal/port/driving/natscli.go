@@ -15,7 +15,7 @@ type NATSRemote func(ctx context.Context, machine, stdin string, stdout, stderr 
 
 // NATSCommand is what viper nats was asked for (docs/plan/nats-cli.md).
 type NATSCommand struct {
-	Name    string        // peers, send, broadcast, request, listen
+	Name    string        // peers, topics, send, broadcast, request, listen
 	To      string        // send, request
 	Topic   string        // broadcast: one topic; listen: a filter, optional, several separated by commas
 	Text    string        // send, broadcast, request
@@ -25,7 +25,11 @@ type NATSCommand struct {
 }
 
 // NATSPeer is a machine that said that it is there.
-type NATSPeer struct{ Name string }
+type NATSPeer struct {
+	Name        string
+	Topics      []string // topics: the topics it receives
+	TopicsKnown bool     // topics: it said which (an older program does not)
+}
 
 // NATSResult is what a command produced.
 type NATSResult struct {

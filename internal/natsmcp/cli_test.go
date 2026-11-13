@@ -162,7 +162,7 @@ func TestWatchShowsWhatTheSubjectsProveAndNothingForged(t *testing.T) {
 	mu.Unlock()
 	var msgs []natsmcp.Line
 	for _, l := range lines {
-		if l.Event == "message" && l.Via != "presence" {
+		if l.Event == "message" && l.Via != "presence" && l.Via != "topics" {
 			msgs = append(msgs, l)
 		}
 	}
@@ -237,7 +237,7 @@ func watchFor(t *testing.T, m *machine, d string, during func(), args ...string)
 	defer mu.Unlock()
 	var msgs []natsmcp.Line
 	for _, l := range decodeLines(t, out.String()) {
-		if l.Event == "message" && l.Via != "presence" {
+		if l.Event == "message" && l.Via != "presence" && l.Via != "topics" {
 			msgs = append(msgs, l)
 		}
 	}

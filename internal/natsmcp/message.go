@@ -149,8 +149,8 @@ func (p *Peers) SetTopics(name string, names []string, at time.Time) {
 	p.mu.Unlock()
 }
 
-// ParseTopics reads the text of a topics announcement: the names, separated by blanks, each a valid name, at most max of
-// them (limit), none twice. The result is sorted.
+// ParseTopics reads the text of a topics announcement: the names, separated by blanks, each a valid name, at most limit of
+// them, none twice. The result is sorted.
 func ParseTopics(text string, limit int) ([]string, error) {
 	var out []string
 	seen := map[string]bool{}

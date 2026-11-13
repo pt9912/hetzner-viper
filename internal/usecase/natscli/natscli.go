@@ -48,7 +48,7 @@ func Validate(c driving.NATSCommand, from string) error {
 // validateTarget checks the names the command is about.
 func validateTarget(c driving.NATSCommand, from string) error {
 	switch c.Name {
-	case "peers":
+	case "peers", "topics":
 		return nil
 	case "listen":
 		if c.Topic != "" && len(topicList(c.Topic)) == 0 {
@@ -105,7 +105,7 @@ func Words(c driving.NATSCommand) []string {
 			t = 30 * time.Second
 		}
 		return append(w, "request", "--to", c.To, "--timeout", t.String())
-	case "peers":
+	case "peers", "topics":
 		d := c.Timeout
 		if d == 0 {
 			d = PeersWindow
@@ -161,7 +161,7 @@ func checkEvent(e Event) error {
 	switch e.Event {
 	case "ready", "sent", "answer":
 	case "message":
-		if e.Via != "out" && e.Via != "pub" && e.Via != "presence" {
+		if e.Via != "out" && e.Via != "pub" && e.Via != "presence" && e.Via != "topics" {
 			return fmt.Errorf("an event with the route %.20q", e.Via)
 		}
 	default:
@@ -215,14 +215,14 @@ func (Service) Run(ctx context.Context, remote driving.NATSRemote, machine strin
 		_ = pw.CloseWithError(err) // ends the reader with the error of the program, if any
 		errc <- err
 	}()
-	collect := collector{c: c, res: &res, show: show, seen: map[string]bool{}}
+	collect := collector{c: c, res: &res, show: show, index: map[string]int{}}
 	readErr := ReadEvents(pr, collect.add)
 	_ = pr.Close()
 	runErr := <-errc
 	switch {
 	case readErr != nil && !errors.Is(readErr, runErr):
 		return res, readErr
-	case runErr != nil && ctx.Err() != nil && (c.Name == "listen" || c.Name == "peers"):
+	case runErr != nil && ctx.Err() != nil && (c.Name == "listen" || c.Name == "peers" || c.Name == "topics"):
 		return res, nil // interrupted or the time is up
 	}
 	return res, runErr
@@ -230,10 +230,10 @@ func (Service) Run(ctx context.Context, remote driving.NATSRemote, machine strin
 
 // collector files the events of a run into its result.
 type collector struct {
-	c    driving.NATSCommand
-	res  *driving.NATSResult
-	show func(Event)
-	seen map[string]bool
+	c     driving.NATSCommand
+	res   *driving.NATSResult
+	show  func(Event)
+	index map[string]int
 }
 
 func (k *collector) add(e Event) error {
@@ -243,11 +243,23 @@ func (k *collector) add(e Event) error {
 	case e.Event == "sent":
 		k.res.Sent = true
 	case e.Event != "message":
-	case k.c.Name == "peers" && e.Via == "presence" && e.State != "bye" && !k.seen[e.From]:
-		k.seen[e.From] = true
-		k.res.Peers = append(k.res.Peers, driving.NATSPeer{Name: e.From})
+	case (k.c.Name == "peers" || k.c.Name == "topics") && e.Via == "presence" && e.State != "bye":
+		k.peer(e.From)
+	case k.c.Name == "topics" && e.Via == "topics":
+		k.res.Peers[k.peer(e.From)].Topics = strings.Fields(e.Text)
+		k.res.Peers[k.peer(e.From)].TopicsKnown = true
 	case k.c.Name == "listen" && k.show != nil && (k.c.Topic == "" || slices.Contains(topicList(k.c.Topic), e.Topic)):
 		k.show(e)
 	}
 	return nil
+}
+
+// peer is the place of a machine in the result; the machine is added when it is not there yet.
+func (k *collector) peer(name string) int {
+	if i, ok := k.index[name]; ok {
+		return i
+	}
+	k.res.Peers = append(k.res.Peers, driving.NATSPeer{Name: name})
+	k.index[name] = len(k.res.Peers) - 1
+	return k.index[name]
 }

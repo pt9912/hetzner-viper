@@ -237,6 +237,7 @@ func (s *Service) onTopics(m *nats.Msg) {
 		return
 	}
 	s.peers.SetTopics(in.From, names, s.now())
+	s.seen(in, e)
 }
 
 func (s *Service) publish(subject string, e Envelope) error {

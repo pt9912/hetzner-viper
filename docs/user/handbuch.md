@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.106  
+Version: 1.107  
 Software-Version: v0.20.1  
 Stand: 13.11.2026  
 
@@ -56,7 +56,7 @@ Sie haben kein Cloud-Konto oder wollen erst einmal ausprobieren? Dann beginnen S
 | `viper log [<rechner>]` | Zeigt die lokalen Protokolle: Ereignisse aller Rechner, eines Rechners oder mit `--full` dessen vollständige Ausgabe. |
 | `viper up --group <gruppe>`, `viper down --group <gruppe>`, `viper check --group <gruppe>`, `viper preflight --group <gruppe>`, `viper ssh --group <gruppe> --cmd …` | Dieselben Befehle für alle Rechner einer Gruppe aus `groups/<gruppe>.env`, gleichzeitig (siehe „Eine Gruppe von Rechnern gemeinsam starten und beenden“). |
 | `viper mcp-binary --arch amd64\|arm64` | Schreibt den in `viper` eingebauten MCP-Server `viper-nats-mcp` für die Architektur nach stdout (`> datei`), zum Ansehen, Prüfen oder als `NATS_MCP_BINARY`. Zeigt nichts auf dem Terminal. |
-| `viper nats peers\|listen\|send\|broadcast\|request <gruppe> …` | Sendet Nachrichten an die Rechner einer NATS-Gruppe und liest mit, als einer der Rechner der Gruppe (siehe „Nachrichten an eine NATS-Gruppe senden“). |
+| `viper nats peers\|topics\|listen\|send\|broadcast\|request <gruppe> …` | Sendet Nachrichten an die Rechner einer NATS-Gruppe und liest mit, als einer der Rechner der Gruppe (siehe „Nachrichten an eine NATS-Gruppe senden“). |
 | `viper help`, `viper version` | Zeigt alle Befehle bzw. die Version. |
 
 ### Wie ein Rechner benannt wird
@@ -723,6 +723,7 @@ Mit `viper nats` sprechen Sie die Rechner einer NATS-Gruppe von Ihrem eigenen Re
 ```bash
 viper nats peers     entwicklung                          # wer hat sich gemeldet (hört 35 Sekunden)
 viper nats peers     entwicklung --query                  # schneller (8 Sekunden), siehe Hinweise
+viper nats topics    entwicklung [--query]                # wer empfängt welche Themen (jede Maschine mit ihren Themen, dann jedes Thema mit seinen Maschinen)
 viper nats send      entwicklung "Bitte pushen" --to beta
 viper nats broadcast entwicklung "Release um 15 Uhr" --topic news
 viper nats request   entwicklung "Wie ist der Stand?" --to beta --timeout 60
@@ -733,7 +734,7 @@ echo "langer Text" | viper nats send entwicklung - --to beta   # Text von der St
 
 * **Absender:** Ohne eigenen Schlüssel (siehe „Als Betreiber senden“ unten) kommt Ihre Nachricht von einer **Maschine der Gruppe** an, mit deren Schlüssel und Rechten; `viper` nimmt ohne `--from` die erste Maschine der Gruppe, die startklar ist und nicht der Empfänger ist. Mit `--from <maschine>` wählen Sie sie selbst. Die erste Ausgabezeile nennt den Absender („Sender: alpha …“).
 * `--json` gibt je Ereignis eine JSON-Zeile aus.
-* `--timeout` bei `request` (Standard 30 Sekunden, 1 bis 120) und bei `peers` (wie lange zugehört wird).
+* `--timeout` bei `request` (Standard 30 Sekunden, 1 bis 120) und bei `peers` (wie lange zugehört wird). `topics` hört wie `peers` zu; eine Maschine, die ihre Themen nicht meldet (ein älteres `viper-nats-mcp`, oder die Meldung kommt noch), steht als „has not said“ da, nicht als Maschine ohne Themen.
 
 #### Ergebnis
 
@@ -1556,4 +1557,5 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.103 | nach v0.20.1 | Der Preflight prüft bei `K3D_REGISTRY`, ob das Programm `k3d` da ist, wenn `viper up` die Registry oder den Cluster anlegen muss, und meldet sonst einen Fehler mit dem Hinweis, wie man es installiert. |
 | 1.104 | nach v0.20.1 | Behoben: Im Image der Pods und Container haben die SSH-Sitzungen die Sprachumgebung `C.UTF-8` (`btop` und `tmux` meldeten „No UTF-8 locale detected“). Kapitel 7 nennt die Abhilfe für vorhandene Rechner. |
 | 1.105 | nach v0.20.1 | `viper check` zeigt den freien Platz des Heimverzeichnisses statt des Wurzelverzeichnisses: bei Pods und Containern ist das das Volume, auf dem die Arbeit liegt (`K8S_DISK_GB`), nicht die Platte des Knotens. Auf einer VM ändert sich nichts. |
+| 1.107 | nach v0.20.1 | Neu: `viper nats topics GRUPPE` zeigt auf Ihrem Rechner, welche Maschine welche Themen empfängt. |
 | 1.106 | nach v0.20.1 | Neu: das MCP-Werkzeug `topics` listet die Themen (die eigenen und die, die die anderen Maschinen der Gruppe empfangen); die Maschinen melden ihre Themen auf einem eigenen Subjekt, ältere `viper-nats-mcp` bleiben dabei unberührt. `NATS_MCP_AUTOALLOW=read` erlaubt jetzt auch `topics` (nach einem `viper up`). |
