@@ -43,6 +43,15 @@ func (n Names) Pub(topic string) string {
 // Presence is where this machine says that it is there.
 func (n Names) Presence() string { return fmt.Sprintf("viper.%s.%s.presence", n.Group, n.Me) }
 
+// Topics is where this machine says which topics it subscribed to (below its own tree, so the third token proves the sender).
+// It is a subject of its own, not a field of the presence message: a server of an older version reads the presence strictly and
+// would refuse a presence with a field it does not know, so the machine would count as absent for it. It never subscribes to
+// this subject and does not see the announcement.
+func (n Names) Topics() string { return fmt.Sprintf("viper.%s.%s.topics", n.Group, n.Me) }
+
+// TopicsSub is what this machine reads for the topics of the others.
+func (n Names) TopicsSub() string { return fmt.Sprintf("viper.%s.*.topics", n.Group) }
+
 // InSub is what this machine reads for messages addressed to it.
 func (n Names) InSub() string { return fmt.Sprintf("viper.%s.*.out.%s", n.Group, n.Me) }
 
@@ -57,7 +66,7 @@ func (n Names) PresenceSub() string { return fmt.Sprintf("viper.%s.*.presence", 
 
 // Inbound is a received subject taken apart.
 type Inbound struct {
-	Kind string // "out", "pub" or "presence"
+	Kind string // "out", "pub", "presence" or "topics"
 	From string // the sender, from the subject
 	Arg  string // the topic of a "pub"
 	To   string // the machine an "out" is for
@@ -82,13 +91,14 @@ func (n Names) Parse(subject string) (Inbound, bool) {
 	if len(t) < 4 || t[0] != "viper" || t[1] != n.Group || !ValidName(t[2]) || t[2] == n.Me {
 		return Inbound{}, false
 	}
+	if len(t) == 4 && (t[3] == "presence" || t[3] == "topics") { // what a machine says about itself
+		return Inbound{Kind: t[3], From: t[2]}, true
+	}
 	switch {
 	case len(t) == 5 && t[3] == "out" && t[4] == n.Me:
 		return Inbound{Kind: "out", From: t[2], To: n.Me}, true
 	case len(t) == 5 && t[3] == "pub" && ValidName(t[4]):
 		return Inbound{Kind: "pub", From: t[2], Arg: t[4]}, true
-	case len(t) == 4 && t[3] == "presence":
-		return Inbound{Kind: "presence", From: t[2]}, true
 	}
 	return Inbound{}, false
 }

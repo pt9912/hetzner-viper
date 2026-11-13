@@ -10,6 +10,7 @@ import (
 	"io"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -18,10 +19,10 @@ import (
 // Envelope is the content of every message the servers exchange.
 type Envelope struct {
 	V     int    `json:"v"`
-	Kind  string `json:"kind"`            // msg, req, res, presence
+	Kind  string `json:"kind"`            // msg, req, res, presence, topics
 	ID    string `json:"id,omitempty"`    // chosen by the sender of a request
 	Re    string `json:"re,omitempty"`    // the ID of the request an answer belongs to
-	Text  string `json:"text,omitempty"`  // the message
+	Text  string `json:"text,omitempty"`  // the message; for topics the names of the topics, separated by blanks
 	State string `json:"state,omitempty"` // presence: up or bye
 	Query bool   `json:"query,omitempty"` // presence: please answer with yours
 }
@@ -104,7 +105,7 @@ func checkKeys(data []byte) error {
 
 func checkEnvelope(e Envelope, maxText int) error {
 	switch e.Kind {
-	case "msg", "req", "res", "presence":
+	case "msg", "req", "res", "presence", "topics":
 	default:
 		return fmt.Errorf("kind %q", truncate(e.Kind, 32))
 	}
@@ -123,15 +124,52 @@ func checkEnvelope(e Envelope, maxText int) error {
 	return nil
 }
 
-// Peers is who said recently that it is there.
+// Peers is who said recently that it is there, and which topics they said they subscribed to.
 type Peers struct {
-	mu   sync.Mutex
-	seen map[string]time.Time
-	ttl  time.Duration
+	mu     sync.Mutex
+	seen   map[string]time.Time
+	topics map[string]topicList
+	ttl    time.Duration
+}
+
+type topicList struct {
+	names []string
+	at    time.Time
 }
 
 // NewPeers returns a table in which a machine counts as present for ttl after its last message.
-func NewPeers(ttl time.Duration) *Peers { return &Peers{seen: map[string]time.Time{}, ttl: ttl} }
+func NewPeers(ttl time.Duration) *Peers {
+	return &Peers{seen: map[string]time.Time{}, topics: map[string]topicList{}, ttl: ttl}
+}
+
+// SetTopics notes the topics a machine said it subscribed to.
+func (p *Peers) SetTopics(name string, names []string, at time.Time) {
+	p.mu.Lock()
+	p.topics[name] = topicList{names: names, at: at}
+	p.mu.Unlock()
+}
+
+// ParseTopics reads the text of a topics announcement: the names, separated by blanks, each a valid name, at most max of
+// them (limit), none twice. The result is sorted.
+func ParseTopics(text string, limit int) ([]string, error) {
+	var out []string
+	seen := map[string]bool{}
+	for _, t := range strings.Fields(text) {
+		if !ValidName(t) {
+			return nil, fmt.Errorf("%q is not a topic name", truncate(t, 32))
+		}
+		if seen[t] {
+			continue
+		}
+		seen[t] = true
+		out = append(out, t)
+	}
+	if len(out) > limit {
+		return nil, fmt.Errorf("%d topics", len(out))
+	}
+	sort.Strings(out)
+	return out, nil
+}
 
 // Seen notes that a machine is there.
 func (p *Peers) Seen(name string, at time.Time) {
@@ -144,13 +182,17 @@ func (p *Peers) Seen(name string, at time.Time) {
 func (p *Peers) Gone(name string) {
 	p.mu.Lock()
 	delete(p.seen, name)
+	delete(p.topics, name)
 	p.mu.Unlock()
 }
 
-// Peer is a machine that is present.
+// Peer is a machine that is present. TopicsKnown is false for a machine that has not said which topics it subscribed to
+// (an older version does not, or its announcement has not come yet or is older than the time to live).
 type Peer struct {
-	Name string
-	Age  time.Duration
+	Name        string
+	Age         time.Duration
+	Topics      []string
+	TopicsKnown bool
 }
 
 // Present returns the machines seen within the time to live, by name.
@@ -160,7 +202,11 @@ func (p *Peers) Present(now time.Time) []Peer {
 	var out []Peer
 	for n, t := range p.seen {
 		if age := now.Sub(t); age <= p.ttl {
-			out = append(out, Peer{Name: n, Age: age})
+			peer := Peer{Name: n, Age: age}
+			if tl, ok := p.topics[n]; ok && now.Sub(tl.at) <= p.ttl {
+				peer.Topics, peer.TopicsKnown = tl.names, true
+			}
+			out = append(out, peer)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })

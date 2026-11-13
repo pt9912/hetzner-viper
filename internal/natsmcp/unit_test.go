@@ -16,6 +16,7 @@ func TestParseAcceptsOnlyTheShapesOfTheSubscriptions(t *testing.T) {
 		"viper.g.a.out.me":    {Kind: "out", From: "a", To: "me"},
 		"viper.g.a.pub.build": {Kind: "pub", From: "a", Arg: "build"},
 		"viper.g.a.presence":  {Kind: "presence", From: "a"},
+		"viper.g.a.topics":    {Kind: "topics", From: "a"},
 	}
 	for subject, want := range good {
 		if got, ok := n.Parse(subject); !ok || got != want {
@@ -45,6 +46,9 @@ func TestParseAcceptsOnlyTheShapesOfTheSubscriptions(t *testing.T) {
 		"viper.g.a.out.>",           // wildcard
 		"viper.g.a.pub.>",           // wildcard
 		"viper.g.a.presence.>",      // wildcard
+		"viper.g.a.topics.extra",    // five tokens
+		"viper.g.a.topics.>",        // wildcard
+		"viper.g.me.topics",         // from itself
 		"_INBOX.me.1",               // an inbox
 		"viper.g.a.out.ME",          // case
 		"viper.g.a.out.mé",          // not ASCII
@@ -266,5 +270,53 @@ func TestLoadConfigReadsTheDefaultTopics(t *testing.T) {
 	}
 	if _, err = natsmcp.LoadConfig(write("a.b")); err == nil {
 		t.Error("a topic name with a dot was accepted")
+	}
+}
+
+func TestTopicsAnnouncementsAreReadStrictly(t *testing.T) {
+	for text, want := range map[string]string{"": "", "ci": "ci", "review  ci build ci": "build,ci,review"} {
+		got, err := natsmcp.ParseTopics(text, 16)
+		if err != nil || strings.Join(got, ",") != want {
+			t.Errorf("%q: %v %v", text, got, err)
+		}
+	}
+	for name, text := range map[string]string{"upper case": "CI", "a dot": "ci.build", "a wildcard": "ci >", "an underscore": "bad_topic", "too many": strings.Repeat("a b c d e f g h i j k l m n o p q ", 1)} {
+		if got, err := natsmcp.ParseTopics(text, 16); err == nil {
+			t.Errorf("%s: accepted as %v", name, got)
+		}
+	}
+	e, err := natsmcp.Decode([]byte(`{"v":1,"kind":"topics","text":"ci review"}`), natsmcp.DefaultMaxText)
+	if err != nil || e.Kind != "topics" || e.Text != "ci review" {
+		t.Errorf("%+v %v", e, err)
+	}
+}
+
+func TestPeersKnowTheTopicsOfAMachineOnlyAsLongAsTheMachineIsThereAndHasSaid(t *testing.T) {
+	p := natsmcp.NewPeers(90 * time.Second)
+	now := time.Now()
+	p.Seen("old", now)   // an older version: it never says which topics
+	p.Seen("quiet", now) // it said: none
+	p.SetTopics("quiet", nil, now)
+	p.Seen("busy", now)
+	p.SetTopics("busy", []string{"ci", "review"}, now)
+	p.Seen("stale", now)
+	p.SetTopics("stale", []string{"ci"}, now.Add(-100*time.Second)) // older than the time to live: not known any more
+	p.Seen("gone", now)
+	p.SetTopics("gone", []string{"ci"}, now)
+	p.Gone("gone")
+	byName := map[string]natsmcp.Peer{}
+	for _, x := range p.Present(now) {
+		byName[x.Name] = x
+	}
+	if len(byName) != 4 || byName["old"].TopicsKnown || !byName["quiet"].TopicsKnown || len(byName["quiet"].Topics) != 0 ||
+		strings.Join(byName["busy"].Topics, ",") != "ci,review" || byName["stale"].TopicsKnown {
+		t.Errorf("%+v", byName)
+	}
+	p.Gone("busy")
+	p.Seen("busy", now) // comes back: what it said before it left does not count
+	for _, x := range p.Present(now) {
+		if x.Name == "busy" && x.TopicsKnown {
+			t.Error("topics of a machine that left were kept")
+		}
 	}
 }

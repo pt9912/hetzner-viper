@@ -90,10 +90,10 @@ func TestMCPAllowedToolsFollowTheMode(t *testing.T) {
 	if got := model.MCPAllowedTools(model.AutoAllowOff); len(got) != 0 {
 		t.Errorf("off: %v", got)
 	}
-	if got := strings.Join(model.MCPAllowedTools(model.AutoAllowRead), ","); got != "peers,inbox" {
+	if got := strings.Join(model.MCPAllowedTools(model.AutoAllowRead), ","); got != "peers,inbox,topics" {
 		t.Errorf("read: %s", got)
 	}
-	if got := model.MCPAllowedTools(model.AutoAllowAll); len(got) != 8 || len(got) != len(model.MCPTools()) {
+	if got := model.MCPAllowedTools(model.AutoAllowAll); len(got) != 9 || len(got) != len(model.MCPTools()) {
 		t.Errorf("all: %v", got)
 	}
 	if got := model.MCPAllowedTools("anything"); got != nil {

@@ -10,6 +10,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -109,6 +110,9 @@ func (s *Service) Connect(ctx context.Context) error {
 	if _, err := nc.Subscribe(s.cfg.Names.PresenceSub(), s.onPresence); err != nil {
 		return err
 	}
+	if _, err := nc.Subscribe(s.cfg.Names.TopicsSub(), s.onTopics); err != nil {
+		return err
+	}
 	if err := s.subscribeTopics(nc); err != nil {
 		return err
 	}
@@ -191,7 +195,48 @@ func (s *Service) presenceLoop(ctx context.Context) {
 func (s *Service) publishPresence(state string, query bool) {
 	if s.Connected() && !s.cfg.Quiet {
 		_ = s.publish(s.cfg.Names.Presence(), Envelope{V: 1, Kind: "presence", State: state, Query: query})
+		if state == "up" {
+			s.publishTopics() // with every sign of life: whoever came later or lost a message has them within half a minute
+		}
 	}
+}
+
+// subscribedTopics are the topics this machine receives, sorted.
+func (s *Service) subscribedTopics() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, 0, len(s.topics))
+	for t := range s.topics {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// publishTopics tells the group which topics this machine subscribed to (the tools subscribe and unsubscribe call it too).
+func (s *Service) publishTopics() {
+	if s.Connected() && !s.cfg.Quiet {
+		_ = s.publish(s.cfg.Names.Topics(), Envelope{V: 1, Kind: "topics", Text: strings.Join(s.subscribedTopics(), " ")})
+	}
+}
+
+// onTopics notes which topics another machine subscribed to. Anything that does not parse is dropped.
+func (s *Service) onTopics(m *nats.Msg) {
+	in, ok := s.cfg.Names.Parse(m.Subject)
+	if !ok || in.Kind != "topics" {
+		return
+	}
+	e, err := Decode(m.Data, s.cfg.MaxText)
+	if err != nil || e.Kind != "topics" {
+		s.logLimited("refused a topics announcement from %s", in.From)
+		return
+	}
+	names, err := ParseTopics(e.Text, maxTopics)
+	if err != nil {
+		s.logLimited("refused a topics announcement from %s: %v", in.From, err)
+		return
+	}
+	s.peers.SetTopics(in.From, names, s.now())
 }
 
 func (s *Service) publish(subject string, e Envelope) error {

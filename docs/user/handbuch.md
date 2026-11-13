@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.105  
+Version: 1.106  
 Software-Version: v0.20.1  
 Stand: 13.11.2026  
 
@@ -675,6 +675,7 @@ Der Agent hat diese Werkzeuge:
 | `peers` | Maschinen der Gruppe, die sich in den letzten 90 Sekunden gemeldet haben |
 | `send` | Textnachricht an eine Maschine |
 | `broadcast`, `subscribe`, `unsubscribe` | Rundruf an ein Thema; Themen abonnieren und abbestellen (höchstens 16, die Themen aus `NATS_MCP_TOPICS` mitgezählt; diese sind schon beim Start abonniert und lassen sich nicht abbestellen) |
+| `topics` | die Themen: die, die der Agent selbst empfängt (die festen aus `NATS_MCP_TOPICS` sind gekennzeichnet), die, die die anderen Maschinen der Gruppe nach eigener Aussage empfangen, und je Thema die Maschinen, die es empfangen. Eine Maschine, die nichts gesagt hat (ein älteres `viper-nats-mcp`, oder ihre Meldung ist noch nicht da), steht als „has not said which topics“ da und nicht als eine ohne Themen. Die Meldungen kommen mit jedem Lebenszeichen (alle 30 Sekunden) und gleich nach `subscribe` und `unsubscribe` |
 | `request`, `reply` | Anfrage mit Warten auf die Antwort (30 Sekunden, höchstens 120); Antwort auf eine Anfrage aus dem Posteingang |
 | `inbox` | die letzten 200 eingegangenen Nachrichten und Anfragen (jede Textzeile beginnt mit `| `) |
 
@@ -696,7 +697,7 @@ Der Absender einer Nachricht folgt aus dem Subject, das der NATS-Server nur dem 
 Claude Code fragt standardmäßig bei jedem Aufruf eines Werkzeugs. `viper` ändert das nur auf Ihren Wunsch und schreibt dann in `~/.claude/settings.json` des Rechners genau die Einträge `mcp__nats__…`; alle anderen Einträge, ein Verweis auf ein Dotfiles-Repository und die Rechte der Datei bleiben. Ohne `jq` auf dem Rechner kann `viper` das nicht und sagt es.
 
 * `off` (Standard): jedes Werkzeug fragt nach (ein früher gesetzter Eintrag wird entfernt).
-* `read`: `peers` und `inbox` laufen ohne Nachfrage, nur lesend.
+* `read`: `peers`, `inbox` und `topics` laufen ohne Nachfrage, nur lesend.
 * `all`: alle Werkzeuge laufen ohne Nachfrage. **Dann kann der Agent ohne Ihr Zutun Nachrichten an alle Rechner der Gruppe senden und Anfragen beantworten.** Nutzen Sie das nur, wenn Sie den Agenten und die anderen Agenten der Gruppe so weit überblicken.
 
 #### Hinweise und Warnungen
@@ -1086,7 +1087,7 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `NATS_MCP` | `true`: `viper up` installiert auf dem Rechner den MCP-Server `viper-nats-mcp` und trägt ihn bei Claude Code ein (Benutzerbereich, Name `nats`); braucht `NATS_ENABLED=true` | `false` |
 | `NATS_MCP_PUSH_FROM` | Maschinennamen, durch Komma getrennt (der eigene Name wird übergangen, sodass dieselbe Liste in einer Gruppendatei für alle Rechner gilt), deren Nachrichten der Server in eine Claude-Code-Sitzung schiebt (nur wenn Sie Claude selbst mit dem Channel-Schalter starten, siehe unten); leer: nichts wird geschoben | leer |
 | `NATS_MCP_TOPICS` | Themen, durch Komma getrennt (höchstens 16, Namen wie bei `subscribe`), die der MCP-Server beim Start abonniert, wie mit dem Werkzeug `subscribe`, nur fest: `unsubscribe` lehnt sie ab. In einer Gruppendatei (`groups/<gruppe>.env`) gilt die Liste für alle Rechner der Gruppe; eine Änderung wirkt nach `viper up` und dem nächsten Start des Servers (neue Claude-Code-Sitzung) | leer |
-| `NATS_MCP_AUTOALLOW` | Welche Werkzeuge des MCP-Servers Claude Code ohne Nachfrage nutzen darf: `off`, `read` (`peers`, `inbox`) oder `all`; ein früher gesetzter Eintrag wird bei jedem `viper up` ersetzt | `off` |
+| `NATS_MCP_AUTOALLOW` | Welche Werkzeuge des MCP-Servers Claude Code ohne Nachfrage nutzen darf: `off`, `read` (`peers`, `inbox`, `topics`) oder `all`; ein früher gesetzter Eintrag wird bei jedem `viper up` ersetzt | `off` |
 | `NATS_MCP_BINARY` | Datei, die statt des in `viper` eingebauten MCP-Servers installiert wird (nötig für ein mit `go build` gebautes `viper` ohne `make`) | leer |
 | `DNS_PROVIDER` | Wer den DNS-Namen anlegt: `cloudflare` oder `none` (kein Eintrag, keine Domain, kein Cloudflare); wird nur aus den Einstellungsdateien gelesen | `cloudflare` |
 | `DNS_DOMAIN` | Ihre Domain; Pflichtangabe mit Cloudflare | leer |
@@ -1555,3 +1556,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.103 | nach v0.20.1 | Der Preflight prüft bei `K3D_REGISTRY`, ob das Programm `k3d` da ist, wenn `viper up` die Registry oder den Cluster anlegen muss, und meldet sonst einen Fehler mit dem Hinweis, wie man es installiert. |
 | 1.104 | nach v0.20.1 | Behoben: Im Image der Pods und Container haben die SSH-Sitzungen die Sprachumgebung `C.UTF-8` (`btop` und `tmux` meldeten „No UTF-8 locale detected“). Kapitel 7 nennt die Abhilfe für vorhandene Rechner. |
 | 1.105 | nach v0.20.1 | `viper check` zeigt den freien Platz des Heimverzeichnisses statt des Wurzelverzeichnisses: bei Pods und Containern ist das das Volume, auf dem die Arbeit liegt (`K8S_DISK_GB`), nicht die Platte des Knotens. Auf einer VM ändert sich nichts. |
+| 1.106 | nach v0.20.1 | Neu: das MCP-Werkzeug `topics` listet die Themen (die eigenen und die, die die anderen Maschinen der Gruppe empfangen); die Maschinen melden ihre Themen auf einem eigenen Subjekt, ältere `viper-nats-mcp` bleiben dabei unberührt. `NATS_MCP_AUTOALLOW=read` erlaubt jetzt auch `topics` (nach einem `viper up`). |

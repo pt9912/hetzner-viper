@@ -301,7 +301,7 @@ func TestTheServerCheckWarnsAboutAnOldConfigurationWithAllowResponses(t *testing
 const mcpOn = "NATS_ENABLED=true\nNATS_GROUP=dev\nNATS_MCP=true\nNATS_MCP_PUSH_FROM=alpha\nNATS_MCP_AUTOALLOW=read\n"
 
 func TestAHealthyMCPSetupPassesTheChecks(t *testing.T) {
-	st := healthyClient + "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=/home/builder/.viper-nats/viper-nats-mcp\nmcp_allowed=peers,inbox\nmcp_push=alpha\n"
+	st := healthyClient + "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=/home/builder/.viper-nats/viper-nats-mcp\nmcp_allowed=peers,inbox,topics\nmcp_push=alpha\n"
 	n := newNATSFixture(t, mcpOn, model.NATSClient, st)
 	out, problems := n.run()
 	sec := natsSection(out)
@@ -317,14 +317,14 @@ func TestAHealthyMCPSetupPassesTheChecks(t *testing.T) {
 
 func TestMCPProblemsAreReported(t *testing.T) {
 	const cmd = "/home/builder/.viper-nats/viper-nats-mcp"
-	base := healthyClient + "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=" + cmd + "\nmcp_allowed=peers,inbox\nmcp_push=alpha\n"
+	base := healthyClient + "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=" + cmd + "\nmcp_allowed=peers,inbox,topics\nmcp_push=alpha\n"
 	for name, tc := range map[string]struct{ status, want string }{
 		"no binary":        {healthyClient + "mcp_bin=missing\n", "FAIL  NATS_MCP is on, but"},
 		"not registered":   {strings.Replace(base, "mcp_claude="+cmd, "mcp_claude=none", 1), "FAIL  Claude Code does not know the MCP server nats"},
 		"other command":    {strings.Replace(base, "mcp_claude="+cmd, "mcp_claude=/old/place/mcp", 1), "FAIL  Claude Code starts /old/place/mcp for the MCP server nats"},
 		"does not run":     {strings.Replace(base, "mcp_version=viper-nats-mcp v1", "mcp_version=bash: Exec format error", 1), "FAIL  the MCP server on the machine does not run"},
 		"other push list":  {strings.Replace(base, "mcp_push=alpha", "mcp_push=", 1), "WARN  the machines whose messages are pushed"},
-		"other allow list": {strings.Replace(base, "mcp_allowed=peers,inbox", "mcp_allowed=", 1), "WARN  the tools of the MCP server allowed"},
+		"other allow list": {strings.Replace(base, "mcp_allowed=peers,inbox,topics", "mcp_allowed=", 1), "WARN  the tools of the MCP server allowed"},
 	} {
 		n := newNATSFixture(t, mcpOn, model.NATSClient, tc.status)
 		out, _ := n.run()
@@ -346,7 +346,7 @@ func TestTheMCPServerOnTheMachineIsComparedWithTheOneOfThisViper(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings := mcpOn + "NATS_MCP_BINARY=\"" + filepath.ToSlash(bin) + "\"\n" // slashes: a backslash in a settings file is an escape
-	base := healthyClient + "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=/home/builder/.viper-nats/viper-nats-mcp\nmcp_allowed=peers,inbox\nmcp_push=alpha\nmcp_arch=x86_64\n"
+	base := healthyClient + "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=/home/builder/.viper-nats/viper-nats-mcp\nmcp_allowed=peers,inbox,topics\nmcp_push=alpha\nmcp_arch=x86_64\n"
 	same := base + "mcp_sha=" + mcpbin.Checksum([]byte("the server of this viper")) + "\n"
 	n := newNATSFixture(t, settings, model.NATSClient, same)
 	out, _ := n.run()
@@ -362,7 +362,7 @@ func TestTheMCPServerOnTheMachineIsComparedWithTheOneOfThisViper(t *testing.T) {
 }
 
 func TestAPushSourceThatIsNoMachineOfTheGroupIsWarnedAbout(t *testing.T) {
-	st := healthyClient + "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=/home/builder/.viper-nats/viper-nats-mcp\nmcp_allowed=peers,inbox\nmcp_push=ghost\n"
+	st := healthyClient + "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=/home/builder/.viper-nats/viper-nats-mcp\nmcp_allowed=peers,inbox,topics\nmcp_push=ghost\n"
 	n := newNATSFixture(t, "NATS_ENABLED=true\nNATS_GROUP=dev\nNATS_MCP=true\nNATS_MCP_PUSH_FROM=ghost\nNATS_MCP_AUTOALLOW=read\n", model.NATSClient, st)
 	out, _ := n.run()
 	if sec := natsSection(out); !strings.Contains(sec, "WARN  NATS_MCP_PUSH_FROM names ghost, which is no machine of the group dev") {
@@ -371,7 +371,7 @@ func TestAPushSourceThatIsNoMachineOfTheGroupIsWarnedAbout(t *testing.T) {
 }
 
 func TestTheDefaultTopicsOfTheMCPServerAreCompared(t *testing.T) {
-	base := healthyClient + "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=/home/builder/.viper-nats/viper-nats-mcp\nmcp_allowed=peers,inbox\nmcp_push=alpha\n"
+	base := healthyClient + "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=/home/builder/.viper-nats/viper-nats-mcp\nmcp_allowed=peers,inbox,topics\nmcp_push=alpha\n"
 	cfg := mcpOn + "NATS_MCP_TOPICS=build,alerts\n"
 	n := newNATSFixture(t, cfg, model.NATSClient, base+"mcp_topics=build,alerts\n")
 	if sec := natsSection(func() string { o, _ := n.run(); return o }()); strings.Contains(sec, "NATS_MCP_TOPICS") {

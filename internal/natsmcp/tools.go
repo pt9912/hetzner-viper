@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 )
@@ -57,6 +58,8 @@ func (s *Service) Tools() []Tool {
 			Schema: schema(map[string]any{"topic": topic}, "topic"), Run: s.toolSubscribe},
 		{Name: "unsubscribe", Description: "Stop receiving a topic.",
 			Schema: schema(map[string]any{"topic": topic}, "topic"), Run: s.toolUnsubscribe},
+		{Name: "topics", Description: "List the topics: the ones you receive (the default topics of the group and your own) and the ones the other machines said they receive. Use it to find a topic before you broadcast to it or subscribe.",
+			Schema: schema(map[string]any{}), Run: s.toolTopics},
 	}
 }
 
@@ -334,6 +337,7 @@ func (s *Service) toolSubscribe(_ context.Context, args json.RawMessage) (string
 		_ = sub.Unsubscribe() // best effort: the subscription was not confirmed
 		return "", err
 	}
+	s.publishTopics()
 	return "subscribed to " + a.Topic, nil
 }
 
@@ -352,7 +356,85 @@ func (s *Service) toolUnsubscribe(_ context.Context, args json.RawMessage) (stri
 		return "", fmt.Errorf("not subscribed to %q", a.Topic)
 	}
 	delete(s.topics, a.Topic)
-	return "unsubscribed from " + a.Topic, sub.Unsubscribe()
+	err := sub.Unsubscribe()
+	go s.publishTopics() // the lock is held here
+	return "unsubscribed from " + a.Topic, err
+}
+
+// toolTopics lists the topics: those this machine receives (and which of them stay), those the other machines said they
+// receive, and each topic with the machines that receive it. A machine that has not said (an older version, or the
+// announcement has not come yet) is named as such, not taken for one without topics.
+func (s *Service) toolTopics(context.Context, json.RawMessage) (string, error) {
+	if !s.Connected() {
+		return "", errors.New("not connected to the NATS server (" + s.connectionState() + ")")
+	}
+	mine := s.subscribedTopics()
+	by := map[string][]string{}
+	for _, t := range mine {
+		by[t] = append(by[t], s.cfg.Names.Me)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "You are %s in the group %s.\n", s.cfg.Names.Me, s.cfg.Names.Group)
+	b.WriteString("You receive: " + s.ownTopicsText(mine) + "\n")
+	ps := s.peers.Present(s.now())
+	if len(ps) == 0 {
+		b.WriteString("No other machine has said that it is there in the last 90 seconds.\n")
+	} else {
+		b.WriteString("The others:\n")
+	}
+	for _, p := range ps {
+		b.WriteString("- " + p.Name + ": " + peerTopicsText(p) + "\n")
+		for _, t := range p.Topics {
+			by[t] = append(by[t], p.Name)
+		}
+	}
+	b.WriteString(topicsInUse(by))
+	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+// ownTopicsText names the topics this machine receives; the default ones of the group are marked, they stay.
+func (s *Service) ownTopicsText(mine []string) string {
+	if len(mine) == 0 {
+		return "no topic."
+	}
+	parts := make([]string, len(mine))
+	for i, t := range mine {
+		parts[i] = t
+		if slices.Contains(s.cfg.Topics, t) {
+			parts[i] += " (default of the group, stays)"
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+// peerTopicsText is what another machine said about its topics.
+func peerTopicsText(p Peer) string {
+	switch {
+	case !p.TopicsKnown:
+		return "has not said which topics (an older viper-nats-mcp, or its announcement has not come yet)"
+	case len(p.Topics) == 0:
+		return "no topic"
+	}
+	return strings.Join(p.Topics, ", ")
+}
+
+// topicsInUse lists each topic with the machines that receive it ("" if there is none).
+func topicsInUse(by map[string][]string) string {
+	if len(by) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(by))
+	for t := range by {
+		names = append(names, t)
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	b.WriteString("Topics in use (a broadcast to one reaches the machines named):\n")
+	for _, t := range names {
+		sort.Strings(by[t])
+		fmt.Fprintf(&b, "- %s: %s\n", t, strings.Join(by[t], ", "))
+	}
+	return b.String()
 }
 
 // Run connects to NATS and serves MCP on in and out until in ends or ctx is done.

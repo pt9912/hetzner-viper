@@ -82,7 +82,7 @@ type NATSConfig struct {
 	// (NATS_MCP_TOPICS); they cannot be unsubscribed at run time. At most MaxMCPTopics.
 	MCPTopics []string
 	// MCPAutoAllow is whether viper allows the tools of the MCP server in the settings of Claude Code
-	// without asking each time: "off" (default), "read" (peers, inbox) or "all".
+	// without asking each time: "off" (default), "read" (peers, inbox, topics) or "all".
 	MCPAutoAllow string
 	// MCPBinary is a file to install instead of the one built into viper (NATS_MCP_BINARY, for
 	// builds that have none).
@@ -98,14 +98,14 @@ const (
 
 // MCPTools are the tools of the NATS MCP server, in the order they are listed.
 func MCPTools() []string {
-	return []string{"peers", "send", "broadcast", "request", "reply", "inbox", "subscribe", "unsubscribe"}
+	return []string{"peers", "send", "broadcast", "request", "reply", "inbox", "subscribe", "unsubscribe", "topics"}
 }
 
 // MCPAllowedTools are the tools that NATS_MCP_AUTOALLOW lets the agent use without asking.
 func MCPAllowedTools(mode string) []string {
 	switch mode {
 	case AutoAllowRead:
-		return []string{"peers", "inbox"}
+		return []string{"peers", "inbox", "topics"}
 	case AutoAllowAll:
 		return MCPTools()
 	}

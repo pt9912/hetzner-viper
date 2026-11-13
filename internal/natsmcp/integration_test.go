@@ -437,7 +437,7 @@ func TestRunServesMCPOverStdioAgainstARealServer(t *testing.T) {
 	for _, x := range list {
 		names = append(names, x.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "peers,send,broadcast,request,reply,inbox,subscribe,unsubscribe" {
+	if strings.Join(names, ",") != "peers,send,broadcast,request,reply,inbox,subscribe,unsubscribe,topics" {
 		t.Errorf("%v", names)
 	}
 	// a message of b reaches the agent of a through the inbox tool
@@ -555,5 +555,42 @@ func TestTheInboxStaysWithinTheLimitAndSaysWhatIsMissing(t *testing.T) {
 	}
 	if len(txt) > 48<<10 || !strings.Contains(txt, "[text cut") || !strings.Contains(txt, "[more entries: call inbox again with since=") {
 		t.Errorf("%d bytes; cut marker %v; more marker %v", len(txt), strings.Contains(txt, "[text cut"), strings.Contains(txt, "[more entries"))
+	}
+}
+
+func TestTheTopicsToolShowsTheOwnTopicsAndThoseTheOthersSaidTheyReceive(t *testing.T) {
+	ms := setupTopics(t, nil, nil, map[string][]string{"a": {"build"}})
+	for tp, who := range map[string]string{"ci": "b", "review": "b"} {
+		if _, err := call(t, ms[who].svc, "subscribe", map[string]any{"topic": tp}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := call(t, ms["c"].svc, "subscribe", map[string]any{"topic": "build"}); err != nil {
+		t.Fatal(err)
+	}
+	var txt string
+	eventually(t, "a knows the topics of b and c", func() bool {
+		var err error
+		txt, err = call(t, ms["a"].svc, "topics", nil)
+		return err == nil && strings.Contains(txt, "- b: ci, review") && strings.Contains(txt, "- c: build")
+	})
+	for _, want := range []string{"You are a in the group g.", "You receive: build (default of the group, stays)", "- build: a, c", "- ci: b", "- review: b"} {
+		if !strings.Contains(txt, want) {
+			t.Errorf("missing %q in\n%s", want, txt)
+		}
+	}
+	// b leaves a topic: the others see it without waiting for the next sign of life
+	if _, err := call(t, ms["b"].svc, "unsubscribe", map[string]any{"topic": "ci"}); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "a sees that b left ci", func() bool {
+		txt, _ = call(t, ms["a"].svc, "topics", nil)
+		return strings.Contains(txt, "- b: review") && !strings.Contains(txt, "- ci:")
+	})
+	// a machine that said nothing is named as one that did not say, not as one without topics
+	quiet := setupWith(t, nil, map[string]bool{"b": true})
+	eventually(t, "a sees c", func() bool { return len(quiet["a"].svc.PeersTable().Present(time.Now())) >= 1 })
+	if txt, err := call(t, quiet["a"].svc, "topics", nil); err != nil || strings.Contains(txt, "- b:") {
+		t.Errorf("a quiet machine is not in the table: %q %v", txt, err)
 	}
 }
