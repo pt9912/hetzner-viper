@@ -734,6 +734,7 @@ func TestNothingIsRemovedWithoutDELETEAndAFailureOnlyWarns(t *testing.T) {
 	d.Registry = "keep"
 	d.Cloud = infraHz{hz: hz{w: w}, left: k3dItems(), removed: &rm, err: errors.New("k3d is busy")}
 	code, err := stop.Run(context.Background(), w.c, false, d, w.lg, &w.out, &w.errb)
+	w.lg.Close(err, code) // an open log file keeps Windows from removing the temporary directory
 	if code != 0 || err != nil || len(w.deleted) != 1 || !strings.Contains(w.errb.String(), "WARNING: removing what viper made for the machine failed: k3d is busy") {
 		t.Errorf("the machine is deleted and the failure is a warning: %d %v\n%s", code, err, w.all())
 	}
