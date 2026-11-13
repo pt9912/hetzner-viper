@@ -14,7 +14,7 @@ import (
 type options struct {
 	machine, repo, cmd, dir string
 	version                 string // the release of this program
-	tag, k3d                string // viper image build
+	tag, k3d, k3dRegistry   string // viper image build
 	group                   string // run for all machines of groups/<group>.env
 	// viper nats
 	args                    []string // the words after the command: the subcommand, the group, the text
@@ -62,7 +62,7 @@ var errHelp = errors.New("help")
 // isValueFlag reports whether the option takes a value.
 func isValueFlag(n string) bool {
 	switch n {
-	case "repo", "cmd", "dir", "group", "parallel", "cpu", "ram", "disk", "arch", "location", "provider", "vat", "to", "topic", "from", "timeout", "tag", "k3d":
+	case "repo", "cmd", "dir", "group", "parallel", "cpu", "ram", "disk", "arch", "location", "provider", "vat", "to", "topic", "from", "timeout", "tag", "k3d", "k3d-registry":
 		return true
 	}
 	return false
@@ -82,7 +82,7 @@ func commands() map[string]command {
 		"find":         {usage: "[--cpu N] [--ram GB] [--disk GB] [--arch x86|arm] [--location L] [--provider P] [--vat PERCENT]", machine: noMachine, flags: []string{"cpu", "ram", "disk", "arch", "location", "provider", "vat"}, run: nativeFind},
 		"log":          {usage: "[<machine>] [--full]", machine: maybeMachine, flags: []string{"full"}, run: nativeLog},
 		"nats":         {usage: "peers|listen|send|broadcast|request|init|revoke GROUP [TEXT|-] [--from MACHINE] [--to MACHINE] [--topic T[,T...]] [--timeout S] [--query] [--all] [--json] [--yes]", machine: restArgs, flags: []string{"to", "topic", "from", "timeout", "query", "all", "json", "yes"}, run: nativeNats},
-		"image":        {usage: "build [--tag NAME:TAG] [--k3d CLUSTER]", machine: restArgs, flags: []string{"tag", "k3d"}, run: nativeImage},
+		"image":        {usage: "build [--tag NAME:TAG] [--k3d CLUSTER] [--k3d-registry NAME]", machine: restArgs, flags: []string{"tag", "k3d", "k3d-registry"}, run: nativeImage},
 		"k8s-proxy":    {usage: "<machine>", machine: needMachine, run: nativeK8sProxy},
 		"docker-proxy": {usage: "<machine>", machine: needMachine, run: nativeDockerProxy},
 		"mcp-binary":   {usage: "--arch amd64|arm64", machine: noMachine, flags: []string{"arch"}, run: nativeMCPBinary},
@@ -277,7 +277,7 @@ func setValue(o *options, name, flag, v string) error {
 		return setVAT(o, name, v)
 	case "group":
 		o.group = v
-	case "to", "topic", "from", "timeout", "tag", "k3d":
+	case "to", "topic", "from", "timeout", "tag", "k3d", "k3d-registry":
 		return setNatsValue(o, name, flag, v)
 	case "parallel":
 		n, err := strconv.Atoi(v)
@@ -307,6 +307,8 @@ func setNatsValue(o *options, name, flag, v string) error {
 		o.tag = v
 	case "k3d":
 		o.k3d = v
+	case "k3d-registry":
+		o.k3dRegistry = v
 	default:
 		return setTimeout(o, name, v)
 	}

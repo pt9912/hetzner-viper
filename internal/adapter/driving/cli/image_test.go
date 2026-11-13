@@ -96,3 +96,97 @@ func TestImageBuildSaysWhatIsMissing(t *testing.T) {
 		t.Errorf("%d %s", code, stderr.String())
 	}
 }
+
+// registryRun runs viper image build --k3d-registry reg against a docker and a k3d that are scripted: registry says
+// whether k3d-reg runs, stopped whether docker start brings it back, k3d whether the k3d program is there.
+func registryRun(t *testing.T, registry, stopped, k3d bool, extra ...string) (calls [][]string, out string, code int) {
+	t.Helper()
+	_, h := fakeTools(t)
+	var stdout, stderr bytes.Buffer
+	h.Stdout, h.Stderr = &stdout, &stderr
+	h.LookPath = func(p string) (string, error) {
+		if p == "k3d" && !k3d {
+			return "", errors.New("not found")
+		}
+		return "/bin/" + p, nil
+	}
+	h.RunTool = func(name string, a ...string) error {
+		calls = append(calls, append([]string{name}, a...))
+		switch {
+		case name == "docker" && a[0] == "start":
+			if !stopped {
+				return errors.New("No such container: k3d-reg")
+			}
+			registry = true
+		case name == "k3d" && a[0] == "registry":
+			registry = true
+		}
+		return nil
+	}
+	h.OutputTool = func(name string, a ...string) (string, error) {
+		if name == "docker" && a[0] == "port" && a[1] == "k3d-reg" && a[2] == "5000/tcp" {
+			if registry {
+				return "0.0.0.0:5099\n[::]:5099\n", nil
+			}
+			return "", errors.New("No such container: k3d-reg")
+		}
+		return "", errors.New("unexpected " + name)
+	}
+	args := append([]string{"image", "build", "--tag", "viper-machine:mine", "--k3d-registry", "reg"}, extra...)
+	code = cli.Main("v1", args, h)
+	return calls, stdout.String() + stderr.String(), code
+}
+
+func TestImageBuildPushesIntoAK3dRegistryThatRuns(t *testing.T) {
+	calls, out, code := registryRun(t, true, false, true)
+	if code != 0 || len(calls) != 3 || calls[0][1] != "build" ||
+		strings.Join(calls[1], " ") != "docker tag viper-machine:mine localhost:5099/viper-machine:mine" ||
+		strings.Join(calls[2], " ") != "docker push localhost:5099/viper-machine:mine" {
+		t.Fatalf("%d %v\n%s", code, calls, out)
+	}
+	if !strings.Contains(out, "K8S_IMAGE=k3d-reg:5000/viper-machine:mine") || !strings.Contains(out, "--registry-use k3d-reg:5000") ||
+		!strings.Contains(out, "COMPOSE_IMAGE=viper-machine:mine") {
+		t.Errorf("the output names the image the nodes pull, and the local one for Compose:\n%s", out)
+	}
+}
+
+func TestImageBuildMakesTheK3dRegistryWhenItIsMissingBeforeItBuilds(t *testing.T) {
+	calls, out, code := registryRun(t, false, false, true)
+	if code != 0 || len(calls) != 5 || calls[0][0] != "docker" || calls[0][1] != "start" ||
+		strings.Join(calls[1], " ") != "k3d registry create reg" || calls[2][1] != "build" {
+		t.Fatalf("the registry is made first, without a fixed port (k3d picks a free one): %d %v\n%s", code, calls, out)
+	}
+	if !strings.Contains(out, "does not exist: making it") || !strings.Contains(out, "k3d-reg:5000/viper-machine:mine") {
+		t.Errorf("%s", out)
+	}
+}
+
+func TestImageBuildStartsAStoppedK3dRegistryInsteadOfMakingANewOne(t *testing.T) {
+	calls, out, code := registryRun(t, false, true, true)
+	for _, c := range calls {
+		if c[0] == "k3d" {
+			t.Fatalf("a registry that exists was made again: %v", calls)
+		}
+	}
+	if code != 0 || !strings.Contains(out, "was stopped; it is running again") {
+		t.Fatalf("%d %v\n%s", code, calls, out)
+	}
+}
+
+func TestImageBuildSaysEarlyThatK3dIsMissingAndRefusesABadRegistryName(t *testing.T) {
+	calls, out, code := registryRun(t, false, false, false)
+	if code == 0 || !strings.Contains(out, "k3d not found") {
+		t.Fatalf("%d\n%s", code, out)
+	}
+	for _, c := range calls {
+		if len(c) > 1 && c[1] == "build" {
+			t.Fatalf("it built for minutes before it said k3d is missing: %v", calls)
+		}
+	}
+	_, h := fakeTools(t)
+	var stderr bytes.Buffer
+	h.Stdout, h.Stderr = &bytes.Buffer{}, &stderr
+	if code := cli.Main("v1", []string{"image", "build", "--k3d-registry", "a b"}, h); code == 0 || !strings.Contains(stderr.String(), "--k3d-registry") {
+		t.Errorf("%d %s", code, stderr.String())
+	}
+}
