@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.100  
+Version: 1.101  
 Software-Version: v0.20.0  
 Stand: 13.11.2026  
 
@@ -1545,3 +1545,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.98 | v0.19.0 | Release v0.19.0: die Änderung 1.97 (Standard-Image für `K8S_IMAGE` und `COMPOSE_IMAGE`, `K3D_REGISTRY`, `K3D_CLUSTER_CREATE` und `K3D_AGENTS` mit Registry und Cluster von `viper up`, `viper down` mit `--delete-registry` und `--keep-registry`, `viper up` lädt ein Compose-Image, Image für amd64 und arm64, neuer Standard von `WORKSPACE_DIR`, der Abschnitt „Lokal arbeiten, ohne Cloud-Konto“). Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ und die Beispiele für das Image nennen jetzt `v0.19.0`. |
 | 1.99 | v0.20.0 | Release v0.20.0: Ein Rechner darf in mehreren Gruppen stehen; `--in-group G` sagt, wessen Einstellungen für einen einzelnen Rechner gelten (`--group G` bleibt „alle Rechner der Gruppe“), und `viper log` verlangt die Auswahl ebenfalls. Die Dateinamen der Binaries im Abschnitt „`viper` installieren“ und die Beispiele für das Image nennen jetzt `v0.20.0`. |
 | 1.100 | nach v0.20.0 | Einleitung: Zweck, Voraussetzungen, Kosten, Datenverlust und Sicherheit nennen auch Pods und Container (kein Cloud-Konto nötig, Docker nur für diese Wege, Volumes, `builder` ohne Root). |
+| 1.101 | nach v0.20.0 | Behoben: `viper up` legt bei einer NATS-Gruppe in k3d den Cluster (und die Registry) an, bevor es das Netz der Gruppe macht; bisher scheiterte der Start mit „context k3d-… does not exist“. `viper check` meldet bei `K8S_DOCKER=none` oder `COMPOSE_DOCKER=none` kein fehlendes Docker mehr als Fehler. |

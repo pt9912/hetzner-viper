@@ -3,6 +3,7 @@ package start_test
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -327,5 +328,33 @@ func TestForAServerThatWasThereWithoutAGroupTheSignalComesWhenItHasJoined(t *tes
 	})
 	if calls != 1 || meta == nil || meta.Group != "dev" || meta.Role != model.NATSServer {
 		t.Fatalf("signaled %d times, labels at that moment %+v", calls, meta)
+	}
+}
+
+// orderHz records the order of PrepareImage and the first call that needs the API of the cluster.
+type orderHz struct {
+	natsHz
+	order *[]string
+}
+
+func (o orderHz) PrepareImage(context.Context, io.Writer) error {
+	*o.order = append(*o.order, "prepare")
+	return nil
+}
+
+func (o orderHz) EnsurePrivateNetwork(ctx context.Context, g, l string) (model.PrivateNetwork, bool, error) {
+	*o.order = append(*o.order, "network")
+	return o.natsHz.EnsurePrivateNetwork(ctx, g, l)
+}
+
+func TestTheImageAndTheClusterArePreparedBeforeTheNetworkOfTheNATSGroupIsMade(t *testing.T) {
+	n := newNATSWorld(t, "")
+	var order []string
+	d := n.deps()
+	d.Cloud = orderHz{natsHz: n.hz, order: &order}
+	code, err := start.Run(context.Background(), n.c, "", d, n.lg, &n.out, &n.err)
+	n.lg.Close(err, code) // how far the start gets does not matter here: only what comes first
+	if len(order) < 2 || order[0] != "prepare" || order[1] != "network" {
+		t.Errorf("a k3d cluster that viper up makes has no API before PrepareImage; the order is %v", order)
 	}
 }

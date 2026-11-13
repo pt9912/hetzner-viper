@@ -376,3 +376,31 @@ func TestWithoutDNSNoNameIsChecked(t *testing.T) {
 		}
 	}
 }
+
+// A container that is to have no Docker (K8S_DOCKER or COMPOSE_DOCKER is none) is not at fault for having none, as in viper up.
+func TestAContainerWithoutDockerIsNotAProblemWhenTheSettingsSayNone(t *testing.T) {
+	for provider, settings := range map[string]string{
+		"kubernetes": "PROVIDER=kubernetes\nDNS_PROVIDER=none\nSERVER_LOCATION=k3d-x\nK8S_IMAGE=i\n",
+		"compose":    "PROVIDER=compose\nDNS_PROVIDER=none\nSERVER_LOCATION=default\nCOMPOSE_IMAGE=i\n",
+	} {
+		env := map[string]string{"kubernetes": "K8S_DOCKER", "compose": "COMPOSE_DOCKER"}[provider]
+		for _, mode := range []string{"none", "dind"} {
+			f, c := newFixture(t, settings+env+"="+mode+"\n")
+			f.probeOut = strings.Replace(okProbe, "docker=ok", "docker=no", 1)
+			out, n, err := f.run(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch mode {
+			case "none":
+				if strings.Contains(out, "docker not running") || !strings.Contains(out, "info  no docker on this machine") {
+					t.Errorf("%s none: %d problems\n%s", provider, n, out)
+				}
+			default:
+				if !strings.Contains(out, "FAIL  docker not running") {
+					t.Errorf("%s dind: a machine that should have Docker and has none is a problem\n%s", provider, out)
+				}
+			}
+		}
+	}
+}

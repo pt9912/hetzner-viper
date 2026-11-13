@@ -300,9 +300,12 @@ func serverChecks(r *report, c *model.Machine, val map[string]string, workdir, r
 	} else {
 		r.warn("git user.name/user.email are not set on the server: commits fail (VIPER_GIT_USER_NAME, VIPER_GIT_USER_EMAIL, then rerun %s)", rerun)
 	}
-	if v("docker") == "ok" {
+	switch {
+	case v("docker") == "ok":
 		r.ok("docker running")
-	} else {
+	case c.IsContainer() && c.DockerMode() == "none": // the settings say there is no Docker on this machine
+		r.info("no docker on this machine (K8S_DOCKER or COMPOSE_DOCKER is none)")
+	default:
 		r.bad("docker not running")
 	}
 	swapAndCodeServerChecks(r, c, v, rerun)

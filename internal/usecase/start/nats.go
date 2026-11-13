@@ -418,6 +418,9 @@ func lastNonEmpty(s string) string {
 // the network removed again if the server could not be created.
 func (r *runner) ensureServerInGroup(ctx context.Context, ca, ipadKey string) (*model.Server, bool, int, error) {
 	if r.c.NATS.Enabled {
+		if code, err := r.prepareForNewMachine(ctx); code != 0 || err != nil {
+			return nil, false, code, err
+		}
 		if code, err := r.natsPrepare(ctx); code != 0 || err != nil {
 			return nil, false, code, err
 		}
@@ -427,6 +430,20 @@ func (r *runner) ensureServerInGroup(ctx context.Context, ca, ipadKey string) (*
 		r.natsCleanup(ctx)
 	}
 	return srv, reused, code, err
+}
+
+// prepareForNewMachine prepares what a provider needs before the first call to its API, for a machine that does not exist yet:
+// a k3d cluster that viper up makes has no API before that, and the network of the NATS group is made through the API. A
+// machine that exists needs nothing (and would leave a lease behind). Preparing again later is a no-op.
+func (r *runner) prepareForNewMachine(ctx context.Context) (int, error) {
+	existing, err := r.d.Cloud.ServerByName(ctx, r.c.ServerName)
+	if err != nil {
+		return r.opFail(&cloud.OpError{Op: "listing the servers", Err: err})
+	}
+	if existing != nil {
+		return 0, nil
+	}
+	return r.prepareImage(ctx)
 }
 
 // natsJoin makes the machine a member of its NATS group; without NATS it does nothing.
