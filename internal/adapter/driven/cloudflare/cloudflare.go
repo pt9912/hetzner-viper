@@ -16,8 +16,15 @@ import (
 	"time"
 )
 
-// Comment marks the records this tool owns.
-const Comment = "managed by hetzner-claude"
+// Comment marks the records this tool owns. LegacyComment is what versions up to v0.21.1 wrote: those records are ours too,
+// and get the new comment when they are written again.
+const (
+	Comment       = "managed by viper"
+	LegacyComment = "managed by hetzner-claude"
+)
+
+// ours is whether a comment marks a record of this tool.
+func ours(comment string) bool { return comment == Comment || comment == LegacyComment }
 
 const defaultBase = "https://api.cloudflare.com/client/v4"
 
@@ -133,7 +140,7 @@ func (c *Client) Set(ctx context.Context, host, ip string) (string, error) {
 	}
 	payload := map[string]any{"type": "A", "name": host, "content": ip, "ttl": 60, "proxied": false, "comment": Comment}
 	if rec != nil {
-		if rec.Comment != Comment {
+		if !ours(rec.Comment) {
 			return "", errors.New("Existing DNS record is not managed by this setup; refusing overwrite")
 		}
 		_, err = c.do(ctx, http.MethodPut, recordsPath(c.ZoneID)+"/"+rec.ID, payload)
@@ -155,7 +162,7 @@ func (c *Client) Delete(ctx context.Context, host, expectedIP string) (string, e
 		return "", err
 	}
 	if rec != nil {
-		if rec.Comment != Comment {
+		if !ours(rec.Comment) {
 			return "", errors.New("DNS record not owned by setup; skipping")
 		}
 		if expectedIP != "" && rec.Content != expectedIP {
@@ -192,7 +199,7 @@ func (c *Client) Check(ctx context.Context, domain, host string) (lines []string
 	switch {
 	case rec == nil:
 		lines = append(lines, fmt.Sprintf("ok    %s: no record yet", host))
-	case rec.Comment == Comment:
+	case ours(rec.Comment):
 		lines = append(lines, fmt.Sprintf("info  %s -> %s (managed by this setup)", host, rec.Content))
 	default:
 		lines = append(lines, fmt.Sprintf("FAIL  %s already has a record not managed by this setup", host))

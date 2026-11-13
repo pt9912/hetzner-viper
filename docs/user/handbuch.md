@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.116  
+Version: 1.117  
 Software-Version: v0.21.1  
 Stand: 13.11.2026  
 
@@ -1173,7 +1173,7 @@ Mit `PROVIDER=gcp` bzw. `PROVIDER=azure` richtet `viper up` den Server bei Googl
 
 ### DNS
 
-Der DNS-Eintrag ist ein A-Record ohne Cloudflare-Proxy, weil dieser SSH nicht weiterleitet. `viper` ändert oder löscht nur Einträge, die es selbst angelegt hat (Kommentar `managed by hetzner-claude`).
+Der DNS-Eintrag ist ein A-Record ohne Cloudflare-Proxy, weil dieser SSH nicht weiterleitet. `viper` ändert oder löscht nur Einträge, die es selbst angelegt hat (Kommentar `managed by viper`; Einträge mit dem Kommentar `managed by hetzner-claude` aus Versionen bis v0.21.1 gelten weiter als seine eigenen).
 
 **Ohne Cloudflare:** Mit `DNS_PROVIDER=none` legt `viper` keinen Eintrag an. Sie brauchen weder `DNS_DOMAIN` noch Cloudflare-Token und -Zone. Den Rechner erreichen Sie mit `viper ssh <rechner>` oder über seine Adresse; `viper dns <rechner>` nennt die gespeicherte Adresse. Bei AWS zeigt `viper up` zusätzlich den Namen, den EC2 vergibt (`ec2-<adresse>.<region>.compute.amazonaws.com`). Er wechselt mit der Adresse. Andere Geräte (iPad) verbinden Sie dann über die Adresse; die Host-CA für `*.<DNS_DOMAIN>` entfällt. `viper check` prüft keinen DNS-Namen.
 
@@ -1570,3 +1570,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.114 | nach v0.21.1 | `viper nats send`, `broadcast` und `request` lesen den Text auf Wunsch aus einer Datei (`--file DATEI`). |
 | 1.115 | nach v0.21.1 | Die Zustandsdateien liegen in `~/.local/state/hetzner-claude/servers/<präfix>/` (statt `<präfix>/`), der Schlüssel des Betreibers in `groups/<gruppe>/operator.nk` (statt `nats/<gruppe>/`): So kann kein `SERVER_PREFIX` mit `nats`, `logs` oder `compose` mit den anderen Ordnern zusammenfallen. Dateien aus v0.21.0 und v0.21.1 zieht `viper` selbst um. |
 | 1.116 | nach v0.21.1 | Das Zustandsverzeichnis heißt `~/.local/state/viper` (vorher `~/.local/state/hetzner-claude`); `viper` zieht das alte Verzeichnis beim nächsten Befehl als Ganzes um. |
+| 1.117 | nach v0.21.1 | Der Kommentar an den DNS-Einträgen von `viper` heißt `managed by viper` (vorher `managed by hetzner-claude`); alte Einträge bleiben seine eigenen und bekommen den neuen Kommentar beim nächsten Schreiben. |

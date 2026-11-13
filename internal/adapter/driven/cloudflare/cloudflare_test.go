@@ -222,3 +222,15 @@ func TestCheckReportsZoneAndRecord(t *testing.T) {
 		}
 	}
 }
+
+// Records that versions up to v0.21.1 made (with their comment) are ours: they are changed, deleted and shown as ours.
+func TestRecordsWithTheOldCommentAreOurs(t *testing.T) {
+	old := cloudflare.Record{ID: "r1", Name: "h.example.com", Content: "198.51.100.1", Comment: cloudflare.LegacyComment}
+	f := newFake(t, old)
+	if _, err := f.client().Set(context.Background(), "h.example.com", "203.0.113.7"); err != nil {
+		t.Fatalf("an old record of ours is refused: %v", err)
+	}
+	if got := f.bodies[len(f.bodies)-1]["comment"]; got != cloudflare.Comment {
+		t.Errorf("the record keeps the old comment: %v", got)
+	}
+}
