@@ -109,6 +109,7 @@ func Load(dir, machine string, env settings.Env, needTokens bool) (*model.Machin
 	if err := checkMachineGroup(vars, grp, machine); err != nil {
 		return nil, err
 	}
+	applyDefaultImage(vars, env)
 	c := &model.Machine{Name: machine, Dir: dir, Group: grp.name, GroupFile: grp.file, Warnings: grp.warnings}
 	c.Vars = func(name string) string {
 		if v, ok := vars[name]; ok {
@@ -345,6 +346,19 @@ func derivePaths(c *model.Machine, home string) {
 	c.LogDir = filepath.Join(c.StateDir, "logs")
 }
 
+// applyDefaultImage gives a machine in a cluster or on a Docker host the image that was published for this version of viper
+// when no file and no environment variable names one. A build that is not a release has none: the image is then a required
+// setting (viper image build makes it).
+func applyDefaultImage(vars map[string]string, env settings.Env) {
+	name := map[string]string{"kubernetes": "K8S_IMAGE", "compose": "COMPOSE_IMAGE"}[ProviderOf(vars)]
+	if name == "" || vars[name] != "" || env.Getenv(name) != "" {
+		return
+	}
+	if img := model.DefaultMachineImage(env.Version); img != "" {
+		vars[name] = img
+	}
+}
+
 // imageAndWorkspace are SERVER_IMAGE and WORKSPACE_DIR of the machine. The work directory is below the home directory of
 // builder unless WORKSPACE_DIR says otherwise (a machine that is a container has no root to make one elsewhere). A machine
 // that is a container has the image of the container (K8S_IMAGE or COMPOSE_IMAGE).
@@ -430,7 +444,7 @@ func checkKubernetes(c *model.Machine) error {
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("Missing settings: %s (PROVIDER=kubernetes: SERVER_LOCATION is the context of the kubeconfig, K8S_IMAGE the image of the machine, which viper image build makes; viper takes no default so that nothing is made in the wrong cluster or from the wrong image)", strings.Join(missing, " "))
+		return fmt.Errorf("Missing settings: %s (PROVIDER=kubernetes: SERVER_LOCATION is the context of the kubeconfig, K8S_IMAGE the image of the machine, which viper image build makes; a released viper takes ghcr.io/pt9912/viper-machine:<its version> itself, any other build needs it; viper takes no default context so that nothing is made in the wrong cluster)", strings.Join(missing, " "))
 	}
 	if DNSProviderOf(map[string]string{"DNS_PROVIDER": c.Get("DNS_PROVIDER")}) != model.DNSNone {
 		return errors.New("DNS_PROVIDER=none is needed for PROVIDER=kubernetes: a pod has no public address to name")
@@ -497,7 +511,7 @@ func checkCompose(c *model.Machine) error {
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("Missing settings: %s (PROVIDER=compose: SERVER_LOCATION is the Docker context, \"default\" for the local daemon, COMPOSE_IMAGE the image of the machine, which viper image build makes; viper takes no default so that nothing is made on the wrong host or from the wrong image)", strings.Join(missing, " "))
+		return fmt.Errorf("Missing settings: %s (PROVIDER=compose: SERVER_LOCATION is the Docker context, \"default\" for the local daemon, COMPOSE_IMAGE the image of the machine, which viper image build makes; a released viper takes ghcr.io/pt9912/viper-machine:<its version> itself, any other build needs it; viper takes no default Docker context so that nothing is made on the wrong host)", strings.Join(missing, " "))
 	}
 	if strings.HasPrefix(c.Get("SERVER_LOCATION"), "-") || strings.ContainsAny(c.Get("SERVER_LOCATION"), " \t\n\r\"'") {
 		return fmt.Errorf("SERVER_LOCATION: the name of a Docker context: %s", c.Get("SERVER_LOCATION"))

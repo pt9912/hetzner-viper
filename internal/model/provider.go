@@ -1,5 +1,7 @@
 package model
 
+import "regexp"
+
 // ProviderInfo is what viper knows of a cloud provider: which settings it needs and what its defaults are.
 type ProviderInfo struct {
 	// Credentials are the settings the provider's API needs (empty if it finds them itself, like
@@ -18,6 +20,20 @@ type ProviderInfo struct {
 	// Container is whether the machine is a container, not a VM: no cloud-init, no systemd, no sudo, no
 	// public address (docs/plan/kubernetes.md).
 	Container bool
+}
+
+// MachineImageRepo is where the image of the machines (image/) of a release is published: MachineImageRepo:<version>.
+const MachineImageRepo = "ghcr.io/pt9912/viper-machine"
+
+var releaseRe = regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
+
+// DefaultMachineImage is the image of the machines for K8S_IMAGE and COMPOSE_IMAGE when the settings do not name one: the
+// one published for this version of viper. A build that is not a release has none ("").
+func DefaultMachineImage(version string) string {
+	if !releaseRe.MatchString(version) {
+		return ""
+	}
+	return MachineImageRepo + ":" + version
 }
 
 // DefaultProvider is the provider when PROVIDER is not set.

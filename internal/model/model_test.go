@@ -72,3 +72,12 @@ func TestTheNATSServerHostIsTheServiceInAClusterAndTheAliasOnADockerHost(t *test
 		t.Errorf("kubernetes: %s", got)
 	}
 }
+
+func TestOnlyAReleaseHasADefaultMachineImage(t *testing.T) {
+	for v, want := range map[string]string{"v0.18.0": "ghcr.io/pt9912/viper-machine:v0.18.0", "v1.2.30": "ghcr.io/pt9912/viper-machine:v1.2.30",
+		"dev": "", "": "", "v0.18.0-3-gabc": "", "v0.18.0-dirty": "", "0.18.0": "", "v0.18": ""} {
+		if got := model.DefaultMachineImage(v); got != want {
+			t.Errorf("%q: %q, want %q", v, got, want)
+		}
+	}
+}

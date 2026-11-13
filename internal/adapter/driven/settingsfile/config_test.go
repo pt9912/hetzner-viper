@@ -613,3 +613,36 @@ func TestK3dSettingsComeFromTheMachineTheGroupAndTheEnvironment(t *testing.T) {
 		t.Errorf("%v %q %q", err, c.Get("K3D_REGISTRY"), c.Get("K3D_AGENTS"))
 	}
 }
+
+// A release of viper has a machine image published under its version, which is the default of K8S_IMAGE and COMPOSE_IMAGE; a
+// build that is not a release has none, and a file or the environment beats it.
+func TestTheImageOfAReleaseIsTheDefaultOfK8sImageAndComposeImage(t *testing.T) {
+	for provider, setting := range map[string]string{"kubernetes": "K8S_IMAGE", "compose": "COMPOSE_IMAGE"} {
+		base := "PROVIDER=" + provider + "\nDNS_PROVIDER=none\nSERVER_LOCATION=x\n"
+		env := func(version string, vars map[string]string) settings.Env {
+			return settings.Env{Lookup: envOf(vars), Home: "/h", Version: version}
+		}
+		c, err := settingsfile.Load(setupDir(t, base, ""), "web", env("v0.18.0", nil), false)
+		if err != nil || c.ServerImage != "ghcr.io/pt9912/viper-machine:v0.18.0" || c.Get(setting) != c.ServerImage {
+			t.Errorf("%s: a release takes its own image: %q %v", provider, c.ServerImage, err)
+		}
+		for _, v := range []string{"dev", "v0.18.0-3-gabc1234", "v0.18.0-dirty", ""} {
+			if _, err := settingsfile.Load(setupDir(t, base, ""), "web", env(v, nil), false); err == nil || !strings.Contains(err.Error(), "Missing settings: "+setting) {
+				t.Errorf("%s, version %q: %v", provider, v, err)
+			}
+		}
+		c, err = settingsfile.Load(setupDir(t, base+setting+"=mine:1\n", ""), "web", env("v0.18.0", nil), false)
+		if err != nil || c.ServerImage != "mine:1" {
+			t.Errorf("%s: a file names the image: %q %v", provider, c.ServerImage, err)
+		}
+		c, err = settingsfile.Load(setupDir(t, base, ""), "web", env("v0.18.0", map[string]string{setting: "fromshell:2"}), false)
+		if err != nil || c.ServerImage != "fromshell:2" {
+			t.Errorf("%s: the environment names the image: %q %v", provider, c.ServerImage, err)
+		}
+	}
+	// another provider is not given an image
+	c, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\n", ""), "web", settings.Env{Lookup: envOf(nil), Home: "/h", Version: "v0.18.0"}, false)
+	if err != nil || c.Get("K8S_IMAGE") != "" || c.Get("COMPOSE_IMAGE") != "" {
+		t.Errorf("%v %q", err, c.Get("K8S_IMAGE"))
+	}
+}

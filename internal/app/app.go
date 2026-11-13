@@ -35,6 +35,7 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/dns"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/runlog"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"github.com/pt9912/hetzner-viper/internal/port/driving"
 	"github.com/pt9912/hetzner-viper/internal/usecase/check"
 	"github.com/pt9912/hetzner-viper/internal/usecase/find"
@@ -56,7 +57,11 @@ func Run(version string, args []string, stdin io.Reader, stdout, stderr io.Write
 		OutputTool: system.Output,
 		StreamTool: system.Stream,
 		LookPath:   system.LookPath,
-		Env:        system.HostEnvironment,
+		Env: func() (settings.Env, error) {
+			e, err := system.HostEnvironment()
+			e.Version = version
+			return e, err
+		},
 		IsTerminal: func() bool { return system.IsTerminal(stdin) && system.IsTerminal(stdout) },
 		Stdin:      stdin,
 		Stdout:     stdout,

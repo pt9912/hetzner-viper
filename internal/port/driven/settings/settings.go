@@ -9,6 +9,9 @@ import "github.com/pt9912/hetzner-viper/internal/model"
 type Env struct {
 	Lookup func(string) (string, bool) // os.LookupEnv
 	Home   string
+	// Version is the version of viper ("v0.18.0"; "dev" or "v0.18.0-3-gabc" for a build that is not a release). The machine
+	// image of a release is published under it, which makes it the default of K8S_IMAGE and COMPOSE_IMAGE.
+	Version string
 }
 
 // Getenv is the value of an environment variable, "" if it is not set.
