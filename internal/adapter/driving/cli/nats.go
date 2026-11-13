@@ -99,7 +99,7 @@ func natsTextOf(o *options, sub string, rest []string, stdin io.Reader, usage st
 		if err != nil {
 			return "", fmt.Errorf("viper nats %s: %w", sub, err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }() // read only
 		return natsText("-", f)
 	}
 	if len(rest) != 1 {
