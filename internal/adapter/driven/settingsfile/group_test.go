@@ -120,14 +120,14 @@ func TestABrokenFileOfAnotherGroupIsOnlyAWarningUnlessItNamesTheMachine(t *testi
 func TestPrefixKnowsTheGroupFile(t *testing.T) {
 	dir := setupDir(t, groupBase+"SERVER_PREFIX=a\n", "")
 	writeIn(t, dir, "groups/g.env", "GROUP_MACHINES=web\nSERVER_PREFIX=lab\n")
-	if got := settingsfile.Prefix(dir, "web", groupEnvOf()); got != "lab" {
+	if got, _ := settingsfile.Prefix(dir, "web", groupEnvOf()); got != "lab" {
 		t.Errorf("group: %s", got)
 	}
-	if got := settingsfile.Prefix(dir, "x", groupEnvOf()); got != "a" {
+	if got, _ := settingsfile.Prefix(dir, "x", groupEnvOf()); got != "a" {
 		t.Errorf("no group: %s", got)
 	}
 	writeIn(t, dir, "machines/web.env.local", "SERVER_PREFIX=own\n")
-	if got := settingsfile.Prefix(dir, "web", groupEnvOf()); got != "own" {
+	if got, _ := settingsfile.Prefix(dir, "web", groupEnvOf()); got != "own" {
 		t.Errorf("machine: %s", got)
 	}
 }

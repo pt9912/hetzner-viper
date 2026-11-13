@@ -93,7 +93,7 @@ func proxyCommand(c *model.Machine) (string, error) {
 	}
 	// on Windows the paths have backslashes, which the quoting below would have to refuse; Windows takes slashes too
 	parts := []string{filepath.ToSlash(exe), c.ProxyVerb(), "--dir", filepath.ToSlash(dir)}
-	if c.Group != "" { // the group the machine was set up in: a machine that several groups name needs it to find its settings
+	if c.GroupChosen { // several groups name the machine: the proxy needs to be told whose settings apply (one group is found alone)
 		parts = append(parts, "--in-group", c.Group)
 	}
 	parts = append(parts, c.Name)

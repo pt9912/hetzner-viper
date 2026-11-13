@@ -318,9 +318,9 @@ func TestWriteConfigKeepsALinkAndRemovesOldTemporaryFiles(t *testing.T) {
 	}
 }
 
-func TestTheProxyCommandNamesTheGroupTheMachineWasSetUpIn(t *testing.T) {
+func TestTheProxyCommandNamesTheGroupOnlyWhenSeveralGroupsNameTheMachine(t *testing.T) {
 	c := podConfig(t, "web")
-	c.Group = "dev"
+	c.Group, c.GroupChosen = "dev", true
 	if err := files().WriteConfig(c, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -328,13 +328,14 @@ func TestTheProxyCommandNamesTheGroupTheMachineWasSetUpIn(t *testing.T) {
 	if !strings.Contains(string(b), `"--in-group" "dev" "web"`) {
 		t.Errorf("a machine that several groups name needs the group to find its settings:\n%s", b)
 	}
-	c.Group = ""
+	// one group (or none) is found alone: the same text as before there were several groups, which an older viper reads too
+	c.GroupChosen = false
 	if err := files().WriteConfig(c, ""); err != nil {
 		t.Fatal(err)
 	}
 	b, _ = os.ReadFile(c.SSHConfig)
 	if strings.Contains(string(b), "--in-group") {
-		t.Errorf("a machine in no group has none:\n%s", b)
+		t.Errorf("a machine in one group has none:\n%s", b)
 	}
 }
 

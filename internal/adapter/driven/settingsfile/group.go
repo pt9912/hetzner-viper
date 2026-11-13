@@ -21,8 +21,16 @@ const groupDir = "groups"
 type membership struct {
 	name     string // the group, "" if the machine is in none
 	file     string // its file
+	several  bool   // other groups name the machine too, so the caller had to say which one applies
 	warnings []string
 }
+
+// choiceError is a failure of the choice between groups: the machine is named in several and none was chosen, or the
+// chosen group does not exist or does not name the machine. Things that only read a part of the settings (the prefix of
+// the log files) must not swallow it.
+type choiceError struct{ error }
+
+func (e choiceError) Unwrap() error { return e.error }
 
 // groupFiles are the names of the groups that have a file in dir/groups, sorted. A missing directory
 // is no group at all.
@@ -120,22 +128,31 @@ func memberOf(dir, machine string, env settings.Env) (membership, error) {
 	case 1:
 		m.name, m.file = files[0], GroupFileOf(dir, files[0])
 	default:
-		return m, fmt.Errorf("The machine %s is named in the groups %s: say which one applies with --in-group, like viper up %s --in-group %s", machine, strings.Join(files, ", "), machine, files[0])
+		return m, choiceError{fmt.Errorf("The machine %s is named in the groups %s: say which one applies with --in-group, like viper up %s --in-group %s", machine, strings.Join(files, ", "), machine, files[0])}
 	}
 	return m, nil
 }
 
 // memberIn is the membership of a machine in the group the caller named: the group has to exist and to name the machine.
-// Other groups that name the machine do not matter.
+// Other groups that name the machine do not matter, but they are noted (several): the ssh config then has to say which group
+// applies, and in no other case.
 func memberIn(dir, machine string, env settings.Env) (membership, error) {
 	grp, err := LoadGroup(dir, env.Group, env)
 	if err != nil {
-		return membership{}, err
+		return membership{}, choiceError{err}
 	}
 	if !slices.Contains(grp.Machines, machine) {
-		return membership{}, fmt.Errorf("The machine %s is not in the group %s (groups/%s.env names %s)", machine, env.Group, env.Group, strings.Join(grp.Machines, ", "))
+		return membership{}, choiceError{fmt.Errorf("The machine %s is not in the group %s (groups/%s.env names %s)", machine, env.Group, env.Group, strings.Join(grp.Machines, ", "))}
 	}
-	return membership{name: env.Group, file: grp.File}, nil
+	others := 0
+	for _, n := range groupFiles(dir) {
+		if n != env.Group {
+			if g, err := LoadGroup(dir, n, env); err == nil && slices.Contains(g.Machines, machine) {
+				others++
+			}
+		}
+	}
+	return membership{name: env.Group, file: grp.File, several: others > 0}, nil
 }
 
 // namesMachine looks at the raw text of a group file for the machine, as a word anywhere in it (also in

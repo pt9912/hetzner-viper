@@ -182,7 +182,6 @@ func runGroupUp(ctx context.Context, o *options, env settings.Env, stdout, stder
 	var pre []driving.GroupTask
 	for _, m := range g.Machines {
 		mo := *o
-		mo.within = o.group
 		mo.machine, mo.group = m, ""
 		pre = append(pre, driving.GroupTask{Machine: m, Run: ws.task(m, func(ctx context.Context, out, errOut io.Writer) error {
 			return runPreflight(ctx, &mo, env, out, errOut)
@@ -308,7 +307,6 @@ func groupUpTask(m string, o *options, env settings.Env, st *groupUpState, ws *g
 			return err
 		}
 		mo := *o
-		mo.within = o.group
 		mo.machine, mo.group = m, ""
 		mo.noCode, mo.skipPreflight, mo.serverWait = true, true, groupServerWait
 		mo.onServerCreated = func() { st.gates[m].open(true) }

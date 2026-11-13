@@ -72,15 +72,22 @@ func sourceFile(vars map[string]string, path string, env settings.Env) error {
 }
 
 // Prefix is SERVER_PREFIX of a machine, read like the scripts read it (files only, the machine's
-// file wins); a file that cannot be read counts as not set, so the default "claude" applies.
-func Prefix(dir, machine string, env settings.Env) string {
+// file wins); a file that cannot be read counts as not set, so the default "claude" applies. The
+// choice between groups is not swallowed: a machine that several groups name, with no group chosen
+// (or a wrong one), has no prefix to tell, and an empty log would be the wrong answer.
+func Prefix(dir, machine string, env settings.Env) (string, error) {
 	vars := map[string]string{}
 	_ = sourceFile(vars, filepath.Join(dir, ".env.local"), env)
-	if grp, err := memberOf(dir, machine, env); err == nil && grp.file != "" {
+	grp, err := memberOf(dir, machine, env)
+	var ce choiceError
+	if errors.As(err, &ce) {
+		return "", ce.error
+	}
+	if err == nil && grp.file != "" {
 		_ = sourceFile(vars, grp.file, env)
 	}
 	_ = sourceFile(vars, filepath.Join(dir, "machines", machine+".env.local"), env)
-	return or(vars["SERVER_PREFIX"], "claude")
+	return or(vars["SERVER_PREFIX"], "claude"), nil
 }
 
 // Load reads .env.local and machines/<machine>.env.local of dir and checks the settings. With
@@ -110,7 +117,7 @@ func Load(dir, machine string, env settings.Env, needTokens bool) (*model.Machin
 		return nil, err
 	}
 	applyDefaultImage(vars, env)
-	c := &model.Machine{Name: machine, Dir: dir, Group: grp.name, GroupFile: grp.file, Warnings: grp.warnings}
+	c := &model.Machine{Name: machine, Dir: dir, Group: grp.name, GroupChosen: grp.several, GroupFile: grp.file, Warnings: grp.warnings}
 	c.Vars = func(name string) string {
 		if v, ok := vars[name]; ok {
 			return v
@@ -260,7 +267,9 @@ func (Files) LoadFile(dir string, env settings.Env) (map[string]string, error) {
 }
 
 // Prefix is SERVER_PREFIX of a machine; see Prefix.
-func (Files) Prefix(dir, machine string, env settings.Env) string { return Prefix(dir, machine, env) }
+func (Files) Prefix(dir, machine string, env settings.Env) (string, error) {
+	return Prefix(dir, machine, env)
+}
 
 // LoadGroup reads groups/<name>.env; see LoadGroup.
 func (Files) LoadGroup(dir, name string, env settings.Env) (*model.Group, error) {

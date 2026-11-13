@@ -780,3 +780,51 @@ func TestDownOfAGroupShowsWhatAMachineSaysAsOneBlockWithItsQuestion(t *testing.T
 		t.Errorf("the rest of the output is lost:\n%s", out.String())
 	}
 }
+
+// A machine that two groups name: --group G works on the machines of G with the settings of G, and one machine needs --in-group.
+func TestAGroupRunLooksAtEveryMemberInThatGroupEvenIfAnotherGroupNamesItToo(t *testing.T) {
+	dir := upGroupDir(t, "alpha,beta", "")
+	if err := os.WriteFile(filepath.Join(dir, "groups", "prod.env"), []byte("GROUP_MACHINES=beta\nSERVER_TYPE=cpx52\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, h := fakeTools(t)
+	f := &upFake{script: func(string, driving.UpOptions) (int, error) { return 0, nil }}
+	f.services(h)
+	env := upEnv(t)
+	h.Env = func() (settings.Env, error) { return env, nil }
+	var mu sync.Mutex
+	seen := map[string]string{}
+	h.Services.Preflight = func(c *model.Machine) driving.Preflight {
+		return preflightFunc(func() int {
+			mu.Lock()
+			seen[c.Name] = c.Group + "/" + c.ServerType
+			mu.Unlock()
+			return 0
+		})
+	}
+	var out bytes.Buffer
+	h.Stdout = &out
+	run := func(o cli.Opts) error {
+		for k := range seen {
+			delete(seen, k)
+		}
+		o.Host, o.Dir = h, dir
+		return cli.RunCommand("preflight", &o)
+	}
+	if err := run(cli.Opts{Group: "dev"}); err != nil || seen["alpha"] != "dev/cpx32" || !strings.HasPrefix(seen["beta"], "dev/") || len(seen) != 2 {
+		t.Errorf("--group dev: every member with the settings of dev: %v %v", seen, err)
+	}
+	if err := run(cli.Opts{Group: "prod"}); err != nil || seen["beta"] != "prod/cpx52" || len(seen) != 1 {
+		t.Errorf("--group prod: beta with the settings of prod: %v %v", seen, err)
+	}
+	if err := run(cli.Opts{Machine: "beta", Within: "prod"}); err != nil || seen["beta"] != "prod/cpx52" {
+		t.Errorf("--in-group prod: %v %v", seen, err)
+	}
+	err := run(cli.Opts{Machine: "beta"})
+	if err == nil || !strings.Contains(err.Error(), "named in the groups dev, prod") || !strings.Contains(err.Error(), "--in-group") {
+		t.Errorf("without a choice: %v", err)
+	}
+	if err := run(cli.Opts{Machine: "alpha"}); err != nil || seen["alpha"] != "dev/cpx32" {
+		t.Errorf("a machine in one group needs no choice: %v %v", seen, err)
+	}
+}

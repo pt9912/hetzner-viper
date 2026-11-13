@@ -230,7 +230,11 @@ func showLog(o *options, env settings.Env, out io.Writer) error {
 	state := filepath.Join(home, ".local", "state", "hetzner-claude")
 	server := ""
 	if o.machine != "" {
-		server = o.host().Services.Settings.Prefix(settingsDir(o), o.machine, env) + "-" + o.machine
+		prefix, err := o.host().Services.Settings.Prefix(settingsDir(o), o.machine, env)
+		if err != nil {
+			return err
+		}
+		server = prefix + "-" + o.machine
 	}
 	return o.host().Services.ShowLog(state, server, o.full, out)
 }

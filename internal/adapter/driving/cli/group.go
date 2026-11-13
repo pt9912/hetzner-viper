@@ -34,7 +34,6 @@ func runGroup(ctx context.Context, o *options, env settings.Env, stdout, stderr 
 	tasks := make([]driving.GroupTask, 0, len(g.Machines))
 	for _, m := range g.Machines {
 		mo := *o
-		mo.within = o.group
 		mo.machine, mo.group = m, ""
 		tasks = append(tasks, driving.GroupTask{Machine: m, Run: ws.task(m, func(ctx context.Context, out, errOut io.Writer) error {
 			return run(ctx, &mo, env, out, errOut)

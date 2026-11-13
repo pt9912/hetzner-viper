@@ -371,22 +371,22 @@ func TestSourceAgreesWithBash(t *testing.T) {
 func TestPrefixIsReadLikeTheScriptsReadIt(t *testing.T) {
 	dir := setupDir(t, "SERVER_PREFIX=cs      # not claude\n", "SERVER_TYPE=cpx32\n")
 	env := settings.Env{Home: "/h"}
-	if got := settingsfile.Prefix(dir, "web", env); got != "cs" {
+	if got, _ := settingsfile.Prefix(dir, "web", env); got != "cs" {
 		t.Errorf("comment after the value: %q", got)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "machines", "web.env.local"), []byte("SERVER_PREFIX=\"mach\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := settingsfile.Prefix(dir, "web", env); got != "mach" {
+	if got, _ := settingsfile.Prefix(dir, "web", env); got != "mach" {
 		t.Errorf("machine file wins, quotes removed: %q", got)
 	}
-	if got := settingsfile.Prefix(t.TempDir(), "web", env); got != "claude" {
+	if got, _ := settingsfile.Prefix(t.TempDir(), "web", env); got != "claude" {
 		t.Errorf("default: %q", got)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "machines", "web.env.local"), []byte("SERVER_PREFIX=$(x)\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := settingsfile.Prefix(dir, "web", env); got != "cs" {
+	if got, _ := settingsfile.Prefix(dir, "web", env); got != "cs" {
 		t.Errorf("an unreadable machine file is ignored: %q", got)
 	}
 }
@@ -690,5 +690,46 @@ func TestAMachineInSeveralGroupsIsLookedAtInTheGroupTheCallerNames(t *testing.T)
 	}
 	if c, err := load("api", "dev"); err != nil || c.Group != "dev" {
 		t.Errorf("%+v %v", c, err)
+	}
+}
+
+// The prefix of the log files of a machine that several groups name is the prefix of the group the caller names; with no
+// choice there is no prefix to tell, and an empty log would be the wrong answer.
+func TestThePrefixOfAMachineInSeveralGroupsFollowsTheChoice(t *testing.T) {
+	dir := setupDir(t, "DNS_DOMAIN=example.com\n", "")
+	if err := os.MkdirAll(filepath.Join(dir, "groups"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range map[string]string{"dev": "GROUP_MACHINES=web\n", "prod": "GROUP_MACHINES=web\nSERVER_PREFIX=p\n"} {
+		if err := os.WriteFile(filepath.Join(dir, "groups", name+".env"), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	env := func(group string) settings.Env { return settings.Env{Lookup: envOf(nil), Home: "/h", Group: group} }
+	if got, err := settingsfile.Prefix(dir, "web", env("")); err == nil || got != "" || !strings.Contains(err.Error(), "--in-group") {
+		t.Errorf("no choice: %q %v", got, err)
+	}
+	if got, err := settingsfile.Prefix(dir, "web", env("prod")); err != nil || got != "p" {
+		t.Errorf("prod: %q %v", got, err)
+	}
+	if got, err := settingsfile.Prefix(dir, "web", env("dev")); err != nil || got != "claude" {
+		t.Errorf("dev: %q %v", got, err)
+	}
+	if _, err := settingsfile.Prefix(dir, "web", env("typo")); err == nil {
+		t.Error("a group that does not exist was taken")
+	}
+	if _, err := settingsfile.Prefix(dir, "other", env("dev")); err == nil || !strings.Contains(err.Error(), "is not in the group dev") {
+		t.Errorf("a group that does not name the machine: %v", err)
+	}
+	// the ssh config has to tell the group only when several name the machine
+	c, err := settingsfile.Load(dir, "web", env("prod"), false)
+	if err != nil || !c.GroupChosen || c.Group != "prod" {
+		t.Errorf("%+v %v", c, err)
+	}
+	if err := os.Remove(filepath.Join(dir, "groups", "dev.env")); err != nil {
+		t.Fatal(err)
+	}
+	if c, err = settingsfile.Load(dir, "web", env(""), false); err != nil || c.GroupChosen || c.Group != "prod" {
+		t.Errorf("one group is found alone and needs no choice: %+v %v", c, err)
 	}
 }

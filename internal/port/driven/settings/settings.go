@@ -36,7 +36,7 @@ type Store interface {
 	// LoadGroup reads groups/<name>.env of dir: the machines it names and its settings, checked.
 	LoadGroup(dir, name string, env Env) (*model.Group, error)
 	// Prefix is SERVER_PREFIX of a machine, as far as the files tell it.
-	Prefix(dir, machine string, env Env) string
+	Prefix(dir, machine string, env Env) (string, error)
 	// ProviderOf is the cloud provider and DNSProviderOf the DNS provider the settings in vars name.
 	ProviderOf(vars map[string]string) string
 	DNSProviderOf(vars map[string]string) string

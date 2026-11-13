@@ -277,16 +277,20 @@ func setNumber(o *options, name, flag, v string) error {
 	return nil
 }
 
-// setValue stores the value of an option that takes one.
-// setGroup reads --group (all machines of a group) and --in-group (one machine, as that group has it).
-func setGroup(o *options, flag, v string) {
+// setGroup reads --group (all machines of a group) and --in-group (one machine, as that group has it). A group needs a name.
+func setGroup(o *options, name, flag, v string) error {
+	if v == "" {
+		return fmt.Errorf("viper %s: --%s needs the name of a group", name, flag)
+	}
 	if flag == "group" {
 		o.group = v
-		return
+		return nil
 	}
 	o.within = v
+	return nil
 }
 
+// setValue stores the value of an option that takes one.
 func setValue(o *options, name, flag, v string) error {
 	switch flag {
 	case "repo":
@@ -304,7 +308,7 @@ func setValue(o *options, name, flag, v string) error {
 	case "vat":
 		return setVAT(o, name, v)
 	case "group", "in-group":
-		setGroup(o, flag, v)
+		return setGroup(o, name, flag, v)
 	case "to", "topic", "from", "timeout", "tag", "k3d":
 		return setNatsValue(o, name, flag, v)
 	case "parallel":
