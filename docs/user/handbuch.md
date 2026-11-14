@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.126  
+Version: 1.127  
 Software-Version: v0.23.0  
 Stand: 14.11.2026  
 
@@ -57,7 +57,7 @@ Sie haben kein Cloud-Konto oder wollen erst einmal ausprobieren? Dann beginnen S
 | `viper up --group <gruppe>`, `viper down --group <gruppe>`, `viper check --group <gruppe>`, `viper preflight --group <gruppe>`, `viper ssh --group <gruppe> --cmd …` | Dieselben Befehle für alle Rechner einer Gruppe aus `groups/<gruppe>.env`, gleichzeitig (siehe „Eine Gruppe von Rechnern gemeinsam starten und beenden“). |
 | `viper mcp-binary --arch amd64\|arm64` | Schreibt den in `viper` eingebauten MCP-Server `viper-nats-mcp` für die Architektur nach stdout (`> datei`), zum Ansehen, Prüfen oder als `NATS_MCP_BINARY`. Zeigt nichts auf dem Terminal. |
 | `viper nats peers\|topics\|listen\|send\|broadcast\|request\|fetch\|init\|revoke <gruppe> …` | Sendet Nachrichten (und Bilder, PDFs und ZIP-Dateien) an die Rechner einer NATS-Gruppe (`--file DATEI` statt des Textes) und liest mit, als einer der Rechner der Gruppe (siehe „Nachrichten an eine NATS-Gruppe senden“); `fetch` holt eine Datei, `init` und `revoke` richten Ihren eigenen Schlüssel als Betreiber ein und entfernen ihn. |
-| `viper help`, `viper version` | Zeigt alle Befehle bzw. die Version. |
+| `viper help`, `viper <befehl> --help`, `viper version` | Zeigt alle Befehle in Gruppen; die Hilfe eines Befehls mit seinen Optionen (jede erklärt), Beispielen und dem passenden Abschnitt des Handbuchs (`viper check --help`, `viper nats send --help`; auch `viper help check`); die Version. |
 
 ### Wie ein Rechner benannt wird
 
@@ -1639,3 +1639,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.124 | nach v0.22.0 | Neu: Bilder, PDFs und ZIP-Dateien in NATS-Gruppen (`NATS_OBJECTS`, `NATS_OBJECTS_MAX`, `NATS_OBJECTS_FILE_MAX`, `NATS_OBJECTS_TTL`): `--pdf`, `--image`, `--zip` bei `viper nats send`, `broadcast` und `request`, `viper nats fetch`, die Werkzeuge `fetch` und der Parameter `attachment`; der Speicher liegt auf dem NATS-Server der Gruppe. Das Restrisiko (jede Maschine kann Dateien ersetzen oder alle löschen) steht in dem Kapitel. |
 | 1.125 | nach v0.22.0 | Dateien in NATS-Gruppen: Nachtrag aus Code- und Doku-Review (Datei- und Anbieter-Angaben vereinheitlicht, Namen von Dateien als Text des Absenders, Anwesenheit während einer Sendung, Meldung bei geändertem `NATS_OBJECTS`, Grenze für Lesevorgänge). |
 | 1.126 | v0.23.0 | Release v0.23.0: die Änderungen 1.123 bis 1.125 (Version von `viper-nats-mcp` bei `peers`; Bilder, PDFs und ZIP-Dateien in NATS-Gruppen mit `NATS_OBJECTS`, `viper nats --pdf/--image/--zip` und `fetch`, das Werkzeug `fetch`); `viper up` wiederholt einen Befehl auf dem Server, wenn der Server die Verbindung vor der Anmeldung schließt. |
+| 1.127 | nach v0.23.0 | `viper help` zeigt die Befehle in Gruppen mit einer Zeile je Befehl; `viper <befehl> --help` (auch `viper help <befehl>`, `viper nats <unterbefehl> --help`) beschreibt einen Befehl mit allen Optionen, Beispielen und dem Abschnitt im Handbuch. |

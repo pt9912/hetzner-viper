@@ -15,7 +15,11 @@ func Main(version string, args []string, h *Host) int {
 	name, o, err := parse(args)
 	switch {
 	case errors.Is(err, errHelp):
-		fmt.Fprint(stdout, helpText(version))
+		var he *helpError
+		if !errors.As(err, &he) {
+			he = &helpError{}
+		}
+		fmt.Fprint(stdout, helpFor(he, version))
 		return 0
 	case err != nil:
 		fmt.Fprintln(stderr, err)

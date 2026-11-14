@@ -178,3 +178,34 @@ func RunGroupDown(ctx context.Context, p *Opts, env settings.Env, in io.Reader, 
 func RunGroupSSH(ctx context.Context, p *Opts, env settings.Env, stdout, stderr io.Writer) error {
 	return runGroup(ctx, p.options(), env, stdout, stderr, sshOnce)
 }
+
+// CommandFlags are the options of a command besides --dir.
+func CommandFlags(name string) []string { return commands()[name].flags }
+
+// HelpOptionNames are the options a command's help describes besides --dir.
+func HelpOptionNames(name string) []string {
+	var out []string
+	for _, o := range helps()[name].options {
+		out = append(out, o.name)
+	}
+	return out
+}
+
+// NatsSubNames are the subcommands of viper nats with a help of their own.
+func NatsSubNames() []string {
+	var out []string
+	for n := range natsSubs() {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// NatsSubOptionNames are the options a subcommand of viper nats describes.
+func NatsSubOptionNames(sub string) []string { return natsSubs()[sub].options }
+
+// CommandHelp is the help of one command.
+func CommandHelp(name string) string { return commandHelp(name, "v9.9.9") }
+
+// NatsSubHelp is the help of one subcommand of viper nats.
+func NatsSubHelp(sub string) string { return natsSubHelp(sub, "v9.9.9") }

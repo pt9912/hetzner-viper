@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -110,7 +109,7 @@ func parse(args []string) (string, options, error) {
 	for i := 1; i < len(args); i++ {
 		a := args[i]
 		if a == "-h" || a == "--help" {
-			return "", o, errHelp
+			return "", o, &helpError{name: name, sub: firstWord(args[1:])}
 		}
 		if !strings.HasPrefix(a, "--") {
 			positional = append(positional, a)
@@ -129,11 +128,17 @@ func parse(args []string) (string, options, error) {
 // lookupCommand finds the command named by the first argument.
 func lookupCommand(args []string) (string, command, error) {
 	if len(args) == 0 {
-		return "", command{}, errHelp
+		return "", command{}, &helpError{}
 	}
 	name := args[0]
 	if name == "help" || name == "-h" || name == "--help" {
-		return "", command{}, errHelp
+		if name == "help" && len(args) > 1 { // viper help check, viper help nats send
+			if _, ok := commands()[args[1]]; !ok {
+				return "", command{}, fmt.Errorf("viper help: unknown command %q (viper help lists them)", args[1])
+			}
+			return "", command{}, &helpError{name: args[1], sub: firstWord(args[2:])}
+		}
+		return "", command{}, &helpError{}
 	}
 	c, ok := commands()[name]
 	if !ok {
@@ -170,36 +175,29 @@ func usageLine(name string) string {
 	return strings.TrimRight("Usage: viper "+name+" "+commands()[name].usage, " ")
 }
 
-func helpText(version string) string {
-	names := make([]string, 0, len(commands()))
-	for n := range commands() {
-		names = append(names, n)
+// firstWord is the first argument that is no option: the subcommand of viper nats.
+func firstWord(args []string) string {
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			return a
+		}
 	}
-	sort.Strings(names)
-	var b strings.Builder
-	b.WriteString("viper " + version + ": set up and use machines in the cloud for Claude Code (needs the OpenSSH client)\n\n")
-	for _, n := range names {
-		b.WriteString("  " + strings.TrimPrefix(usageLine(n), "Usage: ") + "\n")
-	}
-	b.WriteString(`
-Option for every command:
-  --dir DIR   the directory with .env.local (and machines/); a relative SSH_KEY is relative to it
-              (default: the current directory)
-
-Values that start with a dash need the form --cmd=VALUE, for example viper ssh web --cmd="ls -la".
-
-` + manualLines(version))
-	return b.String()
+	return ""
 }
+
+func helpText(version string) string { return overviewText(version) }
 
 var releaseVersion = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 
 const manualBase = "https://github.com/pt9912/hetzner-viper/blob/"
 
+// manualPath is the manual in the repository.
+const manualPath = "/docs/user/handbuch.md"
+
 // manualLines name the user manual (German): of this version, if it is a release, and the current
 // one on main.
 func manualLines(v string) string {
-	const path = "/docs/user/handbuch.md"
+	const path = manualPath
 	if !releaseVersion.MatchString(v) {
 		return "Manual (German): " + manualBase + "main" + path + "\n"
 	}
