@@ -17,6 +17,9 @@ import (
 
 func (st *site) upload(t *testing.T, query, body, ctype, origin string) (int, string) {
 	t.Helper()
+	if !strings.Contains(query, "group=") {
+		query += "&group=dev"
+	}
 	req, _ := http.NewRequest("POST", st.base+"/api/upload?"+query, strings.NewReader(body))
 	req.Header.Set("Content-Type", ctype)
 	req.Header.Set("X-Viper-UI", "1")

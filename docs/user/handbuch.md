@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.134  
+Version: 1.135  
 Software-Version: v0.24.0  
 Stand: 14.11.2026  
 
@@ -395,7 +395,7 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 
 ### Die Oberfläche im Browser
 
-`viper ui` startet auf Ihrem Rechner eine kleine Weboberfläche und öffnet den Browser. Sie zeigt die Rechner und Gruppen aus den Einstellungsdateien, lässt je Rechner `viper check` laufen, zeigt die Protokolle und startet `preflight`, `up` und `down` für einen Rechner oder eine Gruppe, mit der Ausgabe, den Rückfragen und einem Knopf zum Abbrechen. und spricht mit den NATS-Gruppen (wer ist da, Themen, mitlesen, Nachrichten und Dateien senden und holen).
+`viper ui` startet auf Ihrem Rechner eine kleine Weboberfläche und öffnet den Browser. Sie zeigt die Rechner und Gruppen aus den Einstellungsdateien, lässt je Rechner `viper check` laufen, zeigt die Protokolle und startet `preflight`, `up` und `down` für einen Rechner oder eine Gruppe, mit der Ausgabe, den Rückfragen und einem Knopf zum Abbrechen; sie spricht mit den NATS-Gruppen (wer ist da, Themen, mitlesen, Nachrichten und Dateien senden und holen).
 
 #### Vorgehen
 
@@ -410,17 +410,17 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 8. **NATS:** Die Seite „NATS“ zeigt die Gruppen aus `groups/*.env`, deren Rechner `NATS_ENABLED=true` haben. Die Zeile darunter sagt, wie `viper nats` spricht: **als Betreiber**, wenn dieser Rechner den Schlüssel der Gruppe hat (`viper nats init <gruppe>`), sonst **als Rechner der Gruppe** über ssh (die Auswahl „Speak as“ nennt den Rechner). Jede Schaltfläche startet `viper nats …` als Lauf (Seite „Runs“):
     * **Peers** und **Topics**: wer da ist und welche Themen die Rechner abonniert haben.
     * **Listen**: liest mit, bis Sie **Cancel** drücken; ein Thema begrenzt (leer: alle Themen der Einstellungen), „everything of the group“ zeigt alles. Hat eine Nachricht eine Datei, steht dort **Fetch this file**; der Knopf trägt ID und Prüfsumme in das Formular „Get a file“ ein.
-    * **Send**: Nachricht an einen Rechner, Anfrage mit Antwort oder Rundruf an ein Thema; der Text bis 16 KiB, dazu eine Datei (PDF, Bild oder ZIP; die Prüfungen und Grenzen sind die von `viper nats`, bei einer Gruppe ohne `NATS_OBJECTS` lehnt der Befehl die Datei ab). Der Text steht nie in der Befehlszeile eines Programms. Die Warnung, dass der Absender in `NATS_MCP_PUSH_FROM` eines Empfängers steht, erscheint als Fehler des Laufs; „send anyway“ entspricht `--yes`.
+    * **Send**: Nachricht an einen Rechner, Anfrage mit Antwort oder Rundruf an ein Thema; der Text bis 16 KiB, dazu eine Datei (PDF, Bild oder ZIP). Eine Datei geht nur an eine Gruppe mit Objektspeicher (`NATS_OBJECTS=true`; ohne ihn ist das Feld aus), und sie darf nicht größer sein als `NATS_OBJECTS_FILE_MAX` der Gruppe; die weiteren Prüfungen sind die von `viper nats`. Eine Datei, die niemand sendet (etwa weil die Nachricht abgelehnt wurde), löscht die Oberfläche selbst, spätestens nach 30 Minuten. Der Text steht nie in der Befehlszeile eines Programms. Die Warnung, dass der Absender in `NATS_MCP_PUSH_FROM` eines Empfängers steht, erscheint als Fehler des Laufs; „send anyway“ entspricht `--yes`.
     * **Get a file** (`viper nats fetch`, nur mit dem Schlüssel des Betreibers): Nach dem Lauf erscheint **Download the file**. Die Datei stammt von einem anderen Agenten: nicht ausführen; die Seite lädt sie immer als Download, nie als Seite.
 
 9. **Einstellungen:** Die Seite zeigt die Namen der Einstellungen jeder Datei im Einstellungsverzeichnis (`.env.local`, `groups/*.env`, `machines/*.env.local`) und, was nur die Umgebung setzt. Den **Wert** zeigt sie nur für Einstellungen einer festen Liste, die keine Zugangsdaten sind und nichts Privates enthalten (zum Beispiel `PROVIDER`, `SERVER_TYPE`, `SERVER_LOCATION`, `GROUP_MACHINES`, die `NATS_*`-Einstellungen ohne Schlüssel, `K3D_*`); alles andere steht als „gesetzt“, auch eine Repo-URL, ein Token, ein Passwort und der Pfad eines Schlüssels. Werte, die ein Programm erst ausrechnen müsste (`$VAR`), zeigt sie nicht. Aus der Umgebung nennt sie nur die Namen. Ändern lässt sich hier nichts: Bearbeiten Sie die Dateien weiter selbst.
-10. **Sprache und Bedienung:** Oben rechts wählen Sie Englisch oder Deutsch; ohne Wahl entscheidet die Sprache des Browsers, die Wahl bleibt im Browser erhalten. Die Ausgaben von `viper` selbst (Läufe, Prüfungen, Protokolle) und die Fehler des Servers bleiben englisch. Die Seiten sind mit der Tastatur bedienbar (Sprunglink „Zum Inhalt springen“; die Seitenreiter wechseln Sie mit den Pfeiltasten, `Pos1` und `Ende`), haben Namen für Screenreader (zum Beispiel „Up für web“) und folgen dem hellen oder dunklen Farbschema des Systems. Endet die Sitzung (`viper ui` wurde neu gestartet), steht oben ein Hinweis; öffnen Sie dann die neue Adresse.
+10. **Sprache und Bedienung:** Oben rechts wählen Sie Englisch oder Deutsch; ohne Wahl entscheidet die Sprache des Browsers, die Wahl bleibt im Browser erhalten. Die Ausgaben von `viper` selbst (Läufe, Prüfungen, Protokolle) und die Fehler des Servers bleiben englisch. In der Ausgabe eines Laufs ersetzt die Oberfläche auch ein Geheimnis, das `viper` in zwei Teilen und mit einer Pause dazwischen ausgibt; ein Wort von acht und mehr Zeichen am Ende einer unfertigen Zeile erscheint dafür erst nach einer zweiten Pause (eine Rückfrage wie „Type DELETE to continue:“ erscheint sofort). Die Seiten sind mit der Tastatur bedienbar (Sprunglink „Zum Inhalt springen“; die Seitenreiter wechseln Sie mit den Pfeiltasten, `Pos1` und `Ende`), haben Namen für Screenreader (zum Beispiel „Up für web“) und folgen dem hellen oder dunklen Farbschema des Systems. Endet die Sitzung (`viper ui` wurde neu gestartet), steht oben ein Hinweis; öffnen Sie dann die neue Adresse.
 
 Optionen:
 
 * `--port N`: auf diesem Port lauschen (Standard: ein freier).
 * `--no-open`: den Browser nicht öffnen; das Terminal zeigt die Adresse mit dem Schlüssel (gilt zehn Minuten, einmal).
-* `--readonly`: keine Aktion anbieten (kein Preflight, Up oder Down); Ansehen, Check und Protokolle bleiben.
+* `--readonly`: keine Aktion anbieten (kein Preflight, Up, Down und kein NATS, auch kein Hochladen); Ansehen, Check, Protokolle und Einstellungen bleiben.
 
 #### Ergebnis
 
@@ -428,10 +428,10 @@ Die Seiten laufen im Browser. `Check` und die Aktionen schreiben wie am Terminal
 
 #### Hinweise
 
-* **Nur dieser Rechner:** Der Server lauscht auf `127.0.0.1` und antwortet nur unter genau dieser Adresse (nicht unter `localhost`). Die erste Anfrage tauscht einen Schlüssel, der bei jedem Start neu ist, einmal und höchstens eine Minute lang gegen ein Cookie (zehn Minuten mit `--no-open`); danach antwortet der Server nur mit diesem Cookie. Der Browser wird über eine Datei in einem privaten Verzeichnis geöffnet, damit der Schlüssel nicht in der Befehlszeile eines Programms steht, das andere Benutzer sehen; `viper` löscht die Datei beim Beenden.
+* **Nur dieser Rechner:** Der Server lauscht auf `127.0.0.1` und antwortet nur unter genau dieser Adresse (nicht unter `localhost`). Die erste Anfrage tauscht einen Schlüssel, der bei jedem Start neu ist, einmal und höchstens eine Minute lang gegen ein Cookie (zehn Minuten mit `--no-open`); danach antwortet der Server nur mit diesem Cookie. Der Browser wird über eine Datei in einem privaten Verzeichnis geöffnet, damit der Schlüssel nicht in der Befehlszeile eines Programms steht, das andere Benutzer sehen; `viper` löscht die Datei, sobald der Schlüssel benutzt ist, spätestens beim Beenden (nach einem harten Abbruch bleibt sie in einem privaten Verzeichnis unter dem Temp-Verzeichnis liegen; sie enthält dann nur einen längst abgelaufenen Schlüssel).
 * **Keine Zugangsdaten auf dem Bildschirm:** Die Seiten zeigen nie die Einstellungsdateien. Die Werte der bekannten geheimen Einstellungen (Token und Passwörter der Anbieter, GitHub, Claude, Code-Server) ersetzt `viper` in jeder Ausgabe durch `[hidden]`; Steuerzeichen und Escape-Folgen fallen weg.
-* Je Rechner läuft eine Aktion zugleich (auch Gruppenläufe halten ihre Mitglieder), höchstens vier Läufe insgesamt. `Up` startet VS Code nicht (`--no-code`); eine Shell (`viper ssh`) gibt es in der Oberfläche nicht.
-* Beenden Sie `viper ui` mit Strg-C, während Läufe gehen, bricht es sie ab wie ein Strg-C am Terminal und wartet bis zu 20 Sekunden.
+* Je Rechner läuft eine Aktion zugleich (auch Gruppenläufe halten ihre Mitglieder), höchstens vier Läufe der Aktionen zugleich und vier NATS-Läufe (zum Beispiel Mitleser); ein Tab hält einen Strom offen, insgesamt sind acht offene Ströme möglich, und das Abbrechen geht auch dann noch. `Up` startet VS Code nicht (`--no-code`); eine Shell (`viper ssh`) gibt es in der Oberfläche nicht.
+* Beenden Sie `viper ui` mit Strg-C, während Läufe gehen, bricht es sie sofort ab wie ein Strg-C am Terminal und wartet bis zu 20 Sekunden auf sie, auch wenn gerade eine lange Anfrage (ein Check) läuft.
 * Hat ein Rechner unlesbare Einstellungen, steht der Fehler in der Zeile und **Check** ist aus.
 * Ein Rechner, der in mehreren Gruppen steht, erscheint je Gruppe einmal; **Check** prüft ihn in der Gruppe der Zeile.
 * Ist der Port belegt, bricht `viper ui` mit einer Meldung ab; wählen Sie mit `--port` einen anderen.
@@ -1694,3 +1694,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.132 | nach v0.24.0 | `viper ui`: `Preflight`, `Up` und `Down` für Rechner und Gruppen, mit Ausgabe, Rückfragen (Eingabefeld) und Abbrechen; die Seite „Runs“. |
 | 1.133 | nach v0.24.0 | `viper ui`: die Seite „NATS“ (Peers, Topics, Mitlesen, Senden mit Text und Datei, Datei holen und herunterladen). |
 | 1.134 | nach v0.24.0 | `viper ui`: die Seite „Settings“ (Namen aller Einstellungsdateien, Werte nur bei einer Liste unbedenklicher Einstellungen), Deutsch und Englisch wählbar, Bedienung mit der Tastatur, Namen für Screenreader, Hinweis bei beendeter Sitzung, Fehlerseiten. |
+| 1.135 | nach v0.24.0 | `viper ui` nach dem Code-Review: abgelehnte Sendungen geben ihre Datei frei, eine Datei nur bei Objektspeicher und höchstens `NATS_OBJECTS_FILE_MAX`, `--readonly` sperrt auch NATS, Abbrechen geht mit offenen Strömen, Beenden unterbricht die Läufe sofort, Kopfzeile und zweiteilige Geheimnisse werden geschwärzt, ein Repo mit Zugangsdaten wird abgelehnt, nur die erste von zwei Antworten gilt, Strom und Download-Link je Lauf. |

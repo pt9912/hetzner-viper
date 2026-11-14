@@ -2,7 +2,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { UI } from './fixture';
+import { freePort, UI } from './fixture';
 
 // A viper ui on real Docker (PROVIDER=compose): own names (prefix m5t), an own home directory (so own ssh keys and own state),
 // nothing of the user's is touched. For the tests that are run by hand (E2E_REAL_COMPOSE=1); CI has no Docker image of the
@@ -18,7 +18,7 @@ export async function startRealCompose(image: string): Promise<UI & { prefix: st
   const viper = process.env.VIPER_BIN as string;
   const env = { ...process.env, HOME: home };
   execFileSync(viper, ['setup', '--dir', work], { cwd: work, env, stdio: 'pipe' }); // the login key and the host key of this home
-  const child = spawn(viper, ['ui', '--no-open', '--port', String(20000 + Math.floor(Math.random() * 20000))], { cwd: work, env });
+  const child = spawn(viper, ['ui', '--no-open', '--port', String(await freePort())], { cwd: work, env });
   let out = '';
   child.stdout?.on('data', (d) => { out += d; });
   child.stderr?.on('data', (d) => { out += d; });

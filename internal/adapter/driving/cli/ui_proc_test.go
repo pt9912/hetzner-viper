@@ -50,3 +50,15 @@ func TestTheStandardInputOfAProcessStaysOpenForAnswers(t *testing.T) {
 		t.Errorf("%d %q", code, out)
 	}
 }
+
+// A program that keeps the pipe open after viper itself was killed by a signal: the status is the one of a signal (130), not -1.
+func TestAProcessKilledBySignalWhileAChildHoldsThePipe(t *testing.T) {
+	p, err := cli.StartProcess("sh", "-c", "(sleep 8 &); kill -9 $$")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(p.Output())
+	if code := p.Wait(); code != 130 {
+		t.Errorf("exit status %d", code)
+	}
+}

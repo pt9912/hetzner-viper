@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/http"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,9 +31,11 @@ type Machine struct {
 	Provider string `json:"provider,omitempty"`
 	Type     string `json:"type,omitempty"`
 	Location string `json:"location,omitempty"`
-	NATS     string `json:"nats,omitempty"`  // the NATS group
-	State    string `json:"state,omitempty"` // ready, started or none: what the marks of this computer say
-	Error    string `json:"error,omitempty"` // the settings that cannot be read
+	NATS     string `json:"nats,omitempty"` // the NATS group
+	// FileMax is the largest file its NATS group takes in bytes (NATS_OBJECTS_FILE_MAX), 0 without an object store.
+	FileMax int64  `json:"file_max,omitempty"`
+	State   string `json:"state,omitempty"` // ready, started or none: what the marks of this computer say
+	Error   string `json:"error,omitempty"` // the settings that cannot be read
 }
 
 // Group is a group of groups/<name>.env.
@@ -48,6 +51,8 @@ type NATSGroup struct {
 	Name     string   `json:"name"`
 	Machines []string `json:"machines"`
 	Operator bool     `json:"operator"`
+	// FileMax is the largest file the group takes, in bytes (NATS_OBJECTS_FILE_MAX); 0: the group has no object store.
+	FileMax int64 `json:"file_max"`
 }
 
 // Setting is one line of a settings file: the name, and the value only for the names that are no credentials and no
@@ -94,8 +99,10 @@ type Config struct {
 	// Clean makes an output fit to show (control characters, escape sequences), Redact takes the values of the settings
 	// that are secrets out of it. nil: the output is shown as it is (tests only).
 	Clean, Redact func(string) string
-	// MaxUpload is the largest file a page may hand over to send (default 64 MiB; the command checks the limit of the group).
+	// MaxUpload is the largest file a page may hand over to send (default 64 MiB; the limit of the group applies as well).
 	MaxUpload int64
+	// UploadLife is how long a file that was handed over waits for its message (default 30 minutes).
+	UploadLife time.Duration
 	// Spawn starts viper for an action (nil: the pages offer none).
 	Spawn Spawner
 	// TokenTTL is how long after the start the one-time key can be exchanged (default one minute).
@@ -109,6 +116,8 @@ const (
 	maxBody        = 4 << 10
 	maxRunBody     = 64 << 10 // a message is up to 16 KiB, as JSON
 	maxConcurrent  = 16
+	maxStreams     = 8 // open event streams (a page has one)
+	overviewLife   = time.Second
 	checkTimeLimit = 15 * time.Minute
 	cookieName     = "viper_ui"
 )
@@ -127,7 +136,17 @@ type Server struct {
 	sem      chan struct{}
 	runs     runTable
 	uploads  uploadTable
+	streams  chan struct{} // the budget of the open event streams: they must not starve cancel and answer
 	quit     chan struct{} // closed when the server ends: the streams end
+	quitOnce sync.Once
+
+	exchanged     chan struct{} // closed when the key has been exchanged
+	exchangedOnce sync.Once
+
+	ovMu sync.Mutex
+	ov   Overview
+	ovAt time.Time
+	ovOK bool
 }
 
 // New makes a server. Listen gives it its address.
@@ -141,13 +160,16 @@ func New(cfg Config) *Server {
 	if cfg.MaxUpload == 0 {
 		cfg.MaxUpload = 64 << 20
 	}
+	if cfg.UploadLife == 0 {
+		cfg.UploadLife = 30 * time.Minute
+	}
 	if cfg.Clean == nil {
 		cfg.Clean = func(s string) string { return s }
 	}
 	if cfg.Redact == nil {
 		cfg.Redact = func(s string) string { return s }
 	}
-	return &Server{cfg: cfg, token: random(), cookie: random(), started: cfg.Now(), checking: map[string]bool{}, sem: make(chan struct{}, maxConcurrent), quit: make(chan struct{})}
+	return &Server{cfg: cfg, token: random(), cookie: random(), started: cfg.Now(), checking: map[string]bool{}, sem: make(chan struct{}, maxConcurrent), streams: make(chan struct{}, maxStreams), quit: make(chan struct{}), exchanged: make(chan struct{})}
 }
 
 func random() string {
@@ -176,26 +198,66 @@ func (s *Server) Host() string { return s.host }
 // Token is the key that the first request exchanges for the session cookie.
 func (s *Server) Token() string { return s.token }
 
-// Serve answers until ctx ends, then closes the connections after at most 20 seconds.
+// Serve answers until ctx ends, then asks the runs to end (as Ctrl-C does), closes the connections and waits for both, each for
+// at most 20 seconds. It also cleans up when the listener fails.
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 16 << 10}
-	srv.RegisterOnShutdown(func() { close(s.quit) })
+	srv.RegisterOnShutdown(s.stop)
 	done := make(chan error, 1)
 	go func() { done <- srv.Serve(ln) }()
+	var serveErr error
 	select {
-	case err := <-done:
-		return err
+	case serveErr = <-done:
+		if errors.Is(serveErr, http.ErrServerClosed) {
+			serveErr = nil
+		}
 	case <-ctx.Done():
 	}
+	// the runs get their Ctrl-C at once, not after a long request has ended: the two waits are independent
+	runsCtx, cancelRuns := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
+	defer cancelRuns()
+	ended := make(chan struct{})
+	go func() { s.endRuns(runsCtx); close(ended) }()
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	defer cancel()
-	err := srv.Shutdown(sctx)
-	s.endRuns(sctx)
-	s.uploads.removeAll()
-	if errors.Is(err, context.DeadlineExceeded) {
+	if err := srv.Shutdown(sctx); errors.Is(err, context.DeadlineExceeded) {
 		_ = srv.Close()
 	}
-	return nil
+	s.stop()
+	<-ended
+	s.uploads.removeAll()
+	return serveErr
+}
+
+// stop ends the open streams (once).
+func (s *Server) stop() { s.quitOnce.Do(func() { close(s.quit) }) }
+
+// Exchanged is closed when the one-time key has been exchanged for the cookie.
+func (s *Server) Exchanged() <-chan struct{} { return s.exchanged }
+
+// snapshot is the overview, read at most once a second (every request that needs it would read every settings file again);
+// a run that ends makes the next one read anew. The caller gets a copy it may change.
+func (s *Server) snapshot(ctx context.Context) (Overview, error) {
+	s.ovMu.Lock()
+	defer s.ovMu.Unlock()
+	if !s.ovOK || s.cfg.Now().Sub(s.ovAt) >= overviewLife {
+		ov, err := s.cfg.Backend.Overview(ctx)
+		if err != nil {
+			return Overview{}, err
+		}
+		s.ov, s.ovAt, s.ovOK = ov, s.cfg.Now(), true
+	}
+	ov := s.ov
+	ov.Machines = slices.Clone(ov.Machines)
+	ov.Groups = slices.Clone(ov.Groups)
+	ov.NATS = slices.Clone(ov.NATS)
+	return ov, nil
+}
+
+func (s *Server) forgetOverview() {
+	s.ovMu.Lock()
+	s.ovOK = false
+	s.ovMu.Unlock()
 }
 
 // Handler is the whole site, behind the guard.
@@ -235,9 +297,13 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			deny(w, r)
 			return
 		}
+		slot := s.sem
+		if r.URL.Path == "/api/events" {
+			slot = s.streams // an open stream must not take the place of a cancel
+		}
 		select {
-		case s.sem <- struct{}{}:
-			defer func() { <-s.sem }()
+		case slot <- struct{}{}:
+			defer func() { <-slot }()
 		default:
 			http.Error(w, "too many requests", http.StatusServiceUnavailable)
 			return
@@ -307,6 +373,7 @@ func (s *Server) exchange(w http.ResponseWriter, r *http.Request, t string) {
 		deny(w, r)
 		return
 	}
+	s.exchangedOnce.Do(func() { close(s.exchanged) })
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: s.cookie, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
 	// Not a redirect: when the key comes from a page of another origin (the start file is a file://), the browser sends the
 	// requests of the whole redirect chain as cross-site and leaves out a SameSite=Strict cookie. A page of this server
@@ -316,7 +383,7 @@ func (s *Server) exchange(w http.ResponseWriter, r *http.Request, t string) {
 }
 
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
-	ov, err := s.cfg.Backend.Overview(r.Context())
+	ov, err := s.snapshot(r.Context())
 	if err != nil {
 		fail(w, http.StatusInternalServerError, s.show(err.Error()))
 		return
@@ -336,7 +403,7 @@ func (s *Server) show(text string) string { return s.cfg.Redact(s.cfg.Clean(text
 
 // known looks the machine up in the overview: only names that the files name get as far as a command.
 func (s *Server) known(ctx context.Context, machine, group string) bool {
-	ov, err := s.cfg.Backend.Overview(ctx)
+	ov, err := s.snapshot(ctx)
 	if err != nil {
 		return false
 	}
@@ -370,7 +437,7 @@ func (s *Server) log(w http.ResponseWriter, r *http.Request) {
 // knownName is true for a machine that the files name, and for "" (the events of all). Either way it reads the overview,
 // which is also where the backend learns the secrets of the settings that the output must not show.
 func (s *Server) knownName(ctx context.Context, machine string) bool {
-	ov, err := s.cfg.Backend.Overview(ctx)
+	ov, err := s.snapshot(ctx)
 	if err != nil {
 		return false
 	}

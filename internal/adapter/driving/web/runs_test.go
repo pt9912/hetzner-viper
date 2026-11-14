@@ -72,6 +72,7 @@ func (s *spawns) next(t *testing.T) *proc {
 
 // site is a server that really listens, and a client that went through the exchange.
 type site struct {
+	fake  *fake
 	s     *web.Server
 	c     *http.Client
 	base  string
@@ -83,7 +84,7 @@ func live(t *testing.T, readonly bool) *site { return liveWith(t, readonly, nil)
 func liveWith(t *testing.T, readonly bool, tune func(*web.Config)) *site {
 	t.Helper()
 	f := newFake()
-	f.overview.NATS = []web.NATSGroup{{Name: "dev", Machines: []string{"dev1", "dev2"}, Operator: true}}
+	f.overview.NATS = []web.NATSGroup{{Name: "dev", Machines: []string{"dev1", "dev2"}, Operator: true, FileMax: 8 << 20}, {Name: "bare", Machines: []string{"dev1"}}}
 	f.overview.Groups = []web.Group{{Name: "dev", Machines: []string{"dev1", "dev2"}}}
 	f.overview.Machines = append(f.overview.Machines, web.Machine{Name: "dev2", Group: "dev"})
 	sp := &spawns{ch: make(chan *proc, 8)}
@@ -101,7 +102,7 @@ func liveWith(t *testing.T, readonly bool, tune func(*web.Config)) *site {
 	go func() { _ = s.Serve(ctx, ln); close(done) }()
 	jar, _ := cookiejar.New(nil)
 	c := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	st := &site{s: s, c: c, base: "http://" + s.Host(), spawn: sp}
+	st := &site{fake: f, s: s, c: c, base: "http://" + s.Host(), spawn: sp}
 	resp, err := c.Get(s.URL())
 	if err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatal(err, resp)

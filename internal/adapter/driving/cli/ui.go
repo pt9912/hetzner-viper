@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -52,12 +53,22 @@ func nativeUI(o *options) error {
 	go func() { done <- srv.Serve(ctx, ln) }()
 	fmt.Fprintf(h.Stdout, "viper ui: http://%s/ (Ctrl-C ends it)\n", srv.Host())
 	if o.readonly {
-		fmt.Fprintln(h.Stdout, "viper ui: read only (no preflight, up or down)")
+		fmt.Fprintln(h.Stdout, "viper ui: read only (no preflight, up, down or NATS)")
 	}
 	if o.noOpen {
 		fmt.Fprintf(h.Stdout, "viper ui: open this address in your browser within %d minutes (it works once): %s\n", int(cfg.TokenTTL.Minutes()), srv.URL())
-	} else if dir := openStart(h, srv); dir != "" {
-		defer func() { _ = os.RemoveAll(dir) }()
+	} else {
+		start := make(chan string, 1)
+		go func() { start <- openStart(h, srv) }() // a program that opens the browser may take its time: Ctrl-C does not wait for it
+		defer func() {
+			select {
+			case dir := <-start:
+				if dir != "" {
+					_ = os.RemoveAll(dir)
+				}
+			case <-time.After(3 * time.Second): // the opener is still busy: the file goes with the temp directory of the system
+			}
+		}()
 	}
 	select {
 	case err := <-done:
@@ -79,12 +90,22 @@ func openStart(h *Host, srv *web.Server) string {
 		if err = os.WriteFile(file, []byte(page), 0o600); err == nil {
 			name, args := browserCommand(runtime.GOOS, file)
 			_, err = h.OutputTool(name, args...)
+			go removeAfterExchange(srv, dir)
 		}
 	}
 	if err != nil {
 		fmt.Fprintf(h.Stderr, "viper ui: could not open the browser (%v); open this address within a minute: %s\n", err, srv.URL())
 	}
 	return dir
+}
+
+// removeAfterExchange deletes the start file as soon as the key in it is used up (or would be too old to work anyway).
+func removeAfterExchange(srv *web.Server, dir string) {
+	select {
+	case <-srv.Exchanged():
+	case <-time.After(2 * time.Minute):
+	}
+	_ = os.RemoveAll(dir)
 }
 
 // browserCommand is the program that opens a file in the default program of the system. Never cmd /c start: it reads the
@@ -149,14 +170,15 @@ func (b *uiBackend) natsGroups(ov web.Overview) []web.NATSGroup {
 		if g.Error != "" {
 			continue
 		}
-		on := false
+		on, fileMax := false, int64(0)
 		for _, m := range ov.Machines {
 			if m.Group == g.Name && m.NATS != "" {
 				on = true
+				fileMax = max(fileMax, m.FileMax) // a setting of the group file: every machine says the same
 			}
 		}
 		if on {
-			out = append(out, web.NATSGroup{Name: g.Name, Machines: g.Machines, Operator: hasOperatorKey(state, g.Name)})
+			out = append(out, web.NATSGroup{Name: g.Name, Machines: g.Machines, Operator: hasOperatorKey(state, g.Name), FileMax: fileMax})
 		}
 	}
 	return out
@@ -181,6 +203,9 @@ func (b *uiBackend) machine(name, group string) web.Machine {
 	m.Provider, m.Type, m.Location = c.Provider, c.ServerType, c.ServerLocation
 	if c.NATS.Enabled {
 		m.NATS = c.NATS.Group
+		if c.NATS.Objects {
+			m.FileMax = c.NATS.ObjectsFileMax
+		}
 	}
 	m.State = markState(c)
 	return m
@@ -231,7 +256,8 @@ func nilIfStatus(err error) error {
 	if err == nil {
 		return nil
 	}
-	if _, ok := err.(exitStatus); ok {
+	var es exitStatus
+	if errors.As(err, &es) {
 		return nil
 	}
 	return err

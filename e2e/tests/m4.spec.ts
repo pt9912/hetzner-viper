@@ -98,14 +98,15 @@ test('settings: names of every file, values only where it is safe, never a crede
 test('a refused page and a missing page tell the person what to do', async ({ browser, page }) => {
   const ctx = await browser.newContext();
   const bare = await ctx.newPage();
-  const res = await bare.goto(ui.base + '/');
+  const res = await bare.goto(ui.base + '/', { waitUntil: 'commit' }); // (Playwright's Firefox does not always report "load" of an error page)
   expect(res?.status()).toBe(403);
   await expect(bare.locator('h1')).toContainText('Not allowed');
   await expect(bare.locator('body')).toContainText('address that viper printed');
   await expect(bare.locator('body')).toContainText('Adresse, die viper');
   await ctx.close();
   await page.goto(ui.start);
-  const missing = await page.goto(ui.base + '/nothing-here');
+  await expect(page.locator('#machines tbody tr')).toHaveCount(3); // the exchange page has moved on
+  const missing = await page.goto(ui.base + '/nothing-here', { waitUntil: 'commit' });
   expect(missing?.status()).toBe(404);
   await expect(page.locator('h1')).toContainText('Not found');
 });

@@ -88,5 +88,11 @@ test.describe('read only', () => {
     await expect(page.getByRole('button', { name: 'Down web', exact: true })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Check web', exact: true })).toBeEnabled();
     await expect(page.locator('#version')).toContainText('read only');
+    // NATS is an action as well: the page offers none, and does not call the refusal a lost session
+    await page.click('#tab-nats');
+    for (const id of ['#nats-peers', '#nats-topics', '#nats-listen', '#nats-send button[type=submit]', '#nats-fetch button[type=submit]']) {
+      await expect(page.locator(id)).toBeDisabled();
+    }
+    await expect(page.locator('#banner')).toBeHidden();
   });
 });

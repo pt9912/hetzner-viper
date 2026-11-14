@@ -19,18 +19,16 @@ import (
 type uploadTable struct {
 	mu    sync.Mutex
 	dir   string
-	files map[string]upload
+	files map[string]*upload
 }
 
 type upload struct {
 	path, kind string
-	at         time.Time
+	ready      bool        // the file has arrived; before that the entry only holds the place
+	timer      *time.Timer // deletes a file that nobody sends
 }
 
-const (
-	maxUploads = 8
-	uploadLife = 30 * time.Minute
-)
+const maxUploads = 8
 
 var kindRe = regexp.MustCompile(`^(pdf|image|zip)$`)
 
@@ -53,7 +51,7 @@ func cleanFileName(n string) string {
 	return out
 }
 
-// POST /api/upload?kind=pdf|image|zip&name=report.pdf, the file as the body.
+// POST /api/upload?kind=pdf|image|zip&group=dev&name=report.pdf, the file as the body.
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.Readonly || s.cfg.Spawn == nil {
 		fail(w, http.StatusForbidden, "this page is read only")
@@ -64,39 +62,74 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "the kind is pdf, image or zip")
 		return
 	}
+	limit, ok := s.uploadLimit(w, r)
+	if !ok {
+		return
+	}
+	id, sub, ok := s.reserveUpload(w)
+	if !ok {
+		return
+	}
+	path := filepath.Join(sub, cleanFileName(r.URL.Query().Get("name")))
+	if err := save(w, r, sub, path, limit); err != nil {
+		s.uploads.discard(id)
+		return
+	}
 	t := &s.uploads
 	t.mu.Lock()
-	t.expire()
-	if len(t.files) >= maxUploads {
-		t.mu.Unlock()
-		fail(w, http.StatusServiceUnavailable, "too many files waiting; send one first")
-		return
+	if u := t.files[id]; u != nil { // the table may have been emptied meanwhile (the server ends)
+		u.path, u.kind, u.ready = path, kind, true
+		u.timer = time.AfterFunc(s.cfg.UploadLife, func() { t.discard(id) })
 	}
-	if t.dir == "" {
-		dir, err := os.MkdirTemp("", "viper-ui-up-")
-		if err != nil {
-			t.mu.Unlock()
-			fail(w, http.StatusInternalServerError, "no folder for the file")
-			return
-		}
-		t.dir, t.files = dir, map[string]upload{}
-	}
-	id := random()
-	sub := filepath.Join(t.dir, id)
-	t.mu.Unlock()
-	path := filepath.Join(sub, cleanFileName(r.URL.Query().Get("name")))
-	if err := s.save(w, r, sub, path); err != nil {
-		_ = os.RemoveAll(sub)
-		return
-	}
-	t.mu.Lock()
-	t.files[id] = upload{path: path, kind: kind, at: s.cfg.Now()}
 	t.mu.Unlock()
 	reply(w, map[string]any{"id": id})
 }
 
-// save writes the body to the file, at most MaxUpload bytes.
-func (s *Server) save(w http.ResponseWriter, r *http.Request, sub, path string) error {
+// uploadLimit is the largest file for the group of the request: the limit of the group (its object store, which a group
+// without NATS_OBJECTS does not have) and the limit of the page.
+func (s *Server) uploadLimit(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	ov, err := s.snapshot(r.Context())
+	if err != nil {
+		fail(w, http.StatusInternalServerError, s.show(err.Error()))
+		return 0, false
+	}
+	g, ok := findNATS(ov, r.URL.Query().Get("group"))
+	if !ok {
+		fail(w, http.StatusBadRequest, "no such NATS group")
+		return 0, false
+	}
+	if g.FileMax <= 0 {
+		fail(w, http.StatusConflict, "this group has no object store (NATS_OBJECTS=true): files cannot be sent")
+		return 0, false
+	}
+	return min(g.FileMax, s.cfg.MaxUpload), true
+}
+
+// reserveUpload takes a place in the table (before the file is written, so that many uploads at once cannot pass the limit)
+// and makes the folder of the file.
+func (s *Server) reserveUpload(w http.ResponseWriter) (id, sub string, ok bool) {
+	t := &s.uploads
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.files) >= maxUploads {
+		fail(w, http.StatusServiceUnavailable, "too many files waiting; send one first")
+		return "", "", false
+	}
+	if t.dir == "" {
+		dir, err := os.MkdirTemp("", "viper-ui-up-")
+		if err != nil {
+			fail(w, http.StatusInternalServerError, "no folder for the file")
+			return "", "", false
+		}
+		t.dir, t.files = dir, map[string]*upload{}
+	}
+	id = random()
+	t.files[id] = &upload{}
+	return id, filepath.Join(t.dir, id), true
+}
+
+// save writes the body to the file, at most limit bytes.
+func save(w http.ResponseWriter, r *http.Request, sub, path string, limit int64) error {
 	if err := os.Mkdir(sub, 0o700); err != nil {
 		fail(w, http.StatusInternalServerError, "no folder for the file")
 		return err
@@ -106,14 +139,14 @@ func (s *Server) save(w http.ResponseWriter, r *http.Request, sub, path string) 
 		fail(w, http.StatusInternalServerError, "no file")
 		return err
 	}
-	_, err = io.Copy(f, http.MaxBytesReader(w, r.Body, s.cfg.MaxUpload))
+	_, err = io.Copy(f, http.MaxBytesReader(w, r.Body, limit))
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
 	if err != nil {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
-			fail(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("the file has more than %d MiB", s.cfg.MaxUpload>>20))
+			fail(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("the file has more than %d MiB (NATS_OBJECTS_FILE_MAX of the group)", limit>>20))
 		} else {
 			fail(w, http.StatusBadRequest, "the file did not arrive")
 		}
@@ -121,28 +154,47 @@ func (s *Server) save(w http.ResponseWriter, r *http.Request, sub, path string) 
 	return err
 }
 
-// expire deletes the files nobody sent in time; the caller holds the lock.
-func (t *uploadTable) expire() {
-	for id, u := range t.files {
-		if time.Since(u.at) > uploadLife {
-			_ = os.RemoveAll(filepath.Dir(u.path))
-			delete(t.files, id)
-		}
-	}
-}
-
 // take hands the file to a run: it is not offered again.
 func (t *uploadTable) take(id string) (upload, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	u, ok := t.files[id]
+	u := t.files[id]
+	if u == nil || !u.ready {
+		return upload{}, false
+	}
 	delete(t.files, id)
-	return u, ok
+	if u.timer != nil {
+		u.timer.Stop()
+	}
+	return *u, true
+}
+
+// discard deletes a file that was handed over and is not used (or whose upload failed).
+func (t *uploadTable) discard(id string) {
+	t.mu.Lock()
+	u := t.files[id]
+	delete(t.files, id)
+	dir := t.dir
+	t.mu.Unlock()
+	if u == nil {
+		return
+	}
+	if u.timer != nil {
+		u.timer.Stop()
+	}
+	if dir != "" {
+		_ = os.RemoveAll(filepath.Join(dir, id))
+	}
 }
 
 func (t *uploadTable) removeAll() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	for _, u := range t.files {
+		if u.timer != nil {
+			u.timer.Stop()
+		}
+	}
 	if t.dir != "" {
 		_ = os.RemoveAll(t.dir)
 	}

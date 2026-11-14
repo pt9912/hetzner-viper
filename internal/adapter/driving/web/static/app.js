@@ -21,7 +21,7 @@
     const res = await fetch(path, opts);
     let data = {};
     try { data = await res.json(); } catch (e) { data = {}; }
-    if (res.status === 403) { banner(t('banner.session')); }
+    if (res.status === 403 && !data.error) { banner(t('banner.session')); } // the answer of the guard has no JSON; a refusal of an action has
     if (!res.ok) { throw new Error(data.error || ('HTTP ' + res.status)); }
     return data;
   }
@@ -66,7 +66,7 @@
       for (const a of ACTIONS) {
         act.appendChild(button(t('btn.' + a), t('aria.' + a, m.name), () => startRun({ action: a, machine: m.name, group: m.group || '' }), !!m.error || overview.readonly));
       }
-      act.appendChild(button(t('btn.log'), t('aria.log', m.name), () => { show('logs'); $('log-machine').value = m.name; loadLog(); }));
+      act.appendChild(button(t('btn.log'), t('aria.log', m.name), () => { $('log-machine').value = m.name; show('logs'); }));
       body.appendChild(tr);
     }
     $('overview-note').textContent = overview.machines.length === 0 ? t('note.none') : t('note.state');
@@ -145,7 +145,10 @@
     }
   }
 
+  let logSeq = 0;
+
   async function loadLog() {
+    const seq = ++logSeq; // an answer that comes late must not replace a newer one
     const machine = $('log-machine').value;
     const full = $('log-full').checked && machine !== '';
     $('log-status').textContent = t('log.loading');
@@ -154,6 +157,7 @@
       if (machine) { q.set('machine', machine); }
       if (full) { q.set('full', '1'); }
       const r = await api('/api/log?' + q.toString());
+      if (seq !== logSeq) { return; }
       logText = r.text + (r.truncated ? '\n' + t('cut') : '');
       $('log-status').textContent = '';
       filterLog();
@@ -222,6 +226,18 @@
     natsGroupChanged();
   }
 
+  // no action while the page is read only; and no file for a group that has no object store
+  function natsEnabled() {
+    const g = natsGroup();
+    const off = !!overview.readonly || !g;
+    for (const id of ['nats-peers', 'nats-topics', 'nats-listen', 'nats-timeout', 'nats-listen-topic', 'nats-listen-all', 'nats-kind', 'nats-to', 'nats-topic', 'nats-text', 'nats-yes', 'nats-id', 'nats-sha', 'nats-from']) { $(id).disabled = off; }
+    for (const f of ['nats-send', 'nats-fetch']) { for (const el of $(f).querySelectorAll('button')) { el.disabled = off; } }
+    const noFile = off || !g.file_max;
+    $('nats-file').disabled = noFile;
+    $('nats-nofile').hidden = !g || off || g.file_max > 0;
+    if (!off) { natsKindChanged(); }
+  }
+
   function natsGroupChanged() {
     const g = natsGroup();
     if (!g) { return; }
@@ -236,11 +252,12 @@
     if (g.machines.includes(keepFrom)) { from.value = keepFrom; }
     if (g.machines.includes(keepTo)) { to.value = keepTo; }
     $('nats-mode').textContent = g.operator ? t('nats.mode.operator') : t('nats.mode.machine', g.name);
-    natsKindChanged();
+    natsEnabled();
   }
 
   function natsKindChanged() {
     const kind = $('nats-kind').value;
+    if (overview.readonly) { return; }
     $('nats-to').disabled = kind === 'broadcast';
     $('nats-topic').disabled = kind !== 'broadcast';
   }
@@ -249,7 +266,6 @@
     const g = natsGroup();
     if (!g) { return; }
     const req = Object.assign({ action: 'nats', nats: g.name }, extra);
-    fetching = extra.sub === 'fetch';
     if ($('nats-from').value) { req.from = $('nats-from').value; }
     await startRun(req);
   }
@@ -266,10 +282,11 @@
     try {
       if (file) {
         status.textContent = t('nats.handing');
-        const res = await fetch('/api/upload?kind=' + fileKind(file) + '&name=' + encodeURIComponent(file.name), {
+        const res = await fetch('/api/upload?kind=' + fileKind(file) + '&group=' + encodeURIComponent(natsGroup().name) + '&name=' + encodeURIComponent(file.name), {
           method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/octet-stream', 'X-Viper-UI': '1' }, body: file,
         });
         const data = await res.json().catch(() => ({}));
+        if (res.status === 403 && !data.error) { banner(t('banner.session')); }
         if (!res.ok) { throw new Error(data.error || 'HTTP ' + res.status); }
         req.upload = data.id;
       }
@@ -309,11 +326,12 @@
 
   let natsCarry = '';
 
-  function showNatsOutput(out, text) {
+  function showNatsOutput(out, text, last) {
     natsCarry += text;
     const lines = natsCarry.split('\n');
-    natsCarry = lines.pop();
+    natsCarry = last ? '' : lines.pop(); // at the end of the run the last line is shown too
     for (const line of lines) {
+      if (line === '') { continue; }
       if (!line.startsWith('{')) { out.appendChild(document.createTextNode(line + '\n')); continue; }
       const r = natsText(line);
       out.appendChild(document.createTextNode(r.text + '\n'));
@@ -327,7 +345,6 @@
   // ---- runs: viper itself, started by the server; the page attaches to its output ----
   let source = null;
   let runs = [];
-  let fetching = false;
   let current = '';
 
   async function startRun(req) {
@@ -349,7 +366,7 @@
 
   function runLabel(run) {
     const st = run.state === 'done' ? t('run.state.done', run.code) : t('run.state.' + run.state);
-    return t('run.item', run.action, run.machine || run.group || run.nats || '', st);
+    return t('run.item', run.action, run.machine || run.group || [run.nats, run.sub].filter(Boolean).join(' '), st);
   }
 
   async function loadRuns() {
@@ -378,7 +395,9 @@
     source = new EventSource('/api/events?id=' + encodeURIComponent(id));
     natsCarry = '';
     $('run-download').hidden = true;
-    const action = (runs.find((r) => r.id === id) || {}).action;
+    const info = runs.find((r) => r.id === id) || {};
+    const action = info.action;
+    const isFetch = action === 'nats' && info.sub === 'fetch';
     source.addEventListener('out', (ev) => {
       const e = JSON.parse(ev.data);
       const out = $('run-output');
@@ -394,7 +413,8 @@
       $('run-cancel').disabled = st.state === 'done' || st.state === 'cancelling';
       if (st.state === 'waiting') { $('run-answer').focus(); }
       if (st.state === 'done') {
-        if (action === 'nats' && st.code === 0 && fetching) { $('run-download-link').href = '/api/download?id=' + encodeURIComponent(id); $('run-download').hidden = false; }
+        if (action === 'nats') { showNatsOutput($('run-output'), '', true); }
+        if (isFetch && st.code === 0) { $('run-download-link').href = '/api/download?id=' + encodeURIComponent(id); $('run-download').hidden = false; }
         source.close(); source = null; load();
       }
       loadRuns();

@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 )
 
 type fake struct {
+	calls    atomic.Int32 // how often the overview was read
 	overview web.Overview
 	checks   chan struct{} // a check waits for it, if set
 	entered  chan struct{} // a check says that it began
@@ -23,7 +26,10 @@ type fake struct {
 	asked    []string
 }
 
-func (f *fake) Overview(context.Context) (web.Overview, error) { return f.overview, nil }
+func (f *fake) Overview(context.Context) (web.Overview, error) {
+	f.calls.Add(1)
+	return f.overview, nil
+}
 
 func (f *fake) Check(_ context.Context, machine, group string, out io.Writer) (int, error) {
 	f.mu.Lock()
@@ -294,12 +300,12 @@ func TestOneCheckPerMachineAtATime(t *testing.T) {
 
 // The pages: no inline script or style, no eval, no innerHTML, nothing from elsewhere.
 func TestThePagesHaveNothingThatTheModelForbids(t *testing.T) {
-	n := 0
+	var names []string
 	err := fs.WalkDir(web.Pages(), ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
-		n++
+		names = append(names, p)
 		b, err := fs.ReadFile(web.Pages(), p)
 		if err != nil {
 			return err
@@ -319,8 +325,8 @@ func TestThePagesHaveNothingThatTheModelForbids(t *testing.T) {
 		}
 		return nil
 	})
-	if err != nil || n != 5 {
-		t.Fatalf("%d files, %v", n, err)
+	if want := []string{"app.js", "favicon.svg", "i18n.js", "index.html", "style.css"}; err != nil || !slices.Equal(names, want) {
+		t.Fatalf("the files of the pages are %v (%v), not %v", names, err, want)
 	}
 }
 

@@ -44,7 +44,7 @@ test('a message is sent by text and file: the file is handed over first, the tex
     seen.run = route.request().postDataJSON();
     route.fulfill({ contentType: 'application/json', body: '{"id":"msg"}' });
   });
-  await page.route('**/api/runs', (r) => r.fulfill({ contentType: 'application/json', body: '{"runs":[{"id":"msg","action":"nats","state":"done","code":0}]}' }));
+  await page.route('**/api/runs', (r) => r.fulfill({ contentType: 'application/json', body: '{"runs":[{"id":"msg","action":"nats","sub":"send","nats":"dev","state":"done","code":0}]}' }));
   await page.route('**/api/events?id=msg', (r) => r.fulfill({ contentType: 'text/event-stream', body: sse([['out', { seq: 0, text: '{"event":"sent","att_id":"o1","att_name":"r.pdf","att_type":"pdf","att_size":12}\n' }], ['state', { state: 'done', code: 0 }]]) }));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'e2e-file-'));
   const file = path.join(dir, 'report.pdf');
@@ -72,7 +72,7 @@ test('what listen shows is text; a file in a message offers Fetch, and a fetched
     n += 1;
     route.fulfill({ contentType: 'application/json', body: JSON.stringify({ id: n === 1 ? 'lis' : 'fet' }) });
   });
-  await page.route('**/api/runs', (r) => r.fulfill({ contentType: 'application/json', body: '{"runs":[{"id":"lis","action":"nats","state":"running","code":0},{"id":"fet","action":"nats","state":"done","code":0}]}' }));
+  await page.route('**/api/runs', (r) => r.fulfill({ contentType: 'application/json', body: '{"runs":[{"id":"lis","action":"nats","sub":"listen","nats":"dev","state":"running","code":0},{"id":"fet","action":"nats","sub":"fetch","nats":"dev","state":"done","code":0}]}' }));
   const sha = 'ab'.repeat(32);
   const msg = { event: 'message', via: 'out', from: 'a', to: 'b', text: '<img src=x onerror=window.pwned=1>', att_id: 'obj_9', att_name: 'p.pdf', att_type: 'pdf', att_size: 5, att_sha256: sha };
   await page.route('**/api/events?id=lis', (r) => r.fulfill({ contentType: 'text/event-stream', body: sse([['out', { seq: 0, text: JSON.stringify(msg) + '\n' }], ['state', { state: 'running', code: 0 }]]) }));
@@ -99,4 +99,13 @@ test('read only: the page cannot hand over a file', async () => {
   const cookie = (res.headers.get('set-cookie') ?? '').split(';')[0];
   const up = await fetch(ui.base + '/api/upload?kind=pdf', { method: 'POST', headers: { cookie, 'Content-Type': 'application/octet-stream', 'X-Viper-UI': '1', Origin: ui.base }, body: 'x' });
   expect(up.status).toBe(403);
+});
+
+test('a group without an object store takes no file', async ({ page }) => {
+  await ui.stop();
+  ui = await startUI([], 30, false, { objects: false });
+  await page.goto(ui.start);
+  await page.click('#tab-nats');
+  await expect(page.locator('#nats-file')).toBeDisabled();
+  await expect(page.locator('#nats-nofile')).toBeVisible();
 });

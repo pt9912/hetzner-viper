@@ -66,7 +66,10 @@ func statusOf(cmd *exec.Cmd, err error) int {
 		return 0 // exitCode(nil) is 1: it is meant for an error
 	}
 	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil {
-		return cmd.ProcessState.ExitCode()
+		if code := cmd.ProcessState.ExitCode(); code >= 0 {
+			return code
+		}
+		return 130 // ended by a signal, as exitCode says it
 	}
 	return exitCode(err)
 }

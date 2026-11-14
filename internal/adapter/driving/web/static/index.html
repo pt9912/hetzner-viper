@@ -117,6 +117,7 @@
         <div class="row">
           <label for="nats-file" data-i18n="nats.file">File (PDF, image or ZIP)</label>
           <input type="file" id="nats-file" accept=".pdf,.zip,image/*">
+          <span id="nats-nofile" class="muted" data-i18n="nats.nofile" hidden>No object store</span>
           <label><input type="checkbox" id="nats-yes"> <span data-i18n="nats.yes">send anyway (--yes)</span></label>
         </div>
         <div class="row"><button type="submit" data-i18n="nats.send">Send</button><span id="nats-send-status" class="muted" role="status"></span></div>

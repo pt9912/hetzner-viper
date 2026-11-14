@@ -1,15 +1,18 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -31,11 +34,13 @@ type Spawner func(argv []string) (Proc, error)
 const (
 	flushAfter     = 600 * time.Millisecond // a line that is not finished after this long is shown: it is a question
 	killAfter      = 20 * time.Second       // Ctrl-C is a request; after this the process is killed
-	maxRuns        = 4                      // running at the same time
+	maxRuns        = 4                      // running at the same time, of the actions; the NATS runs have as many of their own
+	minWordHeld    = 8                      // the last word of an unfinished line is kept back (see splitWord) when it is this long
 	keepFinished   = 20
 	maxRetained    = 1 << 20 // what of the output of a run is kept for a page that attaches late
 	maxAnswer      = 256
 	maxPendingLine = 4096
+	keepTail       = 128 // of a line without a blank that is cut: a secret is not longer
 )
 
 // The states of a run.
@@ -56,23 +61,26 @@ type run struct {
 	Action  string   `json:"action"`
 	Machine string   `json:"machine,omitempty"`
 	Group   string   `json:"group,omitempty"`
-	Names   []string `json:"-"` // the machines the run holds
+	Sub     string   `json:"sub,omitempty"`  // a NATS run: the subcommand
+	NATS    string   `json:"nats,omitempty"` // and the group
+	Names   []string `json:"-"`              // the machines the run holds
 
-	mu      sync.Mutex
-	proc    Proc
-	events  []event
-	size    int
-	next    int
-	state   string
-	code    int
-	started time.Time
-	notify  chan struct{} // closed and replaced at every change
-	kill    *time.Timer
-	files   *runFiles // what the run has on this computer: the text, a file to send, the folder of a fetch
+	mu            sync.Mutex
+	proc          Proc // set under mu, once, after the run is in the table
+	pendingCancel bool // a cancel that came before the process was there
+	events        []event
+	size          int
+	next          int
+	state         string
+	code          int
+	started       time.Time
+	notify        chan struct{} // closed and replaced at every change
+	kill          *time.Timer
+	files         *runFiles // what the run has on this computer: the text, a file to send, the folder of a fetch
 }
 
 // view is what a page needs: the events from the cursor on, the state, and a channel that closes at the next change.
-func (r *run) view(cursor int) (evs []event, state string, code int, ch <-chan struct{}) {
+func (r *run) view(cursor int) (evs []event, cut bool, state string, code int, ch <-chan struct{}) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, e := range r.events {
@@ -80,7 +88,41 @@ func (r *run) view(cursor int) (evs []event, state string, code int, ch <-chan s
 			evs = append(evs, e)
 		}
 	}
-	return evs, r.state, r.code, r.notify
+	// events that were dropped to keep the memory small: the page is told
+	cut = len(evs) > 0 && evs[0].Seq > cursor
+	return evs, cut, r.state, r.code, r.notify
+}
+
+// setProc gives the run its process (once); a cancel that came first is carried out now.
+func (r *run) setProc(p Proc) {
+	r.mu.Lock()
+	r.proc = p
+	pending := r.pendingCancel
+	if pending && r.kill == nil {
+		r.kill = time.AfterFunc(killAfter, func() { _ = p.Kill() })
+	}
+	r.mu.Unlock()
+	if pending {
+		_ = p.Interrupt()
+	}
+}
+
+func (r *run) process() Proc { //nolint:ireturn // the process of the run is what the cli gave: any Proc
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.proc
+}
+
+// claimQuestion takes the question the run asks (waiting -> running); only the first of two answers gets it.
+func (r *run) claimQuestion() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.state != stateWaiting {
+		return false
+	}
+	r.state = stateRunning
+	r.changed()
+	return true
 }
 
 func (r *run) changed() {
@@ -132,6 +174,8 @@ type info struct {
 	Action  string `json:"action"`
 	Machine string `json:"machine,omitempty"`
 	Group   string `json:"group,omitempty"`
+	Sub     string `json:"sub,omitempty"`
+	NATS    string `json:"nats,omitempty"`
 	State   string `json:"state"`
 	Code    int    `json:"code"`
 	Started string `json:"started"`
@@ -140,7 +184,7 @@ type info struct {
 func (r *run) info() info {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return info{r.ID, r.Action, r.Machine, r.Group, r.state, r.code, r.started.Format(time.RFC3339)}
+	return info{r.ID, r.Action, r.Machine, r.Group, r.Sub, r.NATS, r.state, r.code, r.started.Format(time.RFC3339)}
 }
 
 // Runs: a table on the server, not in a page: a page that is closed ends nothing, and a new one finds the runs again.
@@ -211,12 +255,24 @@ func runArgv(req runRequest, ov Overview) (argv, names []string, err error) {
 	return argv, names, nil
 }
 
-// repoUsable: a repository belongs to up and preflight, and is one word without control characters that is no option.
+// repoUsable: a repository belongs to up and preflight, and is one word without control characters that is no option and has no
+// credentials in it (the preflight refuses those too; a token must not reach a protocol).
 func repoUsable(req runRequest) bool {
-	if req.Repo == "" {
+	r := req.Repo
+	if r == "" {
 		return true
 	}
-	return req.Action != "down" && len(req.Repo) <= 512 && !strings.HasPrefix(req.Repo, "-") && !strings.ContainsFunc(req.Repo, func(c rune) bool { return c <= ' ' || c == 0x7f })
+	if req.Action == "down" || len(r) > 512 || strings.HasPrefix(r, "-") || strings.ContainsFunc(r, func(c rune) bool { return unicode.IsControl(c) || unicode.IsSpace(c) }) {
+		return false
+	}
+	if i := strings.Index(r, "://"); i >= 0 {
+		rest := r[i+3:]
+		if j := strings.IndexByte(rest, '/'); j >= 0 {
+			rest = rest[:j]
+		}
+		return !strings.Contains(rest, "@")
+	}
+	return true
 }
 
 func findGroup(ov Overview, name string) (Group, bool) {
@@ -249,11 +305,17 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	ov, err := s.cfg.Backend.Overview(r.Context())
+	ov, err := s.snapshot(r.Context())
 	if err != nil {
 		fail(w, http.StatusInternalServerError, s.show(err.Error()))
 		return
 	}
+	started := false
+	defer func() {
+		if !started && req.Upload != "" {
+			s.uploads.discard(req.Upload) // a run that was refused takes no file with it
+		}
+	}()
 	var argv, names []string
 	var files *runFiles
 	if req.Action == "nats" {
@@ -265,9 +327,13 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	run := &run{files: files, ID: random(), Action: req.Action, Machine: req.Machine, Group: req.Group, Names: names, state: stateRunning, started: s.cfg.Now(), notify: make(chan struct{})}
-	if req.Scope == "group" {
-		run.Machine = ""
+	run := &run{files: files, ID: random(), Action: req.Action, Names: names, state: stateRunning, started: s.cfg.Now(), notify: make(chan struct{})}
+	if req.Action == "nats" {
+		run.Sub, run.NATS = req.Sub, req.NATS // checked by natsArgv: names of the overview and fixed words
+	} else if req.Scope == "group" {
+		run.Group = req.Group
+	} else {
+		run.Machine, run.Group = req.Machine, req.Group // found in the overview
 	}
 	if code, msg := s.hold(run); code != 0 {
 		files.remove()
@@ -281,8 +347,9 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, s.show(err.Error()))
 		return
 	}
-	run.proc = proc
-	run.add("$ viper " + strings.Join(argv, " ") + "\n")
+	started = true
+	run.add(s.show("$ viper " + strings.Join(argv, " ") + "\n"))
+	run.setProc(proc)
 	go s.pump(run)
 	reply(w, map[string]string{"id": run.ID})
 }
@@ -294,7 +361,7 @@ func (s *Server) hold(r *run) (int, string) {
 	defer t.mu.Unlock()
 	active := 0
 	for _, o := range t.runs {
-		if o.current() != stateDone {
+		if o.current() != stateDone && (o.Action == "nats") == (r.Action == "nats") {
 			active++
 		}
 	}
@@ -349,7 +416,7 @@ func (s *Server) release(r *run) {
 		}
 	}
 	for i, o := range t.runs {
-		if o == r && r.proc == nil { // never started
+		if o == r && r.process() == nil { // never started
 			t.runs = append(t.runs[:i], t.runs[i+1:]...)
 			break
 		}
@@ -367,10 +434,14 @@ func (s *Server) lookupRun(id string) *run {
 	return nil
 }
 
-// pump shows the output as it comes: whole lines at once, a line that stays open (a question) after a short silence.
+// pump shows the output as it comes: whole lines at once, and a line that stays open (a question) after a short silence. A long
+// word at the end of such a line is kept back for one more silence first: it may be the first half of a token that a
+// redaction would not find in two pieces.
 func (s *Server) pump(r *run) {
-	chunks := readChunks(r.proc.Output())
+	proc := r.process()
+	chunks := readChunks(proc.Output())
 	var pending []byte
+	held := false // the last word of pending was kept back once already
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
 	defer timer.Stop()
@@ -381,7 +452,7 @@ func (s *Server) pump(r *run) {
 				chunks = nil
 				break
 			}
-			pending = s.lines(r, append(pending, c...))
+			pending, held = s.lines(r, append(pending, c...)), false
 			if len(pending) > 0 {
 				timer.Reset(flushAfter)
 			} else {
@@ -389,17 +460,51 @@ func (s *Server) pump(r *run) {
 			}
 			r.setState(stateRunning)
 		case <-timer.C:
+			pending, held = s.flushOpenLine(r, pending, held)
 			if len(pending) > 0 {
-				r.add(s.show(string(pending)))
-				pending = nil
-				r.setState(stateWaiting)
+				timer.Reset(flushAfter)
 			}
 		}
 	}
 	if len(pending) > 0 {
 		r.add(s.show(string(pending)))
 	}
-	s.finish(r, r.proc.Wait())
+	s.finish(r, proc.Wait())
+}
+
+// flushOpenLine shows an unfinished line after a silence: the question. Its last long word waits for one more silence.
+func (s *Server) flushOpenLine(r *run, pending []byte, held bool) (rest []byte, nowHeld bool) {
+	if len(pending) == 0 {
+		return nil, false
+	}
+	emit, keep := pending, []byte(nil)
+	if !held {
+		emit, keep = splitWord(pending)
+	}
+	if len(emit) > 0 {
+		r.add(s.show(string(emit)))
+	}
+	if len(keep) > 0 {
+		return keep, true
+	}
+	r.setState(stateWaiting)
+	return nil, false
+}
+
+// splitWord cuts the last word off a line that is not finished, if it is a long one that does not end like a question
+// ("... continue: ", "Password:", "> "): there the silence is a person's turn, and the question is shown at once.
+func splitWord(b []byte) (emit, keep []byte) {
+	if len(b) == 0 {
+		return b, nil
+	}
+	if last := b[len(b)-1]; last == ' ' || last == '\t' || strings.IndexByte(":?>$#]", last) >= 0 {
+		return b, nil
+	}
+	i := bytes.LastIndexAny(b, " \t") + 1
+	if len(b)-i < minWordHeld {
+		return b, nil
+	}
+	return b[:i], b[i:]
 }
 
 // readChunks reads the output as it comes, in pieces and not in lines: a question has no line end.
@@ -421,24 +526,25 @@ func readChunks(out io.Reader) chan []byte {
 	return chunks
 }
 
-// lines shows what ends in a new line and returns the rest.
+// lines shows what ends in a new line and returns the rest. A rest that is longer than a page of text is cut at its last white
+// space (a token is not cut in two), or, in a line without any, a little before its end.
 func (s *Server) lines(r *run, b []byte) []byte {
-	if i := strings.LastIndexByte(string(b), '\n'); i >= 0 {
+	if i := bytes.LastIndexByte(b, '\n'); i >= 0 {
 		r.add(s.show(string(b[:i+1])))
 		b = b[i+1:]
 	}
-	if len(b) > maxPendingLine {
-		cut := len(b)
-		for i := max(0, len(b)-3); i < len(b); i++ {
-			if utf8.RuneStart(b[i]) && !utf8.FullRune(b[i:]) {
-				cut = i
-				break
-			}
-		}
-		r.add(s.show(string(b[:cut])))
-		b = b[cut:]
+	if len(b) <= maxPendingLine {
+		return b
 	}
-	return b
+	cut := bytes.LastIndexAny(b, " \t") + 1
+	if cut == 0 {
+		cut = len(b) - keepTail
+	}
+	for cut > 0 && cut < len(b) && !utf8.RuneStart(b[cut]) { // not in the middle of a character
+		cut--
+	}
+	r.add(s.show(string(b[:cut])))
+	return b[cut:]
 }
 
 func (s *Server) finish(r *run, code int) {
@@ -450,7 +556,8 @@ func (s *Server) finish(r *run, code int) {
 	r.changed()
 	r.mu.Unlock()
 	s.release(r)
-	r.files.finish() // the text and the file that went out; a fetched file stays for the page to take
+	s.forgetOverview() // what the run did (a machine made or deleted) is in the next overview
+	r.files.finish()   // the text and the file that went out; a fetched file stays for the page to take
 }
 
 func (r *run) cancel() {
@@ -460,10 +567,17 @@ func (r *run) cancel() {
 		return
 	}
 	r.state = stateCancelling
-	r.kill = time.AfterFunc(killAfter, func() { _ = r.proc.Kill() })
+	p := r.proc
+	if p == nil { // setProc will do it
+		r.pendingCancel = true
+	} else {
+		r.kill = time.AfterFunc(killAfter, func() { _ = p.Kill() })
+	}
 	r.changed()
 	r.mu.Unlock()
-	_ = r.proc.Interrupt()
+	if p != nil {
+		_ = p.Interrupt()
+	}
 }
 
 func (s *Server) listRuns(w http.ResponseWriter, _ *http.Request) {
@@ -516,20 +630,20 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "the answer is one short line")
 		return
 	}
-	if run.current() != stateWaiting {
+	if !run.claimQuestion() { // the first of two answers gets it
 		fail(w, http.StatusConflict, "the run asks nothing now")
 		return
 	}
-	if _, err := io.WriteString(run.proc.Input(), req.Text+"\n"); err != nil {
+	if _, err := io.WriteString(run.process().Input(), req.Text+"\n"); err != nil {
 		fail(w, http.StatusConflict, "the run has ended")
 		return
 	}
 	run.add(s.show(req.Text) + "\n")
-	run.setState(stateRunning)
 	reply(w, map[string]bool{"ok": true})
 }
 
-// events streams the output of a run to a page (server-sent events). It changes nothing: a GET only attaches.
+// events streams the output of a run to a page (server-sent events). It changes nothing: a GET only attaches. Every event has
+// its number as id, so a stream that the browser reconnects goes on after the last event it got (Last-Event-ID).
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	run := s.lookupRun(r.URL.Query().Get("id"))
 	fl, ok := w.(http.Flusher)
@@ -540,11 +654,19 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.WriteHeader(http.StatusOK)
 	cursor, last := 0, ""
+	if n, err := strconv.Atoi(r.Header.Get("Last-Event-ID")); err == nil && n >= 0 {
+		cursor = n + 1
+	}
+	keep := time.NewTimer(15 * time.Second)
+	defer keep.Stop()
 	for {
-		evs, state, code, ch := run.view(cursor)
+		evs, cut, state, code, ch := run.view(cursor)
+		if cut {
+			fmt.Fprint(w, "event: out\ndata: {\"text\":\"[... earlier output was cut]\\n\"}\n\n")
+		}
 		for _, e := range evs {
 			b, _ := json.Marshal(e)
-			fmt.Fprintf(w, "event: out\ndata: %s\n\n", b)
+			fmt.Fprintf(w, "id: %d\nevent: out\ndata: %s\n\n", e.Seq, b)
 			cursor = e.Seq + 1
 		}
 		if key := fmt.Sprint(state, code); key != last {
@@ -555,13 +677,14 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		if state == stateDone {
 			return
 		}
+		keep.Reset(15 * time.Second)
 		select {
 		case <-ch:
 		case <-r.Context().Done():
 			return
 		case <-s.quit:
 			return
-		case <-time.After(15 * time.Second):
+		case <-keep.C:
 			fmt.Fprint(w, ": keep\n\n")
 		}
 	}
