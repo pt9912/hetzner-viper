@@ -2,7 +2,7 @@
 
 Version: 1.120  
 Software-Version: v0.21.1  
-Stand: 13.11.2026  
+Stand: 14.11.2026  
 
 ## 1. Einleitung
 
