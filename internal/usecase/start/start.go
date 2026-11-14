@@ -3,6 +3,7 @@
 package start
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -86,12 +87,83 @@ func (r *runner) eprintf(format string, a ...any) { fmt.Fprintf(r.errOut, format
 
 // ssh runs a command on the server with the machine's own ssh config, output going to the user.
 // Without stdin it passes -n (ssh must not read ours).
+//
+// A connection that the server closes before the login (ssh says kex_exchange_identification) is tried again a few times: nothing
+// of the command has run then, and a fresh server does it now and then (sshd keeps a short penalty against an address whose
+// earlier attempts, while the server was not ready yet, ended before the login). Other failures are the caller's.
 func (r *runner) ssh(ctx context.Context, stdin, command string) error {
 	args := []string{"-F", r.c.SSHConfig, r.c.SSHAlias, command}
 	if stdin == "" {
 		args = append([]string{"-n"}, args...)
 	}
-	return r.d.Stream(ctx, stdin, r.out, r.errOut, "ssh", args...)
+	var err error
+	for attempt := 1; attempt <= sshConnectTries; attempt++ {
+		held := &kexFilter{w: r.errOut}
+		if err = r.d.Stream(ctx, stdin, r.out, held, "ssh", args...); err == nil || !held.refused || attempt == sshConnectTries || ctx.Err() != nil {
+			held.release()
+			return err
+		}
+		r.d.Sleep(time.Duration(attempt*3) * time.Second)
+	}
+	return err
+}
+
+// sshConnectTries is how often a command is tried when the server closes the connection before the login.
+const sshConnectTries = 5
+
+// kexFilter passes the standard error of ssh on, but holds back the lines of a connection that was closed before the login: they are
+// shown only if the command fails for good (release), not for every attempt.
+type kexFilter struct {
+	w       io.Writer
+	buf     []byte
+	held    []string
+	refused bool
+}
+
+func (k *kexFilter) Write(p []byte) (int, error) {
+	k.buf = append(k.buf, p...)
+	for {
+		i := bytes.IndexByte(k.buf, '\n')
+		if i < 0 {
+			if len(k.buf) > 0 && !couldBeHeld(k.buf) { // an unfinished line that is none of ours (a progress bar) goes on at once
+				_, err := k.w.Write(k.buf)
+				k.buf = nil
+				return len(p), err
+			}
+			return len(p), nil
+		}
+		line := string(k.buf[:i+1])
+		k.buf = k.buf[i+1:]
+		if strings.Contains(line, "kex_exchange_identification") || strings.HasPrefix(line, "Connection reset by ") && strings.Contains(line, " port ") {
+			k.refused = k.refused || strings.Contains(line, "kex_exchange_identification")
+			k.held = append(k.held, line)
+			continue
+		}
+		if _, err := io.WriteString(k.w, line); err != nil {
+			return len(p), err
+		}
+	}
+}
+
+// couldBeHeld says whether the start of a line is the start of one that kexFilter holds back.
+func couldBeHeld(b []byte) bool {
+	for _, w := range []string{"kex_exchange_identification", "Connection reset by "} {
+		if strings.HasPrefix(w, string(b)) || strings.HasPrefix(string(b), w) {
+			return true
+		}
+	}
+	return false
+}
+
+// release writes what was held back, and what is left of an unfinished line.
+func (k *kexFilter) release() {
+	for _, l := range k.held {
+		_, _ = io.WriteString(k.w, l)
+	}
+	if len(k.buf) > 0 {
+		_, _ = k.w.Write(k.buf)
+	}
+	k.held, k.buf = nil, nil
 }
 
 // script runs one of the scripts on the server, with its arguments quoted.

@@ -1,6 +1,13 @@
 // Test-only exports of the unexported identifiers the external tests use.
 package start
 
+import (
+	"context"
+	"io"
+
+	"github.com/pt9912/hetzner-viper/internal/model"
+)
+
 // BrewPkgScript exports brewPkgScript for the tests.
 func BrewPkgScript() string { return brewPkgScript }
 
@@ -54,3 +61,9 @@ func NatsBucketScript() string { return natsBucketScript }
 
 // NatsDiskScript exports natsDiskScript for the tests.
 func NatsDiskScript() string { return natsDiskScript }
+
+// RunSSH runs a command on the machine the way the steps of viper up do (r.ssh), for the tests.
+func RunSSH(d Deps, c *model.Machine, out, errOut io.Writer, command string) error {
+	r := &runner{c: c, d: d, out: out, errOut: errOut}
+	return r.ssh(context.Background(), "", command)
+}
