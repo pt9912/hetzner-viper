@@ -54,6 +54,12 @@ func (r *runner) natsMCP(ctx context.Context) (int, error) {
 	if _, err := r.remote(ctx, "", natsMCPTestScript, natsMCPBinary); err != nil {
 		return fail("the test of the server", err)
 	}
+	if c.NATS.Objects && r.nats != nil && r.nats.role == model.NATSServer {
+		args := []string{natsserver.Dir, "--max-bytes", fmt.Sprint(c.NATS.ObjectsMax), "--ttl-days", fmt.Sprint(c.NATS.ObjectsTTLDays)}
+		if _, err := r.remote(ctx, "", natsBucketScript, args...); err != nil {
+			return fail("making the bucket of the object store", err)
+		}
+	}
 	r.printf("NATS MCP of %s is ready.\n", c.Name)
 	r.natsMCPHint()
 	return 0, nil

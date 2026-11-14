@@ -155,7 +155,7 @@ func TestTheOperatorSendsFromThisComputerAndTheMachineSeesTheOperator(t *testing
 		t.Fatal(err)
 	}
 	block, err := natsserver.AuthorizationBlock("dev", []natsserver.Client{
-		{Machine: "beta", PublicKey: betaID.PublicKey}, {Machine: "operator", PublicKey: op.registered["operator"], Operator: true}})
+		{Machine: "beta", PublicKey: betaID.PublicKey}, {Machine: "operator", PublicKey: op.registered["operator"], Operator: true}}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

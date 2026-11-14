@@ -43,6 +43,8 @@ if [ -s "$dir/server.conf" ]; then
   echo "operators=$(grep '^# viper-operator ' "$dir/server.conf" | awk '{print $3 ":" $4}' | paste -sd, -)"
   # the object store (NATS_OBJECTS): the line viper wrote, and whether the running server has JetStream
   echo "objects=$(sed -n 's/^# viper-objects //p' "$dir/server.conf" | head -n 1)"
+  # the bucket of the store, as the server has it (read with the key of the entry that makes it, which only this machine has)
+  if [ -s "$dir/admin.nk" ] && [ -x "$dir/viper-nats-mcp" ]; then "$dir/viper-nats-mcp" bucket-info 2>&1 | head -n 12; fi
 fi
 # the MCP server (NATS_MCP): the binary, its entry with Claude Code, the push list and the allowed tools
 if [ -x "$dir/viper-nats-mcp" ]; then

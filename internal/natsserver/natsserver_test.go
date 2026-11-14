@@ -86,7 +86,7 @@ func TestRenderRefusesWhatWouldWidenTheServer(t *testing.T) {
 }
 
 func TestPermissionsStayInTheGroup(t *testing.T) {
-	pub, sub := natsserver.Permissions("dev", "beta")
+	pub, sub := natsserver.Permissions("dev", "beta", false)
 	all := strings.Join(append(append([]string{}, pub...), sub...), " ")
 	if strings.Contains(all, " >") || strings.HasPrefix(all, ">") || strings.Contains(all, "$SYS") {
 		t.Errorf("too wide: %s", all)

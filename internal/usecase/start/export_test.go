@@ -49,5 +49,8 @@ func ContainerProbe() string { return containerProbe }
 // NatsCheckScript exports natsCheckScript for the tests.
 func NatsCheckScript() string { return natsCheckScript }
 
+// NatsBucketScript exports natsBucketScript for the tests.
+func NatsBucketScript() string { return natsBucketScript }
+
 // NatsDiskScript exports natsDiskScript for the tests.
 func NatsDiskScript() string { return natsDiskScript }

@@ -40,7 +40,7 @@ func forgeSetup(t *testing.T) (a, b, c *forgeClient) {
 		seeds[m] = id.Seed
 		clients = append(clients, natsserver.Client{Machine: m, PublicKey: id.PublicKey})
 	}
-	block, err := natsserver.AuthorizationBlock("g", clients)
+	block, err := natsserver.AuthorizationBlock("g", clients, false)
 	if err != nil {
 		t.Fatal(err)
 	}

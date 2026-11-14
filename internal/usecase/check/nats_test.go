@@ -438,13 +438,14 @@ func TestTheOperatorKeyIsComparedWithTheRegistrationAtTheServer(t *testing.T) {
 }
 
 func TestTheServerCheckComparesTheObjectStoreWithTheSettings(t *testing.T) {
-	const on = "NATS_ENABLED=true\nNATS_GROUP=dev\nNATS_OBJECTS=true\n"
+	const on = "NATS_ENABLED=true\nNATS_GROUP=dev\nNATS_MCP=true\nNATS_OBJECTS=true\n"
 	line := "objects=store=/var/lib/viper-nats max=268435456 file=8388608 ttl=7\n"
-	status := strings.Replace(healthyServer, "alpha,web", "beta,web", 1)
+	const mcp = "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=/home/builder/.viper-nats/viper-nats-mcp\nmcp_allowed=\nmcp_push=\n"
+	status := strings.Replace(healthyServer, "alpha,web", "beta,web", 1) + mcp
 	for name, tc := range map[string]struct{ settings, status, want, not string }{
 		"the same":          {on, status + line, "the server has the object store the settings ask for", "WARN"},
 		"asked, not made":   {on, status, "NATS_OBJECTS is on, but the server of the group was made without an object store", ""},
-		"made, not asked":   {"NATS_ENABLED=true\nNATS_GROUP=dev\n", status + line, "has an object store", ""},
+		"made, not asked":   {"NATS_ENABLED=true\nNATS_GROUP=dev\nNATS_MCP=true\n", status + line, "has an object store", ""},
 		"another size":      {on + "NATS_OBJECTS_MAX=512\n", status + line, "is not the one the settings ask for", ""},
 		"neither (nothing)": {"NATS_ENABLED=true\nNATS_GROUP=dev\n", status, "", "object store"},
 	} {
@@ -456,6 +457,27 @@ func TestTheServerCheckComparesTheObjectStoreWithTheSettings(t *testing.T) {
 		}
 		if problems != 0 {
 			t.Errorf("%s: a difference in the object store is a warning, no problem: %d", name, problems)
+		}
+	}
+}
+
+func TestTheServerCheckReadsTheBucketOfTheObjectStore(t *testing.T) {
+	const mcp = "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=/home/builder/.viper-nats/viper-nats-mcp\nmcp_allowed=\nmcp_push=\n"
+	const settings = "NATS_ENABLED=true\nNATS_GROUP=dev\nNATS_MCP=true\nNATS_OBJECTS=true\n"
+	status := strings.Replace(healthyServer, "alpha,web", "beta,web", 1) + mcp +
+		"objects=store=/var/lib/viper-nats max=268435456 file=8388608 ttl=7\n"
+	good := "bucket=ok\nbucket_max_bytes=268435456\nbucket_max_age=604800\nbucket_max_msgs=16384\nbucket_max_msg_size=262144\nbucket_storage=file\nbucket_replicas=1\nbucket_discard=new\n"
+	for name, tc := range map[string]struct{ status, want string }{
+		"as the settings say": {status + good, "ok    the bucket of the object store is as the settings say"},
+		"not read":            {status, "the bucket of the object store was not read"},
+		"missing":             {status + "bucket=missing\n", "WARN  the bucket of the object store is not there"},
+		"another size":        {status + strings.Replace(good, "268435456", "1048576", 1), "WARN  the bucket of the object store is not as the settings say: max_bytes is 1048576"},
+		"discard old":         {status + strings.Replace(good, "bucket_discard=new", "bucket_discard=old", 1), "discard is old, should be new"},
+	} {
+		n := newNATSFixture(t, settings, model.NATSServer, tc.status)
+		out, problems := n.run()
+		if !strings.Contains(natsSection(out), tc.want) || problems != 0 {
+			t.Errorf("%s: %d\n%s", name, problems, natsSection(out))
 		}
 	}
 }

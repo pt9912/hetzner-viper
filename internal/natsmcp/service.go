@@ -83,6 +83,8 @@ func (s *Service) Connect(ctx context.Context) error {
 	}
 	opts := []nats.Option{
 		nats.Name("viper-nats-mcp"), nats.Nkey(pub, kp.Sign), nats.NoEcho(),
+		nats.CustomInboxPrefix("_INBOX." + s.cfg.Names.Me), // the machine may read only _INBOX.<machine>.>: what the object store answers
+
 		nats.RetryOnFailedConnect(true), nats.MaxReconnects(-1), nats.ReconnectWait(2 * time.Second),
 		nats.IgnoreAuthErrorAbort(), // the server may not know the key yet (viper up of the machine is running): keep trying
 		nats.ErrorHandler(func(_ *nats.Conn, _ *nats.Subscription, err error) { s.logError("server error", err) }),

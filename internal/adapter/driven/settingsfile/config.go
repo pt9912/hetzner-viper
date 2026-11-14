@@ -267,7 +267,13 @@ func applyNATS(c *model.Machine, home string) error {
 	if err := applyNATSObjects(c); err != nil {
 		return err
 	}
-	return applyNATSMCP(c, home)
+	if err := applyNATSMCP(c, home); err != nil {
+		return err
+	}
+	if c.NATS.Objects && !c.NATS.MCP {
+		return errors.New("NATS_OBJECTS: needs NATS_MCP=true (the programs that put and get the files are part of viper-nats-mcp)")
+	}
+	return nil
 }
 
 // applyNATSObjects reads NATS_OBJECTS and its limits. They are looked at only if NATS_OBJECTS is on.

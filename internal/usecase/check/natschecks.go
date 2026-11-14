@@ -262,14 +262,14 @@ func natsServerChecks(r *report, c *model.Machine, v map[string]string, members 
 		r.warn("server.conf still has allow_responses (written by viper v0.15.0): any machine of the group can publish to any subject; run viper up on a machine of the group to write the configuration again")
 	}
 	natsListenCheck(r, v["listen"], srv.PrivateIP)
-	natsObjectsCheck(r, c, v["objects"])
+	natsObjectsCheck(r, c, v["objects"], v)
 	natsRegistrationChecks(r, c, v["registered"], members)
 	natsOperatorChecks(r, c, v["operators"], members)
 }
 
 // natsObjectsCheck compares the object store the settings ask for (NATS_OBJECTS) with the one the server was set up with: it is
 // fixed when the server is made, so a change of the settings only reaches a new server.
-func natsObjectsCheck(r *report, c *model.Machine, line string) {
+func natsObjectsCheck(r *report, c *model.Machine, line string, bucket map[string]string) {
 	want := ""
 	if n := c.NATS; n.Objects {
 		dir := natsserver.ObjectStoreDir(c.IsContainer())
@@ -285,7 +285,34 @@ func natsObjectsCheck(r *report, c *model.Machine, line string) {
 		r.warn("the object store of the server (%s) is not the one the settings ask for (%s): it is fixed when the server is made", line, want)
 	default:
 		r.ok("the server has the object store the settings ask for (%s)", line)
+		natsBucketCheck(r, c, bucket)
 	}
+}
+
+// natsBucketCheck compares the stream of the bucket, which the server has, with the settings: missing, or made differently (by
+// hand, or by another version).
+func natsBucketCheck(r *report, c *model.Machine, v map[string]string) {
+	switch v["bucket"] {
+	case "":
+		r.info("the bucket of the object store was not read (no key of the entry that makes it, or no viper-nats-mcp on this machine)")
+		return
+	case "missing":
+		r.warn("the bucket of the object store is not there: run viper up on the machine of the server to make it")
+		return
+	}
+	n := c.NATS
+	want := map[string]string{"bucket_max_bytes": fmt.Sprint(n.ObjectsMax), "bucket_max_age": fmt.Sprint(n.ObjectsTTLDays * 86400), "bucket_discard": "new", "bucket_storage": "file", "bucket_replicas": "1"}
+	var diff []string
+	for _, k := range []string{"bucket_max_bytes", "bucket_max_age", "bucket_discard", "bucket_storage", "bucket_replicas"} {
+		if v[k] != want[k] {
+			diff = append(diff, fmt.Sprintf("%s is %s, should be %s", strings.TrimPrefix(k, "bucket_"), v[k], want[k]))
+		}
+	}
+	if len(diff) > 0 {
+		r.warn("the bucket of the object store is not as the settings say: %s (viper leaves it as it is; viper down --group, then viper up --group makes it again)", strings.Join(diff, "; "))
+		return
+	}
+	r.ok("the bucket of the object store is as the settings say")
 }
 
 // natsOperatorChecks compare the operator at the server (viper nats init) with the key on this computer: a

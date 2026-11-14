@@ -18,11 +18,11 @@ func key(t *testing.T) string {
 }
 
 func TestTheOperatorGetsOnlyItsOwnSubtreeAndReadsTheGroup(t *testing.T) {
-	pub, sub := natsserver.OperatorPermissions("dev", "operator")
+	pub, sub := natsserver.OperatorPermissions("dev", "operator", false)
 	if len(pub) != 1 || pub[0] != "viper.dev.operator.>" || len(sub) != 1 || sub[0] != "viper.dev.>" {
 		t.Errorf("%v %v", pub, sub)
 	}
-	mpub, _ := natsserver.Permissions("dev", "alpha")
+	mpub, _ := natsserver.Permissions("dev", "alpha", false)
 	for _, p := range mpub {
 		if strings.Contains(p, ".req.") {
 			for _, o := range pub {

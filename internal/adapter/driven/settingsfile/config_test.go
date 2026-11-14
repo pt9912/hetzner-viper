@@ -827,7 +827,7 @@ func TestStateFilesLieInTheDirectoryOfThePrefixAndOldOnesMoveThere(t *testing.T)
 
 func TestLoadReadsTheObjectStoreSettingsOfAGroup(t *testing.T) {
 	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
-	base := "DNS_DOMAIN=example.com\nNATS_ENABLED=true\nNATS_GROUP=g\n"
+	base := "DNS_DOMAIN=example.com\nNATS_ENABLED=true\nNATS_GROUP=g\nNATS_MCP=true\n"
 	c, err := settingsfile.Load(setupDir(t, base, ""), "web", env, false)
 	if err != nil || c.NATS.Objects {
 		t.Fatalf("off by default: %v %+v", err, c.NATS)
@@ -843,6 +843,9 @@ func TestLoadReadsTheObjectStoreSettingsOfAGroup(t *testing.T) {
 	// the limits are looked at only if NATS_OBJECTS is on
 	if c, err = settingsfile.Load(setupDir(t, base+"NATS_OBJECTS_MAX=nonsense\n", ""), "web", env, false); err != nil || c.NATS.Objects {
 		t.Errorf("%v %+v", err, c.NATS)
+	}
+	if _, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nNATS_ENABLED=true\nNATS_GROUP=g\nNATS_OBJECTS=true\n", ""), "web", env, false); err == nil || !strings.Contains(err.Error(), "needs NATS_MCP=true") {
+		t.Errorf("an object store without the MCP server: %v", err)
 	}
 	for name, tc := range map[string]struct{ settings, want string }{
 		"bad switch":          {"NATS_OBJECTS=maybe\n", "NATS_OBJECTS: true or false"},

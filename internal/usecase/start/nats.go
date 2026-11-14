@@ -229,11 +229,16 @@ func (r *runner) natsTools(ctx context.Context, withServer bool) (int, error) {
 
 // natsIdentity creates the machine's identity (or keeps the one it has) and returns its public key.
 func (r *runner) natsIdentity(ctx context.Context) (string, error) {
+	return r.natsIdentityNamed(ctx, "client")
+}
+
+// natsIdentityNamed is natsIdentity for another file name: "admin" is the entry that makes the bucket of the object store.
+func (r *runner) natsIdentityNamed(ctx context.Context, name string) (string, error) {
 	id, err := natsserver.NewIdentity()
 	if err != nil {
 		return "", err
 	}
-	out, err := r.remote(ctx, id.Seed+"\n"+id.PublicKey+"\n", natsIdentityScript, natsserver.Dir)
+	out, err := r.remote(ctx, id.Seed+"\n"+id.PublicKey+"\n", natsIdentityScript, natsserver.Dir, name)
 	if err != nil {
 		return "", err
 	}
@@ -272,6 +277,19 @@ func (r *runner) natsRegister(ctx context.Context, server natsgroup.Target, serv
 	return r.ops().Update(ctx, server, c.NATS.Group, r.natsEndpoint(serverIP), add)
 }
 
+// natsRegisterAdmin makes the key of the entry that makes the bucket (it stays on the machine of the server) and enters it at
+// the server.
+func (r *runner) natsRegisterAdmin(ctx context.Context, serverIP string) error {
+	pub, err := r.natsIdentityNamed(ctx, "admin")
+	if err != nil {
+		return err
+	}
+	add := func(l []natsserver.Client) ([]natsserver.Client, error) {
+		return natsserver.WithEntry(l, natsserver.Client{Machine: natsserver.AdminName, PublicKey: pub, Admin: true})
+	}
+	return r.ops().Update(ctx, natsgroup.Self(r.c), r.c.NATS.Group, r.natsEndpoint(serverIP), add)
+}
+
 // natsFinish writes the connection file, then logs in once with the nats tool to see that it all
 // works: TLS, the key, the address.
 func (r *runner) natsFinish(ctx context.Context, serverIP string) error {
@@ -302,6 +320,11 @@ func (r *runner) natsServer(ctx context.Context, ip string) (int, error) {
 	}
 	if err := r.natsRegister(ctx, natsgroup.Self(c), ip, pub); err != nil {
 		return fail("writing the configuration", err)
+	}
+	if c.NATS.Objects {
+		if err := r.natsRegisterAdmin(ctx, ip); err != nil {
+			return fail("registering the entry of the object store", err)
+		}
 	}
 	if c.NATS.Objects { // before anything is started: a store that does not fit would fail later and less clearly
 		need := c.NATS.ObjectsMax + objectsReserve

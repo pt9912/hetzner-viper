@@ -89,7 +89,7 @@ func setupTopics(t *testing.T, pushFrom map[string][]string, quiet map[string]bo
 			t.Fatal(err)
 		}
 	}
-	block, err := natsserver.AuthorizationBlock("g", clients)
+	block, err := natsserver.AuthorizationBlock("g", clients, false)
 	if err != nil {
 		t.Fatal(err)
 	}
