@@ -246,11 +246,8 @@ func applyNATS(c *model.Machine, home string) error {
 	if err := model.CheckNATSName("NATS_GROUP", group); err != nil {
 		return err
 	}
-	if err := model.CheckNATSName("Machine name (NATS_ENABLED is on)", c.Name); err != nil {
+	if err := checkNATSMachineName(c.Name); err != nil {
 		return err
-	}
-	if c.Name == model.NATSAdminName {
-		return fmt.Errorf("Machine name %q is the name of the entry that makes the object store of a group: use another machine name", c.Name)
 	}
 	port, err := model.ParseNATSPort(c.Get("NATS_PORT"))
 	if err != nil {
@@ -288,6 +285,18 @@ func applyNATSObjects(c *model.Machine) error {
 	c.NATS.Objects = true
 	c.NATS.ObjectsMax, c.NATS.ObjectsFileMax, c.NATS.ObjectsTTLDays, err = model.ParseObjectsLimits(c.Get("NATS_OBJECTS_MAX"), c.Get("NATS_OBJECTS_FILE_MAX"), c.Get("NATS_OBJECTS_TTL"))
 	return err
+}
+
+// checkNATSMachineName checks the name of a machine of a NATS group: it goes into subjects, and it is not the name of the entry
+// that makes the object store.
+func checkNATSMachineName(name string) error {
+	if err := model.CheckNATSName("Machine name (NATS_ENABLED is on)", name); err != nil {
+		return err
+	}
+	if name == model.NATSAdminName {
+		return fmt.Errorf("Machine name %q is the name of the entry that makes the object store of a group: use another machine name", name)
+	}
+	return nil
 }
 
 // mcpTopics reads NATS_MCP_TOPICS: names separated by commas, without duplicates, at most model.MaxMCPTopics.

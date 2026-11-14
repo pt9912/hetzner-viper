@@ -39,3 +39,12 @@ func (s *Service) WaiterIDs() []string {
 	}
 	return ids
 }
+
+// PruneAttachments exports pruneAttachments for the tests.
+func PruneAttachments(dir, keep string) { pruneAttachments(dir, keep) }
+
+// The limits of the folder of attachments.
+const (
+	MaxAttachDirLen = maxAttachDirLen
+	MaxAttachDirMiB = maxAttachDirMiB
+)

@@ -1,4 +1,4 @@
-package natsmcp
+package natsmcp_test
 
 import (
 	"fmt"
@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/pt9912/hetzner-viper/internal/natsmcp"
 )
 
 // The folder of attachments of a machine is kept small: the oldest files go, the file just made stays, and nothing that is no
@@ -31,7 +33,7 @@ func TestTheFolderOfAttachmentsKeepsTheNewestFiles(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	pruneAttachments(dir, keep)
+	natsmcp.PruneAttachments(dir, keep)
 	entries, _ := os.ReadDir(dir)
 	var files int
 	for _, e := range entries {
@@ -39,8 +41,8 @@ func TestTheFolderOfAttachmentsKeepsTheNewestFiles(t *testing.T) {
 			files++
 		}
 	}
-	if files != maxAttachDirLen {
-		t.Errorf("%d files are left, want %d", files, maxAttachDirLen)
+	if files != natsmcp.MaxAttachDirLen {
+		t.Errorf("%d files are left, want %d", files, natsmcp.MaxAttachDirLen)
 	}
 	for _, gone := range []string{"f00.png", "f09.png"} {
 		if _, err := os.Stat(filepath.Join(dir, gone)); err == nil {
@@ -54,10 +56,10 @@ func TestTheFolderOfAttachmentsKeepsTheNewestFiles(t *testing.T) {
 	}
 	// the size counts too: the file that was just made stays even if it is the one that is over
 	big := filepath.Join(dir, "big.png")
-	if err := os.WriteFile(big, make([]byte, (maxAttachDirMiB+1)<<20), 0o600); err != nil {
+	if err := os.WriteFile(big, make([]byte, (natsmcp.MaxAttachDirMiB+1)<<20), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	pruneAttachments(dir, big)
+	natsmcp.PruneAttachments(dir, big)
 	if _, err := os.Stat(big); err != nil {
 		t.Errorf("the new file was removed: %v", err)
 	}
