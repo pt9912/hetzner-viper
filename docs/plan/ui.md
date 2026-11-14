@@ -72,6 +72,25 @@ Sprache der Oberfläche: Englisch wie die Hilfe von `viper` und die Meldungen; e
 4. **Einstellungen (lesend), Deutsch, Feinschliff:** Zugänglichkeit (Tastatur, Kontrast, Screenreader-Namen), Größe der Seiten, Fehlerseiten.
 5. **Handbuch und Läufe:** Kapitel „Oberfläche im Browser“, `developer.md`, Läufe mit Firefox und Chrome auf Linux, macOS und Windows (so weit erreichbar), gegen echte Docker-Maschinen (Compose), k3d und, mit Erlaubnis, Hetzner.
 
+### Ergebnis von Meilenstein 0 (14.11.2026, Linux)
+
+Gemacht mit einem Wegwerf-Paket (`internal/adapter/driving/webprobe`, wieder entfernt) und dem echten `viper`:
+
+| Punkt | Ergebnis |
+|---|---|
+| (c) Sicherheitsmodell mit `net/http` + `httptest` | **Ja.** Geprüft und grün: falscher Host (auch `localhost`), Tausch genau einmal, ohne Cookie 403, `Origin` fehlend/`null`/fremd/`localhost` 403, `Sec-Fetch-Site: cross-site` und `text/plain` 403, `..` im Pfad, CSP mit `object-src 'none'`, Umleitung 303 auf `/` mit `Referrer-Policy: no-referrer`. Nicht gemacht: echter Browser, 60-Sekunden-Ablauf. |
+| (e) Rückfrage ohne Zeilenende | **Ja.** Mit Leser in Stücken (stdout und stderr in eine Röhre) kommt „Type DELETE to continue: “ sofort an; die Antwort mit `\n` auf die offene Eingabe wird gelesen. Ein Zeilenleser hätte sie nicht geliefert. |
+| (f) SIGINT | **Ja, mit Vorbehalt.** `exec.Cmd.Cancel` mit `Process.Signal(SIGINT)` an den Unterprozess, `WaitDelay` 20 s: Ein Testprogramm mit `trap` endet mit 130. Das echte `viper up` (gegen ein gefälschtes `docker`) beendet das Kind (`docker`), beendet den laufenden Schritt, schreibt „interrupted“ ins Protokoll und endet **erst nach dem Ende der laufenden Vorprüfung (hier rund 15 s)**: Die Oberfläche braucht also „wird abgebrochen …“ als Zustand und darf nicht nach einer Sekunde SIGKILL schicken. Unter Windows nicht geprüft; `Process.Signal(SIGINT)` geht dort nicht, der Code braucht eine Datei je Betriebssystem (`//go:build`). |
+| (g) `//go:embed` und `gochecknoglobals` | **Kein Verstoß:** `//go:embed static` an einer Variable und eine Funktion `Static()` darüber bestehen `golangci-lint` mit der Konfiguration des Projekts (der einzige Fund war ein ungenutzter Parameter). |
+| (a) Reicht ein Unterprozess für Rückfragen | **Ja** (e); keine Rückfrage liest `/dev/tty`. |
+| (b) Lesen im Prozess | `port/driving.Check` liefert die Zahl der Probleme (`Check(ctx, c, out, errOut) (int, error)`) und schreibt den Text auf `out`; für `ShowLog` und die Liste gibt es **noch keinen Port**. |
+| (d) Windows, (h) Startdatei in Firefox/Chrome, (i) Browser öffnen | **Nicht geprüft** (kein Browser, kein Windows/macOS in dieser Umgebung); bleibt Aufgabe vor Meilenstein 1 und Meilenstein 5. `GOOS=windows go vet` des Probe-Pakets ging durch. |
+
+**Neu aus dieser Prüfung:**
+
+* Die Regel `driving-adapters-call-ports` in der `.golangci.yml` verbietet einem Adapter, `usecase` zu importieren. Das Paket `driving/web` ruft die Anwendungsfälle nur über `internal/port/driving`; für die Liste und `ShowLog` ist dort je eine Schnittstelle zu ergänzen, und `app` verdrahtet sie. Kein neuer Eintrag in `depguard` nötig, die Regel gilt für `internal/adapter/driving/**` schon.
+* Abbrechen braucht den Zustand „wird abgebrochen“ (rund 15 s sind normal), SIGKILL erst nach 20 s.
+
 ## 7 Teststrategie
 
 * `httptest` für jede Sicherheitsregel aus §3 (falscher Host, auch `localhost`; kein Cookie; falscher oder fehlender Ursprung; `Sec-Fetch-Site`; falsche Methode; falscher `Content-Type`; zu große Hochladung; unbekannter Pfad; Pfadumgehung `..`; Verzeichnisliste; zweiter Tausch des Schlüssels; Tausch nach 60 Sekunden), mit der Sicherung, dass **keine** Antwort einen Wert aus den Einstellungsdateien enthält (ein Test legt Zugangsdaten in die Dateien und sucht in allen Antworten, auch in Protokollen und Läufen).
