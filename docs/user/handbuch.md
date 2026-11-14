@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.127  
+Version: 1.128  
 Software-Version: v0.23.0  
 Stand: 14.11.2026  
 
@@ -1640,3 +1640,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.125 | nach v0.22.0 | Dateien in NATS-Gruppen: Nachtrag aus Code- und Doku-Review (Datei- und Anbieter-Angaben vereinheitlicht, Namen von Dateien als Text des Absenders, Anwesenheit während einer Sendung, Meldung bei geändertem `NATS_OBJECTS`, Grenze für Lesevorgänge). |
 | 1.126 | v0.23.0 | Release v0.23.0: die Änderungen 1.123 bis 1.125 (Version von `viper-nats-mcp` bei `peers`; Bilder, PDFs und ZIP-Dateien in NATS-Gruppen mit `NATS_OBJECTS`, `viper nats --pdf/--image/--zip` und `fetch`, das Werkzeug `fetch`); `viper up` wiederholt einen Befehl auf dem Server, wenn der Server die Verbindung vor der Anmeldung schließt. |
 | 1.127 | nach v0.23.0 | `viper help` zeigt die Befehle in Gruppen mit einer Zeile je Befehl; `viper <befehl> --help` (auch `viper help <befehl>`, `viper nats <unterbefehl> --help`) beschreibt einen Befehl mit allen Optionen, Beispielen und dem Abschnitt im Handbuch. |
+| 1.128 | nach v0.23.0 | Ein falscher Aufruf nennt zur Aufrufzeile jetzt, wo die Optionen beschrieben sind (`viper <befehl> --help`, bei `viper nats` je Unterbefehl). |

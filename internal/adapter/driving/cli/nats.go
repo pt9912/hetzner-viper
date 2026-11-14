@@ -34,7 +34,7 @@ type natsArgs struct {
 
 // parseNatsArgs reads the words after viper nats: SUBCOMMAND GROUP [TEXT|-].
 func parseNatsArgs(o *options, stdin io.Reader) (natsArgs, error) {
-	usage := usageLine("nats")
+	usage := usageError("nats")
 	if len(o.args) < 2 {
 		return natsArgs{}, errors.New(usage)
 	}
@@ -112,12 +112,12 @@ func checkNatsOptions(o *options, sub string) error {
 	given := map[string]bool{"to": o.to != "", "topic": o.topic != "", "timeout": o.timeout != 0, "query": o.query, "all": o.all, "file": o.file != "", "pdf": o.pdf != "", "image": o.image != "", "zip": o.zip != "", "sha256": o.sha256 != "", "out": o.out != ""}
 	for opt, set := range given {
 		if set && !slices.Contains(use, opt) {
-			return fmt.Errorf("viper nats %s: --%s is not used by this subcommand\n%s", sub, opt, usageLine("nats"))
+			return fmt.Errorf("viper nats %s: --%s is not used by this subcommand\n%s\nviper nats %s --help describes its options", sub, opt, usageLine("nats"), sub)
 		}
 	}
 	for _, opt := range use {
 		if opt == "to" && o.to == "" || opt == "topic" && o.topic == "" && sub == "broadcast" || opt == "sha256" && o.sha256 == "" {
-			return fmt.Errorf("viper nats %s: --%s is needed\n%s", sub, opt, usageLine("nats"))
+			return fmt.Errorf("viper nats %s: --%s is needed\n%s\nviper nats %s --help describes its options", sub, opt, usageLine("nats"), sub)
 		}
 	}
 	return nil

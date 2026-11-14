@@ -13,7 +13,7 @@ import (
 // runFind shows the server types that fit the need, of every provider whose credentials are set.
 func runFind(ctx context.Context, o *options, env settings.Env, stdout, stderr io.Writer) error {
 	if o.cpu == 0 && o.ram == 0 && o.disk == 0 {
-		return fmt.Errorf("viper find: give at least one of --cpu, --ram, --disk\n%s", usageLine("find"))
+		return fmt.Errorf("viper find: give at least one of --cpu, --ram, --disk\n%s", usageError("find"))
 	}
 	if o.location != "" && o.provider == "" {
 		return fmt.Errorf("viper find: --location needs --provider: the names of the locations differ by provider (fsn1, eu-central-1, germanywestcentral, europe-west3-b)")

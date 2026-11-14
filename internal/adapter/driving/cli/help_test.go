@@ -106,3 +106,27 @@ func TestTheHelpIsForTheCommandThatWasAskedAbout(t *testing.T) {
 		t.Errorf("exit %d %q %q", code, out, errs)
 	}
 }
+
+// A wrong call says where the options are described.
+func TestAWrongCallPointsToTheHelpOfTheCommand(t *testing.T) {
+	for args, want := range map[string]string{
+		"up":                  "viper up --help describes the options",
+		"check web extra":     "viper check --help describes the options",
+		"check --nonsense":    "viper check --help describes the options",
+		"check web --group g": "viper check --help describes the options",
+		"find":                "viper find --help describes the options",
+		"image":               "viper image --help describes the options",
+		"nats":                "viper nats --help describes the options",
+		"nats nonsense dev":   "viper nats --help describes the options",
+	} {
+		_, errs, code := helpOutput(t, strings.Fields(args)...)
+		if code == 0 || !strings.Contains(errs, want) {
+			t.Errorf("%q: exit %d, %q", args, code, errs)
+		}
+	}
+	// the options of a subcommand: its own help
+	_, errs, code := helpOutput(t, "nats", "peers", "dev", "--to", "x")
+	if code == 0 || !strings.Contains(errs, "viper nats peers --help describes its options") {
+		t.Errorf("exit %d %q", code, errs)
+	}
+}

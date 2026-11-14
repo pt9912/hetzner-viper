@@ -60,7 +60,7 @@ func nativeImage(o *options) error {
 // imageArgs checks the command line of viper image build and returns the tag of the image.
 func imageArgs(o *options) (string, error) {
 	if len(o.args) != 1 || o.args[0] != "build" {
-		return "", errors.New("viper image: the only subcommand is build\n" + usageLine("image"))
+		return "", errors.New("viper image: the only subcommand is build\n" + usageError("image"))
 	}
 	tag := o.tag
 	if tag == "" {

@@ -155,24 +155,29 @@ func setMachine(o *options, name string, c command, positional []string) error {
 	}
 	if len(positional) > 0 {
 		if c.machine == noMachine || len(positional) > 1 {
-			return fmt.Errorf("viper %s: unexpected argument %q\n%s", name, positional[len(positional)-1], usageLine(name))
+			return fmt.Errorf("viper %s: unexpected argument %q\n%s", name, positional[len(positional)-1], usageError(name))
 		}
 		o.machine = positional[0]
 	}
 	if o.group != "" && o.machine != "" {
-		return fmt.Errorf("viper %s: a machine and --group exclude each other (--group G is all machines of the group; one machine as the group G has it: viper %s %s --in-group %s)\n%s", name, name, o.machine, o.group, usageLine(name))
+		return fmt.Errorf("viper %s: a machine and --group exclude each other (--group G is all machines of the group; one machine as the group G has it: viper %s %s --in-group %s)\n%s", name, name, o.machine, o.group, usageError(name))
 	}
 	if o.within != "" && o.machine == "" {
-		return fmt.Errorf("viper %s: --in-group G goes with one machine (all machines of a group: --group G)\n%s", name, usageLine(name))
+		return fmt.Errorf("viper %s: --in-group G goes with one machine (all machines of a group: --group G)\n%s", name, usageError(name))
 	}
 	if c.machine == needMachine && o.machine == "" && o.group == "" {
-		return fmt.Errorf("%s", usageLine(name))
+		return fmt.Errorf("%s", usageError(name))
 	}
 	return nil
 }
 
 func usageLine(name string) string {
 	return strings.TrimRight("Usage: viper "+name+" "+commands()[name].usage, " ")
+}
+
+// usageError is the usage of a command for an error message: the line, and where the options are described.
+func usageError(name string) string {
+	return usageLine(name) + "\nviper " + name + " --help describes the options"
 }
 
 // firstWord is the first argument that is no option: the subcommand of viper nats.
@@ -219,7 +224,7 @@ func setRegistry(o *options, name, flag string) error {
 func parseFlag(o *options, name string, args []string, i *int, allowed map[string]bool) error {
 	n, v, hasValue := strings.Cut(args[*i][2:], "=")
 	if !allowed[n] {
-		return fmt.Errorf("viper %s: unknown option --%s\n%s", name, n, usageLine(name))
+		return fmt.Errorf("viper %s: unknown option --%s\n%s", name, n, usageError(name))
 	}
 	if isValueFlag(n) {
 		if !hasValue {
