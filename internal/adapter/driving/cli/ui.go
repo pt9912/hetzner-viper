@@ -29,6 +29,9 @@ func nativeUI(o *options) error {
 	b := &uiBackend{o: o, env: env, secrets: secrets}
 	b.learnEnvironment()
 	cfg := web.Config{Backend: b, Readonly: o.readonly, Version: o.version, Clean: natsmcp.Clean, Redact: secrets.redact}
+	if !o.readonly {
+		cfg.Spawn = spawner(settingsDir(o))
+	}
 	if o.noOpen {
 		cfg.TokenTTL = 10 * time.Minute // the address is copied by hand
 	}
@@ -49,7 +52,7 @@ func nativeUI(o *options) error {
 	go func() { done <- srv.Serve(ctx, ln) }()
 	fmt.Fprintf(h.Stdout, "viper ui: http://%s/ (Ctrl-C ends it)\n", srv.Host())
 	if o.readonly {
-		fmt.Fprintln(h.Stdout, "viper ui: read only")
+		fmt.Fprintln(h.Stdout, "viper ui: read only (no preflight, up or down)")
 	}
 	if o.noOpen {
 		fmt.Fprintf(h.Stdout, "viper ui: open this address in your browser within %d minutes (it works once): %s\n", int(cfg.TokenTTL.Minutes()), srv.URL())

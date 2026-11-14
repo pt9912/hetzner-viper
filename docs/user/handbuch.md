@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.131  
+Version: 1.132  
 Software-Version: v0.24.0  
 Stand: 14.11.2026  
 
@@ -395,7 +395,7 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 
 ### Die Oberfläche im Browser
 
-`viper ui` startet auf Ihrem Rechner eine kleine Weboberfläche und öffnet den Browser. Sie zeigt die Rechner und Gruppen aus den Einstellungsdateien, lässt je Rechner `viper check` laufen und zeigt die Protokolle. Mehr kann diese Stufe nicht: Anlegen, Löschen und NATS gibt es weiter nur auf der Kommandozeile.
+`viper ui` startet auf Ihrem Rechner eine kleine Weboberfläche und öffnet den Browser. Sie zeigt die Rechner und Gruppen aus den Einstellungsdateien, lässt je Rechner `viper check` laufen, zeigt die Protokolle und startet `preflight`, `up` und `down` für einen Rechner oder eine Gruppe, mit der Ausgabe, den Rückfragen und einem Knopf zum Abbrechen. NATS gibt es weiter nur auf der Kommandozeile.
 
 #### Vorgehen
 
@@ -403,21 +403,26 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 2. Der Browser öffnet sich mit der Übersicht. Die Adresse (`http://127.0.0.1:<port>/`) steht im Terminal; `Strg-C` beendet die Oberfläche.
 3. **Übersicht:** Rechner und Gruppen mit Anbieter, Typ, Ort und NATS-Gruppe. Die Spalte „State“ sagt, was dieser Rechner weiß: „set up“ (`viper up` ist durchgelaufen), „started“ (der Server ist angelegt) oder „not started“. Ob der Rechner wirklich läuft, beantwortet **Check**: Das ist `viper check` und zeigt dessen Ausgabe; „OK“ heißt Exit-Status 0.
 4. **Logs:** die Ereignisse aller Rechner, eines Rechners oder dessen vollständige Ausgabe, mit Suchfeld; dasselbe wie `viper log`.
+5. **Aktionen:** Die Knöpfe **Preflight**, **Up** und **Down** je Rechner und je Gruppe starten `viper preflight`, `viper up` und `viper down` als eigenen Prozess, genau wie am Terminal (gleiche Sperren, gleiche Protokolle). Das Feld „Repository URL“ gilt für Up und Preflight (`--repo`). Die Seite **Runs** zeigt die Ausgabe, solange der Lauf geht; ein neuer Tab findet laufende Läufe wieder, und das Schließen eines Tabs beendet nichts.
+6. **Rückfragen:** Fragt `viper` etwas (zum Beispiel „Type DELETE to continue“), erscheint unter der Ausgabe ein Eingabefeld. Sie tippen das Wort selbst; es gibt keinen Knopf, der für Sie bestätigt.
+7. **Abbrechen:** Der Knopf wirkt wie Strg-C am Terminal: `viper` bricht ab und räumt auf, was es kann. Es macht nichts rückgängig; ein halb angelegter Server kann bleiben. Das Beenden kann einige Sekunden dauern („Ending …“); nach 20 Sekunden beendet die Oberfläche den Prozess hart.
 
 Optionen:
 
 * `--port N`: auf diesem Port lauschen (Standard: ein freier).
 * `--no-open`: den Browser nicht öffnen; das Terminal zeigt die Adresse mit dem Schlüssel (gilt zehn Minuten, einmal).
-* `--readonly`: keine Aktion anbieten. In dieser Stufe ändert nichts etwas, die Option ist für die späteren Stufen da.
+* `--readonly`: keine Aktion anbieten (kein Preflight, Up oder Down); Ansehen, Check und Protokolle bleiben.
 
 #### Ergebnis
 
-Die Seiten laufen im Browser, sonst ändert sich nichts. `Check` schreibt wie am Terminal in `events.log` und `logs/`.
+Die Seiten laufen im Browser. `Check` und die Aktionen schreiben wie am Terminal in `events.log` und `logs/`; `Up`, `Down` und `Preflight` ändern, was auch am Terminal geändert würde.
 
 #### Hinweise
 
 * **Nur dieser Rechner:** Der Server lauscht auf `127.0.0.1` und antwortet nur unter genau dieser Adresse (nicht unter `localhost`). Die erste Anfrage tauscht einen Schlüssel, der bei jedem Start neu ist, einmal und höchstens eine Minute lang gegen ein Cookie (zehn Minuten mit `--no-open`); danach antwortet der Server nur mit diesem Cookie. Der Browser wird über eine Datei in einem privaten Verzeichnis geöffnet, damit der Schlüssel nicht in der Befehlszeile eines Programms steht, das andere Benutzer sehen; `viper` löscht die Datei beim Beenden.
 * **Keine Zugangsdaten auf dem Bildschirm:** Die Seiten zeigen nie die Einstellungsdateien. Die Werte der bekannten geheimen Einstellungen (Token und Passwörter der Anbieter, GitHub, Claude, Code-Server) ersetzt `viper` in jeder Ausgabe durch `[hidden]`; Steuerzeichen und Escape-Folgen fallen weg.
+* Je Rechner läuft eine Aktion zugleich (auch Gruppenläufe halten ihre Mitglieder), höchstens vier Läufe insgesamt. `Up` startet VS Code nicht (`--no-code`); eine Shell (`viper ssh`) gibt es in der Oberfläche nicht.
+* Beenden Sie `viper ui` mit Strg-C, während Läufe gehen, bricht es sie ab wie ein Strg-C am Terminal und wartet bis zu 20 Sekunden.
 * Hat ein Rechner unlesbare Einstellungen, steht der Fehler in der Zeile und **Check** ist aus.
 * Ein Rechner, der in mehreren Gruppen steht, erscheint je Gruppe einmal; **Check** prüft ihn in der Gruppe der Zeile.
 * Ist der Port belegt, bricht `viper ui` mit einer Meldung ab; wählen Sie mit `--port` einen anderen.
@@ -1677,3 +1682,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.129 | v0.24.0 | Release v0.24.0: die Änderungen 1.127 und 1.128 (Hilfe: `viper help` in Gruppen, `viper <befehl> --help` mit allen Optionen; Hinweis auf die Hilfe bei falschem Aufruf) und die ergänzten Beispieldateien (`NATS_OBJECTS*` in `groups/example.env.example`). |
 | 1.130 | nach v0.24.0 | k3d: Legt `viper up` den Cluster an, stellt k3d den aktuellen Kontext der `kubeconfig` nicht mehr um (`--kubeconfig-switch-context=false`); der Abschnitt „Registry und Cluster von `viper up` anlegen lassen (k3d)“ sagt, wie `viper` die `kubeconfig` benutzt. |
 | 1.131 | nach v0.24.0 | Neu: `viper ui` (`--port`, `--no-open`, `--readonly`) startet eine Weboberfläche auf `127.0.0.1` mit der Übersicht der Rechner und Gruppen, `viper check` je Rechner und den Protokollen; Schlüssel nur einmal, Cookie, Prüfung von Host und Herkunft, Ausgaben ohne Zugangsdaten. |
+| 1.132 | nach v0.24.0 | `viper ui`: `Preflight`, `Up` und `Down` für Rechner und Gruppen, mit Ausgabe, Rückfragen (Eingabefeld) und Abbrechen; die Seite „Runs“. |

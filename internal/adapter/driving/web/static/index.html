@@ -11,6 +11,7 @@
   <h1>viper</h1>
   <nav aria-label="Pages">
     <button type="button" id="tab-overview" class="tab" aria-pressed="true">Overview</button>
+    <button type="button" id="tab-runs" class="tab" aria-pressed="false">Runs</button>
     <button type="button" id="tab-logs" class="tab" aria-pressed="false">Logs</button>
   </nav>
   <span id="version" class="muted"></span>
@@ -23,11 +24,31 @@
       <thead><tr><th>Machine</th><th>Group</th><th>Provider</th><th>Type</th><th>Location</th><th>NATS</th><th>State</th><th>Actions</th></tr></thead>
       <tbody></tbody>
     </table>
+    <div class="row">
+      <label for="repo">Repository URL for up and preflight (optional)</label>
+      <input type="text" id="repo" autocomplete="off" spellcheck="false" size="40">
+    </div>
     <h2>Groups</h2>
-    <ul id="groups"></ul>
+    <table id="groups"><thead><tr><th>Group</th><th>Machines</th><th>Actions</th></tr></thead><tbody></tbody></table>
     <h2 id="h-check">Check</h2>
     <p id="check-status" role="status" class="muted">Pick a machine and press Check: it runs <code>viper check</code> and shows what it says.</p>
     <pre id="check-output" tabindex="0" aria-labelledby="h-check"></pre>
+  </section>
+  <section id="page-runs" hidden aria-labelledby="h-runs">
+    <h2 id="h-runs">Runs</h2>
+    <p class="muted">A run is viper itself, as at the terminal. A question (Type DELETE ...) is answered below, with the word you type.</p>
+    <ul id="run-list"></ul>
+    <p id="run-status" role="status"></p>
+    <pre id="run-output" tabindex="0" aria-labelledby="h-runs" aria-live="off"></pre>
+    <form id="run-form" class="row" hidden>
+      <label for="run-answer">Answer</label>
+      <input type="text" id="run-answer" autocomplete="off" spellcheck="false" size="30">
+      <button type="submit">Send</button>
+    </form>
+    <div class="row">
+      <button type="button" id="run-cancel" disabled>Cancel (like Ctrl-C)</button>
+      <span class="muted">Cancel does not undo: a server that was half made can remain.</span>
+    </div>
   </section>
   <section id="page-logs" hidden aria-labelledby="h-logs">
     <h2 id="h-logs">Logs</h2>

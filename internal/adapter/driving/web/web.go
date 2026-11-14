@@ -64,6 +64,8 @@ type Config struct {
 	// Clean makes an output fit to show (control characters, escape sequences), Redact takes the values of the settings
 	// that are secrets out of it. nil: the output is shown as it is (tests only).
 	Clean, Redact func(string) string
+	// Spawn starts viper for an action (nil: the pages offer none).
+	Spawn Spawner
 	// TokenTTL is how long after the start the one-time key can be exchanged (default one minute).
 	TokenTTL time.Duration
 	// Now is the clock (tests).
@@ -90,6 +92,8 @@ type Server struct {
 	used     bool
 	checking map[string]bool // the machines a check runs for
 	sem      chan struct{}
+	runs     runTable
+	quit     chan struct{} // closed when the server ends: the streams end
 }
 
 // New makes a server. Listen gives it its address.
@@ -106,7 +110,7 @@ func New(cfg Config) *Server {
 	if cfg.Redact == nil {
 		cfg.Redact = func(s string) string { return s }
 	}
-	return &Server{cfg: cfg, token: random(), cookie: random(), started: cfg.Now(), checking: map[string]bool{}, sem: make(chan struct{}, maxConcurrent)}
+	return &Server{cfg: cfg, token: random(), cookie: random(), started: cfg.Now(), checking: map[string]bool{}, sem: make(chan struct{}, maxConcurrent), quit: make(chan struct{})}
 }
 
 func random() string {
@@ -138,6 +142,7 @@ func (s *Server) Token() string { return s.token }
 // Serve answers until ctx ends, then closes the connections after at most 20 seconds.
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 16 << 10}
+	srv.RegisterOnShutdown(func() { close(s.quit) })
 	done := make(chan error, 1)
 	go func() { done <- srv.Serve(ln) }()
 	select {
@@ -148,6 +153,7 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	defer cancel()
 	err := srv.Shutdown(sctx)
+	s.endRuns(sctx)
 	if errors.Is(err, context.DeadlineExceeded) {
 		_ = srv.Close()
 	}
@@ -161,6 +167,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/overview", s.overview)
 	mux.HandleFunc("GET /api/log", s.log)
 	mux.HandleFunc("POST /api/check", s.check)
+	mux.HandleFunc("GET /api/runs", s.listRuns)
+	mux.HandleFunc("GET /api/events", s.events)
+	mux.HandleFunc("POST /api/run", s.startRun)
+	mux.HandleFunc("POST /api/answer", s.answer)
+	mux.HandleFunc("POST /api/cancel", s.cancelRun)
 	return s.guard(mux)
 }
 
