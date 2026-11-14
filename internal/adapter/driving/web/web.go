@@ -183,7 +183,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			return
 		}
 		if t := r.URL.Query().Get("t"); t != "" && r.URL.Path == "/" && r.Method == http.MethodGet {
-			s.exchange(w, r, t)
+			s.exchange(w, t)
 			return
 		}
 		if c, err := r.Cookie(cookieName); err != nil || !equal(c.Value, s.cookie) {
@@ -228,8 +228,8 @@ func (s *Server) sameOrigin(r *http.Request) bool {
 	return f == "" || f == "same-origin"
 }
 
-// exchange gives the cookie for the one-time key: once, and in the first minute.
-func (s *Server) exchange(w http.ResponseWriter, r *http.Request, t string) {
+// exchange gives the cookie for the one-time key: once, and in the first minute. The answer is a page that moves on to /.
+func (s *Server) exchange(w http.ResponseWriter, t string) {
 	s.mu.Lock()
 	ok := !s.used && s.cfg.Now().Sub(s.started) < s.cfg.TokenTTL && equal(t, s.token)
 	if ok {
@@ -241,7 +241,11 @@ func (s *Server) exchange(w http.ResponseWriter, r *http.Request, t string) {
 		return
 	}
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: s.cookie, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	// Not a redirect: when the key comes from a page of another origin (the start file is a file://), the browser sends the
+	// requests of the whole redirect chain as cross-site and leaves out a SameSite=Strict cookie. A page of this server
+	// that moves on by itself is a navigation of this site.
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = io.WriteString(w, `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/"><title>viper</title>`)
 }
 
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {

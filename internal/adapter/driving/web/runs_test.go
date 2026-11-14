@@ -97,7 +97,7 @@ func live(t *testing.T, readonly bool) *site {
 	c := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	st := &site{s: s, c: c, base: "http://" + s.Host(), spawn: sp}
 	resp, err := c.Get(s.URL())
-	if err != nil || resp.StatusCode != http.StatusSeeOther {
+	if err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatal(err, resp)
 	}
 	_ = resp.Body.Close()

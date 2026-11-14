@@ -82,8 +82,8 @@ func do(h http.Handler, method, host, path string, hdr map[string]string, body s
 func login(t *testing.T, s *web.Server, h http.Handler) map[string]string {
 	t.Helper()
 	w := do(h, "GET", s.Host(), "/?t="+s.Token(), nil, "")
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/" {
-		t.Fatalf("exchange: %d %v", w.Code, w.Header())
+	if w.Code != http.StatusOK || w.Header().Get("Location") != "" || !strings.Contains(w.Body.String(), `http-equiv="refresh" content="0;url=/"`) {
+		t.Fatalf("exchange: %d %v %s", w.Code, w.Header(), w.Body)
 	}
 	c := strings.SplitN(w.Header().Get("Set-Cookie"), ";", 2)[0]
 	return map[string]string{"Cookie": c}
@@ -295,7 +295,7 @@ func TestThePagesHaveNothingThatTheModelForbids(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		s := string(b)
+		s := strings.ReplaceAll(string(b), `xmlns="http://www.w3.org/2000/svg"`, "") // a name, not an address that is fetched
 		for _, bad := range []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function", "setAttribute('style'", `setAttribute("style"`, " style=", "<style", "onclick=", "onerror=", "onload=", "http://", "https://", "//cdn", "@import", "url("} {
 			if strings.Contains(s, bad) {
 				t.Errorf("%s has %q", p, bad)
@@ -310,7 +310,7 @@ func TestThePagesHaveNothingThatTheModelForbids(t *testing.T) {
 		}
 		return nil
 	})
-	if err != nil || n != 3 {
+	if err != nil || n != 4 {
 		t.Fatalf("%d files, %v", n, err)
 	}
 }

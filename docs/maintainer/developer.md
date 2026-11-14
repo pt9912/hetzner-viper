@@ -93,6 +93,17 @@ Das Image `viper-machine` (`image/`) ist das der Anbieter `kubernetes` und `comp
 
 `internal/adapter/driving/web` ist ein treibender Adapter: `net/http`, die Seiten in `web/static` (HTML, CSS, JavaScript, eingebettet mit `//go:embed`, kein Build-Schritt). Er importiert die CLI nicht; `cli/ui.go` gibt ihm ein `web.Backend` (Liste der Rechner aus den Einstellungsdateien, `runCheck`, `showLog` im selben Prozess). Die Regeln stehen in `docs/plan/ui.md` §3; `web_test.go` prüft jede davon (Host, einmaliger Schlüssel, Cookie, `Origin`, CSP, Ausgaben ohne geheime Werte) und durchsucht die Seiten nach `innerHTML`, `eval`, Inline-Stilen und fremden Adressen. Neue Seiten oder Anfragen dürfen keine dieser Regeln aufweichen: keine GET-Anfrage mit Nebenwirkung, jede Ausgabe durch `show` (reinigen, schwärzen), alle Texte mit `textContent`. Aktionen laufen als Prozess von `viper` selbst (`cli/ui_proc*.go`, unter Windows mit eigener Prozessgruppe und `CTRL_BREAK`, dort noch ungeprüft); `web/runs.go` hält die Läufe (ein Lauf je Rechner, Ausgabe in Stücken, eine offene Zeile nach 600 ms ist eine Frage, Abbrechen = Interrupt, nach 20 s Kill). Die Tests in `runs_test.go` benutzen einen Prozess, den der Test steuert.
 
+### Browser-Tests der Oberfläche (`e2e/`)
+
+`e2e/` enthält Playwright-Tests (Chromium) für `viper ui`; sie gehören nicht zum Programm und nicht zu den Gates. Sie starten das echte `viper ui` in einem Wegwerf-Verzeichnis mit `PROVIDER=compose` und einem gefälschten `docker` (es gibt nur eine Zeile aus und schläft), sodass nirgends etwas angelegt wird. Je Test läuft ein eigener Server (der Schlüssel gilt nur einmal).
+
+```bash
+cd e2e && npm install && npx playwright install chromium   # einmal
+npx playwright test                                         # baut viper selbst (oder VIPER_BIN=…)
+```
+
+In einem Container ohne die Systembibliotheken von Chromium (`npx playwright install-deps`, braucht root) hilft `E2E_CONTAINER=1` (`--no-sandbox`, kein `/dev/shm`); ohne installierte Schriften stürzt Chromium beim ersten Text ab. Die Tests prüfen, was nur ein Browser zeigt: Cookie und Weiterleitung (der Start über die `file://`-Startdatei), CSP ohne Verstöße, `localhost` abgelehnt, eine Seite eines fremden Ursprungs, die nichts starten kann, Ausgaben als Text (kein Markup), Rückfrage mit Eingabefeld, Abbrechen und `--readonly`.
+
 ## Tests
 
 Die Tests beschreibt [`architektur.md`](architektur.md#tests). Der Devcontainer enthält `bash`, `git`, `jq`, `ssh-keygen` und `shellcheck`; ein fehlendes Werkzeug lässt den Test fehlschlagen (`make test` setzt `VIPER_REQUIRE_TOOLS=1`), sonst überspringt er ihn.
