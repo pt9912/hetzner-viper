@@ -122,6 +122,7 @@
     renderMachines();
     renderGroups();
     renderLogChoices();
+    renderNats();
   }
 
   async function runCheck(m, button) {
@@ -166,14 +167,147 @@
     $('log-output').textContent = (q ? lines.filter((l) => l.toLowerCase().includes(q)) : lines).join('\n');
   }
 
+  // ---- NATS: viper nats as runs; the page only builds the request ----
+  function natsGroup() { return overview.nats.find((g) => g.name === $('nats-group').value); }
+
+  function renderNats() {
+    const groups = overview.nats || [];
+    $('nats-none').hidden = groups.length > 0;
+    $('nats-main').hidden = groups.length === 0;
+    const sel = $('nats-group');
+    const keep = sel.value;
+    sel.replaceChildren();
+    for (const g of groups) { addOption(sel, g.name, g.name); }
+    if (groups.some((g) => g.name === keep)) { sel.value = keep; }
+    natsGroupChanged();
+  }
+
+  function addOption(sel, value, text) {
+    const o = document.createElement('option');
+    o.value = value;
+    o.textContent = text;
+    sel.appendChild(o);
+  }
+
+  function natsGroupChanged() {
+    const g = natsGroup();
+    if (!g) { return; }
+    const from = $('nats-from');
+    const to = $('nats-to');
+    const keepFrom = from.value;
+    const keepTo = to.value;
+    from.replaceChildren();
+    addOption(from, '', g.operator ? 'the operator (key found here)' : 'a machine of the group (over ssh)');
+    to.replaceChildren();
+    for (const m of g.machines) { addOption(from, m, 'machine ' + m); addOption(to, m, m); }
+    if (g.machines.includes(keepFrom)) { from.value = keepFrom; }
+    if (g.machines.includes(keepTo)) { to.value = keepTo; }
+    $('nats-mode').textContent = g.operator
+      ? 'This computer has the key of the operator: viper nats speaks as the operator.'
+      : 'No key of the operator here (viper nats init ' + g.name + '): viper nats speaks as a machine of the group, over ssh.';
+    natsKindChanged();
+  }
+
+  function natsKindChanged() {
+    const kind = $('nats-kind').value;
+    $('nats-to').disabled = kind === 'broadcast';
+    $('nats-topic').disabled = kind !== 'broadcast';
+  }
+
+  async function natsRun(extra) {
+    const g = natsGroup();
+    if (!g) { return; }
+    const req = Object.assign({ action: 'nats', nats: g.name }, extra);
+    fetching = extra.sub === 'fetch';
+    if ($('nats-from').value) { req.from = $('nats-from').value; }
+    await startRun(req);
+  }
+
+  async function natsSend(ev) {
+    ev.preventDefault();
+    const status = $('nats-send-status');
+    const kind = $('nats-kind').value;
+    const req = { sub: kind, text: $('nats-text').value };
+    if (kind === 'broadcast') { req.topic = $('nats-topic').value.trim(); } else { req.to = $('nats-to').value; }
+    if (kind === 'request') { req.timeout = Number($('nats-timeout').value) || 30; }
+    if ($('nats-yes').checked) { req.yes = true; }
+    const file = $('nats-file').files[0];
+    try {
+      if (file) {
+        status.textContent = 'Handing over the file ...';
+        const type = fileKind(file);
+        const res = await fetch('/api/upload?kind=' + type + '&name=' + encodeURIComponent(file.name), {
+          method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/octet-stream', 'X-Viper-UI': '1' }, body: file,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { throw new Error(data.error || 'HTTP ' + res.status); }
+        req.upload = data.id;
+      }
+      status.textContent = '';
+      await natsRun(req);
+    } catch (e) {
+      status.textContent = e.message;
+    }
+  }
+
+  function fileKind(file) {
+    const n = file.name.toLowerCase();
+    if (n.endsWith('.pdf') || file.type === 'application/pdf') { return 'pdf'; }
+    if (n.endsWith('.zip') || file.type === 'application/zip') { return 'zip'; }
+    return 'image';
+  }
+
+  // a line of the output of viper nats --json, as text; the lines of anything else stay as they are
+  function natsText(line) {
+    let e;
+    try { e = JSON.parse(line); } catch (x) { return { text: line }; }
+    if (!e || typeof e !== 'object' || !e.event) { return { text: line }; }
+    const att = e.att_id ? ' [file ' + (e.att_name || '') + ', ' + (e.att_type || '') + ', ' + (e.att_size || 0) + ' bytes]' : '';
+    let text;
+    switch (e.event) {
+      case 'peer': text = 'present: ' + e.from + (e.text ? ' (topics: ' + e.text + ')' : ''); break;
+      case 'configured': text = 'set in the settings: ' + e.from + ': ' + (e.text || 'no topic'); break;
+      case 'message': text = (e.via === 'pub' ? '#' + e.topic + ' ' : '') + e.from + (e.to ? ' -> ' + e.to : '') + ': ' + (e.text || '') + att; break;
+      case 'answer': text = 'answer from ' + e.from + ': ' + (e.text || '') + att; break;
+      case 'sent': text = 'sent' + att; break;
+      case 'fetched': text = 'fetched: ' + (e.text || ''); break;
+      case 'ready': text = 'ready: ' + (e.me || '') + ' in ' + (e.group || ''); break;
+      default: text = line;
+    }
+    return { text, fetch: e.att_id ? { id: e.att_id, sha: e.att_sha256 || '' } : null };
+  }
+
+  let natsCarry = '';
+
+  function showNatsOutput(out, text) {
+    natsCarry += text;
+    const lines = natsCarry.split('\n');
+    natsCarry = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith('{')) { out.appendChild(document.createTextNode(line + '\n')); continue; }
+      const r = natsText(line);
+      out.appendChild(document.createTextNode(r.text + '\n'));
+      if (r.fetch) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = 'Fetch this file';
+        b.addEventListener('click', () => { $('nats-id').value = r.fetch.id; $('nats-sha').value = r.fetch.sha; show('nats'); $('nats-id').focus(); });
+        out.appendChild(b);
+        out.appendChild(document.createTextNode('\n'));
+      }
+    }
+  }
+
   // ---- runs: viper itself, started by the server; the page attaches to its output ----
   let source = null;
+  let runs = [];
+  let fetching = false;
   let current = '';
   let runState = '';
 
   async function startRun(req) {
     const repo = $('repo').value.trim();
-    if (repo && req.action !== 'down') { req.repo = repo; }
+    if (repo && req.action !== 'down' && req.action !== 'nats') { req.repo = repo; }
     try {
       const r = await api('/api/run', req);
       show('runs');
@@ -189,6 +323,7 @@
   async function loadRuns() {
     let r;
     try { r = await api('/api/runs'); } catch (e) { return; }
+    runs = r.runs;
     const ul = $('run-list');
     ul.replaceChildren();
     for (const run of r.runs) {
@@ -208,10 +343,14 @@
     current = id;
     $('run-output').textContent = '';
     source = new EventSource('/api/events?id=' + encodeURIComponent(id));
+    natsCarry = '';
+    $('run-download').hidden = true;
+    const isNats = (runs.find((r) => r.id === id) || {}).action === 'nats';
+    const action = (runs.find((r) => r.id === id) || {}).action;
     source.addEventListener('out', (ev) => {
       const e = JSON.parse(ev.data);
       const out = $('run-output');
-      out.appendChild(document.createTextNode(e.text));
+      if (isNats) { showNatsOutput(out, e.text); } else { out.appendChild(document.createTextNode(e.text)); }
       while (out.childNodes.length > 5000) { out.removeChild(out.firstChild); }
       out.scrollTop = out.scrollHeight;
     });
@@ -223,7 +362,10 @@
       $('run-form').hidden = st.state !== 'waiting';
       $('run-cancel').disabled = st.state === 'done' || st.state === 'cancelling';
       if (st.state === 'waiting') { $('run-answer').focus(); }
-      if (st.state === 'done') { source.close(); source = null; load(); }
+      if (st.state === 'done') {
+        if (action === 'nats' && st.code === 0 && fetching) { $('run-download-link').href = '/api/download?id=' + encodeURIComponent(id); $('run-download').hidden = false; }
+        source.close(); source = null; load();
+      }
       loadRuns();
     });
   }
@@ -248,7 +390,7 @@
   });
 
   function show(page) {
-    for (const p of ['overview', 'runs', 'logs']) {
+    for (const p of ['overview', 'runs', 'nats', 'logs']) {
       $('page-' + p).hidden = p !== page;
       $('tab-' + p).setAttribute('aria-pressed', String(p === page));
     }
@@ -258,7 +400,15 @@
 
   $('tab-overview').addEventListener('click', () => show('overview'));
   $('tab-runs').addEventListener('click', () => show('runs'));
+  $('tab-nats').addEventListener('click', () => show('nats'));
   $('tab-logs').addEventListener('click', () => show('logs'));
+  $('nats-group').addEventListener('change', natsGroupChanged);
+  $('nats-kind').addEventListener('change', natsKindChanged);
+  $('nats-peers').addEventListener('click', () => natsRun({ sub: 'peers', timeout: Number($('nats-timeout').value) || 5 }));
+  $('nats-topics').addEventListener('click', () => natsRun({ sub: 'topics', timeout: Number($('nats-timeout').value) || 5 }));
+  $('nats-listen').addEventListener('click', () => natsRun({ sub: 'listen', topic: $('nats-listen-topic').value.trim(), all: $('nats-listen-all').checked }));
+  $('nats-send').addEventListener('submit', natsSend);
+  $('nats-fetch').addEventListener('submit', (ev) => { ev.preventDefault(); natsRun({ sub: 'fetch', id: $('nats-id').value.trim(), sha256: $('nats-sha').value.trim().toLowerCase() }); });
   $('log-reload').addEventListener('click', loadLog);
   $('log-machine').addEventListener('change', loadLog);
   $('log-full').addEventListener('change', loadLog);

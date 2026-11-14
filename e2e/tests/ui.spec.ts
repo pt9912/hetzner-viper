@@ -10,6 +10,7 @@ test('the one-time key becomes a session and the overview shows the machines', a
   const problems: string[] = [];
   page.on('console', (m) => { if (m.type() === 'error') { problems.push(m.text()); } });
   page.on('pageerror', (e) => problems.push(String(e)));
+  page.on('response', (r) => { if (r.status() >= 400) { problems.push(r.status() + ' ' + r.url()); } });
   await page.goto(ui.start);
   await expect(page).toHaveURL(ui.base + '/');
   await expect(page.locator('#machines tbody tr')).toHaveCount(3); // web, a and b in the group dev

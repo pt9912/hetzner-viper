@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.132  
+Version: 1.133  
 Software-Version: v0.24.0  
 Stand: 14.11.2026  
 
@@ -395,7 +395,7 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 
 ### Die Oberfläche im Browser
 
-`viper ui` startet auf Ihrem Rechner eine kleine Weboberfläche und öffnet den Browser. Sie zeigt die Rechner und Gruppen aus den Einstellungsdateien, lässt je Rechner `viper check` laufen, zeigt die Protokolle und startet `preflight`, `up` und `down` für einen Rechner oder eine Gruppe, mit der Ausgabe, den Rückfragen und einem Knopf zum Abbrechen. NATS gibt es weiter nur auf der Kommandozeile.
+`viper ui` startet auf Ihrem Rechner eine kleine Weboberfläche und öffnet den Browser. Sie zeigt die Rechner und Gruppen aus den Einstellungsdateien, lässt je Rechner `viper check` laufen, zeigt die Protokolle und startet `preflight`, `up` und `down` für einen Rechner oder eine Gruppe, mit der Ausgabe, den Rückfragen und einem Knopf zum Abbrechen. und spricht mit den NATS-Gruppen (wer ist da, Themen, mitlesen, Nachrichten und Dateien senden und holen).
 
 #### Vorgehen
 
@@ -406,6 +406,12 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 5. **Aktionen:** Die Knöpfe **Preflight**, **Up** und **Down** je Rechner und je Gruppe starten `viper preflight`, `viper up` und `viper down` als eigenen Prozess, genau wie am Terminal (gleiche Sperren, gleiche Protokolle). Das Feld „Repository URL“ gilt für Up und Preflight (`--repo`). Die Seite **Runs** zeigt die Ausgabe, solange der Lauf geht; ein neuer Tab findet laufende Läufe wieder, und das Schließen eines Tabs beendet nichts.
 6. **Rückfragen:** Fragt `viper` etwas (zum Beispiel „Type DELETE to continue“), erscheint unter der Ausgabe ein Eingabefeld. Sie tippen das Wort selbst; es gibt keinen Knopf, der für Sie bestätigt.
 7. **Abbrechen:** Der Knopf wirkt wie Strg-C am Terminal: `viper` bricht ab und räumt auf, was es kann. Es macht nichts rückgängig; ein halb angelegter Server kann bleiben. Das Beenden kann einige Sekunden dauern („Ending …“); nach 20 Sekunden beendet die Oberfläche den Prozess hart.
+
+8. **NATS:** Die Seite „NATS“ zeigt die Gruppen aus `groups/*.env`, deren Rechner `NATS_ENABLED=true` haben. Die Zeile darunter sagt, wie `viper nats` spricht: **als Betreiber**, wenn dieser Rechner den Schlüssel der Gruppe hat (`viper nats init <gruppe>`), sonst **als Rechner der Gruppe** über ssh (die Auswahl „Speak as“ nennt den Rechner). Jede Schaltfläche startet `viper nats …` als Lauf (Seite „Runs“):
+    * **Peers** und **Topics**: wer da ist und welche Themen die Rechner abonniert haben.
+    * **Listen**: liest mit, bis Sie **Cancel** drücken; ein Thema begrenzt (leer: alle Themen der Einstellungen), „everything of the group“ zeigt alles. Hat eine Nachricht eine Datei, steht dort **Fetch this file**; der Knopf trägt ID und Prüfsumme in das Formular „Get a file“ ein.
+    * **Send**: Nachricht an einen Rechner, Anfrage mit Antwort oder Rundruf an ein Thema; der Text bis 16 KiB, dazu eine Datei (PDF, Bild oder ZIP; die Prüfungen und Grenzen sind die von `viper nats`, bei einer Gruppe ohne `NATS_OBJECTS` lehnt der Befehl die Datei ab). Der Text steht nie in der Befehlszeile eines Programms. Die Warnung, dass der Absender in `NATS_MCP_PUSH_FROM` eines Empfängers steht, erscheint als Fehler des Laufs; „send anyway“ entspricht `--yes`.
+    * **Get a file** (`viper nats fetch`, nur mit dem Schlüssel des Betreibers): Nach dem Lauf erscheint **Download the file**. Die Datei stammt von einem anderen Agenten: nicht ausführen; die Seite lädt sie immer als Download, nie als Seite.
 
 Optionen:
 
@@ -1683,3 +1689,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.130 | nach v0.24.0 | k3d: Legt `viper up` den Cluster an, stellt k3d den aktuellen Kontext der `kubeconfig` nicht mehr um (`--kubeconfig-switch-context=false`); der Abschnitt „Registry und Cluster von `viper up` anlegen lassen (k3d)“ sagt, wie `viper` die `kubeconfig` benutzt. |
 | 1.131 | nach v0.24.0 | Neu: `viper ui` (`--port`, `--no-open`, `--readonly`) startet eine Weboberfläche auf `127.0.0.1` mit der Übersicht der Rechner und Gruppen, `viper check` je Rechner und den Protokollen; Schlüssel nur einmal, Cookie, Prüfung von Host und Herkunft, Ausgaben ohne Zugangsdaten. |
 | 1.132 | nach v0.24.0 | `viper ui`: `Preflight`, `Up` und `Down` für Rechner und Gruppen, mit Ausgabe, Rückfragen (Eingabefeld) und Abbrechen; die Seite „Runs“. |
+| 1.133 | nach v0.24.0 | `viper ui`: die Seite „NATS“ (Peers, Topics, Mitlesen, Senden mit Text und Datei, Datei holen und herunterladen). |

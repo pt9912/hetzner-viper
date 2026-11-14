@@ -19,3 +19,7 @@ pre { background: var(--code); border: 1px solid var(--line); border-radius: 4px
 .ok { color: var(--ok); }
 .bad { color: var(--bad); }
 .state-ready { color: var(--ok); }
+h3 { font-size: .95rem; margin: 1rem 0 .4rem; }
+.column { display: flex; flex-direction: column; gap: .5rem; max-width: 48rem; }
+textarea { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: .4rem; }
+a { color: var(--accent); }

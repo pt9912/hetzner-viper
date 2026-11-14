@@ -13,6 +13,7 @@
   <nav aria-label="Pages">
     <button type="button" id="tab-overview" class="tab" aria-pressed="true">Overview</button>
     <button type="button" id="tab-runs" class="tab" aria-pressed="false">Runs</button>
+    <button type="button" id="tab-nats" class="tab" aria-pressed="false">NATS</button>
     <button type="button" id="tab-logs" class="tab" aria-pressed="false">Logs</button>
   </nav>
   <span id="version" class="muted"></span>
@@ -41,6 +42,7 @@
     <ul id="run-list"></ul>
     <p id="run-status" role="status"></p>
     <pre id="run-output" tabindex="0" aria-labelledby="h-runs" aria-live="off"></pre>
+    <p id="run-download" hidden><a id="run-download-link">Download the file</a></p>
     <form id="run-form" class="row" hidden>
       <label for="run-answer">Answer</label>
       <input type="text" id="run-answer" autocomplete="off" spellcheck="false" size="30">
@@ -49,6 +51,65 @@
     <div class="row">
       <button type="button" id="run-cancel" disabled>Cancel (like Ctrl-C)</button>
       <span class="muted">Cancel does not undo: a server that was half made can remain.</span>
+    </div>
+  </section>
+  <section id="page-nats" hidden aria-labelledby="h-nats">
+    <h2 id="h-nats">NATS group</h2>
+    <p id="nats-none" class="muted" hidden>No group with NATS machines found (groups/&lt;name&gt;.env with NATS_ENABLED machines).</p>
+    <div id="nats-main">
+      <div class="row">
+        <label for="nats-group">Group</label>
+        <select id="nats-group"></select>
+        <label for="nats-from">Speak as</label>
+        <select id="nats-from"></select>
+      </div>
+      <p id="nats-mode" class="muted" role="status"></p>
+      <h3>Who is there</h3>
+      <div class="row">
+        <label for="nats-timeout">Wait (seconds)</label>
+        <input type="number" id="nats-timeout" min="1" max="600" value="5">
+        <button type="button" id="nats-peers">Peers</button>
+        <button type="button" id="nats-topics">Topics</button>
+      </div>
+      <h3>Listen</h3>
+      <div class="row">
+        <label for="nats-listen-topic">Topics (optional, with commas)</label>
+        <input type="text" id="nats-listen-topic" autocomplete="off" size="24">
+        <label><input type="checkbox" id="nats-listen-all"> everything of the group</label>
+        <button type="button" id="nats-listen">Listen</button>
+      </div>
+      <h3>Send</h3>
+      <form id="nats-send" class="column">
+        <div class="row">
+          <label for="nats-kind">What</label>
+          <select id="nats-kind">
+            <option value="send">Message to a machine</option>
+            <option value="request">Request to a machine (wait for the answer)</option>
+            <option value="broadcast">Round to a topic</option>
+          </select>
+          <label for="nats-to">To</label>
+          <select id="nats-to"></select>
+          <label for="nats-topic">Topic</label>
+          <input type="text" id="nats-topic" autocomplete="off" size="16">
+        </div>
+        <label for="nats-text">Text (up to 16 KiB)</label>
+        <textarea id="nats-text" rows="4" cols="60" maxlength="16384"></textarea>
+        <div class="row">
+          <label for="nats-file">File (PDF, image or ZIP)</label>
+          <input type="file" id="nats-file" accept=".pdf,.zip,image/*">
+          <label><input type="checkbox" id="nats-yes"> send anyway if the agent there gets it pushed (--yes)</label>
+        </div>
+        <div class="row"><button type="submit">Send</button><span id="nats-send-status" class="muted" role="status"></span></div>
+      </form>
+      <h3>Get a file</h3>
+      <form id="nats-fetch" class="row">
+        <label for="nats-id">ID</label>
+        <input type="text" id="nats-id" autocomplete="off" size="24">
+        <label for="nats-sha">SHA-256</label>
+        <input type="text" id="nats-sha" autocomplete="off" size="40">
+        <button type="submit">Fetch</button>
+      </form>
+      <p class="muted">A fetched file is from another agent: untrusted. Do not run it.</p>
     </div>
   </section>
   <section id="page-logs" hidden aria-labelledby="h-logs">

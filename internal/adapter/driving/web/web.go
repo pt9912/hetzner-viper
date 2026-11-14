@@ -38,12 +38,21 @@ type Group struct {
 	Error    string   `json:"error,omitempty"`
 }
 
+// NATSGroup is a group of groups/<name>.env whose machines are in a NATS group. Operator says that this computer has the key
+// of the operator: viper nats then speaks as the operator, else as one of the machines (over ssh).
+type NATSGroup struct {
+	Name     string   `json:"name"`
+	Machines []string `json:"machines"`
+	Operator bool     `json:"operator"`
+}
+
 // Overview is what viper knows of this computer's machines and groups, from the files alone.
 type Overview struct {
-	Machines []Machine `json:"machines"`
-	Groups   []Group   `json:"groups"`
-	Readonly bool      `json:"readonly"`
-	Version  string    `json:"version"`
+	Machines []Machine   `json:"machines"`
+	Groups   []Group     `json:"groups"`
+	NATS     []NATSGroup `json:"nats"`
+	Readonly bool        `json:"readonly"`
+	Version  string      `json:"version"`
 }
 
 // Backend is what the server shows: the commands of viper, called in this process. The cli package gives it.
@@ -64,6 +73,8 @@ type Config struct {
 	// Clean makes an output fit to show (control characters, escape sequences), Redact takes the values of the settings
 	// that are secrets out of it. nil: the output is shown as it is (tests only).
 	Clean, Redact func(string) string
+	// MaxUpload is the largest file a page may hand over to send (default 64 MiB; the command checks the limit of the group).
+	MaxUpload int64
 	// Spawn starts viper for an action (nil: the pages offer none).
 	Spawn Spawner
 	// TokenTTL is how long after the start the one-time key can be exchanged (default one minute).
@@ -75,6 +86,7 @@ type Config struct {
 const (
 	maxOutput      = 1 << 20 // what of a run is shown
 	maxBody        = 4 << 10
+	maxRunBody     = 64 << 10 // a message is up to 16 KiB, as JSON
 	maxConcurrent  = 16
 	checkTimeLimit = 15 * time.Minute
 	cookieName     = "viper_ui"
@@ -93,6 +105,7 @@ type Server struct {
 	checking map[string]bool // the machines a check runs for
 	sem      chan struct{}
 	runs     runTable
+	uploads  uploadTable
 	quit     chan struct{} // closed when the server ends: the streams end
 }
 
@@ -103,6 +116,9 @@ func New(cfg Config) *Server {
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
+	}
+	if cfg.MaxUpload == 0 {
+		cfg.MaxUpload = 64 << 20
 	}
 	if cfg.Clean == nil {
 		cfg.Clean = func(s string) string { return s }
@@ -154,6 +170,7 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	defer cancel()
 	err := srv.Shutdown(sctx)
 	s.endRuns(sctx)
+	s.uploads.removeAll()
 	if errors.Is(err, context.DeadlineExceeded) {
 		_ = srv.Close()
 	}
@@ -172,6 +189,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/run", s.startRun)
 	mux.HandleFunc("POST /api/answer", s.answer)
 	mux.HandleFunc("POST /api/cancel", s.cancelRun)
+	mux.HandleFunc("POST /api/upload", s.upload)
+	mux.HandleFunc("GET /api/download", s.download)
 	return s.guard(mux)
 }
 
@@ -221,7 +240,11 @@ func equal(a, b string) bool { return subtle.ConstantTimeCompare([]byte(a), []by
 // sameOrigin is the check of a POST: the origin is this server, the header only a script of this server can add, and the
 // content type is not one a form can send.
 func (s *Server) sameOrigin(r *http.Request) bool {
-	if r.Header.Get("Origin") != "http://"+s.host || r.Header.Get("X-Viper-UI") != "1" || r.Header.Get("Content-Type") != "application/json" {
+	want := "application/json"
+	if r.URL.Path == "/api/upload" {
+		want = "application/octet-stream" // not a type a form can send: another origin needs a preflight, which gets no answer
+	}
+	if r.Header.Get("Origin") != "http://"+s.host || r.Header.Get("X-Viper-UI") != "1" || r.Header.Get("Content-Type") != want {
 		return false
 	}
 	f := r.Header.Get("Sec-Fetch-Site")
@@ -245,7 +268,7 @@ func (s *Server) exchange(w http.ResponseWriter, t string) {
 	// requests of the whole redirect chain as cross-site and leaves out a SameSite=Strict cookie. A page of this server
 	// that moves on by itself is a navigation of this site.
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = io.WriteString(w, `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/"><title>viper</title>`)
+	_, _ = io.WriteString(w, `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><title>viper</title>`)
 }
 
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {

@@ -78,13 +78,19 @@ type site struct {
 	spawn *spawns
 }
 
-func live(t *testing.T, readonly bool) *site {
+func live(t *testing.T, readonly bool) *site { return liveWith(t, readonly, nil) }
+
+func liveWith(t *testing.T, readonly bool, tune func(*web.Config)) *site {
 	t.Helper()
 	f := newFake()
+	f.overview.NATS = []web.NATSGroup{{Name: "dev", Machines: []string{"dev1", "dev2"}, Operator: true}}
 	f.overview.Groups = []web.Group{{Name: "dev", Machines: []string{"dev1", "dev2"}}}
 	f.overview.Machines = append(f.overview.Machines, web.Machine{Name: "dev2", Group: "dev"})
 	sp := &spawns{ch: make(chan *proc, 8)}
 	cfg := web.Config{Backend: f, Readonly: readonly, Redact: redact, Spawn: func(argv []string) (web.Proc, error) { return sp.spawn(argv) }}
+	if tune != nil {
+		tune(&cfg)
+	}
 	s := web.New(cfg)
 	ln, err := s.Listen(0)
 	if err != nil {

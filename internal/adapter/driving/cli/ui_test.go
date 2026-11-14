@@ -147,3 +147,28 @@ func TestUIOptions(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestTheOverviewNamesTheNATSGroupsAndWhetherThereIsAnOperatorKey(t *testing.T) {
+	env, home := nativeEnv(t)
+	dir := t.TempDir()
+	write(t, dir, ".env.local", "PROVIDER=compose\nSERVER_PREFIX=ui\nSERVER_LOCATION=default\nCOMPOSE_IMAGE=x:1\nDNS_PROVIDER=none\n")
+	for _, m := range []string{"a", "b"} {
+		write(t, dir, "machines/"+m+".env.local", "NATS_ENABLED=true\nNATS_GROUP=dev\nNATS_MCP=true\n")
+	}
+	write(t, dir, "machines/plain.env.local", "")
+	write(t, dir, "groups/dev.env", "GROUP_MACHINES=a,b\n")
+	write(t, dir, "groups/other.env", "GROUP_MACHINES=plain\n")
+	b, _ := cli.UIBackend(&cli.Opts{Host: testHost(), Dir: dir}, env)
+	ov, err := b.Overview(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ov.NATS) != 1 || ov.NATS[0].Name != "dev" || strings.Join(ov.NATS[0].Machines, ",") != "a,b" || ov.NATS[0].Operator {
+		t.Fatalf("nats groups: %+v", ov.NATS)
+	}
+	write(t, filepath.Join(home, ".local", "state", "viper"), "groups/dev/operator.nk", "SUAXXXX")
+	ov, _ = b.Overview(context.Background())
+	if !ov.NATS[0].Operator {
+		t.Errorf("the key is there: %+v", ov.NATS)
+	}
+}

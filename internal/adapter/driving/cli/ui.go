@@ -132,11 +132,39 @@ func (b *uiBackend) Overview(ctx context.Context) (web.Overview, error) {
 			ov.Machines = append(ov.Machines, b.machine(name, ""))
 		}
 	}
+	ov.NATS = b.natsGroups(ov)
 	sort.SliceStable(ov.Machines, func(i, j int) bool {
 		a, c := ov.Machines[i], ov.Machines[j]
 		return a.Name < c.Name || a.Name == c.Name && a.Group < c.Group
 	})
 	return ov, ctx.Err()
+}
+
+// natsGroups are the groups of groups/*.env whose machines are in a NATS group, and whether this computer has the key of the
+// operator (then viper nats speaks as the operator).
+func (b *uiBackend) natsGroups(ov web.Overview) []web.NATSGroup {
+	state := model.StateDir(b.env.Home)
+	out := []web.NATSGroup{}
+	for _, g := range ov.Groups {
+		if g.Error != "" {
+			continue
+		}
+		on := false
+		for _, m := range ov.Machines {
+			if m.Group == g.Name && m.NATS != "" {
+				on = true
+			}
+		}
+		if on {
+			out = append(out, web.NATSGroup{Name: g.Name, Machines: g.Machines, Operator: hasOperatorKey(state, g.Name)})
+		}
+	}
+	return out
+}
+
+// hasOperatorKey looks for the key at its place (and at the one an older version used); it moves nothing.
+func hasOperatorKey(state, group string) bool {
+	return exists(filepath.Join(state, "groups", group, "operator.nk")) || exists(filepath.Join(state, "nats", group, "operator.nk"))
 }
 
 // machine loads the settings of one machine without asking for the credentials and reports what is there.

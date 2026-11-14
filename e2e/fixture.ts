@@ -21,7 +21,8 @@ export async function startUI(extra: string[] = [], dockerSleep = 30, openBrowse
   const bin = path.join(root, 'bin');
   for (const d of [home, path.join(work, 'machines'), path.join(work, 'groups'), bin]) { fs.mkdirSync(d, { recursive: true }); }
   fs.writeFileSync(path.join(work, '.env.local'), 'PROVIDER=compose\nSERVER_PREFIX=e2e\nSERVER_LOCATION=default\nCOMPOSE_IMAGE=e2efake:1\nDNS_PROVIDER=none\nVIPER_GH_TOKEN=ghp_e2esecretvalue123\n', { mode: 0o600 });
-  for (const m of ['web', 'a', 'b']) { fs.writeFileSync(path.join(work, 'machines', m + '.env.local'), ''); }
+  fs.writeFileSync(path.join(work, 'machines', 'web.env.local'), '');
+  for (const m of ['a', 'b']) { fs.writeFileSync(path.join(work, 'machines', m + '.env.local'), 'NATS_ENABLED=true\nNATS_GROUP=dev\nNATS_MCP=true\n'); }
   fs.writeFileSync(path.join(work, 'groups', 'dev.env'), 'GROUP_MACHINES=a,b\n');
   fs.writeFileSync(path.join(bin, 'docker'), `#!/bin/sh\necho "fake docker $* token=ghp_e2esecretvalue123" >&2\nsleep ${dockerSleep}\n`, { mode: 0o755 });
   // the browser is "opened" by a fake xdg-open that keeps a copy of the start file it is given

@@ -68,6 +68,7 @@ type run struct {
 	started time.Time
 	notify  chan struct{} // closed and replaced at every change
 	kill    *time.Timer
+	files   *runFiles // what the run has on this computer: the text, a file to send, the folder of a fetch
 }
 
 // view is what a page needs: the events from the cursor on, the state, and a channel that closes at the next change.
@@ -113,6 +114,12 @@ func (r *run) setState(state string) {
 	r.changed()
 }
 
+func (r *run) exit() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.code
+}
+
 func (r *run) current() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -149,9 +156,23 @@ type runRequest struct {
 	Group   string `json:"group"`
 	Scope   string `json:"scope"` // "machine" (default) or "group": the whole group
 	Repo    string `json:"repo"`
+	// the actions on a NATS group (action "nats"; Group is not used: NATS is the group)
+	Sub     string `json:"sub"`     // peers, topics, listen, send, broadcast, request, fetch
+	NATS    string `json:"nats"`    // the group
+	To      string `json:"to"`      // a machine of the group
+	From    string `json:"from"`    // the machine that speaks (default: the operator, or one of the group)
+	Topic   string `json:"topic"`   // topics, with commas
+	Text    string `json:"text"`    // the message
+	Timeout int    `json:"timeout"` // seconds
+	Query   bool   `json:"query"`
+	All     bool   `json:"all"`
+	Yes     bool   `json:"yes"`
+	Upload  string `json:"upload"` // the id of a file that was handed over (POST /api/upload)
+	ID      string `json:"id"`     // fetch: the id of the file
+	SHA256  string `json:"sha256"`
 }
 
-func isAction(a string) bool { return a == "preflight" || a == "up" || a == "down" }
+func isAction(a string) bool { return a == "preflight" || a == "up" || a == "down" || a == "nats" }
 
 // argv is the command line of the request, or the reason there is none. Names come from the files (the overview), so none
 // starts with a dash; the repository goes in the form --repo=URL for the same reason.
@@ -159,7 +180,7 @@ func runArgv(req runRequest, ov Overview) (argv, names []string, err error) {
 	if !isAction(req.Action) {
 		return nil, nil, fmt.Errorf("no such action")
 	}
-	if req.Repo != "" && (req.Action == "down" || len(req.Repo) > 512 || strings.HasPrefix(req.Repo, "-") || strings.ContainsFunc(req.Repo, func(c rune) bool { return c <= ' ' || c == 0x7f })) {
+	if !repoUsable(req) {
 		return nil, nil, fmt.Errorf("the repository is not usable here")
 	}
 	argv = []string{req.Action}
@@ -190,6 +211,14 @@ func runArgv(req runRequest, ov Overview) (argv, names []string, err error) {
 	return argv, names, nil
 }
 
+// repoUsable: a repository belongs to up and preflight, and is one word without control characters that is no option.
+func repoUsable(req runRequest) bool {
+	if req.Repo == "" {
+		return true
+	}
+	return req.Action != "down" && len(req.Repo) <= 512 && !strings.HasPrefix(req.Repo, "-") && !strings.ContainsFunc(req.Repo, func(c rune) bool { return c <= ' ' || c == 0x7f })
+}
+
 func findGroup(ov Overview, name string) (Group, bool) {
 	for _, g := range ov.Groups {
 		if g.Name == name && g.Error == "" {
@@ -214,7 +243,7 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req runRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRunBody))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
 		fail(w, http.StatusBadRequest, "bad request")
@@ -225,22 +254,30 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, s.show(err.Error()))
 		return
 	}
-	argv, names, err := runArgv(req, ov)
+	var argv, names []string
+	var files *runFiles
+	if req.Action == "nats" {
+		argv, files, err = s.natsArgv(req, ov)
+	} else {
+		argv, names, err = runArgv(req, ov)
+	}
 	if err != nil {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	run := &run{ID: random(), Action: req.Action, Machine: req.Machine, Group: req.Group, Names: names, state: stateRunning, started: s.cfg.Now(), notify: make(chan struct{})}
+	run := &run{files: files, ID: random(), Action: req.Action, Machine: req.Machine, Group: req.Group, Names: names, state: stateRunning, started: s.cfg.Now(), notify: make(chan struct{})}
 	if req.Scope == "group" {
 		run.Machine = ""
 	}
 	if code, msg := s.hold(run); code != 0 {
+		files.remove()
 		fail(w, code, msg)
 		return
 	}
 	proc, err := s.cfg.Spawn(argv)
 	if err != nil {
 		s.release(run)
+		files.remove()
 		fail(w, http.StatusInternalServerError, s.show(err.Error()))
 		return
 	}
@@ -294,6 +331,7 @@ func (t *runTable) forgetFinished() {
 		}
 		for i, o := range t.runs {
 			if o.current() == stateDone {
+				o.files.remove()
 				t.runs = append(t.runs[:i], t.runs[i+1:]...)
 				break
 			}
@@ -412,6 +450,7 @@ func (s *Server) finish(r *run, code int) {
 	r.changed()
 	r.mu.Unlock()
 	s.release(r)
+	r.files.finish() // the text and the file that went out; a fetched file stays for the page to take
 }
 
 func (r *run) cancel() {
@@ -536,6 +575,13 @@ func (s *Server) endRuns(ctx context.Context) {
 	for _, r := range all {
 		r.cancel()
 	}
+	defer func() {
+		for _, r := range all {
+			if r.current() == stateDone {
+				r.files.remove()
+			}
+		}
+	}()
 	for _, r := range all {
 		for r.current() != stateDone {
 			select {
