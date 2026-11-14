@@ -78,7 +78,7 @@ Sprache der Oberfläche: Englisch wie die Hilfe von `viper` und die Meldungen; e
 * Ein gefälschter Unterprozess (eigene Funktion statt `os.Executable()`) für Ausgabe in Stücken, Rückfrage ohne Zeilenende, Antwort, Abbrechen (SIGINT, dann SIGKILL), Exit-Codes, Parallelität und die Sperre je Rechner.
 * Gerüche der Seiten ohne Browser: kein `eval`, kein `innerHTML`, kein `style=`, keine fremde Adresse (ein Test sucht in den eingebetteten Dateien).
 * Die Liste der Rechner und Gruppen gegen ein Verzeichnis mit Beispieldateien; Ausgaben mit ANSI-Folgen und geheimen Werten gegen die Reinigung.
-* Windows-CI: Pfade, Beenden des Prozesses.
+* Windows-CI: Pfade, Beenden des Prozesses; Tests von Signalen und Prozessgruppen mit `//go:build !windows`, die Tests mit `httptest` laufen überall. Tests im Paket `_test` (Regel `testpackage`): Die Handler sind nur über die ausgeführte Schnittstelle erreichbar.
 * Von Hand: ein echter Browser, eine fremde Seite, die versucht, den Port anzusprechen.
 
 ## 8 Nicht Teil dieses Plans
@@ -103,6 +103,10 @@ Entschieden (Prüfung, §10):
 
 Offen:
 
+* **`--force` und Antworten ohne Tippen:** Eine Rückfrage kann `down --force` vermeiden. Das Wort selbst zu tippen (§4) ist die Regel; ob `--force` als Auswahlfeld angeboten wird, ist zu entscheiden (Vorschlag: nein in Stufe 2).
+* **Linter:** Ein neues Paket `internal/adapter/driving/web` muss in die Grenzregeln der `.golangci.yml` (depguard o. ä.) aufgenommen werden; vor Meilenstein 1 prüfen. Funktionen klein halten (`funlen`), die eingebetteten Dateien in einer Funktion kapseln (`gochecknoglobals`).
+* **Barrierefreiheit:** `aria-live` für Ausgaben kollidiert mit schnellen Strömen; die Rate wird begrenzt (§3), die Tastaturbedienung der Rückfrage ist in Stufe 2 zu prüfen.
+
 * **Der Schlüssel in der Adresse** (Meilenstein 0, §6): Startdatei oder `--no-open`.
 * **`--json` für `check` und `log`:** Später; die Oberfläche braucht es nicht, weil sie im Prozess liest.
 * **Zwei Fenster, zwei Läufe:** `viper ui` und ein Terminal können gleichzeitig denselben Rechner anfassen. Die Sperren gelten wie bisher; die Oberfläche zeigt „läuft schon“.
@@ -126,3 +130,4 @@ Ein unabhängiger Prüfer hat den ersten Entwurf gegen den Code gelesen. Die Fun
 | CSRF, SSE und `EventSource`, CSP, Downloads, Uploads | §3 |
 | Lint und `//go:embed` | Meilenstein 0 (g) |
 | Fehlende Punkte: Protokoll, Port, Beenden, Tabs, Sitzung, `root`, Sprache | §9 |
+| Aufwand: Lister, Browser-Öffnen auf drei Systemen, Signaltests nur außerhalb Windows, Linter-Grenzen, `--force` | §6, §7, §9 |
