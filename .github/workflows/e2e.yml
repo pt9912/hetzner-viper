@@ -1,0 +1,47 @@
+name: browser tests
+
+# The pages of viper ui in a real browser (e2e/, Playwright). Only when what they test changes.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'internal/adapter/driving/web/**'
+      - 'internal/adapter/driving/cli/ui*'
+      - 'e2e/**'
+      - '.github/workflows/e2e.yml'
+  pull_request:
+    paths:
+      - 'internal/adapter/driving/web/**'
+      - 'internal/adapter/driving/cli/ui*'
+      - 'e2e/**'
+      - '.github/workflows/e2e.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  chromium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-traces
+          path: e2e/test-results
+          retention-days: 7
