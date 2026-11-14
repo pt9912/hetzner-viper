@@ -297,6 +297,12 @@ type NATSLine struct {
 	State string `json:"state,omitempty"` // presence
 	Query bool   `json:"query,omitempty"` // presence
 	Text  string `json:"text,omitempty"`  // always cleaned
+	// The attachment of a message, or of the message that was sent (the reference in the object store; docs/plan/nats-objekte.md).
+	AttID   string `json:"att_id,omitempty"`
+	AttType string `json:"att_type,omitempty"`
+	AttName string `json:"att_name,omitempty"`
+	AttSize int64  `json:"att_size,omitempty"`
+	AttSHA  string `json:"att_sha256,omitempty"`
 }
 
 // Detail is the address range and zone of the network for a message; a provider that has no range of

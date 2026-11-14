@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -36,8 +37,11 @@ func Validate(c driving.NATSCommand, from string) error {
 	if err := validateTarget(c, from); err != nil {
 		return err
 	}
-	if (c.Name == "send" || c.Name == "broadcast" || c.Name == "request") && c.Text == "" {
+	if (c.Name == "send" || c.Name == "broadcast" || c.Name == "request") && c.Text == "" && c.Attach == nil {
 		return errors.New("the text is empty")
+	}
+	if c.Attach != nil && (c.Name != "send" && c.Name != "broadcast" && c.Name != "request") {
+		return fmt.Errorf("viper nats %s takes no file", c.Name)
 	}
 	if c.Name == "request" && c.Timeout != 0 && (c.Timeout < time.Second || c.Timeout > MaxTimeout) {
 		return errors.New("the timeout must be between 1 and 120 seconds")
@@ -50,6 +54,8 @@ func validateTarget(c driving.NATSCommand, from string) error {
 	switch c.Name {
 	case "peers", "topics":
 		return nil
+	case "fetch":
+		return validateFetch(c)
 	case "listen":
 		if c.Topic != "" && len(topicList(c.Topic)) == 0 {
 			return errors.New("topic: no name in the list")
@@ -77,6 +83,17 @@ func validateTarget(c driving.NATSCommand, from string) error {
 	return fmt.Errorf("unknown command %q", c.Name)
 }
 
+// validateFetch checks the ID and the checksum (they go into the words of the program) and the folder.
+func validateFetch(c driving.NATSCommand) error {
+	if !hexRe(32).MatchString(c.ID) || !hexRe(64).MatchString(c.SHA256) {
+		return errors.New("the ID is 32 and the checksum 64 hexadecimal characters (lower case)")
+	}
+	if c.Out == "" {
+		return errors.New("the folder is needed")
+	}
+	return nil
+}
+
 // topicList splits the topics of listen (--topic given more than once, or a list with commas); none: all.
 func topicList(s string) []string {
 	var out []string
@@ -96,15 +113,17 @@ func Words(c driving.NATSCommand) []string {
 	w := []string{natsserver.MCPBinary}
 	switch c.Name {
 	case "send":
-		return append(w, "send", "--to", c.To)
+		return attachWord(append(w, "send", "--to", c.To), c)
 	case "broadcast":
-		return append(w, "broadcast", "--topic", c.Topic)
+		return attachWord(append(w, "broadcast", "--topic", c.Topic), c)
 	case "request":
 		t := c.Timeout
 		if t == 0 {
 			t = 30 * time.Second
 		}
-		return append(w, "request", "--to", c.To, "--timeout", t.String())
+		return attachWord(append(w, "request", "--to", c.To, "--timeout", t.String()), c)
+	case "fetch":
+		return append(w, "fetch", "--id", c.ID, "--sha256", c.SHA256, "--out", c.Out)
 	case "peers", "topics":
 		d := c.Timeout
 		if d == 0 {
@@ -125,6 +144,25 @@ func Words(c driving.NATSCommand) []string {
 	}
 	return w
 }
+
+// attachWord adds the option that says the standard input holds a file after the text.
+func attachWord(w []string, c driving.NATSCommand) []string {
+	if c.Attach != nil {
+		return append(w, "--attach")
+	}
+	return w
+}
+
+// Stdin is what goes to the standard input of the program on the machine: the text, or, with a file, the text and the file in
+// one stream (natsmcp.AttachFrame).
+func Stdin(c driving.NATSCommand) string {
+	if c.Attach != nil {
+		return natsmcp.AttachFrame(c.Text, c.Attach.Name, c.Attach.Data)
+	}
+	return c.Text
+}
+
+func hexRe(n int) *regexp.Regexp { return regexp.MustCompile(fmt.Sprintf("^[a-f0-9]{%d}$", n)) }
 
 // Event is one line the machine printed, checked.
 type Event = model.NATSLine
@@ -157,9 +195,23 @@ func ReadEvents(r io.Reader, handle func(Event) error) error {
 	return sc.Err()
 }
 
+// checkEventAttachment checks the reference to a file in an event: all of it or none.
+func checkEventAttachment(e Event) error {
+	if e.AttID == "" {
+		if e.AttType != "" || e.AttName != "" || e.AttSize != 0 || e.AttSHA != "" {
+			return errors.New("an event with part of an attachment")
+		}
+		return nil
+	}
+	if err := natsmcp.CheckReference(&natsmcp.Attachment{ID: e.AttID, Type: e.AttType, Name: e.AttName, Size: e.AttSize, SHA256: e.AttSHA}); err != nil {
+		return fmt.Errorf("an event with an attachment: %w", err)
+	}
+	return nil
+}
+
 func checkEvent(e Event) error {
 	switch e.Event {
-	case "ready", "sent", "answer":
+	case "ready", "sent", "answer", "fetched":
 	case "message":
 		if e.Via != "out" && e.Via != "pub" && e.Via != "presence" && e.Via != "topics" {
 			return fmt.Errorf("an event with the route %.20q", e.Via)
@@ -175,7 +227,7 @@ func checkEvent(e Event) error {
 	if e.Topic != "" && !natsmcp.ValidName(e.Topic) {
 		return fmt.Errorf("an event with the topic %.20q", e.Topic)
 	}
-	return nil
+	return checkEventAttachment(e)
 }
 
 // ChooseAccess is the machine that speaks for the user: from if given (it must be a machine of the
@@ -211,7 +263,7 @@ func (Service) Run(ctx context.Context, remote driving.NATSRemote, machine strin
 	pr, pw := io.Pipe()
 	errc := make(chan error, 1)
 	go func() {
-		err := remote(ctx, machine, c.Text, pw, stderr, Words(c)...)
+		err := remote(ctx, machine, Stdin(c), pw, stderr, Words(c)...)
 		_ = pw.CloseWithError(err) // ends the reader with the error of the program, if any
 		errc <- err
 	}()
@@ -242,6 +294,9 @@ func (k *collector) add(e Event) error {
 		k.res.Answer = &e
 	case e.Event == "sent":
 		k.res.Sent = true
+		k.res.SentLine = &e
+	case e.Event == "fetched":
+		k.res.Fetched = e.Text
 	case e.Event != "message":
 	case (k.c.Name == "peers" || k.c.Name == "topics") && e.Via == "presence" && e.State != "bye":
 		k.peer(e.From)

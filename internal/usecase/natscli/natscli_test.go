@@ -251,3 +251,36 @@ func TestChooseAccess(t *testing.T) {
 func runCmd(ctx context.Context, remote driving.NATSRemote, machine string, c driving.NATSCommand, stderr io.Writer, show func(model.NATSLine)) (driving.NATSResult, error) {
 	return natscli.Service{}.Run(ctx, remote, machine, c, stderr, show)
 }
+
+func TestWordsAndStdinOfACommandWithAFile(t *testing.T) {
+	c := driving.NATSCommand{Name: "send", To: "beta", Text: "see", Attach: &driving.NATSAttachment{Name: "a.pdf", Data: []byte("%PDF-1\x00")}}
+	if got := strings.Join(natscli.Words(c), " "); !strings.HasSuffix(got, "send --to beta --attach") {
+		t.Errorf("%s", got)
+	}
+	if got := natscli.Stdin(c); got != "viper-attach 3 7 a.pdf\nsee%PDF-1\x00" {
+		t.Errorf("%q", got)
+	}
+	if natscli.Stdin(driving.NATSCommand{Name: "send", Text: "plain"}) != "plain" {
+		t.Error("a message without a file is the text")
+	}
+	if err := natscli.Validate(driving.NATSCommand{Name: "send", To: "beta", Attach: c.Attach}, "alpha"); err != nil {
+		t.Errorf("a file needs no text: %v", err)
+	}
+	if err := natscli.Validate(driving.NATSCommand{Name: "send", To: "beta"}, "alpha"); err == nil {
+		t.Error("no text and no file")
+	}
+	if err := natscli.Validate(driving.NATSCommand{Name: "peers", Attach: c.Attach}, "alpha"); err == nil {
+		t.Error("peers takes no file")
+	}
+	f := driving.NATSCommand{Name: "fetch", ID: strings.Repeat("a", 32), SHA256: strings.Repeat("b", 64), Out: "/tmp/x"}
+	if got := strings.Join(natscli.Words(f), " "); !strings.HasSuffix(got, "fetch --id "+f.ID+" --sha256 "+f.SHA256+" --out /tmp/x") {
+		t.Errorf("%s", got)
+	}
+	if err := natscli.Validate(f, "alpha"); err != nil {
+		t.Errorf("%v", err)
+	}
+	f.ID = "../x"
+	if err := natscli.Validate(f, "alpha"); err == nil {
+		t.Error("a bad ID")
+	}
+}

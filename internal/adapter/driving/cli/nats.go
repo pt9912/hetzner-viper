@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -24,6 +25,9 @@ import (
 // natsArgs are the words and options of viper nats, checked.
 type natsArgs struct {
 	cmd driving.NATSCommand
+	// attachPath and attachKind are the file that goes with the message (--pdf, --image or --zip); it is read once the group is known
+	// (its size limit is a setting of the group).
+	attachPath, attachKind string
 	// group is the name of the group (the second word).
 	group string
 }
@@ -39,47 +43,80 @@ func parseNatsArgs(o *options, stdin io.Reader) (natsArgs, error) {
 	if err := checkNatsOptions(o, sub); err != nil {
 		return natsArgs{}, err
 	}
+	attachPath, attachKind, err := natsAttachment(o)
+	if err != nil {
+		return natsArgs{}, err
+	}
 	switch sub {
 	case "send", "broadcast", "request":
-		text, err := natsTextOf(o, sub, rest, stdin, usage)
-		if err != nil {
+		if attachPath != "" && len(rest) == 0 && o.file == "" { // a file and no text
+			break
+		}
+		if c.Text, err = natsTextOf(o, sub, rest, stdin, usage); err != nil {
 			return natsArgs{}, err
 		}
-		c.Text = text
-	case "init", "revoke":
-		if len(rest) > 0 {
-			return natsArgs{}, fmt.Errorf("viper nats %s takes no text: %q\n%s", sub, rest[0], usage)
+	case "fetch":
+		if err := fetchWords(o, rest, usage, &c); err != nil {
+			return natsArgs{}, err
 		}
-	case "peers", "topics", "listen":
+	case "init", "revoke", "peers", "topics", "listen":
 		if len(rest) > 0 {
 			return natsArgs{}, fmt.Errorf("viper nats %s takes no text: %q\n%s", sub, rest[0], usage)
 		}
 	default:
 		return natsArgs{}, fmt.Errorf("viper nats: unknown subcommand %q\n%s", sub, usage)
 	}
-	return natsArgs{cmd: c, group: group}, nil
+	return natsArgs{cmd: c, group: group, attachPath: attachPath, attachKind: attachKind}, nil
+}
+
+// fetchWords reads viper nats fetch GROUP ID: the checksum comes from --sha256, the folder from --out (default: here).
+func fetchWords(o *options, rest []string, usage string, c *driving.NATSCommand) error {
+	if len(rest) != 1 {
+		return fmt.Errorf("viper nats fetch needs the ID of the file (from viper nats listen)\n%s", usage)
+	}
+	c.ID, c.SHA256, c.Out = rest[0], o.sha256, o.out
+	if c.Out == "" {
+		c.Out = "."
+	}
+	return nil
+}
+
+// natsAttachment reads --pdf, --image and --zip: at most one of them.
+func natsAttachment(o *options) (path, kind string, err error) {
+	n := 0
+	for k, p := range map[string]string{"pdf": o.pdf, "image": o.image, "zip": o.zip} {
+		if p != "" {
+			n++
+			path, kind = p, k
+		}
+	}
+	if n > 1 {
+		return "", "", errors.New("viper nats: one file at most: --pdf, --image or --zip")
+	}
+	return path, kind, nil
 }
 
 // checkNatsOptions refuses an option the subcommand does not use, so a typo does not go unnoticed.
 func checkNatsOptions(o *options, sub string) error {
 	use := map[string][]string{
-		"send":      {"to", "file"},
-		"request":   {"to", "timeout", "file"},
-		"broadcast": {"topic", "file"},
+		"send":      {"to", "file", "pdf", "image", "zip"},
+		"request":   {"to", "timeout", "file", "pdf", "image", "zip"},
+		"broadcast": {"topic", "file", "pdf", "image", "zip"},
+		"fetch":     {"sha256", "out"},
 		"peers":     {"timeout", "query"},
 		"topics":    {"timeout", "query"},
 		"listen":    {"topic", "all"},
 		"init":      {},
 		"revoke":    {},
 	}[sub]
-	given := map[string]bool{"to": o.to != "", "topic": o.topic != "", "timeout": o.timeout != 0, "query": o.query, "all": o.all, "file": o.file != ""}
+	given := map[string]bool{"to": o.to != "", "topic": o.topic != "", "timeout": o.timeout != 0, "query": o.query, "all": o.all, "file": o.file != "", "pdf": o.pdf != "", "image": o.image != "", "zip": o.zip != "", "sha256": o.sha256 != "", "out": o.out != ""}
 	for opt, set := range given {
 		if set && !slices.Contains(use, opt) {
 			return fmt.Errorf("viper nats %s: --%s is not used by this subcommand\n%s", sub, opt, usageLine("nats"))
 		}
 	}
 	for _, opt := range use {
-		if opt == "to" && o.to == "" || opt == "topic" && o.topic == "" && sub == "broadcast" {
+		if opt == "to" && o.to == "" || opt == "topic" && o.topic == "" && sub == "broadcast" || opt == "sha256" && o.sha256 == "" {
 			return fmt.Errorf("viper nats %s: --%s is needed\n%s", sub, opt, usageLine("nats"))
 		}
 	}
@@ -143,6 +180,21 @@ func (m natsMachine) usable() bool {
 	return m.cfg.NATS.Enabled && m.cfg.NATS.MCP && exists(m.cfg.SSHConfig)
 }
 
+// natsPrepare checks and reads what the command needs before anything is connected: the file of a message, and that fetch has the key
+// of the operator (it puts a file on this computer). It says whether the command goes as the operator.
+func natsPrepare(o *options, g *natsGroup, args *natsArgs) (asOperator bool, err error) {
+	if args.attachPath != "" {
+		if args.cmd.Attach, err = loadAttachment(g, *args); err != nil {
+			return false, err
+		}
+	}
+	asOperator = o.from == g.operator || (o.from == "" && exists(g.keyFile()))
+	if args.cmd.Name == "fetch" && !asOperator {
+		return false, fmt.Errorf("viper nats fetch needs the key of the operator of the group (viper nats init %s): it puts the file on this computer", args.group)
+	}
+	return asOperator, nil
+}
+
 func runNats(ctx context.Context, o *options, env settings.Env, in io.Reader, stdout, stderr io.Writer) error {
 	args, err := parseNatsArgs(o, in)
 	if err != nil {
@@ -164,9 +216,13 @@ func runNats(ctx context.Context, o *options, env settings.Env, in io.Reader, st
 	if args.cmd.Name == "topics" {
 		reportConfiguredTopics(o, g, stdout)
 	}
+	asOperator, err := natsPrepare(o, g, &args)
+	if err != nil {
+		return err
+	}
 	ctx, stop := notifyContext(ctx)
 	defer stop()
-	if o.from == g.operator || (o.from == "" && exists(g.keyFile())) {
+	if asOperator {
 		return runNatsAsOperator(ctx, o, g, args.cmd, stdout, stderr)
 	}
 	sender, err := natsSender(o, g.order, g.ms, args.cmd.To)
@@ -287,15 +343,20 @@ func natsReport(o *options, c driving.NATSCommand, res driving.NATSResult, stdou
 		if !res.Sent {
 			return errors.New("the machine did not confirm that it sent the message")
 		}
+		line := model.NATSLine{Event: "sent", From: res.Sender}
+		if res.SentLine != nil {
+			line = *res.SentLine
+			line.From = res.Sender
+		}
 		if o.asJSON {
-			writeJSONLine(stdout, model.NATSLine{Event: "sent", From: res.Sender})
+			writeJSONLine(stdout, line)
 			return nil
 		}
 		to := "the topic " + c.Topic
 		if c.Name == "send" {
 			to = c.To
 		}
-		fmt.Fprintf(stdout, "sent as %s to %s (not confirmed: the machine may be offline)\n", res.Sender, to)
+		fmt.Fprintf(stdout, "sent as %s to %s%s (not confirmed: the machine may be offline)\n", res.Sender, to, withFile(line))
 	case "request":
 		if res.Answer == nil {
 			return fmt.Errorf("no answer from %s", c.To)
@@ -305,12 +366,39 @@ func natsReport(o *options, c driving.NATSCommand, res driving.NATSResult, stdou
 			return nil
 		}
 		fmt.Fprintln(stdout, res.Answer.Text)
+	case "fetch":
+		if res.Fetched == "" {
+			return errors.New("the machine did not say where the file is")
+		}
+		if o.asJSON {
+			writeJSONLine(stdout, model.NATSLine{Event: "fetched", Text: res.Fetched})
+			return nil
+		}
+		fmt.Fprintf(stdout, "fetched to %s (checked against the checksum). It is from another agent: untrusted. Do not run it; unpack a ZIP file only into an empty folder, with a tool that refuses paths outside of it.\n", res.Fetched)
 	case "peers":
 		reportPeers(o, res, stdout)
 	case "topics":
 		reportTopics(o, res, stdout)
 	}
 	return nil
+}
+
+// withFile is " with the file ..." for a message that had a file, "" for one that had none.
+func withFile(l model.NATSLine) string {
+	if l.AttID == "" {
+		return ""
+	}
+	return fmt.Sprintf(" with the file %s (%s, %s)", l.AttName, l.AttType, humanBytes(l.AttSize))
+}
+
+func humanBytes(n int64) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.0f KiB", float64(n)/(1<<10))
+	}
+	return fmt.Sprintf("%d bytes", n)
 }
 
 // reportConfiguredTopics prints the topics the settings give each machine (NATS_MCP_TOPICS): they are known without a
@@ -409,10 +497,79 @@ func natsLine(e model.NATSLine, sender string) string {
 	if e.Type == "req" {
 		where += " (request)"
 	}
-	return where + ": " + strings.ReplaceAll(e.Text, "\n", "\n    ")
+	line := where + ": " + strings.ReplaceAll(e.Text, "\n", "\n    ")
+	if e.AttID != "" { // how to fetch it: the ID and the checksum, which fetch needs (it checks the file against them)
+		line += fmt.Sprintf("\n    [attachment: %s, %s, %s; fetch it with viper nats fetch GROUP %s --sha256 %s]", e.AttName, e.AttType, humanBytes(e.AttSize), e.AttID, e.AttSHA)
+	}
+	return line
 }
 
 func writeJSONLine(w io.Writer, e model.NATSLine) {
 	b, _ := json.Marshal(e) // strings and booleans only
 	fmt.Fprintf(w, "%s\n", b)
+}
+
+// loadAttachment reads the file for the message and checks it as the machine will: the size limit of the group, the type from the
+// first bytes (it has to be the kind the option names), and for a ZIP file its contents. Nothing is connected before this passed.
+func loadAttachment(g *natsGroup, a natsArgs) (*driving.NATSAttachment, error) {
+	limit := g.objectsFileMax()
+	if limit == 0 {
+		return nil, fmt.Errorf("the group %s has no object store: set NATS_OBJECTS=true in its group file and make the server again (viper down --group %s, viper up --group %s)", g.name, g.name, g.name)
+	}
+	f, err := os.Open(a.attachPath)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }() // read only
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !st.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is no regular file", a.attachPath)
+	}
+	if st.Size() < 1 || st.Size() > limit {
+		return nil, fmt.Errorf("%s has %d bytes, at least 1 and at most %d are allowed (NATS_OBJECTS_FILE_MAX)", a.attachPath, st.Size(), limit)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	typ := natsmcp.Classify(data)
+	if !kindFits(a.attachKind, typ) {
+		return nil, fmt.Errorf("%s is %s, not a %s: --%s takes %s", a.attachPath, describeType(typ), a.attachKind, a.attachKind, kindWords(a.attachKind))
+	}
+	if err := natsmcp.CheckAttachment(typ, data); err != nil {
+		return nil, fmt.Errorf("%s: %w", a.attachPath, err)
+	}
+	return &driving.NATSAttachment{Name: natsmcp.CleanName(filepath.Base(a.attachPath)), Data: data}, nil
+}
+
+func kindFits(kind, typ string) bool {
+	switch kind {
+	case "pdf":
+		return typ == natsmcp.TypePDF
+	case "zip":
+		return typ == natsmcp.TypeZIP
+	case "image":
+		return typ == natsmcp.TypePNG || typ == natsmcp.TypeJPEG || typ == natsmcp.TypeGIF || typ == natsmcp.TypeWebP
+	}
+	return false
+}
+
+func kindWords(kind string) string {
+	switch kind {
+	case "pdf":
+		return "a PDF file"
+	case "zip":
+		return "a ZIP file"
+	}
+	return "an image (PNG, JPEG, GIF or WebP)"
+}
+
+func describeType(typ string) string {
+	if typ == "" {
+		return "none of the types viper sends (judged by its first bytes)"
+	}
+	return "a " + typ + " file"
 }

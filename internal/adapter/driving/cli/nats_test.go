@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -273,5 +274,116 @@ func TestNatsJSONOutput(t *testing.T) {
 	out, _, err = runNats(t, dir, env, ssh, "", cli.Opts{Args: []string{"listen", "dev"}})
 	if err != nil || strings.TrimSpace(out) != "beta [news]: hi" {
 		t.Errorf("%v %q", err, out)
+	}
+}
+
+func writeFile(t *testing.T, name string, data []byte) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(p, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+const sentWithFile = `{"event":"sent","att_id":"0123456789abcdef0123456789abcdef","att_type":"pdf","att_name":"r.pdf","att_size":12,"att_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}` + "\n"
+
+func TestNatsSendWithAFileSendsTheFileInOneFrameWithTheText(t *testing.T) {
+	dir, env := natsGroup(t, "NATS_OBJECTS=true\n")
+	ssh := &natsSSH{out: sentWithFile}
+	pdf := []byte("%PDF-1.4\nbinary \x00\xff")
+	out, errs, err := runNats(t, dir, env, ssh, "", cli.Opts{Args: []string{"send", "dev", "see this"}, To: "beta", PDF: writeFile(t, "r.pdf", pdf)})
+	if err != nil {
+		t.Fatalf("%v\n%s", err, errs)
+	}
+	if len(ssh.calls) != 1 || ssh.stdin[0] != "viper-attach 8 "+fmt.Sprint(len(pdf))+" r.pdf\nsee this"+string(pdf) {
+		t.Fatalf("stdin %q", ssh.stdin)
+	}
+	last := ssh.calls[0][len(ssh.calls[0])-1]
+	if !strings.Contains(last, "'send' '--to' 'beta' '--attach'") || strings.Contains(last, "see this") || strings.Contains(last, "r.pdf") {
+		t.Errorf("the words have the option and nothing of the text or the file: %s", last)
+	}
+	if !strings.Contains(out, "with the file r.pdf (pdf, 12 bytes)") {
+		t.Errorf("%q", out)
+	}
+	// no text at all
+	ssh = &natsSSH{out: sentWithFile}
+	if _, _, err := runNats(t, dir, env, ssh, "", cli.Opts{Args: []string{"broadcast", "dev"}, Topic: "news", PDF: writeFile(t, "r.pdf", pdf)}); err != nil || !strings.HasPrefix(ssh.stdin[0], "viper-attach 0 ") {
+		t.Errorf("%v %q", err, ssh.stdin)
+	}
+	// --json has the reference
+	ssh = &natsSSH{out: sentWithFile}
+	if out, _, err := runNats(t, dir, env, ssh, "", cli.Opts{Args: []string{"send", "dev", "x"}, To: "beta", PDF: writeFile(t, "r.pdf", pdf), JSON: true}); err != nil || !strings.Contains(out, `"att_name":"r.pdf"`) {
+		t.Errorf("%v %q", err, out)
+	}
+}
+
+func TestNatsChecksAFileBeforeItConnectsToAnything(t *testing.T) {
+	dir, env := natsGroup(t, "NATS_OBJECTS=true\nNATS_OBJECTS_FILE_MAX=1\n")
+	noStore, noEnv := natsGroup(t, "")
+	pdf := []byte("%PDF-1.4\nx")
+	zipBomb := writeFile(t, "z.zip", []byte("PK\x03\x04 not really a zip"))
+	for name, tc := range map[string]struct {
+		dir  string
+		env  settings.Env
+		opts cli.Opts
+		want string
+	}{
+		"an image that is a pdf": {dir, env, cli.Opts{Image: writeFile(t, "a.png", pdf)}, "--image takes an image"},
+		"a pdf that is text":     {dir, env, cli.Opts{PDF: writeFile(t, "a.pdf", []byte("hello"))}, "none of the types"},
+		"too large":              {dir, env, cli.Opts{PDF: writeFile(t, "big.pdf", append([]byte("%PDF-"), make([]byte, 2<<20)...))}, "at most"},
+		"empty":                  {dir, env, cli.Opts{PDF: writeFile(t, "e.pdf", nil)}, "at least 1"},
+		"no such file":           {dir, env, cli.Opts{PDF: filepath.Join(t.TempDir(), "none.pdf")}, "no such file"},
+		"a zip that is none":     {dir, env, cli.Opts{Zip: zipBomb}, "z.zip"},
+		"no object store":        {noStore, noEnv, cli.Opts{PDF: writeFile(t, "a.pdf", pdf)}, "has no object store"},
+		"two files":              {dir, env, cli.Opts{PDF: writeFile(t, "a.pdf", pdf), Image: writeFile(t, "a.png", pdf)}, "one file at most"},
+	} {
+		ssh := &natsSSH{out: sentWithFile}
+		tc.opts.Args, tc.opts.To = []string{"send", "dev", "x"}, "beta"
+		_, _, err := runNats(t, tc.dir, tc.env, ssh, "", tc.opts)
+		if err == nil || !strings.Contains(err.Error(), tc.want) || len(ssh.calls) != 0 {
+			t.Errorf("%s: %v (calls %d)", name, err, len(ssh.calls))
+		}
+	}
+	// the file belongs to send, broadcast and request only
+	for _, sub := range []string{"peers", "listen", "topics"} {
+		if _, _, err := runNats(t, dir, env, &natsSSH{}, "", cli.Opts{Args: []string{sub, "dev"}, PDF: writeFile(t, "a.pdf", pdf)}); err == nil {
+			t.Errorf("%s takes no file", sub)
+		}
+	}
+}
+
+func TestNatsFetchNeedsTheKeyOfTheOperatorAndTheChecksum(t *testing.T) {
+	dir, env := natsGroup(t, "NATS_OBJECTS=true\n")
+	id, sha := "0123456789abcdef0123456789abcdef", strings.Repeat("a", 64)
+	ssh := &natsSSH{}
+	if _, _, err := runNats(t, dir, env, ssh, "", cli.Opts{Args: []string{"fetch", "dev", id}, SHA256: sha, Out: t.TempDir()}); err == nil || !strings.Contains(err.Error(), "needs the key of the operator") || len(ssh.calls) != 0 {
+		t.Errorf("as a machine: %v", err)
+	}
+	for name, p := range map[string]cli.Opts{
+		"no checksum":   {Args: []string{"fetch", "dev", id}},
+		"no id":         {Args: []string{"fetch", "dev"}, SHA256: sha},
+		"a bad id":      {Args: []string{"fetch", "dev", "../x"}, SHA256: sha},
+		"a bad sum":     {Args: []string{"fetch", "dev", id}, SHA256: "abc"},
+		"a text":        {Args: []string{"send", "dev", "x"}, To: "beta", SHA256: sha},
+		"--to on fetch": {Args: []string{"fetch", "dev", id}, SHA256: sha, To: "beta"},
+	} {
+		if _, _, err := runNats(t, dir, env, ssh, "", p); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+func TestNatsListenShowsHowToFetchAnAttachment(t *testing.T) {
+	dir, env := natsGroup(t, "NATS_OBJECTS=true\n")
+	line := `{"event":"message","from":"beta","via":"out","to":"alpha","type":"msg","text":"see","att_id":"0123456789abcdef0123456789abcdef","att_type":"png","att_name":"p.png","att_size":2048,"att_sha256":"` + strings.Repeat("b", 64) + `"}` + "\n"
+	out, _, err := runNats(t, dir, env, &natsSSH{out: line}, "", cli.Opts{Args: []string{"listen", "dev"}})
+	if err != nil || !strings.Contains(out, "[attachment: p.png, png, 2 KiB; fetch it with viper nats fetch GROUP 0123456789abcdef0123456789abcdef --sha256 "+strings.Repeat("b", 64)+"]") {
+		t.Errorf("%v %q", err, out)
+	}
+	// a line with half an attachment is not an event the machine prints
+	bad := `{"event":"message","from":"beta","via":"out","type":"msg","att_id":"0123456789abcdef0123456789abcdef"}` + "\n"
+	if _, _, err := runNats(t, dir, env, &natsSSH{out: bad}, "", cli.Opts{Args: []string{"listen", "dev"}}); err == nil {
+		t.Error("an event with a bad attachment was taken")
 	}
 }

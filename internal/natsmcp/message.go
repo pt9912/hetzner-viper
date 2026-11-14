@@ -147,6 +147,9 @@ var (
 	sha256Re = regexp.MustCompile(`^[a-f0-9]{64}$`)
 )
 
+// CheckReference says what is wrong with the reference to an attachment (the fields of a message or of a line of output).
+func CheckReference(a *Attachment) error { return checkAttachment(a) }
+
 // checkAttachment says what is wrong with the reference to an attachment.
 func checkAttachment(a *Attachment) error {
 	switch {

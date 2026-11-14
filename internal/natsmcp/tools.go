@@ -169,25 +169,37 @@ func (s *Service) toolSend(ctx context.Context, args json.RawMessage) (string, e
 }
 
 // SendText sends a message to a machine; the checks are those of the tool send.
-func (s *Service) SendText(to, text string) error {
+func (s *Service) SendText(to, text string) error { return s.sendMessage(to, text, nil) }
+
+// sendMessage is SendText for a message that may name a file (then the text may be empty).
+func (s *Service) sendMessage(to, text string, att *Attachment) error {
 	if err := s.checkPeer(to); err != nil {
 		return err
 	}
-	if err := s.checkText(text); err != nil {
-		return err
+	if att == nil || text != "" {
+		if err := s.checkText(text); err != nil {
+			return err
+		}
 	}
-	return s.publish(s.cfg.Names.Out(to), Envelope{V: 1, Kind: "msg", Text: text})
+	return s.publish(s.cfg.Names.Out(to), Envelope{V: 1, Kind: "msg", Text: text, Att: att})
 }
 
 // BroadcastText sends a message to a topic; the checks are those of the tool broadcast.
 func (s *Service) BroadcastText(topic, text string) error {
+	return s.broadcastMessage(topic, text, nil)
+}
+
+// broadcastMessage is BroadcastText for a message that may name a file.
+func (s *Service) broadcastMessage(topic, text string, att *Attachment) error {
 	if !ValidName(topic) {
 		return fmt.Errorf("%q is not a topic name (lowercase letters, digits, hyphens)", topic)
 	}
-	if err := s.checkText(text); err != nil {
-		return err
+	if att == nil || text != "" {
+		if err := s.checkText(text); err != nil {
+			return err
+		}
 	}
-	return s.publish(s.cfg.Names.Pub(topic), Envelope{V: 1, Kind: "msg", Text: text})
+	return s.publish(s.cfg.Names.Pub(topic), Envelope{V: 1, Kind: "msg", Text: text, Att: att})
 }
 
 func (s *Service) toolBroadcast(ctx context.Context, args json.RawMessage) (string, error) {

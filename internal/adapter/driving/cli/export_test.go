@@ -15,27 +15,28 @@ import (
 
 // Opts are the options of a command.
 type Opts struct {
-	Machine, Repo, Cmd, Dir   string
-	Group                     string
-	NoJitter                  bool
-	Parallel                  int
-	Force, Full, NoCode, Tmux bool
-	CPU, Disk                 int
-	RAM                       float64
-	Arch, Location, Provider  string
-	VAT                       float64
-	HasVAT                    bool
-	Host                      *Host
-	Args                      []string
-	To, Topic, From, File     string
-	Timeout                   time.Duration
-	Query, All, JSON, Yes     bool
-	Registry                  string
-	Within                    string
+	Machine, Repo, Cmd, Dir      string
+	Group                        string
+	NoJitter                     bool
+	Parallel                     int
+	Force, Full, NoCode, Tmux    bool
+	CPU, Disk                    int
+	RAM                          float64
+	Arch, Location, Provider     string
+	VAT                          float64
+	HasVAT                       bool
+	Host                         *Host
+	Args                         []string
+	To, Topic, From, File        string
+	PDF, Image, Zip, SHA256, Out string
+	Timeout                      time.Duration
+	Query, All, JSON, Yes        bool
+	Registry                     string
+	Within                       string
 }
 
 func (p *Opts) options() *options {
-	o := &options{cpu: p.CPU, disk: p.Disk, ram: p.RAM, arch: p.Arch, location: p.Location, provider: p.Provider, vat: p.VAT, hasVAT: p.HasVAT, noJitter: p.NoJitter, group: p.Group, parallel: p.Parallel, machine: p.Machine, repo: p.Repo, cmd: p.Cmd, dir: p.Dir, force: p.Force, full: p.Full, noCode: p.NoCode, tmux: p.Tmux, h: p.Host, args: p.Args, to: p.To, topic: p.Topic, from: p.From, file: p.File, timeout: p.Timeout, query: p.Query, all: p.All, asJSON: p.JSON, yes: p.Yes} //nolint:dupl // the two sides of the same conversion
+	o := &options{cpu: p.CPU, disk: p.Disk, ram: p.RAM, arch: p.Arch, location: p.Location, provider: p.Provider, vat: p.VAT, hasVAT: p.HasVAT, noJitter: p.NoJitter, group: p.Group, parallel: p.Parallel, machine: p.Machine, repo: p.Repo, cmd: p.Cmd, dir: p.Dir, force: p.Force, full: p.Full, noCode: p.NoCode, tmux: p.Tmux, h: p.Host, args: p.Args, to: p.To, topic: p.Topic, from: p.From, file: p.File, pdf: p.PDF, image: p.Image, zip: p.Zip, sha256: p.SHA256, out: p.Out, timeout: p.Timeout, query: p.Query, all: p.All, asJSON: p.JSON, yes: p.Yes} //nolint:dupl // the two sides of the same conversion
 	o.registry, o.within = p.Registry, p.Within
 	return o
 }
@@ -43,7 +44,7 @@ func (p *Opts) options() *options {
 // Parse reads the command line.
 func Parse(args []string) (string, Opts, error) {
 	name, o, err := parse(args)
-	p := Opts{NoJitter: o.noJitter, Group: o.group, Parallel: o.parallel, Machine: o.machine, Repo: o.repo, Cmd: o.cmd, Dir: o.dir, Force: o.force, Full: o.full, NoCode: o.noCode, Tmux: o.tmux, CPU: o.cpu, Disk: o.disk, RAM: o.ram, Arch: o.arch, Location: o.location, Provider: o.provider, VAT: o.vat, HasVAT: o.hasVAT, Host: o.h, Args: o.args, To: o.to, Topic: o.topic, From: o.from, File: o.file, Timeout: o.timeout, Query: o.query, All: o.all, JSON: o.asJSON, Yes: o.yes} //nolint:dupl // the two sides of the same conversion
+	p := Opts{NoJitter: o.noJitter, Group: o.group, Parallel: o.parallel, Machine: o.machine, Repo: o.repo, Cmd: o.cmd, Dir: o.dir, Force: o.force, Full: o.full, NoCode: o.noCode, Tmux: o.tmux, CPU: o.cpu, Disk: o.disk, RAM: o.ram, Arch: o.arch, Location: o.location, Provider: o.provider, VAT: o.vat, HasVAT: o.hasVAT, Host: o.h, Args: o.args, To: o.to, Topic: o.topic, From: o.from, File: o.file, PDF: o.pdf, Image: o.image, Zip: o.zip, SHA256: o.sha256, Out: o.out, Timeout: o.timeout, Query: o.query, All: o.all, JSON: o.asJSON, Yes: o.yes} //nolint:dupl // the two sides of the same conversion
 	p.Registry, p.Within = o.registry, o.within
 	return name, p, err
 }

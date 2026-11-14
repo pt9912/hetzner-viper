@@ -21,6 +21,8 @@ type options struct {
 	// viper nats
 	args                    []string // the words after the command: the subcommand, the group, the text
 	to, topic, from, file   string
+	pdf, image, zip         string // viper nats send|broadcast|request: a file to send with the message
+	sha256, out             string // viper nats fetch
 	timeout                 time.Duration
 	query, asJSON, yes, all bool
 	// set by the group commands for the run of one machine, not by the command line
@@ -66,7 +68,7 @@ var errHelp = errors.New("help")
 // isValueFlag reports whether the option takes a value.
 func isValueFlag(n string) bool {
 	switch n {
-	case "repo", "cmd", "dir", "group", "in-group", "parallel", "cpu", "ram", "disk", "arch", "location", "provider", "vat", "to", "topic", "from", "file", "timeout", "tag", "k3d":
+	case "repo", "cmd", "dir", "group", "in-group", "parallel", "cpu", "ram", "disk", "arch", "location", "provider", "vat", "to", "topic", "from", "file", "pdf", "image", "zip", "sha256", "out", "timeout", "tag", "k3d":
 		return true
 	}
 	return false
@@ -85,7 +87,7 @@ func commands() map[string]command {
 		"dns":          {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeDNS},
 		"find":         {usage: "[--cpu N] [--ram GB] [--disk GB] [--arch x86|arm] [--location L] [--provider P] [--vat PERCENT]", machine: noMachine, flags: []string{"cpu", "ram", "disk", "arch", "location", "provider", "vat"}, run: nativeFind},
 		"log":          {usage: "[<machine> [--in-group G]] [--full]", machine: maybeMachine, flags: []string{"full", "in-group"}, run: nativeLog},
-		"nats":         {usage: "peers|topics|listen|send|broadcast|request|init|revoke GROUP [TEXT|-|--file FILE] [--from MACHINE] [--to MACHINE] [--topic T[,T...]] [--timeout S] [--query] [--all] [--json] [--yes]", machine: restArgs, flags: []string{"to", "topic", "from", "file", "timeout", "query", "all", "json", "yes"}, run: nativeNats},
+		"nats":         {usage: "peers|topics|listen|send|broadcast|request|fetch|init|revoke GROUP [TEXT|-|--file FILE|ID] [--pdf FILE|--image FILE|--zip FILE] [--sha256 HEX --out DIR] [--from MACHINE] [--to MACHINE] [--topic T[,T...]] [--timeout S] [--query] [--all] [--json] [--yes]", machine: restArgs, flags: []string{"to", "topic", "from", "file", "pdf", "image", "zip", "sha256", "out", "timeout", "query", "all", "json", "yes"}, run: nativeNats},
 		"image":        {usage: "build [--tag NAME:TAG] [--k3d CLUSTER]", machine: restArgs, flags: []string{"tag", "k3d"}, run: nativeImage},
 		"k8s-proxy":    {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeK8sProxy},
 		"docker-proxy": {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeDockerProxy},
@@ -309,7 +311,7 @@ func setValue(o *options, name, flag, v string) error {
 		return setVAT(o, name, v)
 	case "group", "in-group":
 		return setGroup(o, name, flag, v)
-	case "to", "topic", "from", "file", "timeout", "tag", "k3d":
+	case "to", "topic", "from", "file", "pdf", "image", "zip", "sha256", "out", "timeout", "tag", "k3d":
 		return setNatsValue(o, name, flag, v)
 	case "parallel":
 		n, err := strconv.Atoi(v)
@@ -337,6 +339,16 @@ func setNatsValue(o *options, name, flag, v string) error {
 		o.from = v
 	case "file":
 		o.file = v
+	case "pdf":
+		o.pdf = v
+	case "image":
+		o.image = v
+	case "zip":
+		o.zip = v
+	case "sha256":
+		o.sha256 = v
+	case "out":
+		o.out = v
 	case "tag":
 		o.tag = v
 	case "k3d":

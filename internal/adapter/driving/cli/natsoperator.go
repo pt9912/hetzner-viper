@@ -66,6 +66,17 @@ func loadNatsGroup(o *options, env settings.Env, group string) (*natsGroup, erro
 	return ng, nil
 }
 
+// objectsFileMax is the largest file the group takes (NATS_OBJECTS_FILE_MAX); 0 when it has no object store. The setting is that of
+// the group file, so any machine says the same.
+func (g *natsGroup) objectsFileMax() int64 {
+	for _, name := range g.order {
+		if n := g.ms[name].cfg.NATS; n.Objects {
+			return n.ObjectsFileMax
+		}
+	}
+	return 0
+}
+
 // keyFile is where the seed of the operator of the group is.
 func (g *natsGroup) keyFile() string {
 	return model.OperatorKeyFile(g.ms[g.order[0]].cfg.StateDir, g.name)
@@ -187,7 +198,7 @@ func openOperator(ctx context.Context, o *options, g *natsGroup) (*operatorSessi
 		return nil, fmt.Errorf("the ssh tunnel to the NATS server: %w", err)
 	}
 	cfg := natsmcp.Config{URL: "tls://" + addr, SeedFile: g.keyFile(), Names: natsmcp.Names{Group: g.name, Me: g.operator},
-		MaxText: natsmcp.DefaultMaxText, TLSServerName: srv.Host}
+		MaxText: natsmcp.DefaultMaxText, TLSServerName: srv.Host, ObjectsFileMax: g.objectsFileMax()}
 	dir, err := os.MkdirTemp("", "viper-nats-")
 	if err != nil {
 		stopTunnel()

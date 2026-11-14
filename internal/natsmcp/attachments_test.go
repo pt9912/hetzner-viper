@@ -439,3 +439,95 @@ func TestTheReceiverChecksTheFileAgainstTheMessage(t *testing.T) {
 		t.Errorf("nothing wrong is kept: %v", entries)
 	}
 }
+
+func TestAFileTravelsOnStandardInputInOneFrameWithTheText(t *testing.T) {
+	data := []byte("\x89PNG\r\n\x1a\nbinary \x00\n\xff data")
+	frame := natsmcp.AttachFrame("the text\nwith lines", "../dir/shot.png", data)
+	text, file, err := natsmcp.ReadFrame(strings.NewReader(frame), 100, 1000)
+	if err != nil || text != "the text\nwith lines" || file.Name != "shot.png" || !bytes.Equal(file.Data, data) {
+		t.Fatalf("%q %+v %v", text, file, err)
+	}
+	if text, _, err := natsmcp.ReadFrame(strings.NewReader(natsmcp.AttachFrame("", "a.png", data)), 100, 1000); err != nil || text != "" {
+		t.Errorf("a file without text: %q %v", text, err)
+	}
+	for name, in := range map[string]string{
+		"no header":         "",
+		"another header":    "hello 1 1 x\nab",
+		"bad sizes":         "viper-attach x 1 a.png\nab",
+		"no file":           "viper-attach 0 0 a.png\n",
+		"a text too long":   "viper-attach 101 4 a.png\n" + strings.Repeat("t", 101) + "abcd",
+		"a file too large":  "viper-attach 0 1001 a.png\n" + strings.Repeat("f", 1001),
+		"the file is short": "viper-attach 0 10 a.png\nabc",
+		"the text is short": "viper-attach 5 3 a.png\nab",
+		"more than it says": "viper-attach 0 3 a.png\nabcd",
+		"no name":           "viper-attach 0 3\nabc",
+	} {
+		if _, _, err := natsmcp.ReadFrame(strings.NewReader(in), 100, 1000); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+// viper nats send --pdf and the like: the command on the machine takes the frame, waits until the receiver has said that it
+// understands attachments, puts the file into the store and sends the message.
+func TestTheCommandSendsAFileOfItsFrameAndTheReceiverCanFetchIt(t *testing.T) {
+	g := newObjectGroup(t, true)
+	cfg := g.a.svc.Cfg()
+	cfg.Quiet = true
+	cfg.Names.Me = "a"
+	data := png(2000)
+	var out, errb bytes.Buffer
+	// the connection of the command is another connection of the same user: the machine itself stays connected
+	code := natsmcp.RunCLI(context.Background(), cfg, "send", []string{"--to", "b", "--attach"}, strings.NewReader(natsmcp.AttachFrame("see", "pic.png", data)), &out, &errb)
+	if code != 0 {
+		t.Fatalf("%d %s %s", code, out.String(), errb.String())
+	}
+	var line natsmcp.Line
+	if err := json.Unmarshal(out.Bytes(), &line); err != nil || line.Event != "sent" || line.AttType != "png" || line.AttName != "pic.png" || line.AttSize != int64(len(data)) || len(line.AttID) != 32 {
+		t.Fatalf("%+v %v %s", line, err, out.String())
+	}
+	eventually(t, "b has the message", func() bool { return len(g.b.svc.Inbox().Since(0)) == 1 })
+	if e := g.b.svc.Inbox().Since(0)[0]; e.Att == nil || e.Att.ID != line.AttID || e.Att.SHA256 != line.AttSHA || e.Text != "see" {
+		t.Errorf("%+v", e)
+	}
+	// the operator-style fetch: the ID and the checksum from the message, into a folder
+	dir := t.TempDir()
+	out.Reset()
+	code = natsmcp.RunCLI(context.Background(), cfg, "fetch", []string{"--id", line.AttID, "--sha256", line.AttSHA, "--out", dir}, strings.NewReader(""), &out, &errb)
+	if code != 0 || !strings.Contains(out.String(), `"event":"fetched"`) {
+		t.Fatalf("%d %s %s", code, out.String(), errb.String())
+	}
+	if got, err := os.ReadFile(filepath.Join(dir, line.AttID+".png")); err != nil || !bytes.Equal(got, data) {
+		t.Errorf("%v", err)
+	}
+	wrong := strings.Repeat("0", 64)
+	out.Reset()
+	errb.Reset()
+	if code = natsmcp.RunCLI(context.Background(), cfg, "fetch", []string{"--id", line.AttID, "--sha256", wrong, "--out", dir}, strings.NewReader(""), &out, &errb); code == 0 || !strings.Contains(errb.String(), "checksum") {
+		t.Errorf("a wrong checksum: %d %s", code, errb.String())
+	}
+	// a folder the user names is not pruned: files that are there stay
+	if err := os.WriteFile(filepath.Join(dir, "mine.txt"), []byte("mine"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code = natsmcp.RunCLI(context.Background(), cfg, "fetch", []string{"--id", line.AttID, "--sha256", line.AttSHA, "--out", dir}, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Fatal(errb.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "mine.txt")); err != nil {
+		t.Error("a file of the user went")
+	}
+}
+
+func TestTheCommandRefusesAFileForAMachineThatDoesNotUnderstandIt(t *testing.T) {
+	g := newObjectGroup(t, false)
+	cfg := g.a.svc.Cfg()
+	cfg.Quiet = true
+	var out, errb bytes.Buffer
+	code := natsmcp.RunCLI(context.Background(), cfg, "send", []string{"--to", "b", "--attach"}, strings.NewReader(natsmcp.AttachFrame("see", "pic.png", png(100))), &out, &errb)
+	if code == 0 || !strings.Contains(errb.String(), "b did not say that it understands attachments") {
+		t.Errorf("%d %s", code, errb.String())
+	}
+	if n := len(g.b.svc.Inbox().Since(0)); n != 0 {
+		t.Errorf("nothing was sent: %d", n)
+	}
+}
