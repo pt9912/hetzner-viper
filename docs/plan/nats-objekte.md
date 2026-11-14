@@ -2,7 +2,7 @@
 
 **Ziel:** Ein Agent oder der Betreiber schickt einer Maschine (oder einem Thema) ein **Bild** oder ein **PDF**. Die Datei liegt im **Object Store** des NATS-Servers der Gruppe, die Nachricht trägt nur eine Referenz. Der Empfänger holt die Datei mit einem Werkzeug des MCP-Servers (`viper-nats-mcp`) in ein Verzeichnis auf seiner Maschine und liest sie von dort.
 
-**Stand:** Entwurf (14.11.2026), noch nichts gebaut, noch nicht geprüft. Alles, was als *[?]* steht, ist eine Vermutung aus dem Wissen über `nats-server` und `nats.go` und wird in Meilenstein 0 mit einem echten Server geprüft, bevor etwas darauf gebaut wird. *[V]* heißt: im Code dieses Repositorys gelesen.
+**Stand:** Entwurf (14.11.2026), einmal unabhängig geprüft, die Rechte und das Verhalten bei Ablauf und vollem Speicher sind mit `nats-server` 2.15.2 und `nats.go` 1.55.0 gemessen (§4, §11); noch nichts gebaut. *[V]* heißt: im Code dieses Repositorys gelesen oder gemessen. *[?]* ist eine offene Vermutung.
 
 Grundlage: [`nats.md`](nats.md) (Gruppe, Rechte, „JetStream wird nicht aktiviert“, §Persistenz), [`nats-mcp.md`](nats-mcp.md) (der MCP-Server, die Werkzeuge) und [`nats-cli.md`](nats-cli.md) (`viper nats`).
 
@@ -18,35 +18,37 @@ Grundlage: [`nats.md`](nats.md) (Gruppe, Rechte, „JetStream wird nicht aktivie
 | Thema | Festlegung |
 |---|---|
 | Einschalten | `NATS_OBJECTS=true` in der **Gruppendatei** (Standard: aus). Ohne die Einstellung ändert sich nichts: JetStream bleibt aus, `natscheck.sh` bleibt streng, kein neues Recht. Die Einstellung wird beim Einrichten des **Servers** in `server.conf` festgehalten; ein Client mit einer anderen Einstellung wird gewarnt (wie bei den anderen Gruppeneinstellungen). |
-| Grenzen | `NATS_OBJECTS_MAX` (Gesamtgröße des Speichers, Standard 256 MiB), `NATS_OBJECTS_FILE_MAX` (je Datei, Standard 8 MiB), `NATS_OBJECTS_TTL` (Aufbewahrung, Standard 7 Tage). Sie werden als `max_file_store` des Servers und `max_bytes`/`max_age` des Streams durchgesetzt, die Dateigröße zusätzlich im Client. |
-| Ort | `store_dir` im Heimverzeichnis der Server-Maschine (`<Dir>/js`). Die Dateien überstehen einen Neustart des Pods, des Containers und der VM, weil das Heimverzeichnis ein Volume oder die Platte ist. Sie gehen mit `viper down` der Server-Maschine verloren, und wenn die Rolle des Servers auf eine andere Maschine wechselt (§8). |
+| Grenzen | `NATS_OBJECTS_MAX` (Gesamtgröße des Speichers, Standard 256 MiB), `NATS_OBJECTS_FILE_MAX` (je Datei, Standard 8 MiB), `NATS_OBJECTS_TTL` (Aufbewahrung, Standard 7 Tage). `max_age` am Stream lässt Stücke und Metadaten **zusammen** ablaufen; `max_file_store` am Server und `max_bytes` und `max_msgs` am Stream sind die harte Obergrenze (§3), die Dateigröße wird zusätzlich im Client geprüft. **Kein `discard: old`**: Gemessen verdrängt es zuerst die Stücke und lässt die Metadaten stehen, die Datei ist dann kaputt („received a corrupt object, digests do not match“). Ist der Speicher voll, **scheitert das Ablegen** mit einer klaren Meldung, bis Dateien ablaufen. |
+| Ort | Pod und Container: `store_dir` im Heimverzeichnis der Server-Maschine (`<Dir>/js`, das Volume `<name>-home`). **VM:** außerhalb von `<Dir>`, `/var/lib/viper-nats` mit `StateDirectory=` in der Unit (die Unit sperrt `<Dir>` schreibend; §3). Die Dateien überstehen Neustarts. Sie gehen mit `viper down` der Server-Maschine verloren, und wenn die Rolle des Servers auf eine andere Maschine wechselt (§8). |
 | Bucket | **Ein** Bucket je Gruppe, `viper-<gruppe>` (Stream `OBJ_viper-<gruppe>`). **`viper` legt ihn selbst an** (mit dem Schlüssel des Servers beim Einrichten, mit fester Konfiguration); die Maschinen dürfen ihn **nicht anlegen, ändern oder löschen**. |
-| Namen | Der Name des Objekts ist eine **zufällige ID** (32 Hexzeichen), die der Sender wählt; nie ein Dateiname des Senders. Es wird nie überschrieben. Der Dateiname des Senders wandert nur als bereinigte Anzeige in die Referenz. |
-| Löschen | Keine Maschine löscht oder leert etwas: Dateien verfallen nach der TTL (`max_age`) oder, wenn der Speicher voll ist, die ältesten zuerst (`discard: old`). Das vermeidet das Recht auf `$JS.API.STREAM.PURGE` und `…MSG.DELETE`, das eine Maschine den ganzen Bucket leeren ließe (Vermutung, §4). |
+| Namen | Der Name des Objekts ist eine **zufällige ID** (32 Hexzeichen), die der Sender wählt; nie ein Dateiname des Senders. **Dass nie überschrieben wird, erzwingt der Server nicht:** Wer `$O.<b>.M.*` und `$O.<b>.C.*` schreiben darf, kann Metadaten und Stücke **jedes** Objekts ersetzen oder fälschen (gemessen, §11). Das ist ein bekanntes Restrisiko in einer Gruppe, in der „nichts privat“ ist; die **Prüfsumme in der Nachricht** (Absender ist durch das Subject bewiesen) ist der Schutz: Der Empfänger verwirft eine Datei, deren SHA-256 nicht passt. Der Dateiname des Senders wandert nur als bereinigte Anzeige in die Referenz. |
+| Löschen | Keine Maschine löscht, leert oder ändert den Stream: Die Rechte auf `STREAM.PURGE`, `…DELETE`, `…UPDATE`, `…CREATE` und `MSG.DELETE` fehlen (gemessen: verweigert, `ob.Delete` scheitert). Dateien verfallen nach der TTL. `deny_purge` und `deny_delete` am Stream gehen **nicht**: Der Object Store braucht Roll-ups für seine Metadaten (`err_code=10052`). |
 | Typen | Nur **PDF** (`application/pdf`) und **Bild** (PNG, JPEG, GIF, WebP). Der Typ wird an den **ersten Bytes** geprüft, vom Sender beim Senden und vom Empfänger beim Holen; die Endung und eine Angabe des Senders zählen nicht. |
 | Prüfsumme | SHA-256 des Inhalts in der Referenz; der Empfänger prüft sie nach dem Holen. |
 
 ## 3 Der Server
 
-* `server.conf` bekommt bei `NATS_OBJECTS=true`: `jetstream { store_dir: "<Dir>/js", max_file_store: <MAX> }`. Ohne: nichts, wie heute. `Render` lehnt Größen und Pfade außerhalb des Rahmens ab.
-* **VM:** `ReadWritePaths=<Dir>/js` in der Unit (nur dann). Pod und Container: das Heimverzeichnis ist schreibbar *[V]*.
-* **Anlegen des Buckets:** beim Einrichten des Servers (und bei jedem `viper up` des Servers, gleich bleibend: nur anlegen, wenn er fehlt, nichts ändern, was von Hand geändert wurde, aber melden). Konfiguration: `storage: file`, `replicas: 1`, `max_bytes`, `max_age`, `discard: old`, `max_msg_size` etwas über einem Stück (128 KiB), `allow_rollup_hdrs` aus *[?]*, ein Stück je Nachricht.
-* **`natscheck.sh`:** nimmt den neuen Parameter `objects=on|off`. Mit `off` bleibt die Prüfung „JetStream darf nicht an sein“. Mit `on` verlangt sie das Gegenteil und prüft, dass der Bucket da ist.
+* `server.conf` bekommt bei `NATS_OBJECTS=true`: `jetstream { store_dir: "<Verzeichnis>", max_file_store: <MAX> }`. Ohne: nichts, wie heute. `Render` lehnt Größen und Pfade außerhalb des Rahmens ab. `max_file_store` begrenzt den Server insgesamt und gehört in die Größe der VM-Platte.
+* **VM:** Die Unit setzt `ProtectSystem=strict`, `ProtectHome=read-only` und `ReadOnlyPaths=<Dir>` *[V]*. Darum liegt der Speicher dort **außerhalb** von `<Dir>`: `StateDirectory=viper-nats` (Verzeichnis `/var/lib/viper-nats`), kein `ReadWritePaths` unter einem schreibgeschützten Pfad (die Reihenfolge der Zeilen wäre sonst entscheidend). Pod und Container: das Heimverzeichnis ist schreibbar *[V]*, `<Dir>/js`.
+* **Anlegen des Buckets:** beim Einrichten des Servers und bei jedem `viper up` des Servers: anlegen, wenn er fehlt; nichts ändern, was von Hand geändert wurde, aber melden. Konfiguration: `storage: file`, `replicas: 1`, `max_bytes`, `max_age`, **`max_msgs`** (sonst füllen viele winzige Objekte den Stream: gemessen 582 Nachrichten bei 100 KiB, jede mit eigenem Subject), `discard: new` (Standard des Object Stores, bleibt), `max_msg_size` mindestens **256 KiB** oder nicht gesetzt (ein Stück ist 128 KiB plus Kopfzeilen; 128 KiB wäre zu klein). `max_payload` des Servers ist 1 MiB *[V]*, die Stückgröße 128 KiB *[V]*.
+* **Voller Speicher:** Ein Ablegen, das scheitert, meldet `maximum bytes exceeded` (`err_code=10077`); es lässt **Teilstücke** liegen, die erst mit der TTL gehen. Der Absender meldet das als „Speicher der Gruppe voll“ und sendet die Nachricht **nicht**.
+* **`natscheck.sh`:** nimmt den neuen Parameter `objects=on|off`. Mit `off` bleibt die Prüfung „JetStream darf nicht an sein“ (beide Zustände sind erlaubt, je nach Einstellung). Mit `on` verlangt sie das Gegenteil und prüft die **Konfiguration** des Streams (Grenzen, `discard`), nicht nur, dass der Bucket da ist.
 * **`viper check`:** vergleicht die Einstellung der Gruppe mit der in `server.conf` und meldet Abweichungen (wie bei `NATS_MCP_TOPICS`).
 
-## 4 Die Rechte *[?]*
+## 4 Die Rechte *[V]*
 
-Das ist der Teil, der Meilenstein 0 braucht. Ziel: eine Maschine kann **Dateien ablegen und holen, aber nichts anlegen, ändern, löschen oder leeren**. Vermutete Menge je Maschine (`<b>` = `viper-<gruppe>`):
+Gemessen mit einem eingebetteten `nats-server` 2.15.2, `nats.go` 1.55.0 (`jetstream.ObjectStore`), Benutzer mit Rechten wie in `natsserver.Permissions`, Bucket von einem Administrator vorher angelegt (`<b>` = `viper-<gruppe>`). **Kleinste Menge für `Put` und `Get`:**
 
-| Was | Veröffentlichen | Lesen |
-|---|---|---|
-| Ablegen (`Put`) | `$O.<b>.C.*` (Stücke), `$O.<b>.M.*` (Metadaten), `$JS.API.STREAM.INFO.OBJ_<b>` | die Antworten auf `_INBOX.<m>.>` (schon erlaubt) |
-| Holen (`Get`) | `$JS.API.CONSUMER.CREATE.OBJ_<b>` und `…CREATE.OBJ_<b>.>`, `$JS.API.CONSUMER.DELETE.OBJ_<b>.*` *[?]*, `$JS.API.STREAM.INFO.OBJ_<b>` | `_INBOX.<m>.>` für die Antworten und die Zustellung |
-| Nicht erlaubt | `$JS.API.STREAM.CREATE/UPDATE/DELETE/PURGE.OBJ_<b>`, `$JS.API.STREAM.MSG.DELETE.OBJ_<b>`, jede andere Gruppe | |
+| | Menge |
+|---|---|
+| Veröffentlichen | `$O.<b>.C.*` (Stücke), `$O.<b>.M.*` (Metadaten), `$JS.API.STREAM.INFO.OBJ_<b>` (zum Binden), **`$JS.API.DIRECT.GET.OBJ_<b>.>`** (`Put` sucht damit den vorhandenen Namen; ohne das Recht läuft `Put` und `Get` in ein Zeitlimit), `$JS.API.CONSUMER.CREATE.OBJ_<b>` und `…CREATE.OBJ_<b>.>` (`Get`), `$JS.API.CONSUMER.DELETE.OBJ_<b>.*` (ohne es liefert `Get` die Daten, der Server meldet aber eine Verletzung; der geordnete Consumer hinterlässt nichts) |
+| Lesen | `_INBOX.<m>.>` (schon erlaubt); der Client muss **`nats.CustomInboxPrefix("_INBOX.<m>")`** setzen, sonst landen die Antworten in einem fremden `_INBOX.*` |
+| Nicht nötig | `$JS.ACK` |
+| Verweigert (gemessen, jeweils als Verletzung gemeldet) | `STREAM.PURGE`, `STREAM.UPDATE`, `STREAM.CREATE.<x>`, `STREAM.DELETE`, `STREAM.MSG.DELETE` auf dem Bucket der Gruppe; `ob.Delete` und das Löschen des Buckets; `STREAM.INFO` und `CONSUMER.CREATE` auf dem Bucket **einer anderen Gruppe**, auf KV-Buckets und auf andere Streams; ein Senden an `$O.<anderer Bucket>.M.x`. Subjects mit dem festen Namen des Buckets trennen die Gruppen. |
 
-* Der Operator bekommt dieselbe Menge (er sendet über einen SSH-Tunnel, siehe `nats-cli.md`).
-* **Zu prüfen:** (a) reicht `Put` ohne `STREAM.PURGE`, wenn kein Name überschrieben wird *[?]*; (b) holt `Get` mit einem **geordneten Consumer** ohne `CONSUMER.DELETE`; (c) was passiert, wenn eine Maschine ihren Bereich verlässt (der Server meldet `Permissions Violation`, `settle` zeigt es); (d) die kleinste Menge, mit der das Programm `nats` und `nats.go` (`jetstream.ObjectStore`) arbeiten; (e) ob `$O.<b>.M.*` einen Namen nach dem Schema `viper-<g>` erzwingen kann; (f) ob eine Maschine den Bucket anderer Gruppen sieht (nein, wenn die Subjects den Gruppennamen tragen).
-* **Offene Folge:** Alle Maschinen der Gruppe können alle Dateien der Gruppe holen. Das entspricht „in einer Gruppe ist nichts privat“ (`nats.md`).
+* **Grenze der Rechte (wichtig):** `Put` auf einen **vorhandenen** Namen gelingt auch ohne `STREAM.PURGE`: Das Löschen der alten Stücke wird verweigert (und von `nats.go` ignoriert), die Metadaten werden überschrieben, die alten Stücke bleiben als Abfall. Und wer `$O.<b>.M.*` und `$O.<b>.C.*` schreiben darf, kann **jedes** Objekt ersetzen oder fälschen oder Stücke zum Füllen des Speichers senden. Die Rechte lassen sich nicht schmaler machen (der Name in `M.*` ist base64 des Namens, ein Präfix je Absender ist nicht erzwingbar). Darum: Integrität durch die **Prüfsumme in der Nachricht**, Obergrenzen am Stream, Restrisiko im Handbuch (§2, §8).
+* Der Operator bekommt dieselbe Menge (er sendet über einen SSH-Tunnel, siehe `nats-cli.md`), mit seinem eigenen `_INBOX`-Präfix.
+* Alle Maschinen der Gruppe können alle Dateien der Gruppe holen: „in einer Gruppe ist nichts privat“ (`nats.md`).
 
 ## 5 Die Nachricht
 
@@ -57,7 +59,7 @@ Neues Feld im Umschlag (`json:"att,omitempty"`):
 ```
 
 * `type` ist `pdf`, `png`, `jpeg`, `gif` oder `webp`; `name` ist bereinigt (nur Anzeige, höchstens 64 Zeichen, keine Pfadtrenner, keine Steuerzeichen); `id` ist der Objektname; Größe und Prüfsumme begrenzt und geprüft. Ein Anhang gehört zu `msg` und `req`, nicht zu `res`, `presence`, `topics`.
-* **Älteres `viper-nats-mcp` lehnt die ganze Nachricht ab** (unbekanntes Feld). Der Absender kann das nicht wissen: Anhänge gehen erst, wenn **alle** Empfänger die neue Version haben. Das steht im Handbuch; `viper check` meldet eine Maschine mit alter Version (Version des Binaries steht schon in `connection.env`/`viper check` *[?]*).
+* **Älteres `viper-nats-mcp` lehnt die ganze Nachricht ab** (unbekanntes Feld). Damit der Absender das vorher weiß, melden die neuen Server ihre **Fähigkeiten** auf einem eigenen Subject `viper.<g>.<m>.caps` (wie die Themen auf `….topics`: ältere Server ignorieren ein Subject, das sie nicht abonnieren; ein neues Feld in `presence` täte das nicht, sie lehnen es ab). Inhalt: Version und `["att"]`. `send` an eine Maschine ohne `att` und `broadcast` an ein Thema, das so eine Maschine abonniert hat, **verweigert** den Anhang mit Namen der Maschine; ein Rundruf an unbekannte Empfänger warnt. `viper check` meldet eine Maschine mit alter Version.
 * Subject und Themen ändern sich nicht, `maxWire` und `MaxText` bleiben.
 
 ## 6 Der MCP-Server
@@ -71,7 +73,7 @@ Neues Feld im Umschlag (`json:"att,omitempty"`):
 ## 7 `viper nats`
 
 * `viper nats send|broadcast|request GRUPPE … --pdf DATEI` und `--image DATEI` (genau eine von beiden oder keine; der Text darf dazukommen). `viper` prüft Typ und Größe lokal, **bevor** es sich verbindet.
-* **Als Maschine** (ohne eigenen Schlüssel): Die Datei geht über die **Standardeingabe** der SSH-Verbindung an `viper-nats-mcp` (`attach-put`); der Text bleibt ein Argument oder kommt aus `--file`. Die Standardeingabe trägt heute den Text *[V]*; sie trägt dann einen kleinen Kopf (Typ, Größe) und die Bytes. Das ist neu zu entwerfen.
+* **Als Maschine** (ohne eigenen Schlüssel): ein **eigener Unterbefehl** `viper-nats-mcp attach-put` (nicht `send`): Die Standardeingabe trägt **nur** die Datei, mit einem kleinen Kopf zuerst (Typ, Größe, SHA-256, eine Zeile) und danach genau diese Bytes; der Text kommt als Argument oder aus `--file` (nie von der Standardeingabe, die heute den Text trägt *[V]*). `viper` liest die Datei lokal nur bis `NATS_OBJECTS_FILE_MAX` und bricht **vor** dem Verbinden ab, wenn sie größer ist. Der Unterbefehl legt die Datei ab und gibt die Referenz als JSON-Zeile aus; `viper` sendet dann die Nachricht wie bisher mit `att`.
 * **Als Betreiber:** direkt über den Tunnel mit dem Schlüssel des Betreibers.
 * `listen` zeigt eine Nachricht mit Anhang mit der Referenz; **`viper nats fetch GRUPPE ID [--out VERZEICHNIS]`** holt sie auf Ihren Rechner.
 
@@ -87,16 +89,27 @@ Neues Feld im Umschlag (`json:"att,omitempty"`):
 
 ## 9 Meilensteine
 
-0. **Prüfen (nichts bauen):** Mit dem `nats-server` aus `go.mod` und `nats.go` (`jetstream.ObjectStore`) die Rechte aus §4 ausprobieren: die kleinste Menge für `Put` und `Get`, und dass `STREAM.PURGE/DELETE/UPDATE/CREATE` verweigert werden und trotzdem kein Name überschrieben werden muss. Ergebnis zurück in §4.
-1. **Server:** `NATS_OBJECTS*`-Einstellungen, `Render`, Unit, Anlegen des Buckets, `natscheck.sh`, `viper check`.
-2. **Rechte:** Die Menge aus Meilenstein 0 in `Permissions` und `OperatorPermissions` (nur bei `NATS_OBJECTS=true`) und die Tests.
-3. **Nachricht und MCP-Server:** `att` (Lesen und Prüfen, strenge Grenzen), die Parameter von `send`/`broadcast`/`request`, das Werkzeug `fetch`, `inbox`, Obergrenze des Ordners, `MCPTools()`, `viper check`, Tests (auch gegen einen echten Server).
-4. **CLI:** `--pdf`/`--image`, die Standardeingabe als Weg der Datei, `viper nats fetch`, Betreiber über den Tunnel.
-5. **Handbuch und Läufe:** Handbuch (NATS-Kapitel, Sicherheit, Grenzen), `developer.md`, ein Lauf mit drei Maschinen gegen echtes Docker (Compose) und, wenn möglich, gegen k3d.
+0. **Prüfen: erledigt (14.11.2026, §4, §11).**
+1. **Server:** Einstellungen `NATS_OBJECTS*`, `Render` (`jetstream`-Block), die Unit der VM (`StateDirectory`), `natscheck.sh` (`objects=on|off`), `viper check`. Noch ohne Bucket und Rechte.
+2. **Rechte und Bucket:** die Menge aus §4 in `Permissions` und `OperatorPermissions` (nur bei `NATS_OBJECTS=true`), das Anlegen des Buckets durch `viper` mit den Grenzen aus §3, Tests (gegen einen echten Server, auch die Verweigerungen).
+3. **Nachricht und MCP-Server:** `att` (Lesen und Prüfen, strenge Grenzen), `caps` (Subject und Prüfung), die Parameter von `send`/`broadcast`/`request`, `fetch`, `inbox`, Obergrenze des Ordners, `MCPTools()`, `viper check`, Tests mit Prüfsumme und Typ an den Bytes, fehlendem Objekt und abgelaufenem Objekt (`object not found`, „digests do not match“ als „abgelaufen oder verändert“).
+4. **CLI:** `--pdf`/`--image`, `attach-put`, `viper nats fetch`, Betreiber über den Tunnel.
+5. **Handbuch und Läufe:** Handbuch (NATS-Kapitel, Sicherheit, Grenzen, Restrisiko), `developer.md`, ein Lauf mit drei Maschinen gegen echtes Docker und, wenn möglich, gegen k3d.
 
 ## 10 Offene Fragen
 
-* Ein Bucket je Gruppe, oder je Absender (damit nur der Absender seine Dateien überschreibt)? Der Plan nimmt einen und verbietet das Überschreiben.
+* Ein Bucket je Gruppe, oder je Absender? Je Absender hülfe nicht: Die Rechte lassen sich nicht auf einen Teil des Buckets beschränken (§4), und viele Buckets bedeuteten viele Streams. Der Plan nimmt **einen** und schützt durch die Prüfsumme.
 * Reicht die TTL von 7 Tagen, und reicht ein Anhang je Nachricht?
 * Soll `fetch` auch einen Anhang aus einer Gruppe holen dürfen, in der die Maschine nicht Mitglied ist? (Nein: der Bucket ist der der eigenen Gruppe.)
 * Soll `viper nats fetch` ohne Schlüssel des Betreibers über eine Maschine laufen (SSH, `fetch`, `scp` zurück)? Der Plan lässt es zunächst nur für den Betreiber zu.
+
+## 11 Messungen (14.11.2026)
+
+Eingebetteter `nats-server` 2.15.2 und `nats.go` 1.55.0, JetStream mit einem `store_dir` im temporären Verzeichnis.
+
+* **Rechte:** siehe §4 (Menge, Verweigerungen, die Verletzungen, die der Server bei zu kleiner Menge meldet: ohne `STREAM.INFO` kein Binden; ohne `DIRECT.GET` ein Zeitlimit bei `Put` und `Get`; ohne `CONSUMER.CREATE` scheitert `Get`; ohne `CONSUMER.DELETE` nur eine Meldung).
+* **Überschreiben:** `Put` auf einen vorhandenen Namen gelingt ohne `STREAM.PURGE`; die Metadaten werden ersetzt, die alten Stücke bleiben (3 Nachrichten und 3 Subjects im Stream).
+* **Ablauf:** Mit `max_age` allein verfallen Stücke und Metadaten zusammen (`Get` und `GetInfo`: `object not found`). Mit `max_bytes` und `discard: old` fielen zuerst die Stücke: `Get` lieferte „received a corrupt object, digests do not match“, `GetInfo` und `List` zeigten das Objekt weiter an.
+* **Voller Speicher:** Der Standard des Object Stores ist `discard: new`; ein Ablegen über `max_bytes` scheitert mit `API error code=503 err_code=10077 maximum bytes exceeded` und lässt Teilstücke zurück. Bei 100 KiB und `discard: new` wurden 582 winzige Objekte (je etwa 175 Byte) angenommen: Viele kleine Objekte füllen den Stream, darum `max_msgs`.
+* **Größen:** `max_payload` 1048576, Stückgröße 131072 (1 MB gab 8 Stücke). JetStream kostete im Leerlauf etwa 274 KiB Heap und 16 Goroutinen mehr.
+* **Streamflags:** `deny_purge` und `deny_delete` lassen sich nicht setzen, weil die Metadaten Roll-ups brauchen (`err_code=10052`).
