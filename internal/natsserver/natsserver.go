@@ -107,6 +107,89 @@ type Config struct {
 	Listen  string
 	Port    int
 	Clients []Client
+	// Objects, if set, turns JetStream on for the object store of the group (docs/plan/nats-objekte.md). Nil: JetStream
+	// stays off, as it always was.
+	Objects *Objects
+}
+
+// Objects is the object store of a group: where JetStream keeps its files and how much it may hold. It is written to
+// server.conf as a line "# viper-objects ..." (read back by ParseEndpoint, so that a change of the list of the machines keeps
+// it) and as the jetstream block.
+type Objects struct {
+	StoreDir string // ObjectStoreDir
+	MaxBytes int64  // max_file_store: the whole store
+	FileMax  int64  // the largest file
+	TTLDays  int
+}
+
+// ObjectStoreDirVM is where the store is on a VM: outside Dir, which the unit makes read only. Pods and containers keep it
+// in Dir (the home directory is a volume there).
+const ObjectStoreDirVM = "/var/lib/viper-nats"
+
+// ObjectStoreDir is the directory of the store on a machine: a container has the home directory on a volume, a VM uses
+// the state directory of the unit.
+func ObjectStoreDir(container bool) string {
+	if container {
+		return Dir + "/js"
+	}
+	return ObjectStoreDirVM
+}
+
+const objectsPrefix = "# viper-objects "
+
+func (o Objects) validate() error {
+	if o.StoreDir != ObjectStoreDirVM && o.StoreDir != Dir+"/js" {
+		return fmt.Errorf("object store: the directory %q is not one viper uses", o.StoreDir)
+	}
+	if o.MaxBytes < 16<<20 || o.MaxBytes > 100<<30 {
+		return fmt.Errorf("object store: the size %d is out of range", o.MaxBytes)
+	}
+	if o.FileMax < 1<<20 || o.FileMax > o.MaxBytes || o.FileMax > 64<<20 {
+		return fmt.Errorf("object store: the file size %d is out of range", o.FileMax)
+	}
+	if o.TTLDays < 1 || o.TTLDays > 365 {
+		return fmt.Errorf("object store: the time to live %d days is out of range", o.TTLDays)
+	}
+	return nil
+}
+
+// head is the line that keeps the settings of the store in server.conf ("" for none); the settings are checked first.
+func (o *Objects) head() (string, error) {
+	if o == nil {
+		return "", nil
+	}
+	if err := o.validate(); err != nil {
+		return "", err
+	}
+	return o.line() + "\n", nil
+}
+
+// block is the jetstream block of server.conf ("" for no object store: JetStream stays off).
+func (o *Objects) block() string {
+	if o == nil {
+		return ""
+	}
+	return fmt.Sprintf("jetstream {\n  store_dir: \"%s\"\n  max_file_store: %d\n}\n\n", o.StoreDir, o.MaxBytes)
+}
+
+func (o Objects) line() string {
+	return fmt.Sprintf("%sstore=%s max=%d file=%d ttl=%d", objectsPrefix, o.StoreDir, o.MaxBytes, o.FileMax, o.TTLDays)
+}
+
+// parseObjects reads the line Render wrote; nil if there is none or it does not pass the checks.
+func parseObjects(conf string) *Objects {
+	for _, l := range strings.Split(conf, "\n") {
+		rest, ok := strings.CutPrefix(l, objectsPrefix)
+		if !ok {
+			continue
+		}
+		var o Objects
+		if _, err := fmt.Sscanf(rest, "store=%s max=%d file=%d ttl=%d", &o.StoreDir, &o.MaxBytes, &o.FileMax, &o.TTLDays); err != nil || o.validate() != nil {
+			return nil
+		}
+		return &o
+	}
+	return nil
 }
 
 // ListenPodIP is what a server in a pod puts as its listen address: nats-server takes the value of the variable
@@ -245,8 +328,14 @@ func (c Config) Render() (string, error) {
 		}
 		fmt.Fprintf(&b, "%s%s %s\n", prefix, cl.Machine, cl.PublicKey) // read back by ParseClients
 	}
+	head, err := c.Objects.head()
+	if err != nil {
+		return "", err
+	}
+	b.WriteString(head)
 	fmt.Fprintf(&b, "server_name: \"viper-%s\"\nhost: %s\nport: %d\n\n", c.Group, listen, c.Port)
 	fmt.Fprintf(&b, "tls {\n  cert_file: \"%s\"\n  key_file: \"%s\"\n  min_version: \"1.2\"\n  timeout: 5\n}\n\n", CertFile, KeyFile)
+	b.WriteString(c.Objects.block())
 	b.WriteString(authorization(c.Group, clients))
 	return b.String(), nil
 }
@@ -267,7 +356,14 @@ func validUserKey(k string) bool {
 
 // UnitFile is the systemd unit of the server. It starts after the network is online and starts
 // again if it cannot bind yet, because the private interface may come up a moment after boot.
-func UnitFile() string {
+//
+// With the object store (objects) the unit has a state directory of its own, /var/lib/viper-nats: the unit closes the
+// directory of the server to writing, and the store must be written (docs/plan/nats-objekte.md §3).
+func UnitFile(objects bool) string {
+	state := ""
+	if objects {
+		state = "StateDirectory=viper-nats\n"
+	}
 	return `[Unit]
 Description=NATS server of a viper group
 After=network-online.target
@@ -284,7 +380,7 @@ PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
 ReadOnlyPaths=` + Dir + `
-CapabilityBoundingSet=
+` + state + `CapabilityBoundingSet=
 LimitNOFILE=65536
 
 [Install]
@@ -416,6 +512,8 @@ type Endpoint struct {
 	// Listen is ListenPodIP for a server in a pod (Host is then its Service name), else empty.
 	Listen string
 	Port   int
+	// Objects is the object store of the group, if its server has one.
+	Objects *Objects
 }
 
 // ParseEndpoint reads host and port out of a configuration Render wrote.
@@ -438,5 +536,6 @@ func ParseEndpoint(conf string) (Endpoint, bool) {
 	if e.Host == ListenPodIP { // a server in a pod: the name the clients use is the advertised one
 		e.Listen, e.Host = ListenPodIP, advertised
 	}
+	e.Objects = parseObjects(conf)
 	return e, e.Host != "" && e.Port != 0
 }

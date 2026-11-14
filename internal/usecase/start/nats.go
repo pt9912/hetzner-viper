@@ -256,6 +256,9 @@ func (r *runner) natsEndpoint(serverIP string) natsserver.Endpoint {
 	if r.c.IsContainer() {
 		e.Listen = natsserver.ListenPodIP
 	}
+	if n := r.c.NATS; n.Objects { // only the first configuration of the server takes it: later ones keep what the file has
+		e.Objects = &natsserver.Objects{StoreDir: natsserver.ObjectStoreDir(r.c.IsContainer()), MaxBytes: n.ObjectsMax, FileMax: n.ObjectsFileMax, TTLDays: n.ObjectsTTLDays}
+	}
 	return e
 }
 
@@ -300,10 +303,16 @@ func (r *runner) natsServer(ctx context.Context, ip string) (int, error) {
 	if err := r.natsRegister(ctx, natsgroup.Self(c), ip, pub); err != nil {
 		return fail("writing the configuration", err)
 	}
+	if c.NATS.Objects { // before anything is started: a store that does not fit would fail later and less clearly
+		need := c.NATS.ObjectsMax + objectsReserve
+		if _, err := r.remote(ctx, "", natsDiskScript, natsserver.ObjectStoreDir(c.IsContainer()), fmt.Sprint(need)); err != nil {
+			return fail("checking the room for the object store", err)
+		}
+	}
 	if err := r.natsStartServer(ctx, ip); err != nil {
 		return fail("starting the service", err)
 	}
-	if _, err := r.remote(ctx, "", natsCheckScript, host, fmt.Sprint(c.NATS.Port)); err != nil {
+	if _, err := r.remote(ctx, "", natsCheckScript, host, fmt.Sprint(c.NATS.Port), onOff(c.NATS.Objects)); err != nil {
 		return fail("checking the server", err)
 	}
 	if err := r.natsFinish(ctx, host); err != nil {
@@ -321,7 +330,7 @@ func (r *runner) natsStartServer(ctx context.Context, ip string) error {
 		_, err := r.remote(ctx, "", natsProcScript, natsserver.Dir, ip, fmt.Sprint(c.NATS.Port))
 		return err
 	}
-	_, err := r.remote(ctx, natsserver.UnitFile(), natsUnitScript, strings.TrimSuffix(natsserver.Unit, ".service"), ip, fmt.Sprint(c.NATS.Port))
+	_, err := r.remote(ctx, natsserver.UnitFile(c.NATS.Objects), natsUnitScript, strings.TrimSuffix(natsserver.Unit, ".service"), ip, fmt.Sprint(c.NATS.Port))
 	return err
 }
 
@@ -461,3 +470,14 @@ func rangeOrZone(n model.PrivateNetwork) string {
 	}
 	return n.IPRange
 }
+
+// onOff is the word the scripts take for a setting.
+func onOff(on bool) string {
+	if on {
+		return "on"
+	}
+	return "off"
+}
+
+// objectsReserve is what stays free next to the object store: the system and the logs.
+const objectsReserve = 1 << 30

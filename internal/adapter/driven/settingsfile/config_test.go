@@ -824,3 +824,37 @@ func TestStateFilesLieInTheDirectoryOfThePrefixAndOldOnesMoveThere(t *testing.T)
 		t.Error("the old file is still in the state directory")
 	}
 }
+
+func TestLoadReadsTheObjectStoreSettingsOfAGroup(t *testing.T) {
+	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
+	base := "DNS_DOMAIN=example.com\nNATS_ENABLED=true\nNATS_GROUP=g\n"
+	c, err := settingsfile.Load(setupDir(t, base, ""), "web", env, false)
+	if err != nil || c.NATS.Objects {
+		t.Fatalf("off by default: %v %+v", err, c.NATS)
+	}
+	c, err = settingsfile.Load(setupDir(t, base+"NATS_OBJECTS=true\n", ""), "web", env, false)
+	if err != nil || !c.NATS.Objects || c.NATS.ObjectsMax != 256<<20 || c.NATS.ObjectsFileMax != 8<<20 || c.NATS.ObjectsTTLDays != 7 {
+		t.Fatalf("defaults: %v %+v", err, c.NATS)
+	}
+	c, err = settingsfile.Load(setupDir(t, base+"NATS_OBJECTS=1\nNATS_OBJECTS_MAX=1024\nNATS_OBJECTS_FILE_MAX=16\nNATS_OBJECTS_TTL=30\n", ""), "web", env, false)
+	if err != nil || c.NATS.ObjectsMax != 1<<30 || c.NATS.ObjectsFileMax != 16<<20 || c.NATS.ObjectsTTLDays != 30 {
+		t.Fatalf("%v %+v", err, c.NATS)
+	}
+	// the limits are looked at only if NATS_OBJECTS is on
+	if c, err = settingsfile.Load(setupDir(t, base+"NATS_OBJECTS_MAX=nonsense\n", ""), "web", env, false); err != nil || c.NATS.Objects {
+		t.Errorf("%v %+v", err, c.NATS)
+	}
+	for name, tc := range map[string]struct{ settings, want string }{
+		"bad switch":          {"NATS_OBJECTS=maybe\n", "NATS_OBJECTS: true or false"},
+		"size not a number":   {"NATS_OBJECTS=true\nNATS_OBJECTS_MAX=lots\n", "NATS_OBJECTS_MAX"},
+		"size too small":      {"NATS_OBJECTS=true\nNATS_OBJECTS_MAX=4\n", "NATS_OBJECTS_MAX"},
+		"file bigger than 64": {"NATS_OBJECTS=true\nNATS_OBJECTS_FILE_MAX=65\n", "NATS_OBJECTS_FILE_MAX"},
+		"file over the store": {"NATS_OBJECTS=true\nNATS_OBJECTS_MAX=16\nNATS_OBJECTS_FILE_MAX=32\n", "more than NATS_OBJECTS_MAX"},
+		"no time":             {"NATS_OBJECTS=true\nNATS_OBJECTS_TTL=0\n", "NATS_OBJECTS_TTL"},
+		"a year and a day":    {"NATS_OBJECTS=true\nNATS_OBJECTS_TTL=366\n", "NATS_OBJECTS_TTL"},
+	} {
+		if _, err := settingsfile.Load(setupDir(t, base+tc.settings, ""), "web", env, false); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}

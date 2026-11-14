@@ -262,8 +262,30 @@ func natsServerChecks(r *report, c *model.Machine, v map[string]string, members 
 		r.warn("server.conf still has allow_responses (written by viper v0.15.0): any machine of the group can publish to any subject; run viper up on a machine of the group to write the configuration again")
 	}
 	natsListenCheck(r, v["listen"], srv.PrivateIP)
+	natsObjectsCheck(r, c, v["objects"])
 	natsRegistrationChecks(r, c, v["registered"], members)
 	natsOperatorChecks(r, c, v["operators"], members)
+}
+
+// natsObjectsCheck compares the object store the settings ask for (NATS_OBJECTS) with the one the server was set up with: it is
+// fixed when the server is made, so a change of the settings only reaches a new server.
+func natsObjectsCheck(r *report, c *model.Machine, line string) {
+	want := ""
+	if n := c.NATS; n.Objects {
+		dir := natsserver.ObjectStoreDir(c.IsContainer())
+		want = fmt.Sprintf("store=%s max=%d file=%d ttl=%d", dir, n.ObjectsMax, n.ObjectsFileMax, n.ObjectsTTLDays)
+	}
+	switch {
+	case line == "" && want == "":
+	case line == "":
+		r.warn("NATS_OBJECTS is on, but the server of the group was made without an object store: it is fixed when the server is made (viper down --group %s, then viper up --group %s)", c.NATS.Group, c.NATS.Group)
+	case want == "":
+		r.warn("the server of the group has an object store (%s), but NATS_OBJECTS is off in these settings: the group keeps it until the server is made again", line)
+	case line != want:
+		r.warn("the object store of the server (%s) is not the one the settings ask for (%s): it is fixed when the server is made", line, want)
+	default:
+		r.ok("the server has the object store the settings ask for (%s)", line)
+	}
 }
 
 // natsOperatorChecks compare the operator at the server (viper nats init) with the key on this computer: a

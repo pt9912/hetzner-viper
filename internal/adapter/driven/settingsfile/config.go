@@ -264,7 +264,21 @@ func applyNATS(c *model.Machine, home string) error {
 		return fmt.Errorf("Machine name %q is the name of the operator of the group (NATS_OPERATOR_NAME): use another machine name or another operator name", c.Name)
 	}
 	c.NATS = model.NATSConfig{Enabled: true, Group: group, Port: port, Operator: operator, MCPAutoAllow: model.AutoAllowOff}
+	if err := applyNATSObjects(c); err != nil {
+		return err
+	}
 	return applyNATSMCP(c, home)
+}
+
+// applyNATSObjects reads NATS_OBJECTS and its limits. They are looked at only if NATS_OBJECTS is on.
+func applyNATSObjects(c *model.Machine) error {
+	on, err := model.ParseNATSBool("NATS_OBJECTS", c.Get("NATS_OBJECTS"))
+	if err != nil || !on {
+		return err
+	}
+	c.NATS.Objects = true
+	c.NATS.ObjectsMax, c.NATS.ObjectsFileMax, c.NATS.ObjectsTTLDays, err = model.ParseObjectsLimits(c.Get("NATS_OBJECTS_MAX"), c.Get("NATS_OBJECTS_FILE_MAX"), c.Get("NATS_OBJECTS_TTL"))
+	return err
 }
 
 // mcpTopics reads NATS_MCP_TOPICS: names separated by commas, without duplicates, at most model.MaxMCPTopics.

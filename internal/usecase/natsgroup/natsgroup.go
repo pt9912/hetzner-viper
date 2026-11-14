@@ -159,7 +159,7 @@ func (o Ops) Update(ctx context.Context, server Target, group string, first nats
 		if err != nil {
 			return err
 		}
-		cfg, err := natsserver.Config{Group: group, Host: end.Host, Listen: end.Listen, Port: end.Port, Clients: clients}.Render()
+		cfg, err := natsserver.Config{Group: group, Host: end.Host, Listen: end.Listen, Port: end.Port, Clients: clients, Objects: end.Objects}.Render()
 		if err != nil {
 			return err
 		}

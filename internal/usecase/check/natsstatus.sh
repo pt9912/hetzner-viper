@@ -41,6 +41,8 @@ if [ -s "$dir/server.conf" ]; then
   echo "allow_responses=$(grep -c allow_responses "$dir/server.conf")"
   echo "registered=$(grep '^# viper-client ' "$dir/server.conf" | awk '{print $3}' | paste -sd, -)"
   echo "operators=$(grep '^# viper-operator ' "$dir/server.conf" | awk '{print $3 ":" $4}' | paste -sd, -)"
+  # the object store (NATS_OBJECTS): the line viper wrote, and whether the running server has JetStream
+  echo "objects=$(sed -n 's/^# viper-objects //p' "$dir/server.conf" | head -n 1)"
 fi
 # the MCP server (NATS_MCP): the binary, its entry with Claude Code, the push list and the allowed tools
 if [ -x "$dir/viper-nats-mcp" ]; then

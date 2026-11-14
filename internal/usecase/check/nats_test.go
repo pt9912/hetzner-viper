@@ -436,3 +436,26 @@ func TestTheOperatorKeyIsComparedWithTheRegistrationAtTheServer(t *testing.T) {
 		t.Errorf("registered without a key:\n%s", sec)
 	}
 }
+
+func TestTheServerCheckComparesTheObjectStoreWithTheSettings(t *testing.T) {
+	const on = "NATS_ENABLED=true\nNATS_GROUP=dev\nNATS_OBJECTS=true\n"
+	line := "objects=store=/var/lib/viper-nats max=268435456 file=8388608 ttl=7\n"
+	status := strings.Replace(healthyServer, "alpha,web", "beta,web", 1)
+	for name, tc := range map[string]struct{ settings, status, want, not string }{
+		"the same":          {on, status + line, "the server has the object store the settings ask for", "WARN"},
+		"asked, not made":   {on, status, "NATS_OBJECTS is on, but the server of the group was made without an object store", ""},
+		"made, not asked":   {"NATS_ENABLED=true\nNATS_GROUP=dev\n", status + line, "has an object store", ""},
+		"another size":      {on + "NATS_OBJECTS_MAX=512\n", status + line, "is not the one the settings ask for", ""},
+		"neither (nothing)": {"NATS_ENABLED=true\nNATS_GROUP=dev\n", status, "", "object store"},
+	} {
+		n := newNATSFixture(t, tc.settings, model.NATSServer, tc.status)
+		out, problems := n.run()
+		sec := natsSection(out)
+		if tc.want != "" && !strings.Contains(sec, tc.want) || tc.not != "" && strings.Contains(sec, tc.not) {
+			t.Errorf("%s:\n%s", name, sec)
+		}
+		if problems != 0 {
+			t.Errorf("%s: a difference in the object store is a warning, no problem: %d", name, problems)
+		}
+	}
+}

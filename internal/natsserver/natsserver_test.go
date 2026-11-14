@@ -99,10 +99,76 @@ func TestPermissionsStayInTheGroup(t *testing.T) {
 }
 
 func TestUnitFileStartsAfterTheNetworkAndRetries(t *testing.T) {
-	u := natsserver.UnitFile()
+	u := natsserver.UnitFile(false)
 	for _, want := range []string{"After=network-online.target", "Restart=on-failure", "User=builder", "NoNewPrivileges=yes", "ProtectSystem=strict", "ExecStart=" + natsserver.Binary + " -c " + natsserver.ConfigFile, "ExecReload=/bin/kill -HUP $MAINPID"} {
 		if !strings.Contains(u, want) {
 			t.Errorf("missing %q", want)
+		}
+	}
+}
+
+func TestTheUnitHasAStateDirectoryOnlyForAnObjectStore(t *testing.T) {
+	if strings.Contains(natsserver.UnitFile(false), "StateDirectory") {
+		t.Error("no object store, no state directory")
+	}
+	u := natsserver.UnitFile(true)
+	if !strings.Contains(u, "StateDirectory=viper-nats\n") || strings.Index(u, "ReadOnlyPaths=") > strings.Index(u, "StateDirectory=") {
+		t.Errorf("the state directory is in the [Service] part:\n%s", u)
+	}
+}
+
+func objectsConfig(o *natsserver.Objects) natsserver.Config {
+	return natsserver.Config{Group: "dev", Host: "10.130.0.2", Port: 4222, Objects: o, Clients: []natsserver.Client{{Machine: "alpha", PublicKey: keyA}}}
+}
+
+func TestRenderTurnsJetStreamOnOnlyForAnObjectStoreAndKeepsTheLimits(t *testing.T) {
+	o := &natsserver.Objects{StoreDir: natsserver.ObjectStoreDirVM, MaxBytes: 256 << 20, FileMax: 8 << 20, TTLDays: 7}
+	out, err := objectsConfig(o).Render()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"jetstream {", `store_dir: "/var/lib/viper-nats"`, "max_file_store: 268435456", "# viper-objects store=/var/lib/viper-nats max=268435456 file=8388608 ttl=7"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	// the endpoint read back from the file has the store, so that a change of the machines does not turn it off
+	end, ok := natsserver.ParseEndpoint(out)
+	if !ok || end.Objects == nil || *end.Objects != *o {
+		t.Fatalf("%+v %v", end, ok)
+	}
+	again, err := objectsConfig(end.Objects).Render()
+	if err != nil || again != out {
+		t.Errorf("the file changes when it is rendered again from what it says: %v", err)
+	}
+	if off, _ := objectsConfig(nil).Render(); strings.Contains(off, "jetstream") || strings.Contains(off, "viper-objects") {
+		t.Errorf("no object store, no JetStream:\n%s", off)
+	}
+	if end, _ := natsserver.ParseEndpoint(strings.Replace(out, "# viper-objects", "# viper-objectz", 1)); end.Objects != nil {
+		t.Error("a line that is not ours is not read")
+	}
+}
+
+func TestRenderRefusesAnObjectStoreOutsideTheRange(t *testing.T) {
+	good := natsserver.Objects{StoreDir: natsserver.Dir + "/js", MaxBytes: 64 << 20, FileMax: 8 << 20, TTLDays: 7}
+	if _, err := objectsConfig(&good).Render(); err != nil {
+		t.Fatal(err)
+	}
+	for name, mod := range map[string]func(*natsserver.Objects){
+		"another directory":     func(o *natsserver.Objects) { o.StoreDir = "/tmp/js" },
+		"a path with a quote":   func(o *natsserver.Objects) { o.StoreDir = natsserver.Dir + `/js"; x` },
+		"too small":             func(o *natsserver.Objects) { o.MaxBytes = 1 << 20 },
+		"too large":             func(o *natsserver.Objects) { o.MaxBytes = 1 << 40 },
+		"a file over the store": func(o *natsserver.Objects) { o.FileMax = o.MaxBytes + 1 },
+		"no file":               func(o *natsserver.Objects) { o.FileMax = 0 },
+		"a huge file":           func(o *natsserver.Objects) { o.FileMax = 65 << 20 },
+		"no time":               func(o *natsserver.Objects) { o.TTLDays = 0 },
+		"too long":              func(o *natsserver.Objects) { o.TTLDays = 366 },
+	} {
+		o := good
+		mod(&o)
+		if _, err := objectsConfig(&o).Render(); err == nil {
+			t.Errorf("%s was accepted", name)
 		}
 	}
 }

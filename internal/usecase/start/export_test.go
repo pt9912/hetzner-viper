@@ -45,3 +45,9 @@ func CheckLinuxBinary(data []byte, goarch string) error { return checkLinuxBinar
 
 // ContainerProbe exports the probe of a pod for the tests.
 func ContainerProbe() string { return containerProbe }
+
+// NatsCheckScript exports natsCheckScript for the tests.
+func NatsCheckScript() string { return natsCheckScript }
+
+// NatsDiskScript exports natsDiskScript for the tests.
+func NatsDiskScript() string { return natsDiskScript }

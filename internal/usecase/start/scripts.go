@@ -30,6 +30,8 @@ var (
 	natsProcScript string
 	//go:embed scripts/natscheck.sh
 	natsCheckScript string
+	//go:embed scripts/natsdisk.sh
+	natsDiskScript string
 	//go:embed scripts/natscli.sh
 	natsCLIScript string
 	//go:embed scripts/natsfile.sh

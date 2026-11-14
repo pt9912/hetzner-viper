@@ -97,6 +97,55 @@ type NATSConfig struct {
 	// MCPBinary is a file to install instead of the one built into viper (NATS_MCP_BINARY, for
 	// builds that have none).
 	MCPBinary string
+
+	// Objects: the NATS server of the group has an object store for images, PDFs and ZIP files (NATS_OBJECTS;
+	// docs/plan/nats-objekte.md). The sizes are in bytes, the time to live in days. They are fixed when the server is set up.
+	Objects        bool
+	ObjectsMax     int64 // NATS_OBJECTS_MAX: the whole store
+	ObjectsFileMax int64 // NATS_OBJECTS_FILE_MAX: one file
+	ObjectsTTLDays int   // NATS_OBJECTS_TTL
+}
+
+// The defaults and bounds of the settings of the object store (sizes in MiB).
+const (
+	DefaultObjectsMaxMiB     = 256
+	DefaultObjectsFileMaxMiB = 8
+	DefaultObjectsTTLDays    = 7
+	MaxObjectsMaxMiB         = 100 << 10
+	MinObjectsMaxMiB         = 16
+	MaxObjectsFileMaxMiB     = 64
+	MaxObjectsTTLDays        = 365
+)
+
+// ParseObjectsLimits reads NATS_OBJECTS_MAX and NATS_OBJECTS_FILE_MAX (whole MiB) and NATS_OBJECTS_TTL (whole days); empty
+// is the default. A file may not be larger than the store.
+func ParseObjectsLimits(maxMiB, fileMiB, ttlDays string) (maxBytes, fileBytes int64, ttl int, err error) {
+	num := func(name, v string, def, lo, hi int) (int, error) {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return def, nil
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil || n < lo || n > hi {
+			return 0, fmt.Errorf("%s: a whole number from %d to %d: %s", name, lo, hi, v)
+		}
+		return n, nil
+	}
+	m, err := num("NATS_OBJECTS_MAX", maxMiB, DefaultObjectsMaxMiB, MinObjectsMaxMiB, MaxObjectsMaxMiB)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	f, err := num("NATS_OBJECTS_FILE_MAX", fileMiB, DefaultObjectsFileMaxMiB, 1, MaxObjectsFileMaxMiB)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	if f > m {
+		return 0, 0, 0, fmt.Errorf("NATS_OBJECTS_FILE_MAX: %d MiB is more than NATS_OBJECTS_MAX (%d MiB)", f, m)
+	}
+	if ttl, err = num("NATS_OBJECTS_TTL", ttlDays, DefaultObjectsTTLDays, 1, MaxObjectsTTLDays); err != nil {
+		return 0, 0, 0, err
+	}
+	return int64(m) << 20, int64(f) << 20, ttl, nil
 }
 
 // The values of NATS_MCP_AUTOALLOW.
