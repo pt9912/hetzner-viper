@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   chromium:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # a system that this Playwright supports (ubuntu-latest is newer)
     timeout-minutes: 15
     defaults:
       run:
