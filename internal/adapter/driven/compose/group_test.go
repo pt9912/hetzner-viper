@@ -244,11 +244,11 @@ func TestAGroupNameThatIsNoNameIsRefused(t *testing.T) {
 	}
 }
 
-// The state directory may have characters that a pattern takes for its own ([ ] * ?): the last machine is found anyway.
+// The state directory may have characters that a pattern takes for its own ([ ], which Windows paths allow too): the last machine is found anyway.
 func TestAStateDirectoryWithPatternCharactersIsNoProblem(t *testing.T) {
 	ctx := context.Background()
 	h := newHost()
-	state := filepath.Join(t.TempDir(), "a[b]*")
+	state := filepath.Join(t.TempDir(), "a[b]")
 	c, _ := newClient(t, h, func(o *compose.Options) { o.StateDir = state })
 	var ids []string
 	for _, n := range []string{"claude-w1", "claude-w2"} {

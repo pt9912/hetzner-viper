@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.120  
+Version: 1.121  
 Software-Version: v0.21.1  
 Stand: 14.11.2026  
 
@@ -494,7 +494,7 @@ Mit `PROVIDER=compose` ist ein „Rechner“ ein **Container** auf dem Docker-Ho
    SERVER_TYPE=2x4
    ```
 
-   `SERVER_LOCATION` ist der Docker-Kontext (`default` ist der lokale Daemon) und Pflicht, ohne Standard. `COMPOSE_IMAGE` ist nur für ein selbst gebautes oder anderes Image nötig. `SERVER_TYPE` ist `<CPUs>x<GiB Speicher>`. `COMPOSE_DOCKER=dind` müssen Sie ausdrücklich eintragen: Der Docker im Rechner ist ein **privilegierter** Container, und der Preflight meldet sonst einen Fehler (siehe Hinweise).
+   `SERVER_LOCATION` ist der Docker-Kontext (`default` ist der lokale Daemon) und Pflicht, ohne Standard. Meldet der Preflight „context not found“, ist `SERVER_LOCATION` kein Docker-Kontext, oft steht dort noch ein Hetzner-Standort aus der `.env.local`: Setzen Sie ihn für den Rechner oder die Gruppe, z. B. auf `default`. `COMPOSE_IMAGE` ist nur für ein selbst gebautes oder anderes Image nötig. `SERVER_TYPE` ist `<CPUs>x<GiB Speicher>`. `COMPOSE_DOCKER=dind` müssen Sie ausdrücklich eintragen: Der Docker im Rechner ist ein **privilegierter** Container, und der Preflight meldet sonst einen Fehler (siehe Hinweise).
 3. `viper preflight <rechner>`, dann `viper up <rechner> [--repo URL]`. Danach `viper ssh <rechner>`, `viper vscode <rechner>`, `viper check <rechner>`. Zum Löschen: `viper down <rechner>`.
 
 #### Ergebnis
@@ -507,7 +507,7 @@ Mit `PROVIDER=compose` ist ein „Rechner“ ein **Container** auf dem Docker-Ho
 * **Daten:** Heimverzeichnis (mit Arbeitsverzeichnis) und Homebrew liegen auf zwei Docker-Volumes `<name>-home` und `<name>-brew`. Sie überstehen einen Neustart des Containers und `viper up` auf einer vorhandenen Maschine; `viper up` legt einen vorhandenen Container nie neu an (eine geänderte Größe oder ein anderes Image gilt erst nach `viper down` und neuem `viper up`). `viper down` löscht beide mit allen Daten, nach den Abfragen.
 * **Docker im Rechner (`COMPOSE_DOCKER`):** `dind` ist ein Docker-Daemon in einem **privilegierten** zweiten Container. Wer ihn übernimmt, hat Root auf Ihrem Host: Nutzen Sie ihn nur auf Ihrem eigenen Computer. Statt dessen gehen `remote` (ein Daemon außerhalb, `COMPOSE_DOCKER_HOST`) und `none`. Die Images im Docker des Rechners gehen verloren, wenn der Container neu angelegt wird. Wird nur der Rechner-Container neu gestartet (Absturz, `docker restart`), startet `viper up` den zweiten Container neu und wartet, bis der Daemon antwortet.
 * **`DOCKER_HOST`:** Ist die Umgebungsvariable gesetzt, nimmt Docker sie statt des Kontexts aus `SERVER_LOCATION`. `viper` verweigert dann die Arbeit mit einer Meldung, damit nichts auf dem falschen Host entsteht: Heben Sie die Variable für `viper` auf (`unset DOCKER_HOST`). Rechnernamen dürfen nicht auf `-docker` enden (so heißt der Container des Docker-Dienstes).
-* **Schlüssel:** Die Schlüssel des Rechners liegen als Dateien im Zustandsverzeichnis (`~/.local/state/viper/compose/<gruppe oder name>/`, nur für Sie lesbar) und bleiben bis `viper down`. Neue erlaubte Schlüssel gelten erst für einen neu angelegten Rechner.
+* **Schlüssel:** Die Schlüssel des Rechners liegen als Dateien im Zustandsverzeichnis (`~/.local/state/viper/compose/g_<gruppe>/secret/<rechner>/` bei einem Rechner in einer Gruppe, `~/.local/state/viper/compose/<name>/secret/` sonst; nur für Sie lesbar) und bleiben bis `viper down`. Neue erlaubte Schlüssel gelten erst für einen neu angelegten Rechner.
 * Startet ein Container nicht oder bleiben Reste auf dem Docker-Host, hilft Kapitel 7.
 
 ### Rechner über NATS verbinden (NATS-Gruppe)
@@ -736,7 +736,7 @@ viper nats broadcast entwicklung --topic news --file mitteilung.md   # Text aus 
 * **Absender:** Ohne eigenen Schlüssel (siehe „Als Betreiber senden“ unten) kommt Ihre Nachricht von einer **Maschine der Gruppe** an, mit deren Schlüssel und Rechten; `viper` nimmt ohne `--from` die erste Maschine der Gruppe, die startklar ist und nicht der Empfänger ist. Mit `--from <maschine>` wählen Sie sie selbst. Die erste Ausgabezeile nennt den Absender („Sender: alpha …“).
 * **Langer Text:** Statt des Textes können Sie bei `send`, `broadcast` und `request` mit `--file DATEI` eine Datei angeben (höchstens 16 KiB; ein abschließender Zeilenumbruch gehört nicht zum Text). Text und `--file` zusammen sind ein Fehler.
 * `--json` gibt je Ereignis eine JSON-Zeile aus.
-* `--timeout` bei `request` (Standard 30 Sekunden, 1 bis 120) und bei `peers` (wie lange zugehört wird). `topics` zeigt zuerst die festen Themen aus den Einstellungen (`NATS_MCP_TOPICS` in Gruppen- und Rechnerdateien, je Rechner mit `NATS_MCP=true`), ohne dass dort eine Sitzung laufen muss. Danach hört es wie `peers` zu und nennt die Themen, die laufende Maschinen nach eigener Aussage abonniert haben (auch die mit `subscribe` hinzugefügten); eine Maschine ohne laufende Sitzung ist dort, wie bei `peers`, nicht zu sehen. eine Maschine, die ihre Themen nicht meldet (ein älteres `viper-nats-mcp`, oder die Meldung kommt noch), steht als „has not said“ da, nicht als Maschine ohne Themen.
+* `--timeout` bei `request` (Standard 30 Sekunden, 1 bis 120) und bei `peers` (wie lange zugehört wird). `topics` zeigt zuerst die festen Themen aus den Einstellungen (`NATS_MCP_TOPICS` in Gruppen- und Rechnerdateien, je Rechner mit `NATS_MCP=true`), ohne dass dort eine Sitzung laufen muss. Danach hört es wie `peers` zu und nennt die Themen, die laufende Maschinen nach eigener Aussage abonniert haben (auch die mit `subscribe` hinzugefügten); eine Maschine ohne laufende Sitzung ist dort, wie bei `peers`, nicht zu sehen. Eine Maschine, die ihre Themen nicht meldet (ein älteres `viper-nats-mcp`, oder die Meldung kommt noch), steht als „has not said“ da, nicht als Maschine ohne Themen.
 
 #### Ergebnis
 
@@ -1574,3 +1574,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.118 | nach v0.21.1 | Die Änderungen 1.114 bis 1.117 (`viper nats --file`; Zustandsverzeichnis `~/.local/state/viper` mit `servers/` und `groups/`; DNS-Kommentar `managed by viper`). |
 | 1.119 | nach v0.21.1 | Docker Compose: die Rechner einer Gruppe liegen in einem Projekt `viper_g_<gruppe>` mit einer `compose.yaml` (vorher je Rechner ein Projekt); Rechner ohne Gruppe und vorhandene Rechner bleiben, wie sie sind. |
 | 1.120 | nach v0.21.1 | Die Befehlsübersicht nennt `--file` bei `viper nats`; die Software-Version im Kopf und die Dateinamen der Binaries stehen wieder auf v0.21.1 (es gibt kein Release v0.21.2). READMEs: Compose-Datei je Gruppe, `viper nats --file`. |
+| 1.121 | nach v0.21.1 | Docker Compose: Schlüsselort je Rechner richtig angegeben, Hinweis zu „context not found“ (`SERVER_LOCATION` ist der Docker-Kontext); Satzanfang bei `viper nats topics`. |
