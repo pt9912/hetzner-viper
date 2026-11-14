@@ -25,7 +25,7 @@ export async function startUI(extra: string[] = [], dockerSleep = 30, openBrowse
   fs.writeFileSync(path.join(work, 'machines', 'web.env.local'), '');
   for (const m of ['a', 'b']) { fs.writeFileSync(path.join(work, 'machines', m + '.env.local'), 'NATS_ENABLED=true\nNATS_GROUP=dev\nNATS_MCP=true\n'); }
   fs.writeFileSync(path.join(work, 'groups', 'dev.env'), `GROUP_MACHINES=a,b\n${opts.objects === false ? '' : 'NATS_OBJECTS=true\n'}`);
-  fs.writeFileSync(path.join(bin, 'docker'), `#!/bin/sh\necho "fake docker $* token=ghp_e2esecretvalue123" >&2\nsleep ${dockerSleep}\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'docker'), `#!/bin/sh\necho "fake docker $* token=ghp_e2esecretvalue123" >&2\nexec sleep ${dockerSleep}\n`, { mode: 0o755 });
   // the browser is "opened" by a fake xdg-open that keeps a copy of the start file it is given
   fs.writeFileSync(path.join(bin, 'xdg-open'), `#!/bin/sh\ncp "$1" ${path.join(root, 'launch.html')}\n`, { mode: 0o755 });
   const stateDir = path.join(home, '.local', 'state', 'viper');

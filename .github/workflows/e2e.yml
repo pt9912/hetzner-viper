@@ -5,14 +5,18 @@ on:
   push:
     branches: [main]
     paths:
-      - 'internal/adapter/driving/web/**'
-      - 'internal/adapter/driving/cli/ui*'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'go.mod'
+      - 'go.sum'
       - 'e2e/**'
       - '.github/workflows/e2e.yml'
   pull_request:
     paths:
-      - 'internal/adapter/driving/web/**'
-      - 'internal/adapter/driving/cli/ui*'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'go.mod'
+      - 'go.sum'
       - 'e2e/**'
       - '.github/workflows/e2e.yml'
 
@@ -20,7 +24,12 @@ permissions:
   contents: read
 
 jobs:
-  chromium:
+  browser:
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox]
+    name: ${{ matrix.browser }}
     runs-on: ubuntu-24.04 # a system that this Playwright supports (ubuntu-latest is newer)
     timeout-minutes: 15
     defaults:
@@ -37,11 +46,13 @@ jobs:
           cache: npm
           cache-dependency-path: e2e/package-lock.json
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
       - run: npx playwright test
+        env:
+          E2E_BROWSERS: ${{ matrix.browser }}
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: playwright-traces
+          name: playwright-traces-${{ matrix.browser }}
           path: e2e/test-results
           retention-days: 7

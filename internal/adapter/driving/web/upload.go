@@ -17,9 +17,10 @@ import (
 
 // uploadTable holds the files a page handed over to send, in a folder of their own that only this user reaches.
 type uploadTable struct {
-	mu    sync.Mutex
-	dir   string
-	files map[string]*upload
+	mu     sync.Mutex
+	dir    string
+	closed bool // the server ends: no new file
+	files  map[string]*upload
 }
 
 type upload struct {
@@ -77,11 +78,16 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	t := &s.uploads
 	t.mu.Lock()
-	if u := t.files[id]; u != nil { // the table may have been emptied meanwhile (the server ends)
+	u := t.files[id]
+	if u != nil {
 		u.path, u.kind, u.ready = path, kind, true
-		u.timer = time.AfterFunc(s.cfg.UploadLife, func() { t.discard(id) })
+		u.timer.Reset(s.cfg.UploadLife) // from now on it waits for its message
 	}
 	t.mu.Unlock()
+	if u == nil { // the place was taken back meanwhile: too slow, or the server ends
+		fail(w, http.StatusGone, "the file took too long")
+		return
+	}
 	reply(w, map[string]any{"id": id})
 }
 
@@ -111,6 +117,10 @@ func (s *Server) reserveUpload(w http.ResponseWriter) (id, sub string, ok bool) 
 	t := &s.uploads
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.closed {
+		fail(w, http.StatusServiceUnavailable, "viper ui is ending")
+		return "", "", false
+	}
 	if len(t.files) >= maxUploads {
 		fail(w, http.StatusServiceUnavailable, "too many files waiting; send one first")
 		return "", "", false
@@ -124,7 +134,8 @@ func (s *Server) reserveUpload(w http.ResponseWriter) (id, sub string, ok bool) 
 		t.dir, t.files = dir, map[string]*upload{}
 	}
 	id = random()
-	t.files[id] = &upload{}
+	// the place has a timer from the start: an upload that stalls in the middle of the file does not hold it for ever
+	t.files[id] = &upload{timer: time.AfterFunc(s.cfg.UploadLife, func() { t.discard(id) })}
 	return id, filepath.Join(t.dir, id), true
 }
 
@@ -139,6 +150,7 @@ func save(w http.ResponseWriter, r *http.Request, sub, path string, limit int64)
 		fail(w, http.StatusInternalServerError, "no file")
 		return err
 	}
+	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(10 * time.Minute)) // a body that does not come ends the request
 	_, err = io.Copy(f, http.MaxBytesReader(w, r.Body, limit))
 	if cerr := f.Close(); err == nil {
 		err = cerr
@@ -146,12 +158,30 @@ func save(w http.ResponseWriter, r *http.Request, sub, path string, limit int64)
 	if err != nil {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
-			fail(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("the file has more than %d MiB (NATS_OBJECTS_FILE_MAX of the group)", limit>>20))
+			fail(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("the file has more than %s (NATS_OBJECTS_FILE_MAX of the group)", sizeText(limit)))
 		} else {
 			fail(w, http.StatusBadRequest, "the file did not arrive")
 		}
 	}
 	return err
+}
+
+func sizeText(n int64) string {
+	if n >= 1<<20 {
+		return fmt.Sprintf("%d MiB", n>>20)
+	}
+	return fmt.Sprintf("%d KiB", max(n>>10, 1))
+}
+
+// discardReady deletes a file that was handed over and is not used; a file that is still arriving is left alone.
+func (t *uploadTable) discardReady(id string) {
+	t.mu.Lock()
+	u := t.files[id]
+	ready := u != nil && u.ready
+	t.mu.Unlock()
+	if ready {
+		t.discard(id)
+	}
 }
 
 // take hands the file to a run: it is not offered again.
@@ -198,7 +228,7 @@ func (t *uploadTable) removeAll() {
 	if t.dir != "" {
 		_ = os.RemoveAll(t.dir)
 	}
-	t.dir, t.files = "", nil
+	t.dir, t.files, t.closed = "", nil, true
 }
 
 // GET /api/download?id=RUN: the file a fetch run put on this computer. It changes nothing; the answer is a download, never

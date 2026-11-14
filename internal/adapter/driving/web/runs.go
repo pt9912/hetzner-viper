@@ -40,7 +40,7 @@ const (
 	maxRetained    = 1 << 20 // what of the output of a run is kept for a page that attaches late
 	maxAnswer      = 256
 	maxPendingLine = 4096
-	keepTail       = 128 // of a line without a blank that is cut: a secret is not longer
+	minKeepTail    = 128 // of a line without a blank that is cut (at least; a longer secret makes it longer): a secret is not cut in two
 )
 
 // The states of a run.
@@ -83,9 +83,11 @@ type run struct {
 func (r *run) view(cursor int) (evs []event, cut bool, state string, code int, ch <-chan struct{}) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for _, e := range r.events {
-		if e.Seq >= cursor {
-			evs = append(evs, e)
+	if n := len(r.events); n > 0 {
+		// the numbers are in a row (the front is trimmed, nothing else), so the place of an event is its number minus the first
+		start := max(cursor-r.events[0].Seq, 0)
+		if start < n {
+			evs = slices.Clone(r.events[start:])
 		}
 	}
 	// events that were dropped to keep the memory small: the page is told
@@ -189,9 +191,10 @@ func (r *run) info() info {
 
 // Runs: a table on the server, not in a page: a page that is closed ends nothing, and a new one finds the runs again.
 type runTable struct {
-	mu   sync.Mutex
-	runs []*run
-	held map[string]string // machine -> the run that has it
+	mu      sync.Mutex
+	closing bool // the server ends: no new run
+	runs    []*run
+	held    map[string]string // machine -> the run that has it
 }
 
 type runRequest struct {
@@ -305,7 +308,7 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	ov, err := s.snapshot(r.Context())
+	ov, err := s.fresh(r.Context())
 	if err != nil {
 		fail(w, http.StatusInternalServerError, s.show(err.Error()))
 		return
@@ -313,7 +316,7 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 	started := false
 	defer func() {
 		if !started && req.Upload != "" {
-			s.uploads.discard(req.Upload) // a run that was refused takes no file with it
+			s.uploads.discardReady(req.Upload) // a run that was refused takes no file with it
 		}
 	}()
 	var argv, names []string
@@ -359,6 +362,9 @@ func (s *Server) hold(r *run) (int, string) {
 	t := &s.runs
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.closing {
+		return http.StatusServiceUnavailable, "viper ui is ending"
+	}
 	active := 0
 	for _, o := range t.runs {
 		if o.current() != stateDone && (o.Action == "nats") == (r.Action == "nats") {
@@ -416,11 +422,22 @@ func (s *Server) release(r *run) {
 		}
 	}
 	for i, o := range t.runs {
-		if o == r && r.process() == nil { // never started
+		if o == r && r.process() == nil { // never started: it is gone, and nobody waits for it
 			t.runs = append(t.runs[:i], t.runs[i+1:]...)
+			r.mu.Lock()
+			r.state = stateDone
+			r.changed()
+			r.mu.Unlock()
 			break
 		}
 	}
+}
+
+// close lets no new run in.
+func (t *runTable) close() {
+	t.mu.Lock()
+	t.closing = true
+	t.mu.Unlock()
 }
 
 func (s *Server) lookupRun(id string) *run {
@@ -538,13 +555,21 @@ func (s *Server) lines(r *run, b []byte) []byte {
 	}
 	cut := bytes.LastIndexAny(b, " \t") + 1
 	if cut == 0 {
-		cut = len(b) - keepTail
+		// a secret that begins in the part that is shown would end in the part that is kept: it is not longer than the tail
+		cut = max(len(b)-max(minKeepTail, s.longestSecret()), len(b)/2)
 	}
 	for cut > 0 && cut < len(b) && !utf8.RuneStart(b[cut]) { // not in the middle of a character
 		cut--
 	}
 	r.add(s.show(string(b[:cut])))
 	return b[cut:]
+}
+
+func (s *Server) longestSecret() int {
+	if s.cfg.LongestSecret == nil {
+		return minKeepTail
+	}
+	return s.cfg.LongestSecret()
 }
 
 func (s *Server) finish(r *run, code int) {

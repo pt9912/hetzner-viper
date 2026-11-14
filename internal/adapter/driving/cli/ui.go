@@ -29,7 +29,7 @@ func nativeUI(o *options) error {
 	secrets := &secretValues{}
 	b := &uiBackend{o: o, env: env, secrets: secrets}
 	b.learnEnvironment()
-	cfg := web.Config{Backend: b, Readonly: o.readonly, Version: o.version, Clean: natsmcp.Clean, Redact: secrets.redact}
+	cfg := web.Config{Backend: b, Readonly: o.readonly, Version: o.version, Clean: natsmcp.Clean, Redact: secrets.redact, LongestSecret: secrets.longest}
 	if !o.readonly {
 		cfg.Spawn = spawner(settingsDir(o))
 	}
@@ -319,6 +319,17 @@ func (b *uiBackend) learnEnvironment() {
 			b.secrets.add(vars[n])
 		}
 	}
+}
+
+// longest is the length of the longest secret (the pages cut an open line no nearer to its end than that).
+func (s *secretValues) longest() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for v := range s.vals {
+		n = max(n, len(v))
+	}
+	return n
 }
 
 func (s *secretValues) redact(text string) string {

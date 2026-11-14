@@ -162,6 +162,7 @@
       $('log-status').textContent = '';
       filterLog();
     } catch (e) {
+      if (seq !== logSeq) { return; }
       logText = '';
       $('log-output').textContent = '';
       $('log-status').textContent = e.message;
@@ -230,7 +231,7 @@
   function natsEnabled() {
     const g = natsGroup();
     const off = !!overview.readonly || !g;
-    for (const id of ['nats-peers', 'nats-topics', 'nats-listen', 'nats-timeout', 'nats-listen-topic', 'nats-listen-all', 'nats-kind', 'nats-to', 'nats-topic', 'nats-text', 'nats-yes', 'nats-id', 'nats-sha', 'nats-from']) { $(id).disabled = off; }
+    for (const id of ['nats-peers', 'nats-topics', 'nats-listen', 'nats-timeout', 'nats-reqtimeout', 'nats-listen-topic', 'nats-listen-all', 'nats-kind', 'nats-to', 'nats-topic', 'nats-text', 'nats-yes', 'nats-id', 'nats-sha', 'nats-from']) { $(id).disabled = off; }
     for (const f of ['nats-send', 'nats-fetch']) { for (const el of $(f).querySelectorAll('button')) { el.disabled = off; } }
     const noFile = off || !g.file_max;
     $('nats-file').disabled = noFile;
@@ -258,16 +259,17 @@
   function natsKindChanged() {
     const kind = $('nats-kind').value;
     if (overview.readonly) { return; }
+    $('nats-reqtimeout').disabled = kind !== 'request';
     $('nats-to').disabled = kind === 'broadcast';
     $('nats-topic').disabled = kind !== 'broadcast';
   }
 
   async function natsRun(extra) {
     const g = natsGroup();
-    if (!g) { return; }
+    if (!g) { return false; }
     const req = Object.assign({ action: 'nats', nats: g.name }, extra);
     if ($('nats-from').value) { req.from = $('nats-from').value; }
-    await startRun(req);
+    return startRun(req);
   }
 
   async function natsSend(ev) {
@@ -276,7 +278,7 @@
     const kind = $('nats-kind').value;
     const req = { sub: kind, text: $('nats-text').value };
     if (kind === 'broadcast') { req.topic = $('nats-topic').value.trim(); } else { req.to = $('nats-to').value; }
-    if (kind === 'request') { req.timeout = Number($('nats-timeout').value) || 30; }
+    if (kind === 'request') { req.timeout = Number($('nats-reqtimeout').value) || 30; }
     if ($('nats-yes').checked) { req.yes = true; }
     const file = $('nats-file').files[0];
     try {
@@ -291,7 +293,10 @@
         req.upload = data.id;
       }
       status.textContent = '';
-      await natsRun(req);
+      if (await natsRun(req)) { // what was sent is not sent again by the next click
+        $('nats-text').value = '';
+        $('nats-file').value = '';
+      }
     } catch (e) {
       status.textContent = e.message;
     }
@@ -347,6 +352,7 @@
   let runs = [];
   let current = '';
 
+  // startRun starts a run and shows it; it says whether it started
   async function startRun(req) {
     const repo = $('repo').value.trim();
     if (repo && req.action !== 'down' && req.action !== 'nats') { req.repo = repo; }
@@ -357,10 +363,12 @@
       show('runs');
       await loadRuns();
       attach(r.id);
+      return true;
     } catch (e) {
       show('runs');
       $('run-status').textContent = t('run.notstarted', e.message);
       $('run-status').className = 'bad';
+      return false;
     }
   }
 
@@ -393,6 +401,8 @@
     $('run-status').className = '';
     $('run-form').hidden = true;
     source = new EventSource('/api/events?id=' + encodeURIComponent(id));
+    // a stream that the server refuses (the session is gone) closes for good: ask once more, as the page does everywhere, so that the banner says why
+    source.onerror = () => { if (source && source.readyState === EventSource.CLOSED) { api('/api/runs').catch(() => {}); } };
     natsCarry = '';
     $('run-download').hidden = true;
     const info = runs.find((r) => r.id === id) || {};

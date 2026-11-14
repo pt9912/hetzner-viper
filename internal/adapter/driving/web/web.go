@@ -101,6 +101,9 @@ type Config struct {
 	Clean, Redact func(string) string
 	// MaxUpload is the largest file a page may hand over to send (default 64 MiB; the limit of the group applies as well).
 	MaxUpload int64
+	// LongestSecret is the length of the longest value that Redact takes out (nil: 128). An open line is cut no nearer to its
+	// end than that, so that a secret is never cut in two.
+	LongestSecret func() int
 	// UploadLife is how long a file that was handed over waits for its message (default 30 minutes).
 	UploadLife time.Duration
 	// Spawn starts viper for an action (nil: the pages offer none).
@@ -119,7 +122,7 @@ const (
 	maxStreams     = 8 // open event streams (a page has one)
 	overviewLife   = time.Second
 	checkTimeLimit = 15 * time.Minute
-	cookieName     = "viper_ui"
+	cookiePrefix   = "viper_ui_"
 )
 
 // Server is the web server of viper ui.
@@ -142,6 +145,8 @@ type Server struct {
 
 	exchanged     chan struct{} // closed when the key has been exchanged
 	exchangedOnce sync.Once
+
+	cookieName string // viper_ui_<port>: two servers on this computer do not overwrite each other's cookie
 
 	ovMu sync.Mutex
 	ov   Overview
@@ -188,6 +193,7 @@ func (s *Server) Listen(port int) (net.Listener, error) {
 		return nil, err
 	}
 	s.host = ln.Addr().String()
+	s.cookieName = cookiePrefix + strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
 	s.started = s.cfg.Now()
 	return ln, nil
 }
@@ -197,6 +203,9 @@ func (s *Server) Host() string { return s.host }
 
 // Token is the key that the first request exchanges for the session cookie.
 func (s *Server) Token() string { return s.token }
+
+// CookieName is the name of the session cookie (it has the port in it).
+func (s *Server) CookieName() string { return s.cookieName }
 
 // Serve answers until ctx ends, then asks the runs to end (as Ctrl-C does), closes the connections and waits for both, each for
 // at most 20 seconds. It also cleans up when the listener fails.
@@ -216,6 +225,7 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	// the runs get their Ctrl-C at once, not after a long request has ended: the two waits are independent
 	runsCtx, cancelRuns := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	defer cancelRuns()
+	s.runs.close() // from here on no run is started: one that is being started at this moment is cancelled below
 	ended := make(chan struct{})
 	go func() { s.endRuns(runsCtx); close(ended) }()
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
@@ -225,6 +235,7 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	}
 	s.stop()
 	<-ended
+	s.endRuns(runsCtx) // a run that was started while the first round took its list
 	s.uploads.removeAll()
 	return serveErr
 }
@@ -252,6 +263,13 @@ func (s *Server) snapshot(ctx context.Context) (Overview, error) {
 	ov.Groups = slices.Clone(ov.Groups)
 	ov.NATS = slices.Clone(ov.NATS)
 	return ov, nil
+}
+
+// fresh reads the overview anew: what lets a command through (a machine that the files name) and what the output must not show
+// (the secrets that the reading learns) is never a second old.
+func (s *Server) fresh(ctx context.Context) (Overview, error) {
+	s.forgetOverview()
+	return s.snapshot(ctx)
 }
 
 func (s *Server) forgetOverview() {
@@ -289,7 +307,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			s.exchange(w, r, t)
 			return
 		}
-		if c, err := r.Cookie(cookieName); err != nil || !equal(c.Value, s.cookie) {
+		if c, err := r.Cookie(s.cookieName); err != nil || !equal(c.Value, s.cookie) {
 			deny(w, r)
 			return
 		}
@@ -374,7 +392,7 @@ func (s *Server) exchange(w http.ResponseWriter, r *http.Request, t string) {
 		return
 	}
 	s.exchangedOnce.Do(func() { close(s.exchanged) })
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: s.cookie, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	http.SetCookie(w, &http.Cookie{Name: s.cookieName, Value: s.cookie, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
 	// Not a redirect: when the key comes from a page of another origin (the start file is a file://), the browser sends the
 	// requests of the whole redirect chain as cross-site and leaves out a SameSite=Strict cookie. A page of this server
 	// that moves on by itself is a navigation of this site.
@@ -403,7 +421,7 @@ func (s *Server) show(text string) string { return s.cfg.Redact(s.cfg.Clean(text
 
 // known looks the machine up in the overview: only names that the files name get as far as a command.
 func (s *Server) known(ctx context.Context, machine, group string) bool {
-	ov, err := s.snapshot(ctx)
+	ov, err := s.fresh(ctx)
 	if err != nil {
 		return false
 	}
@@ -437,7 +455,7 @@ func (s *Server) log(w http.ResponseWriter, r *http.Request) {
 // knownName is true for a machine that the files name, and for "" (the events of all). Either way it reads the overview,
 // which is also where the backend learns the secrets of the settings that the output must not show.
 func (s *Server) knownName(ctx context.Context, machine string) bool {
-	ov, err := s.snapshot(ctx)
+	ov, err := s.fresh(ctx)
 	if err != nil {
 		return false
 	}

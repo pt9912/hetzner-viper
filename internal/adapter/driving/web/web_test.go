@@ -177,7 +177,7 @@ func TestWithoutTheCookieNothingIsAnswered(t *testing.T) {
 			t.Errorf("%s: %d", p, w.Code)
 		}
 	}
-	if w := do(h, "GET", s.Host(), "/api/overview", map[string]string{"Cookie": "viper_ui=wrong"}, ""); w.Code != http.StatusForbidden {
+	if w := do(h, "GET", s.Host(), "/api/overview", map[string]string{"Cookie": s.CookieName() + "=wrong"}, ""); w.Code != http.StatusForbidden {
 		t.Errorf("wrong cookie: %d", w.Code)
 	}
 }

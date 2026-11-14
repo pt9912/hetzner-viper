@@ -109,3 +109,34 @@ test('a group without an object store takes no file', async ({ page }) => {
   await expect(page.locator('#nats-file')).toBeDisabled();
   await expect(page.locator('#nats-nofile')).toBeVisible();
 });
+
+test('a request waits 30 seconds for its answer, and what was sent is not sent again by the next click', async ({ page }) => {
+  await page.goto(ui.start);
+  await page.click('#tab-nats');
+  const bodies: Array<Record<string, unknown>> = [];
+  await page.route('**/api/run', (route) => {
+    bodies.push(route.request().postDataJSON());
+    route.fulfill({ contentType: 'application/json', body: '{"id":"rq"}' });
+  });
+  await page.route('**/api/runs', (r) => r.fulfill({ contentType: 'application/json', body: '{"runs":[]}' }));
+  await page.route('**/api/events?id=rq', (r) => r.fulfill({ contentType: 'text/event-stream', body: sse([['state', { state: 'done', code: 0 }]]) }));
+  await expect(page.locator('#nats-reqtimeout')).toBeDisabled(); // only a request waits
+  await page.selectOption('#nats-kind', 'request');
+  await expect(page.locator('#nats-reqtimeout')).toHaveValue('30');
+  await page.fill('#nats-text', 'status?');
+  await page.click('#nats-send button[type=submit]');
+  await expect.poll(() => bodies.length).toBe(1);
+  expect(bodies[0]).toMatchObject({ sub: 'request', to: 'a', timeout: 30, text: 'status?' });
+  await page.click('#tab-nats');
+  await expect(page.locator('#nats-text')).toHaveValue('');
+});
+
+test('a stream that the server refuses says that the session is gone', async ({ page }) => {
+  await page.goto(ui.start);
+  await page.route('**/api/run', (r) => r.fulfill({ contentType: 'application/json', body: '{"id":"gone"}' }));
+  await page.route('**/api/runs', (r) => r.fulfill({ status: 403, contentType: 'text/plain', body: 'forbidden' }));
+  await page.route('**/api/events?id=gone', (r) => r.fulfill({ status: 403, contentType: 'text/plain', body: 'forbidden' }));
+  await page.getByRole('button', { name: 'Preflight web', exact: true }).click();
+  await expect(page.locator('#banner')).toBeVisible();
+  await expect(page.locator('#banner')).toContainText('session has ended');
+});

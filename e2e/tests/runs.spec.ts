@@ -55,7 +55,7 @@ test('cancel is Ctrl-C: the page says it ends and shows the exit status', async 
   await expect(page.locator('#run-status')).toContainText('Running');
   await expect(page.locator('#run-cancel')).toBeEnabled();
   await page.click('#run-cancel');
-  await expect(page.locator('#run-status')).toContainText('Ending');
+  await expect(page.locator('#run-status')).toContainText(/Ending|exit 130/); // a process that dies at once has no time to be "ending"
   await expect(page.locator('#run-status')).toContainText('exit 130', { timeout: 40_000 });
   await expect(page.locator('#run-cancel')).toBeDisabled();
   // and a new page finds the run again

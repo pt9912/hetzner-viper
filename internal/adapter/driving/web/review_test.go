@@ -466,3 +466,175 @@ func serveWith(t *testing.T, cfg web.Config) *site {
 	})
 	return &site{s: s, c: c, base: "http://" + s.Host()}
 }
+
+// A run that is being started when the server ends is cancelled as well, and a start that fails then leaves nobody waiting.
+func TestARunThatIsBeingStartedWhenTheServerEndsIsCancelled(t *testing.T) {
+	f := newFake()
+	release := make(chan struct{})
+	made := make(chan *proc, 1)
+	s := web.New(web.Config{Backend: f, Spawn: func(argv []string) (web.Proc, error) {
+		<-release
+		p := newProc(argv)
+		made <- p
+		return p, nil
+	}})
+	ln, _ := s.Listen(0)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { _ = s.Serve(ctx, ln); close(done) }()
+	jar, _ := cookiejar.New(nil)
+	c := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	if r, err := c.Get(s.URL()); err == nil {
+		_ = r.Body.Close()
+	}
+	st := &site{fake: f, s: s, c: c, base: "http://" + s.Host()}
+	go func() { _, _ = st.start(t, `{"action":"up","machine":"web"}`) }()
+	waitForRun(t, st)
+	cancel() // the server ends while the process is still being made
+	time.Sleep(300 * time.Millisecond)
+	close(release)
+	p := <-made
+	select {
+	case <-p.interrupts:
+	case <-time.After(10 * time.Second):
+		t.Fatal("a run that was started during the end was left alone")
+	}
+	p.end(130)
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the server did not end")
+	}
+}
+
+func TestAFailedStartDuringTheEndLeavesNobodyWaiting(t *testing.T) {
+	f := newFake()
+	release := make(chan struct{})
+	s := web.New(web.Config{Backend: f, Spawn: func([]string) (web.Proc, error) {
+		<-release
+		return nil, io.ErrClosedPipe
+	}})
+	ln, _ := s.Listen(0)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { _ = s.Serve(ctx, ln); close(done) }()
+	jar, _ := cookiejar.New(nil)
+	c := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	if r, err := c.Get(s.URL()); err == nil {
+		_ = r.Body.Close()
+	}
+	st := &site{fake: f, s: s, c: c, base: "http://" + s.Host()}
+	go func() { _, _ = st.start(t, `{"action":"up","machine":"web"}`) }()
+	waitForRun(t, st)
+	cancel()
+	time.Sleep(200 * time.Millisecond)
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second): // not the 20 seconds of the wait for a run that is gone
+		t.Fatal("the server waited for a run that never began")
+	}
+}
+
+// waitForRun waits until a run is in the table (its process is still being made).
+func waitForRun(t *testing.T, st *site) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := st.c.Get(st.base + "/api/runs")
+		if err == nil {
+			b, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if strings.Contains(string(b), `"id":"`) {
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("the run is not in the table")
+}
+
+// A secret that is longer than the tail that an open line keeps is not cut in two by the cut of a line that has no blank.
+func TestALongSecretInALineWithoutBlanksIsNotCutInTwo(t *testing.T) {
+	long := strings.Repeat("Q", 300)
+	cfg := web.Config{Backend: newFake(), Redact: func(s string) string { return strings.ReplaceAll(s, long, "[hidden]") }, LongestSecret: func() int { return 300 }}
+	sp := &spawns{ch: make(chan *proc, 2)}
+	cfg.Spawn = func(argv []string) (web.Proc, error) { return sp.spawn(argv) }
+	st := serveWith(t, cfg)
+	st.spawn = sp
+	id, c := st.start(t, `{"action":"up","machine":"web"}`)
+	if c != 200 {
+		t.Fatal(c)
+	}
+	p := sp.next(t)
+	s := st.attach(t, id)
+	p.say(strings.Repeat("x", 3900) + long[:200]) // longer than a page, no blank: it is cut, but not inside the secret
+	time.Sleep(100 * time.Millisecond)
+	p.say(long[200:] + "\n")
+	p.end(0)
+	out := s.until(t, state("done"))
+	if strings.Contains(out, "QQQQ") || !strings.Contains(out, "[hidden]") {
+		t.Errorf("part of the secret is in the output (%d bytes)", len(out))
+	}
+}
+
+// An upload that stalls does not hold its place for ever.
+func TestAStalledUploadGivesItsPlaceBack(t *testing.T) {
+	st := liveWith(t, false, func(c *web.Config) { c.UploadLife = 200 * time.Millisecond })
+	var pipes []*io.PipeWriter
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		pr, pw := io.Pipe()
+		pipes = append(pipes, pw)
+		req, _ := http.NewRequest("POST", st.base+"/api/upload?kind=zip&group=dev", pr)
+		req.Header.Set("Content-Type", "application/octet-stream")
+		req.Header.Set("X-Viper-UI", "1")
+		req.Header.Set("Origin", st.base)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if resp, err := st.c.Do(req); err == nil {
+				_ = resp.Body.Close()
+			}
+		}()
+		_, _ = pw.Write([]byte("x")) // the body has begun and does not go on
+	}
+	time.Sleep(600 * time.Millisecond)
+	if code, b := st.upload(t, "kind=zip", "x", "application/octet-stream", st.base); code != 200 {
+		t.Errorf("a ninth upload after the stalled ones timed out: %d %s", code, b)
+	}
+	for _, pw := range pipes {
+		_ = pw.Close()
+	}
+	wg.Wait()
+}
+
+// What lets a command through and what the output must not show is read anew, also within a second.
+func TestChecksReadTheOverviewAnewButThePageMayUseTheCached(t *testing.T) {
+	st := live(t, false)
+	before := st.fake.calls.Load()
+	for i := 0; i < 3; i++ {
+		resp, err := st.c.Get(st.base + "/api/log?machine=web")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+	}
+	if n := st.fake.calls.Load() - before; n < 3 {
+		t.Errorf("3 log requests read the overview %d times", n)
+	}
+}
+
+func TestTwoServersDoNotShareACookieName(t *testing.T) {
+	a, b := web.New(web.Config{Backend: newFake()}), web.New(web.Config{Backend: newFake()})
+	for _, s := range []*web.Server{a, b} {
+		ln, err := s.Listen(0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = ln.Close() }()
+	}
+	if a.CookieName() == b.CookieName() || !strings.HasPrefix(a.CookieName(), "viper_ui_") {
+		t.Errorf("%q %q", a.CookieName(), b.CookieName())
+	}
+}

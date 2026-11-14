@@ -111,6 +111,8 @@
           <select id="nats-to"></select>
           <label for="nats-topic" data-i18n="nats.topic">Topic</label>
           <input type="text" id="nats-topic" autocomplete="off" size="16">
+          <label for="nats-reqtimeout" data-i18n="nats.reqtimeout">Wait for the answer (seconds)</label>
+          <input type="number" id="nats-reqtimeout" min="1" max="600" value="30">
         </div>
         <label for="nats-text" data-i18n="nats.text">Text (up to 16 KiB)</label>
         <textarea id="nats-text" rows="4" cols="60" maxlength="16384"></textarea>
