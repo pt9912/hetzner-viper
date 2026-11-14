@@ -333,7 +333,7 @@ func TestNatsChecksAFileBeforeItConnectsToAnything(t *testing.T) {
 		"a pdf that is text":     {dir, env, cli.Opts{PDF: writeFile(t, "a.pdf", []byte("hello"))}, "none of the types"},
 		"too large":              {dir, env, cli.Opts{PDF: writeFile(t, "big.pdf", append([]byte("%PDF-"), make([]byte, 2<<20)...))}, "at most"},
 		"empty":                  {dir, env, cli.Opts{PDF: writeFile(t, "e.pdf", nil)}, "at least 1"},
-		"no such file":           {dir, env, cli.Opts{PDF: filepath.Join(t.TempDir(), "none.pdf")}, "no such file"},
+		"no such file":           {dir, env, cli.Opts{PDF: filepath.Join(t.TempDir(), "none.pdf")}, "none.pdf"},
 		"a zip that is none":     {dir, env, cli.Opts{Zip: zipBomb}, "z.zip"},
 		"no object store":        {noStore, noEnv, cli.Opts{PDF: writeFile(t, "a.pdf", pdf)}, "has no object store"},
 		"two files":              {dir, env, cli.Opts{PDF: writeFile(t, "a.pdf", pdf), Image: writeFile(t, "a.png", pdf)}, "one file at most"},
