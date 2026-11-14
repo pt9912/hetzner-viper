@@ -186,6 +186,18 @@ func helpsImages() map[string]commandDoc {
 			examples: []string{"viper image build", "viper image build --k3d viper"},
 			manual:   "Lokal arbeiten, ohne Cloud-Konto",
 		},
+		"ui": {
+			group:   helpImages,
+			summary: "open the machines, their state and logs in the browser",
+			about:   "Starts a small web server on 127.0.0.1 in this program and opens the browser: the machines and groups of this directory, viper check for one machine, and the logs. Only this computer reaches it, with a key that works once; Ctrl-C ends it. Without --no-open the browser is opened on a file in a private directory, so that the key is not in the command line of a program.",
+			options: []optionDoc{
+				{"port", "N", "listen on this port (default: a free one)"},
+				{"no-open", "", "do not open the browser; print the address with the key (valid for ten minutes)"},
+				{"readonly", "", "offer no action (this stage has none yet: it only shows)"},
+			},
+			examples: []string{"viper ui", "viper ui --no-open --port 8787"},
+			manual:   "Die Oberfläche im Browser",
+		},
 		"find": {
 			group:   helpImages,
 			summary: "find the cheapest server types with at least this much CPU, RAM and disk",

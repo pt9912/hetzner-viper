@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>viper</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>viper</h1>
+  <nav aria-label="Pages">
+    <button type="button" id="tab-overview" class="tab" aria-pressed="true">Overview</button>
+    <button type="button" id="tab-logs" class="tab" aria-pressed="false">Logs</button>
+  </nav>
+  <span id="version" class="muted"></span>
+</header>
+<main>
+  <section id="page-overview" aria-labelledby="h-overview">
+    <h2 id="h-overview">Machines</h2>
+    <p id="overview-note" class="muted" role="status"></p>
+    <table id="machines">
+      <thead><tr><th>Machine</th><th>Group</th><th>Provider</th><th>Type</th><th>Location</th><th>NATS</th><th>State</th><th>Actions</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <h2>Groups</h2>
+    <ul id="groups"></ul>
+    <h2 id="h-check">Check</h2>
+    <p id="check-status" role="status" class="muted">Pick a machine and press Check: it runs <code>viper check</code> and shows what it says.</p>
+    <pre id="check-output" tabindex="0" aria-labelledby="h-check"></pre>
+  </section>
+  <section id="page-logs" hidden aria-labelledby="h-logs">
+    <h2 id="h-logs">Logs</h2>
+    <div class="row">
+      <label for="log-machine">Machine</label>
+      <select id="log-machine"></select>
+      <label><input type="checkbox" id="log-full"> complete output</label>
+      <label for="log-filter">Search</label>
+      <input type="search" id="log-filter" autocomplete="off">
+      <button type="button" id="log-reload">Reload</button>
+    </div>
+    <p id="log-status" role="status" class="muted"></p>
+    <pre id="log-output" tabindex="0" aria-labelledby="h-logs"></pre>
+  </section>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

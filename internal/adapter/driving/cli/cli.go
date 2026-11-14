@@ -14,6 +14,8 @@ import (
 
 type options struct {
 	machine, repo, cmd, dir string
+	port                    int    // viper ui
+	noOpen, readonly        bool   // viper ui
 	version                 string // the release of this program
 	tag, k3d                string // viper image build
 	group                   string // run for all machines of groups/<group>.env
@@ -67,7 +69,7 @@ var errHelp = errors.New("help")
 // isValueFlag reports whether the option takes a value.
 func isValueFlag(n string) bool {
 	switch n {
-	case "repo", "cmd", "dir", "group", "in-group", "parallel", "cpu", "ram", "disk", "arch", "location", "provider", "vat", "to", "topic", "from", "file", "pdf", "image", "zip", "sha256", "out", "timeout", "tag", "k3d":
+	case "repo", "cmd", "dir", "group", "in-group", "parallel", "cpu", "ram", "disk", "arch", "location", "provider", "vat", "to", "topic", "from", "file", "pdf", "image", "zip", "sha256", "out", "timeout", "tag", "k3d", "port":
 		return true
 	}
 	return false
@@ -91,6 +93,7 @@ func commands() map[string]command {
 		"k8s-proxy":    {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeK8sProxy},
 		"docker-proxy": {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeDockerProxy},
 		"mcp-binary":   {usage: "--arch amd64|arm64", machine: noMachine, flags: []string{"arch"}, run: nativeMCPBinary},
+		"ui":           {usage: "[--port N] [--no-open] [--readonly]", machine: noMachine, flags: []string{"port", "no-open", "readonly"}, run: nativeUI},
 		"version":      {usage: "", machine: noMachine},
 	}
 }
@@ -238,6 +241,11 @@ func parseFlag(o *options, name string, args []string, i *int, allowed map[strin
 	if hasValue {
 		return fmt.Errorf("viper %s: --%s takes no value", name, n)
 	}
+	return setSwitch(o, name, n)
+}
+
+// setSwitch sets the option that takes no value.
+func setSwitch(o *options, name, n string) error {
 	switch n {
 	case "force":
 		o.force = true
@@ -245,6 +253,10 @@ func parseFlag(o *options, name string, args []string, i *int, allowed map[strin
 		return setRegistry(o, name, n)
 	case "full":
 		o.full = true
+	case "no-open":
+		o.noOpen = true
+	case "readonly":
+		o.readonly = true
 	case "no-code":
 		o.noCode = true
 	case "tmux":
@@ -316,15 +328,28 @@ func setValue(o *options, name, flag, v string) error {
 		return setGroup(o, name, flag, v)
 	case "to", "topic", "from", "file", "pdf", "image", "zip", "sha256", "out", "timeout", "tag", "k3d":
 		return setNatsValue(o, name, flag, v)
-	case "parallel":
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 || n > 64 {
-			return fmt.Errorf("viper %s: --parallel needs a whole number from 1 to 64: %s", name, v)
-		}
-		o.parallel = n
+	case "port", "parallel":
+		return setCount(o, name, flag, v)
 	default:
 		return setNumber(o, name, flag, v)
 	}
+	return nil
+}
+
+// setCount stores the value of --port and --parallel.
+func setCount(o *options, name, flag, v string) error {
+	n, err := strconv.Atoi(v)
+	if flag == "port" {
+		if err != nil || n < 1 || n > 65535 {
+			return fmt.Errorf("viper %s: --port needs a port from 1 to 65535: %s", name, v)
+		}
+		o.port = n
+		return nil
+	}
+	if err != nil || n < 1 || n > 64 {
+		return fmt.Errorf("viper %s: --parallel needs a whole number from 1 to 64: %s", name, v)
+	}
+	o.parallel = n
 	return nil
 }
 

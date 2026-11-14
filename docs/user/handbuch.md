@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.130  
+Version: 1.131  
 Software-Version: v0.24.0  
 Stand: 14.11.2026  
 
@@ -392,6 +392,37 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 * Vollständige Ausgabe eines Rechners: `viper log <rechner> --full`
 
 `viper log` braucht keine Tokens. Eine Repo-URL mit Zugangsdaten (`https://user:token@…`) lehnt der Preflight ab, damit das Token weder in die Protokolle noch auf den Server gelangt. Die Protokolle werden nicht automatisch gekürzt; löschen Sie sie bei Bedarf von Hand. Protokolle auf dem Server (cloud-init, Homebrew) verschwinden dagegen mit dem Server.
+
+### Die Oberfläche im Browser
+
+`viper ui` startet auf Ihrem Rechner eine kleine Weboberfläche und öffnet den Browser. Sie zeigt die Rechner und Gruppen aus den Einstellungsdateien, lässt je Rechner `viper check` laufen und zeigt die Protokolle. Mehr kann diese Stufe nicht: Anlegen, Löschen und NATS gibt es weiter nur auf der Kommandozeile.
+
+#### Vorgehen
+
+1. Wechseln Sie in das Verzeichnis mit den Einstellungen (oder geben Sie es mit `--dir` an) und starten Sie `viper ui`.
+2. Der Browser öffnet sich mit der Übersicht. Die Adresse (`http://127.0.0.1:<port>/`) steht im Terminal; `Strg-C` beendet die Oberfläche.
+3. **Übersicht:** Rechner und Gruppen mit Anbieter, Typ, Ort und NATS-Gruppe. Die Spalte „State“ sagt, was dieser Rechner weiß: „set up“ (`viper up` ist durchgelaufen), „started“ (der Server ist angelegt) oder „not started“. Ob der Rechner wirklich läuft, beantwortet **Check**: Das ist `viper check` und zeigt dessen Ausgabe; „OK“ heißt Exit-Status 0.
+4. **Logs:** die Ereignisse aller Rechner, eines Rechners oder dessen vollständige Ausgabe, mit Suchfeld; dasselbe wie `viper log`.
+
+Optionen:
+
+* `--port N`: auf diesem Port lauschen (Standard: ein freier).
+* `--no-open`: den Browser nicht öffnen; das Terminal zeigt die Adresse mit dem Schlüssel (gilt zehn Minuten, einmal).
+* `--readonly`: keine Aktion anbieten. In dieser Stufe ändert nichts etwas, die Option ist für die späteren Stufen da.
+
+#### Ergebnis
+
+Die Seiten laufen im Browser, sonst ändert sich nichts. `Check` schreibt wie am Terminal in `events.log` und `logs/`.
+
+#### Hinweise
+
+* **Nur dieser Rechner:** Der Server lauscht auf `127.0.0.1` und antwortet nur unter genau dieser Adresse (nicht unter `localhost`). Die erste Anfrage tauscht einen Schlüssel, der bei jedem Start neu ist, einmal und höchstens eine Minute lang gegen ein Cookie (zehn Minuten mit `--no-open`); danach antwortet der Server nur mit diesem Cookie. Der Browser wird über eine Datei in einem privaten Verzeichnis geöffnet, damit der Schlüssel nicht in der Befehlszeile eines Programms steht, das andere Benutzer sehen; `viper` löscht die Datei beim Beenden.
+* **Keine Zugangsdaten auf dem Bildschirm:** Die Seiten zeigen nie die Einstellungsdateien. Die Werte der bekannten geheimen Einstellungen (Token und Passwörter der Anbieter, GitHub, Claude, Code-Server) ersetzt `viper` in jeder Ausgabe durch `[hidden]`; Steuerzeichen und Escape-Folgen fallen weg.
+* Hat ein Rechner unlesbare Einstellungen, steht der Fehler in der Zeile und **Check** ist aus.
+* Ein Rechner, der in mehreren Gruppen steht, erscheint je Gruppe einmal; **Check** prüft ihn in der Gruppe der Zeile.
+* Ist der Port belegt, bricht `viper ui` mit einer Meldung ab; wählen Sie mit `--port` einen anderen.
+* Als `root` warnt `viper ui`: Starten Sie es als Ihr eigener Benutzer.
+* Die Oberfläche ist englisch, wie die Meldungen von `viper`.
 
 ### Mit Claude Code arbeiten
 
@@ -1645,3 +1676,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.128 | nach v0.23.0 | Ein falscher Aufruf nennt zur Aufrufzeile jetzt, wo die Optionen beschrieben sind (`viper <befehl> --help`, bei `viper nats` je Unterbefehl). |
 | 1.129 | v0.24.0 | Release v0.24.0: die Änderungen 1.127 und 1.128 (Hilfe: `viper help` in Gruppen, `viper <befehl> --help` mit allen Optionen; Hinweis auf die Hilfe bei falschem Aufruf) und die ergänzten Beispieldateien (`NATS_OBJECTS*` in `groups/example.env.example`). |
 | 1.130 | nach v0.24.0 | k3d: Legt `viper up` den Cluster an, stellt k3d den aktuellen Kontext der `kubeconfig` nicht mehr um (`--kubeconfig-switch-context=false`); der Abschnitt „Registry und Cluster von `viper up` anlegen lassen (k3d)“ sagt, wie `viper` die `kubeconfig` benutzt. |
+| 1.131 | nach v0.24.0 | Neu: `viper ui` (`--port`, `--no-open`, `--readonly`) startet eine Weboberfläche auf `127.0.0.1` mit der Übersicht der Rechner und Gruppen, `viper check` je Rechner und den Protokollen; Schlüssel nur einmal, Cookie, Prüfung von Host und Herkunft, Ausgaben ohne Zugangsdaten. |

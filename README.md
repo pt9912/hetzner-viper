@@ -28,6 +28,7 @@ viper vscode web                   # open VS Code on the machine again (as viper
 viper down web                     # check for unsaved work, then delete machine "web"
 viper dns web                      # print the DNS name of machine "web"
 viper log [web] [--full]           # events of the machines, or one machine's full output
+viper ui                           # the machines, viper check and the logs in the browser (127.0.0.1 only)
 viper up --group dev               # all machines named in groups/dev.env, at the same time (also down, check, preflight, ssh --cmd)
 viper nats send dev "Push, please" --to beta   # talk to a NATS group from this computer (also peers, listen, broadcast, request)
 viper image build --k3d viper      # the image of the machines of a Kubernetes cluster (PROVIDER=kubernetes), into a k3d cluster

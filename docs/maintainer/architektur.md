@@ -14,6 +14,7 @@ internal/
   usecase/                 start (Up), stop (Down), check, preflight: die Abläufe
   adapter/
     driving/cli            Befehle, Parsen der Befehlszeile
+    driving/web            viper ui: Webserver auf 127.0.0.1 mit eingebetteten Seiten (web/static); kennt die CLI nicht, bekommt ein web.Backend
     driven/                hetzner, aws, gcp, azure, cloudflare, nodns, system, editor, git, resolver,
                            runlog, sshconfig, settingsfile
   app/                     Composition Root: wählt die Adapter, baut die Use Cases, übergibt sie der CLI

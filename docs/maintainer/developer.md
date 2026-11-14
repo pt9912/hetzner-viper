@@ -89,6 +89,10 @@ Das Image `viper-machine` (`image/`) ist das der Anbieter `kubernetes` und `comp
 * **Ein Image zu einem vorhandenen Tag nachholen** (ein Tag wird nie verschoben): `gh workflow run "machine image" -f tag=vX.Y.Z -f ref=main` baut es mit den Dateien von `main`. Der Lauf bricht ab, wenn sich eine Datei, die ins Image kommt (`image/Dockerfile`, `cloud-init.yaml`, `image/seed.py`, `image/sshd_config`, `image/entry.sh`, `image/nats-supervisor.sh`), zwischen Tag und `ref` unterscheidet; das Image ist dann das, was das Tag beschreibt.
 * Der Test läuft auf den Runnern als anderer Benutzer als lokal (uid 1001, lokal oft 1000): Was er auf einem gemounteten Verzeichnis anlegt, muss `builder` (uid 1000) lesen und löschen können, und das Aufräumen am Ende gibt die Dateien dem aufrufenden Benutzer zurück.
 
+### Die Oberfläche (`viper ui`)
+
+`internal/adapter/driving/web` ist ein treibender Adapter: `net/http`, die Seiten in `web/static` (HTML, CSS, JavaScript, eingebettet mit `//go:embed`, kein Build-Schritt). Er importiert die CLI nicht; `cli/ui.go` gibt ihm ein `web.Backend` (Liste der Rechner aus den Einstellungsdateien, `runCheck`, `showLog` im selben Prozess). Die Regeln stehen in `docs/plan/ui.md` §3; `web_test.go` prüft jede davon (Host, einmaliger Schlüssel, Cookie, `Origin`, CSP, Ausgaben ohne geheime Werte) und durchsucht die Seiten nach `innerHTML`, `eval`, Inline-Stilen und fremden Adressen. Neue Seiten oder Anfragen dürfen keine dieser Regeln aufweichen: keine GET-Anfrage mit Nebenwirkung, jede Ausgabe durch `show` (reinigen, schwärzen), alle Texte mit `textContent`.
+
 ## Tests
 
 Die Tests beschreibt [`architektur.md`](architektur.md#tests). Der Devcontainer enthält `bash`, `git`, `jq`, `ssh-keygen` und `shellcheck`; ein fehlendes Werkzeug lässt den Test fehlschlagen (`make test` setzt `VIPER_REQUIRE_TOOLS=1`), sonst überspringt er ihn.

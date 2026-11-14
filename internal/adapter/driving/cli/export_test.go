@@ -209,3 +209,14 @@ func CommandHelp(name string) string { return commandHelp(name, "v9.9.9") }
 
 // NatsSubHelp is the help of one subcommand of viper nats.
 func NatsSubHelp(sub string) string { return natsSubHelp(sub, "v9.9.9") }
+
+// UIBackend is what viper ui shows, for the options (the directory) and the environment, with the redaction of its pages.
+func UIBackend(p *Opts, env settings.Env) (*uiBackend, func(string) string) {
+	secrets := &secretValues{}
+	b := &uiBackend{o: p.options(), env: env, secrets: secrets}
+	b.learnEnvironment()
+	return b, secrets.redact
+}
+
+// BrowserCommand is the program that opens a file in the browser on a system.
+func BrowserCommand(goos, file string) (string, []string) { return browserCommand(goos, file) }
