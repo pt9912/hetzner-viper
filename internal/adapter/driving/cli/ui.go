@@ -220,6 +220,9 @@ func (b *uiBackend) Check(ctx context.Context, machine, group string, out io.Wri
 	e := b.env
 	e.Group = group
 	err := runCheck(ctx, &co, e, out, out)
+	if err == nil {
+		return 0, nil // exitCode(nil) is 1: it is meant for an error
+	}
 	return exitCode(err), nilIfStatus(err)
 }
 

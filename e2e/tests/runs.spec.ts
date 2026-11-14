@@ -60,7 +60,7 @@ test('cancel is Ctrl-C: the page says it ends and shows the exit status', async 
   await expect(page.locator('#run-cancel')).toBeDisabled();
   // and a new page finds the run again
   const page2 = await page.context().newPage();
-  await page2.goto(ui.base + '/');
+  await page2.goto(ui.base + '/', { waitUntil: 'commit' }); // Playwright's Firefox does not report the load of a second page next to a page with an open stream
   await page2.click('#tab-runs');
   await expect(page2.locator('#run-list li')).toHaveCount(1);
 });

@@ -21,9 +21,9 @@ test('the one-time key becomes a session and the overview shows the machines', a
 
 test('the key works once', async ({ browser }) => {
   const first = await browser.newContext();
-  expect((await (await first.newPage()).goto(ui.start))?.status()).toBe(200); // the exchange, then the page
+  expect((await (await first.newPage()).goto(ui.start, { waitUntil: 'commit' }))?.status()).toBe(200); // the exchange, then the page
   const second = await browser.newContext();
-  const again = await (await second.newPage()).goto(ui.start);
+  const again = await (await second.newPage()).goto(ui.start, { waitUntil: 'commit' }); // only the answer matters; a page that moves on by itself is never "loaded" for Playwright's Firefox
   expect(again?.status()).toBe(403);
   await first.close();
   await second.close();

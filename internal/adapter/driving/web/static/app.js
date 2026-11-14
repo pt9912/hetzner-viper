@@ -333,6 +333,8 @@
   async function startRun(req) {
     const repo = $('repo').value.trim();
     if (repo && req.action !== 'down' && req.action !== 'nats') { req.repo = repo; }
+    $('run-status').textContent = t('status.running');
+    $('run-status').className = '';
     try {
       const r = await api('/api/run', req);
       show('runs');
@@ -370,6 +372,9 @@
     if (source) { source.close(); }
     current = id;
     $('run-output').textContent = '';
+    $('run-status').textContent = t('status.running'); // not the end of the run that was shown before
+    $('run-status').className = '';
+    $('run-form').hidden = true;
     source = new EventSource('/api/events?id=' + encodeURIComponent(id));
     natsCarry = '';
     $('run-download').hidden = true;

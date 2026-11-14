@@ -2,6 +2,8 @@ package cli_test
 
 import (
 	"context"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -10,6 +12,8 @@ import (
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driving/cli"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driving/web"
+	"github.com/pt9912/hetzner-viper/internal/model"
+	"github.com/pt9912/hetzner-viper/internal/port/driving"
 )
 
 func write(t *testing.T, dir, name, text string) {
@@ -227,5 +231,47 @@ func TestTheSettingsShowNamesAndOnlyTheValuesOfThePositiveList(t *testing.T) {
 	}
 	if strings.Join(envNames, ",") != "SERVER_IMAGE,VIPER_CLAUDE_TOKEN" {
 		t.Errorf("environment %v", envNames)
+	}
+}
+
+type fakeCheck struct {
+	failures int
+	err      error
+}
+
+func (f fakeCheck) Check(_ context.Context, _ *model.Machine, out, _ io.Writer) (int, error) {
+	_, _ = io.WriteString(out, "== checked\n")
+	return f.failures, f.err
+}
+
+// the status of a check that went well is 0 (exitCode(nil) is 1: a regression of this was seen on real Docker)
+func TestACheckThroughThePagesReportsItsExitStatus(t *testing.T) {
+	for name, tc := range map[string]struct {
+		check fakeCheck
+		code  int
+		err   bool
+	}{
+		"good":     {fakeCheck{}, 0, false},
+		"problems": {fakeCheck{failures: 2}, 1, false},
+		"error":    {fakeCheck{err: errors.New("no route")}, 1, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			env, _ := nativeEnv(t)
+			dir := t.TempDir()
+			write(t, dir, ".env.local", "PROVIDER=compose\nSERVER_PREFIX=ui\nSERVER_LOCATION=default\nCOMPOSE_IMAGE=x:1\nDNS_PROVIDER=none\n")
+			write(t, dir, "machines/web.env.local", "")
+			h := testHost()
+			h.LookPath = func(string) (string, error) { return "/usr/bin/ssh", nil }
+			h.Services.Check = func(*model.Machine) driving.Check { return tc.check }
+			b, _ := cli.UIBackend(&cli.Opts{Host: h, Dir: dir}, env)
+			var out strings.Builder
+			code, err := b.Check(context.Background(), "web", "", &out)
+			if code != tc.code || (err != nil) != tc.err {
+				t.Errorf("code %d err %v, want %d", code, err, tc.code)
+			}
+			if !strings.Contains(out.String(), "== checked") {
+				t.Errorf("output %q", out.String())
+			}
+		})
 	}
 }

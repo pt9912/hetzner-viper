@@ -227,3 +227,6 @@ func UISettings(p *Opts, env settings.Env) ([]web.SettingsFile, error) {
 	b := &uiBackend{o: p.options(), env: env, secrets: &secretValues{}}
 	return b.Settings(context.Background())
 }
+
+// StartProcess starts a program as viper ui starts viper.
+func StartProcess(exe string, args ...string) (*process, error) { return startProcess(exe, args) }

@@ -70,7 +70,7 @@ Sprache der Oberfläche: Englisch wie die Hilfe von `viper` und die Meldungen; e
 2. **Aktionen (gemacht, nach v0.24.0):** Läufe als Prozess mit Ausgabe, Rückfragen, Abbrechen, ein Lauf je Rechner; `preflight`, `up`, `down`.
 3. **NATS (gemacht, nach v0.24.0):** Anwesenheit, Themen, Mitlesen, Senden, Dateien; mit dem Betreiber-Schlüssel und als Maschine.
 4. **Einstellungen (lesend), Deutsch, Feinschliff (gemacht, nach v0.24.0; axe prüft alle Seiten in Hell und Dunkel, Englisch und Deutsch):** Zugänglichkeit (Tastatur, Kontrast, Screenreader-Namen), Größe der Seiten, Fehlerseiten.
-5. **Handbuch und Läufe:** Kapitel „Oberfläche im Browser“, `developer.md`, Läufe mit Firefox und Chrome auf Linux, macOS und Windows (so weit erreichbar), gegen echte Docker-Maschinen (Compose), k3d und, mit Erlaubnis, Hetzner.
+5. **Handbuch und Läufe (Handbuch gemacht; Läufe: Chromium und Firefox auf Linux, echtes Docker per Browser; WebKit, macOS, Windows, k3d und Hetzner nicht):** Kapitel „Oberfläche im Browser“, `developer.md`, Läufe mit Firefox und Chrome auf Linux, macOS und Windows (so weit erreichbar), gegen echte Docker-Maschinen (Compose), k3d und, mit Erlaubnis, Hetzner.
 
 ### Ergebnis von Meilenstein 0 (14.11.2026, Linux)
 
