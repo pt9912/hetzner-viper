@@ -40,6 +40,9 @@ func (r *runner) natsMCP(ctx context.Context) (int, error) {
 	}
 	env := "VIPER_NATS_MCP_PUSH_FROM=" + strings.Join(c.NATS.MCPPushFrom, ",") + "\n" +
 		"VIPER_NATS_MCP_TOPICS=" + strings.Join(c.NATS.MCPTopics, ",") + "\n"
+	if c.NATS.Objects { // the group has an object store: the MCP server may send and fetch files up to this size
+		env += "VIPER_NATS_MCP_OBJECTS_FILE_MAX=" + fmt.Sprint(c.NATS.ObjectsFileMax) + "\n"
+	}
 	if _, err := r.remote(ctx, env, natsFileScript, natsserver.Dir, natsMCPEnv, "600"); err != nil {
 		return fail("writing mcp.env", err)
 	}

@@ -13,6 +13,7 @@ type Entry struct {
 	ID      string // the sender's ID of a request (needed for the answer)
 	Topic   string
 	Text    string
+	Att     *Attachment // a file in the object store the message names (not fetched)
 	TS      time.Time
 	Replied bool
 }

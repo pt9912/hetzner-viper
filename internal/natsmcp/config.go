@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -23,6 +24,10 @@ type Config struct {
 	Names         Names
 	PushFrom      map[string]bool
 	Topics        []string // subscribed at the start and not to be unsubscribed (VIPER_NATS_MCP_TOPICS)
+	// ObjectsFileMax is the largest attachment in bytes: the group has an object store (VIPER_NATS_MCP_OBJECTS_FILE_MAX in mcp.env). 0: none.
+	ObjectsFileMax int64
+	// AttachDir is the folder fetch puts the files of attachments into.
+	AttachDir string
 	// Version is the version of this program, announced to the group (caps). Empty or not a version: nothing is announced.
 	Version string
 
@@ -91,10 +96,19 @@ func LoadConfig(dir string) (Config, error) {
 	if c.URL == "" || c.SeedFile == "" {
 		return Config{}, errors.New("connection.env needs NATS_URL and NATS_NKEY_SEED_FILE")
 	}
+	if err := applyMCPEnv(&c, mcp); err != nil {
+		return Config{}, err
+	}
+	c.AttachDir = filepath.Join(dir, "attachments")
+	return c, nil
+}
+
+// applyMCPEnv reads mcp.env, which viper writes: who is pushed, the default topics, the size limit of attachments.
+func applyMCPEnv(c *Config, mcp map[string]string) error {
 	for _, m := range strings.Split(mcp["VIPER_NATS_MCP_PUSH_FROM"], ",") {
 		if m = strings.TrimSpace(m); m != "" {
 			if !ValidName(m) {
-				return Config{}, fmt.Errorf("mcp.env: %q in VIPER_NATS_MCP_PUSH_FROM is not a machine name", m)
+				return fmt.Errorf("mcp.env: %q in VIPER_NATS_MCP_PUSH_FROM is not a machine name", m)
 			}
 			c.PushFrom[m] = true
 		}
@@ -102,13 +116,20 @@ func LoadConfig(dir string) (Config, error) {
 	for _, t := range strings.Split(mcp["VIPER_NATS_MCP_TOPICS"], ",") {
 		if t = strings.TrimSpace(t); t != "" && !slices.Contains(c.Topics, t) {
 			if !ValidName(t) {
-				return Config{}, fmt.Errorf("mcp.env: %q in VIPER_NATS_MCP_TOPICS is not a topic name", t)
+				return fmt.Errorf("mcp.env: %q in VIPER_NATS_MCP_TOPICS is not a topic name", t)
 			}
 			c.Topics = append(c.Topics, t)
 		}
 	}
 	if len(c.Topics) > maxTopics {
-		return Config{}, fmt.Errorf("mcp.env: at most %d topics in VIPER_NATS_MCP_TOPICS", maxTopics)
+		return fmt.Errorf("mcp.env: at most %d topics in VIPER_NATS_MCP_TOPICS", maxTopics)
 	}
-	return c, nil
+	if v := strings.TrimSpace(mcp["VIPER_NATS_MCP_OBJECTS_FILE_MAX"]); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n < 1<<20 || n > maxAttachment {
+			return fmt.Errorf("mcp.env: VIPER_NATS_MCP_OBJECTS_FILE_MAX is a size from 1 MiB to %d MiB: %s", maxAttachment>>20, v)
+		}
+		c.ObjectsFileMax = n
+	}
+	return nil
 }

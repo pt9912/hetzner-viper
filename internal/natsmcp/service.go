@@ -228,7 +228,15 @@ func (s *Service) publishTopics() {
 
 // capabilities are what this viper-nats-mcp can do beyond the basics, sent to the group so that a sender knows what a
 // receiver understands (docs/plan/nats-objekte.md §5). None yet.
-func (*Service) capabilities() []string { return nil }
+func (s *Service) capabilities() []string {
+	if s.HasObjects() {
+		return []string{CapAttachments}
+	}
+	return nil
+}
+
+// CapAttachments is the capability of a machine that understands attachments: its group has an object store.
+const CapAttachments = "att"
 
 // publishCaps tells the group which version this is and what it can do.
 func (s *Service) publishCaps() {
@@ -305,7 +313,7 @@ func (s *Service) onOut(m *nats.Msg) {
 	s.seen(in, e)
 	switch e.Kind {
 	case "msg", "req":
-		s.receive(Entry{From: in.From, Kind: e.Kind, ID: e.ID, Text: e.Text, TS: s.now()})
+		s.receive(Entry{From: in.From, Kind: e.Kind, ID: e.ID, Text: e.Text, Att: e.Att, TS: s.now()})
 	case "res":
 		// an answer counts only from the machine that was asked
 		s.mu.Lock()
@@ -353,7 +361,7 @@ func (s *Service) onTopic(m *nats.Msg) {
 	if s.tap != nil {
 		return // the tap's wildcard also delivers topics nobody subscribed to: the inbox is not its business
 	}
-	s.receive(Entry{From: in.From, Kind: "msg", Topic: in.Arg, Text: e.Text, TS: s.now()})
+	s.receive(Entry{From: in.From, Kind: "msg", Topic: in.Arg, Text: e.Text, Att: e.Att, TS: s.now()})
 }
 
 func (s *Service) onPresence(m *nats.Msg) {
@@ -421,7 +429,12 @@ func (s *Service) maybePush(e Entry) {
 	if e.Topic != "" {
 		meta["topic"] = e.Topic
 	}
-	if err := s.notify(Safe(e.Text), meta); err != nil {
+	content := Safe(e.Text)
+	if e.Att != nil { // only that there is one: nothing is fetched by itself
+		content += "\n" + attachmentNote(e)
+		meta["attachment"] = e.Att.Type
+	}
+	if err := s.notify(content, meta); err != nil {
 		s.log.Printf("push failed: %v", err)
 	}
 }

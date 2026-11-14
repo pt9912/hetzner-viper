@@ -157,7 +157,7 @@ const (
 
 // MCPTools are the tools of the NATS MCP server, in the order they are listed.
 func MCPTools() []string {
-	return []string{"peers", "send", "broadcast", "request", "reply", "inbox", "subscribe", "unsubscribe", "topics"}
+	return []string{"peers", "send", "broadcast", "request", "reply", "inbox", "subscribe", "unsubscribe", "topics", "fetch"}
 }
 
 // MCPAllowedTools are the tools that NATS_MCP_AUTOALLOW lets the agent use without asking.

@@ -48,7 +48,7 @@ func newObjectServer(t *testing.T, group string) *objectServer {
 		t.Fatal(err)
 	}
 	conf := filepath.Join(dir, "server.conf")
-	text := "host: \"127.0.0.1\"\nport: -1\njetstream {\n  store_dir: \"" + filepath.Join(dir, "js") + "\"\n  max_file_store: 134217728\n}\n\n" + block
+	text := "host: \"127.0.0.1\"\nport: -1\njetstream {\n  store_dir: \"" + filepath.ToSlash(filepath.Join(dir, "js")) + "\"\n  max_file_store: 134217728\n}\n\n" + block
 	if err := os.WriteFile(conf, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}

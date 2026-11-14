@@ -25,6 +25,9 @@ type Envelope struct {
 	Text  string `json:"text,omitempty"`  // the message; for topics the names of the topics, separated by blanks; for caps the version, then the capabilities
 	State string `json:"state,omitempty"` // presence: up or bye
 	Query bool   `json:"query,omitempty"` // presence: please answer with yours
+	// Att is a file in the object store of the group (docs/plan/nats-objekte.md): msg and req only. A version that does not know the
+	// field refuses the whole message.
+	Att *Attachment `json:"att,omitempty"`
 }
 
 var idRe = regexp.MustCompile(`^[a-f0-9]{16,64}$`)
@@ -82,6 +85,7 @@ func checkKeys(data []byte) error {
 		key, _ := t.(string)
 		switch key {
 		case "v", "kind", "id", "re", "text", "state", "query":
+		case "att":
 		default:
 			return fmt.Errorf("unknown field %q", truncate(key))
 		}
@@ -89,9 +93,14 @@ func checkKeys(data []byte) error {
 			return fmt.Errorf("field %q twice", key)
 		}
 		seen[key] = true
-		var skip json.RawMessage
-		if err := dec.Decode(&skip); err != nil {
+		var raw json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
 			return err
+		}
+		if key == "att" {
+			if err := checkAttKeys(raw); err != nil {
+				return err
+			}
 		}
 	}
 	if _, err := dec.Token(); err != nil { // the closing brace
@@ -99,6 +108,58 @@ func checkKeys(data []byte) error {
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return errors.New("text after the JSON object")
+	}
+	return nil
+}
+
+// checkAttKeys is checkKeys for the reference to an attachment: the five fields, each once, in that spelling.
+func checkAttKeys(raw []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
+		return errors.New("att is not a JSON object")
+	}
+	seen := map[string]bool{}
+	for dec.More() {
+		t, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		key, _ := t.(string)
+		switch key {
+		case "id", "type", "name", "size", "sha256":
+		default:
+			return fmt.Errorf("unknown field %q in att", truncate(key))
+		}
+		if seen[key] {
+			return fmt.Errorf("field %q twice in att", key)
+		}
+		seen[key] = true
+		var skip json.RawMessage
+		if err := dec.Decode(&skip); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var (
+	attIDRe  = regexp.MustCompile(`^[a-f0-9]{32}$`)
+	sha256Re = regexp.MustCompile(`^[a-f0-9]{64}$`)
+)
+
+// checkAttachment says what is wrong with the reference to an attachment.
+func checkAttachment(a *Attachment) error {
+	switch {
+	case !attIDRe.MatchString(a.ID):
+		return errors.New("attachment: bad id")
+	case !validType(a.Type):
+		return fmt.Errorf("attachment: type %q", truncate(a.Type))
+	case !validAttachName(a.Name):
+		return errors.New("attachment: bad name")
+	case a.Size < 1 || a.Size > maxAttachment:
+		return fmt.Errorf("attachment: size %d", a.Size)
+	case !sha256Re.MatchString(a.SHA256):
+		return errors.New("attachment: bad checksum")
 	}
 	return nil
 }
@@ -121,7 +182,18 @@ func checkEnvelope(e Envelope, maxText int) error {
 	if len(e.Text) > maxText || !utf8.ValidString(e.Text) {
 		return fmt.Errorf("text of %d bytes", len(e.Text))
 	}
-	return nil
+	return checkAtt(e)
+}
+
+// checkAtt checks the attachment of a message, if it has one: msg and req only.
+func checkAtt(e Envelope) error {
+	if e.Att == nil {
+		return nil
+	}
+	if e.Kind != "msg" && e.Kind != "req" {
+		return fmt.Errorf("an attachment in a message of the kind %q", e.Kind)
+	}
+	return checkAttachment(e.Att)
 }
 
 // Peers is who said recently that it is there, and which topics they said they subscribed to.
