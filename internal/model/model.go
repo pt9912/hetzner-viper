@@ -50,6 +50,9 @@ type ServerSpec struct {
 	Labels map[string]string
 	// Network is the ID of a private network the server is attached to when it is created ("": none).
 	Network string
+	// Group is the viper group (groups/<name>.env) the machine is named in ("": none). A provider that can keep the machines
+	// of a group together (Docker Compose: one project) does so.
+	Group string
 }
 
 // Bootstrap is what a new machine needs to be reachable: the keys that may log in and the host key with its

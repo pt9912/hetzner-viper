@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -35,6 +36,7 @@ type host struct {
 	noImage    bool
 	networks   int
 	nets       map[string]map[string]string // docker networks by name, with their labels
+	projects   []string                     // the project of each compose call
 }
 
 type ctr struct {
@@ -264,9 +266,30 @@ type fileSvc struct {
 	Networks      map[string]map[string]any `yaml:"networks"`
 }
 
+// composeCall is a docker compose command as the adapter gives it: compose -p PROJECT -f FILE VERB FLAGS... SERVICES...
+type composeCall struct {
+	project, file, verb string
+	services            []string
+}
+
+func parseCompose(args []string) composeCall {
+	c := composeCall{project: args[2], file: args[4], verb: args[5]}
+	rest := args[6:]
+	for i := 0; i < len(rest); i++ {
+		switch a := rest[i]; {
+		case a == "--wait-timeout" || a == "--timeout":
+			i++
+		case strings.HasPrefix(a, "-"):
+		default:
+			c.services = append(c.services, a)
+		}
+	}
+	return c
+}
+
 func (h *host) compose(args []string) (string, string, error) {
-	file := args[4]
-	data, err := os.ReadFile(file)
+	call := parseCompose(args)
+	data, err := os.ReadFile(call.file)
 	if err != nil {
 		return "", "", err
 	}
@@ -280,7 +303,19 @@ func (h *host) compose(args []string) (string, string, error) {
 	if err := yaml.Unmarshal(data, &f); err != nil {
 		return "", "", err
 	}
-	switch args[5] {
+	h.projects = append(h.projects, call.project)
+	selected := map[string]fileSvc{} // the services the command is about: those it names, or all of the file
+	for n, s := range f.Services {
+		if len(call.services) == 0 || slices.Contains(call.services, n) {
+			selected[n] = s
+		}
+	}
+	for _, n := range call.services {
+		if _, ok := f.Services[n]; !ok {
+			return "", "no such service: " + n, errors.New("exit status 1")
+		}
+	}
+	switch call.verb {
 	case "up":
 		h.ups++
 		if h.failUp != "" {
@@ -291,7 +326,7 @@ func (h *host) compose(args []string) (string, string, error) {
 				h.volumes[v.Name] = v.Labels
 			}
 		}
-		for _, s := range f.Services {
+		for _, s := range selected {
 			if c, ok := h.containers[s.ContainerName]; ok {
 				c.run = true
 				continue // --no-recreate
@@ -309,8 +344,18 @@ func (h *host) compose(args []string) (string, string, error) {
 		}
 		return "", "", nil
 	case "down":
-		for _, s := range f.Services {
+		for _, s := range selected {
 			delete(h.containers, s.ContainerName)
+		}
+		return "", "", nil
+	case "rm": // rm --stop --force --volumes: the containers go, and with --volumes their anonymous volumes
+		for _, s := range selected {
+			if c, ok := h.containers[s.ContainerName]; ok {
+				if c.anon != "" {
+					delete(h.volumes, c.anon)
+				}
+				delete(h.containers, s.ContainerName)
+			}
 		}
 		return "", "", nil
 	}

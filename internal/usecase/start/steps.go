@@ -169,7 +169,7 @@ func (r *runner) server(ctx context.Context, ca, keyName, ipadKeyFile string) (s
 	created, err := r.d.Cloud.CreateServer(ctx, model.ServerSpec{
 		Name: c.ServerName, Size: c.ServerType, Region: c.ServerLocation, Image: c.ServerImage,
 		SSHKey: keyName, Firewall: c.FirewallName, UserData: userData,
-		Labels: r.natsLabels(), Network: r.natsNetwork(),
+		Labels: r.natsLabels(), Network: r.natsNetwork(), Group: c.Group,
 		Bootstrap: model.Bootstrap{AuthorizedKeys: trimmed(keys), HostKey: hk.Private, HostKeyPub: hk.Public, HostCertificate: hk.Certificate},
 	})
 	if err != nil {

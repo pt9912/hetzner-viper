@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/filelock"
@@ -102,12 +103,13 @@ func (c *Client) ServerByName(ctx context.Context, name string) (*model.Server, 
 	return serverOf(name, in), nil
 }
 
-// writeProject writes the keys and the compose file of the machine into its directory, which only the user can enter.
-// The key files are readable by everyone: they are bind-mounted, so the container sees the owner and the mode of the
-// file on the host, and builder (uid 1000) is not the user of the host (docs/plan/compose.md §3).
-func (c *Client) writeProject(s model.ServerSpec, f composeFile) error {
-	dir := c.projectDir(s.Name)
-	if err := os.MkdirAll(filepath.Join(dir, "secret"), 0o700); err != nil {
+// writeProject writes the keys of the machine into their directory, which only the user can enter, and its compose file:
+// the file of its own project, or, in a group, the group's file with the machine put in (the caller holds the lock). The
+// key files are readable by everyone: they are bind-mounted, so the container sees the owner and the mode of the file on
+// the host, and builder (uid 1000) is not the user of the host (docs/plan/compose.md §3).
+func (c *Client) writeProject(p project, s model.ServerSpec, f composeFile) error {
+	dir := c.secretDir(p, s.Name)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	b := s.Bootstrap
@@ -118,26 +120,23 @@ func (c *Client) writeProject(s model.ServerSpec, f composeFile) error {
 		"host_key-cert.pub": strings.TrimSpace(b.HostCertificate) + "\n",
 	}
 	for name, text := range content {
-		p := filepath.Join(dir, "secret", name)
-		if err := os.WriteFile(p, []byte(text), 0o644); err != nil { //nolint:gosec // see above
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(text), 0o644); err != nil { //nolint:gosec // see above
 			return err
 		}
-		if err := os.Chmod(p, 0o644); err != nil { //nolint:gosec // see above: WriteFile keeps the mode of an old file
+		if err := os.Chmod(path, 0o644); err != nil { //nolint:gosec // see above: WriteFile keeps the mode of an old file
 			return err
 		}
 	}
-	out, err := f.marshal()
-	if err != nil {
-		return err
+	if p.shared() {
+		whole, _, err := c.readFile(p)
+		if err != nil {
+			return err
+		}
+		whole.mergeMachine(f)
+		f = whole
 	}
-	return os.WriteFile(c.composeFile(s.Name), out, 0o600)
-}
-
-// markerDeleting is the file a viper down writes before it deletes anything: if the down is interrupted, the next viper
-// up removes what is left, as the data of a machine that nobody wants any more. Volumes without the mark hold the data
-// of a machine that nobody asked to delete, and are used again.
-func (c *Client) markerDeleting(name string) string {
-	return filepath.Join(c.projectDir(name), "deleting")
+	return c.writeFileAtomic(p, f)
 }
 
 // checkSpec says what is wrong with the spec before anything is made, and returns the size.
@@ -154,34 +153,45 @@ func (c *Client) checkSpec(s model.ServerSpec) (cpus float64, memMiB int, err er
 	return sizeOf(s.Size)
 }
 
-// CreateServer writes the compose file and the keys and starts the machine, waiting until it is healthy.
+// CreateServer writes the compose file and the keys and starts the machine, waiting until it is healthy. The machines of a
+// group share one project and one file: the lock only covers the change of the file, the start of the machine is not
+// under it, so that the machines of a group start at the same time.
 func (c *Client) CreateServer(ctx context.Context, s model.ServerSpec) (*model.Server, error) {
 	cpus, mem, err := c.checkSpec(s)
 	if err != nil {
 		return nil, err
 	}
-	unlock, err := c.lock(s.Name)
+	p, err := projectFor(s)
 	if err != nil {
 		return nil, err
 	}
-	defer unlock()
+	unlock, err := c.lock(p)
+	if err != nil {
+		return nil, err
+	}
+	var once sync.Once
+	release := func() { once.Do(unlock) }
+	defer release()
 	if in, err := c.machine(ctx, s.Name); err != nil || in != nil {
 		if err == nil {
 			err = fmt.Errorf("the container %s exists: viper up uses it", s.Name)
 		}
 		return nil, err
 	}
-	if err := c.dropStale(ctx, s.Name); err != nil {
+	if err := c.dropStale(ctx, p, s.Name); err != nil {
 		return nil, err
 	}
 	subnet, err := c.subnetOf(ctx, s.Network)
 	if err != nil {
 		return nil, err
 	}
-	if err := c.writeProject(s, c.opts.fileFor(s, cpus, mem, subnet)); err != nil {
+	if err := c.writeProject(p, s, c.opts.fileFor(p, s, cpus, mem, subnet)); err != nil {
 		return nil, &cloud.OpError{Op: "writing the compose file of " + s.Name, Write: true, Err: err}
 	}
-	if err := c.up(ctx, s.Name); err != nil {
+	if p.shared() {
+		release()
+	}
+	if err := c.up(ctx, p, s.Name); err != nil {
 		return nil, &cloud.OpError{Op: "starting the machine " + s.Name, Write: true, Err: err}
 	}
 	in, err := c.machine(ctx, s.Name)
@@ -194,10 +204,23 @@ func (c *Client) CreateServer(ctx context.Context, s model.ServerSpec) (*model.S
 	return serverOf(s.Name, in), nil
 }
 
-// up starts what the file describes and waits until it is healthy. An existing container is not made new
-// (--no-recreate): a changed setting must not stop a running machine (docs/plan/compose.md §7.10).
-func (c *Client) up(ctx context.Context, name string) error {
-	_, err := c.compose(ctx, name, "up", "-d", "--no-recreate", "--wait", "--wait-timeout", fmt.Sprint(int(c.opts.timeout().Seconds())))
+// projectFor is the project a new machine is made in: the one of its group, or one of its own.
+func projectFor(s model.ServerSpec) (project, error) {
+	if s.Group == "" {
+		return ownProject(s.Name), nil
+	}
+	if err := checkName(s.Group); err != nil {
+		return project{}, fmt.Errorf("the group: %w", err)
+	}
+	return groupProject(s.Group), nil
+}
+
+// up starts what the file describes for the machine (a project of its own: all it has) and waits until it is healthy. An
+// existing container is not made new (--no-recreate): a changed setting must not stop a running machine
+// (docs/plan/compose.md §7.10).
+func (c *Client) up(ctx context.Context, p project, name string) error {
+	args := []string{"up", "-d", "--no-recreate", "--wait", "--wait-timeout", fmt.Sprint(int(c.opts.timeout().Seconds()))}
+	_, err := c.compose(ctx, p, append(args, c.servicesOf(p, name)...)...)
 	return err
 }
 
@@ -241,11 +264,17 @@ func (c *Client) EnsureRunning(ctx context.Context, name string) error {
 	if err := checkName(name); err != nil {
 		return err
 	}
-	unlock, err := c.lock(name) // before the look: a viper down that holds the lock may remove the machine meanwhile
+	p, err := c.projectOf(ctx, name)
 	if err != nil {
 		return err
 	}
-	defer unlock()
+	unlock, err := c.lock(p) // before the look: a viper down that holds the lock may remove the machine meanwhile
+	if err != nil {
+		return err
+	}
+	var once sync.Once
+	release := func() { once.Do(unlock) }
+	defer release()
 	in, err := c.machine(ctx, name)
 	if err != nil || in == nil {
 		if err == nil {
@@ -253,20 +282,33 @@ func (c *Client) EnsureRunning(ctx context.Context, name string) error {
 		}
 		return err
 	}
-	if _, err := os.Stat(c.composeFile(name)); err != nil {
-		return fmt.Errorf("the compose file of %s is not on this computer (%s): the machine was made elsewhere", name, c.composeFile(name))
+	if !c.fileHas(p, name) {
+		return fmt.Errorf("the compose file of %s is not on this computer (%s): the machine was made elsewhere", name, c.composeFile(p))
 	}
 	// a machine that is in use again is not being deleted: a mark left by a viper down that stopped half way must not
 	// make a later viper up delete its volumes
-	if err := os.Remove(c.markerDeleting(name)); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(c.markerDeleting(p, name)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	if p.shared() {
+		release()
+	}
 	if !in.State.Running {
-		if err := c.up(ctx, name); err != nil {
+		if err := c.up(ctx, p, name); err != nil {
 			return err
 		}
 	}
 	return c.repairDocker(ctx, name)
+}
+
+// fileHas says whether the compose file of the project is there and, in a group, has the machine.
+func (c *Client) fileHas(p project, name string) bool {
+	if !p.shared() {
+		_, err := os.Stat(c.composeFile(p))
+		return err == nil
+	}
+	f, ok, err := c.readFile(p)
+	return err == nil && ok && f.has(p, name)
 }
 
 // repairDocker restarts the Docker service if it has lost its network: a restart of the machine alone (a crash, the
@@ -318,20 +360,25 @@ func (c *Client) waitHealthy(ctx context.Context, name string) error {
 	}
 }
 
-// ours reports whether the volume carries viper's label. A volume that is not there is not ours and no error.
-func (c *Client) volumeOurs(ctx context.Context, v string) (exists, ours bool, err error) {
+// volumeLabels reads the labels of a volume. A volume that is not there is no error: exists is false.
+func (c *Client) volumeLabels(ctx context.Context, v string) (exists bool, labels map[string]string, err error) {
 	out, err := c.docker(ctx, "volume", "inspect", "--format", "{{json .Labels}}", "--", v)
 	if notFound(err) {
-		return false, false, nil
+		return false, nil, nil
 	}
 	if err != nil {
-		return false, false, err
+		return false, nil, err
 	}
-	var labels map[string]string
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &labels); err != nil {
-		return true, false, nil //nolint:nilerr // no labels is not ours
+		return true, nil, nil //nolint:nilerr // no labels is not ours
 	}
-	return true, labels[labelManaged] == "true", nil
+	return true, labels, nil
+}
+
+// volumeOurs reports whether the volume carries viper's label. A volume that is not there is not ours and no error.
+func (c *Client) volumeOurs(ctx context.Context, v string) (exists, ours bool, err error) {
+	exists, labels, err := c.volumeLabels(ctx, v)
+	return exists, labels[labelManaged] == "true", err
 }
 
 // removeVolumes deletes the volumes of the machine that viper made: home directory, Homebrew and the NATS state. One
@@ -362,11 +409,11 @@ func (c *Client) removeVolumes(ctx context.Context, name string) error {
 // dropStale removes what a machine of that name left (a down that stopped half way): the keys, which are new ones for a
 // new machine, and, only if a down had marked the machine as being deleted, its volumes. The caller holds the lock and
 // has seen that the container does not exist.
-func (c *Client) dropStale(ctx context.Context, name string) error {
+func (c *Client) dropStale(ctx context.Context, p project, name string) error {
 	if err := c.removeSidecar(ctx, name); err != nil {
 		return err
 	}
-	if _, err := os.Stat(c.markerDeleting(name)); err == nil {
+	if _, err := os.Stat(c.markerDeleting(p, name)); err == nil {
 		if err := c.removeVolumes(ctx, name); err != nil {
 			return err
 		}
@@ -376,7 +423,40 @@ func (c *Client) dropStale(ctx context.Context, name string) error {
 	if err := c.removeStateVolumes(ctx, name); err != nil {
 		return err
 	}
-	return os.RemoveAll(c.projectDir(name))
+	return c.forgetMachine(p, name)
+}
+
+// forgetMachine removes what viper keeps of the machine on this computer: for a project of its own the whole directory,
+// in a group the keys, the mark and the machine's part of the file; the directory goes with the last machine. The caller
+// holds the lock, which also makes the decision "was that the last".
+func (c *Client) forgetMachine(p project, name string) error {
+	if !p.shared() {
+		return os.RemoveAll(c.projectDir(p))
+	}
+	f, ok, err := c.readFile(p)
+	if err != nil {
+		return err
+	}
+	if ok {
+		f.dropMachine(p, name)
+		if len(f.Services) == 0 {
+			if err := os.Remove(c.composeFile(p)); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		} else if err := c.writeFileAtomic(p, f); err != nil {
+			return err
+		}
+	}
+	if err := os.RemoveAll(c.secretDir(p, name)); err != nil {
+		return err
+	}
+	if err := os.Remove(c.markerDeleting(p, name)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if len(c.machinesOf(p)) == 0 {
+		return os.RemoveAll(c.projectDir(p))
+	}
+	return nil
 }
 
 // removeStateVolumes deletes the NATS state volumes of the machine.
@@ -428,7 +508,7 @@ func (c *Client) removeDaemonVolume(ctx context.Context, vol string) error {
 }
 
 // DeleteServer stops and removes the containers and deletes the volumes and the keys. The data of the machine is
-// destroyed, as with a VM.
+// destroyed, as with a VM. In a group only the machine's services go (docker compose rm), the others run on.
 func (c *Client) DeleteServer(ctx context.Context, id string) error {
 	in, err := c.container(ctx, id)
 	if err != nil || in == nil {
@@ -441,24 +521,21 @@ func (c *Client) DeleteServer(ctx context.Context, id string) error {
 	if strings.TrimPrefix(in.Name, "/") != name {
 		return fmt.Errorf("%w: container %s is not the machine %s", ErrNotOurs, id, name)
 	}
-	unlock, err := c.lock(name)
+	p := projectFromLabels(in.Config.Labels, name)
+	unlock, err := c.lock(p)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	if err := os.MkdirAll(c.projectDir(name), 0o700); err != nil {
+	if err := os.MkdirAll(c.projectDir(p), 0o700); err != nil {
 		return err
 	}
-	if err := os.WriteFile(c.markerDeleting(name), nil, 0o600); err != nil {
+	if err := os.WriteFile(c.markerDeleting(p, name), nil, 0o600); err != nil {
 		return err
 	}
 	dataVolume := c.daemonVolume(ctx, name)
-	if _, err := os.Stat(c.composeFile(name)); err == nil {
-		if _, err := c.compose(ctx, name, "down", "--timeout", "10"); err != nil {
-			return &cloud.OpError{Op: "stopping the machine " + name, Write: true, Err: err}
-		}
-	} else if _, err := c.docker(ctx, "container", "rm", "-f", "--", name, dockerName(name)); err != nil && !notFound(err) {
-		return &cloud.OpError{Op: "removing the containers of " + name, Write: true, Err: err}
+	if err := c.removeContainers(ctx, p, name); err != nil {
+		return err
 	}
 	if err := c.removeDaemonVolume(ctx, dataVolume); err != nil {
 		return err
@@ -466,7 +543,28 @@ func (c *Client) DeleteServer(ctx context.Context, id string) error {
 	if err := c.removeVolumes(ctx, name); err != nil {
 		return err
 	}
-	return os.RemoveAll(c.projectDir(name))
+	return c.forgetMachine(p, name)
+}
+
+// removeContainers stops and removes the containers of the machine: through compose if the file has it (a group: only its
+// services; -v takes the anonymous volume of the Docker daemon with it), else directly.
+func (c *Client) removeContainers(ctx context.Context, p project, name string) error {
+	switch {
+	case !p.shared() && c.fileHas(p, name):
+		if _, err := c.compose(ctx, p, "down", "--timeout", "10"); err != nil {
+			return &cloud.OpError{Op: "stopping the machine " + name, Write: true, Err: err}
+		}
+	case p.shared() && c.fileHas(p, name):
+		args := append([]string{"rm", "--stop", "--force", "--volumes"}, c.servicesOf(p, name)...)
+		if _, err := c.compose(ctx, p, args...); err != nil {
+			return &cloud.OpError{Op: "stopping the machine " + name, Write: true, Err: err}
+		}
+	default:
+		if _, err := c.docker(ctx, "container", "rm", "-f", "--", name, dockerName(name)); err != nil && !notFound(err) {
+			return &cloud.OpError{Op: "removing the containers of " + name, Write: true, Err: err}
+		}
+	}
+	return nil
 }
 
 // Leftovers names what a machine of that name has left while its container is gone: the volumes with its data, the keys
@@ -476,6 +574,10 @@ func (c *Client) Leftovers(ctx context.Context, name string) ([]string, error) {
 		return nil, err
 	}
 	if in, err := c.machine(ctx, name); err != nil || in != nil {
+		return nil, err
+	}
+	p, err := c.projectOf(ctx, name)
+	if err != nil {
 		return nil, err
 	}
 	var out []string
@@ -501,10 +603,25 @@ func (c *Client) Leftovers(ctx context.Context, name string) ([]string, error) {
 			out = append(out, fmt.Sprintf("volume %s (%s)", v.vol, v.what))
 		}
 	}
-	if _, err := os.Stat(c.projectDir(name)); err == nil {
-		out = append(out, "files "+c.projectDir(name))
+	// a group's directory is not a leftover of one machine while the others live in it: its keys and its part of the file are
+	if dir := c.leftoverFiles(p, name); dir != "" {
+		out = append(out, "files "+dir)
 	}
 	return out, nil
+}
+
+// leftoverFiles is what viper keeps of the machine on this computer ("" if nothing).
+func (c *Client) leftoverFiles(p project, name string) string {
+	if !p.shared() {
+		if _, err := os.Stat(c.projectDir(p)); err == nil {
+			return c.projectDir(p)
+		}
+		return ""
+	}
+	if _, err := os.Stat(c.secretDir(p, name)); err == nil || c.fileHas(p, name) {
+		return c.secretDir(p, name)
+	}
+	return ""
 }
 
 // DeleteLeftovers deletes them; the machine must not exist.
@@ -512,7 +629,11 @@ func (c *Client) DeleteLeftovers(ctx context.Context, name string) error {
 	if err := checkName(name); err != nil {
 		return err
 	}
-	unlock, err := c.lock(name)
+	p, err := c.projectOf(ctx, name)
+	if err != nil {
+		return err
+	}
+	unlock, err := c.lock(p)
 	if err != nil {
 		return err
 	}
@@ -529,14 +650,5 @@ func (c *Client) DeleteLeftovers(ctx context.Context, name string) error {
 	if err := c.removeVolumes(ctx, name); err != nil {
 		return err
 	}
-	return os.RemoveAll(c.projectDir(name))
-}
-
-// lock takes the lock of the project of the machine: two viper up or down of the same machine at once would fight over
-// the container names (docs/plan/compose.md §7.9).
-func (c *Client) lock(name string) (func(), error) {
-	if err := os.MkdirAll(c.projectDir(name), 0o700); err != nil {
-		return nil, err
-	}
-	return filelock.Lock(filepath.Join(c.opts.StateDir, "compose", name+".lock"))
+	return c.forgetMachine(p, name)
 }

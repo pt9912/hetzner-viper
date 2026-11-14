@@ -12,7 +12,7 @@ import (
 // fields in the same order every time: viper up on a machine that exists writes it again, and a change would mean a new
 // container (docs/plan/compose.md §7.10).
 type composeFile struct {
-	Name     string             `yaml:"name"`
+	Name     string             `yaml:"name,omitempty"`
 	Services map[string]service `yaml:"services"`
 	Volumes  map[string]volume  `yaml:"volumes"`
 	Networks map[string]network `yaml:"networks,omitempty"`
@@ -82,8 +82,8 @@ func secretFiles() []string {
 
 const groupNet = "group"
 
-func labelsOf(server string, extra map[string]string) map[string]string {
-	l := map[string]string{labelManaged: "true", labelServer: server}
+func labelsOf(p project, server string, extra map[string]string) map[string]string {
+	l := map[string]string{labelManaged: "true", labelServer: server, labelProject: p.key}
 	for k, v := range extra {
 		l[k] = v
 	}
@@ -100,33 +100,41 @@ func (o Options) dockerEnv() map[string]string {
 	return nil
 }
 
-// fileFor is the compose file of the machine. The keys are files next to it (./secret/), bind-mounted to the place the
-// image reads them from. s.Network, if set, is the group network of a NATS group (made by viper, not by compose): the
-// machine is then on that network only.
-func (o Options) fileFor(s model.ServerSpec, cpus float64, memMiB int, subnet string) composeFile {
+// fileFor is the compose file of the machine (for a group: the part of the group's file that is the machine's, which the
+// caller merges into it). The keys are files next to it (./secret/, or ./secret/<server>/ in a group's directory),
+// bind-mounted to the place the image reads them from. s.Network, if set, is the group network of a NATS group (made by
+// viper, not by compose): the machine is then on that network only.
+func (o Options) fileFor(p project, s model.ServerSpec, cpus float64, memMiB int, subnet string) composeFile {
 	name := s.Name
+	home, brew := p.item(name, "home"), p.item(name, "brew")
 	m := service{
 		Image: o.Image, PullPolicy: "never", ContainerName: name,
 		Environment: o.dockerEnv(),
 		CPUs:        cpus, MemLimit: fmt.Sprintf("%dm", memMiB),
-		Volumes: []string{"home:/home/builder", "brew:/home/linuxbrew"},
+		Volumes: []string{home + ":/home/builder", brew + ":/home/linuxbrew"},
 		Healthcheck: &healthcheck{Test: []string{"CMD", "bash", "-c", fmt.Sprintf("exec 3<>/dev/tcp/127.0.0.1/%d", SSHPort)},
 			Interval: "2s", Timeout: "3s", Retries: 3, StartPeriod: "10m"}, // the first start puts Homebrew on its volume
 		Restart: "unless-stopped",
-		Labels:  labelsOf(name, s.Labels),
+		Labels:  labelsOf(p, name, s.Labels),
 	}
 	f := composeFile{
-		Name:     projectName(name),
-		Services: map[string]service{serviceMachine: m},
+		Services: map[string]service{p.service(name): m},
 		Volumes: map[string]volume{
-			"home": {Name: homeVolume(name), Labels: labelsOf(name, nil)},
-			"brew": {Name: brewVolume(name), Labels: labelsOf(name, nil)},
+			home: {Name: homeVolume(name), Labels: labelsOf(p, name, nil)},
+			brew: {Name: brewVolume(name), Labels: labelsOf(p, name, nil)},
 		},
 		Secrets: map[string]secret{},
 	}
+	if !p.shared() {
+		f.Name = p.name()
+	}
+	dir := "./secret/"
+	if p.shared() {
+		dir += name + "/"
+	}
 	for _, sf := range secretFiles() {
-		f.Secrets[sf] = secret{File: "./secret/" + sf}
-		m.Secrets = append(m.Secrets, secretRef{Source: sf, Target: secretDir + "/" + sf})
+		f.Secrets[p.item(name, sf)] = secret{File: dir + sf}
+		m.Secrets = append(m.Secrets, secretRef{Source: p.item(name, sf), Target: secretDir + "/" + sf})
 	}
 	if s.Network != "" {
 		f.Networks = map[string]network{groupNet: {External: true, Name: s.Network}}
@@ -141,9 +149,9 @@ func (o Options) fileFor(s model.ServerSpec, cpus float64, memMiB int, subnet st
 		m.Networks = map[string]netAttach{groupNet: attach}
 	}
 	if o.docker() == DockerDind {
-		f.Services[serviceDocker] = o.dockerService(name)
+		f.Services[p.sidecar(name)] = o.dockerService(p, name)
 	}
-	f.Services[serviceMachine] = m
+	f.Services[p.service(name)] = m
 	return f
 }
 
@@ -151,17 +159,17 @@ func (o Options) fileFor(s model.ServerSpec, cpus float64, memMiB int, subnet st
 // listens on its loopback address only: without TLS and without a login, anything that reached it would be root on the
 // host. It is privileged, which a Docker daemon needs. restart: true restarts it with the machine on compose operations
 // (a plain docker restart of the machine is repaired by viper: docs/plan/compose.md §7.8).
-func (o Options) dockerService(server string) service {
+func (o Options) dockerService(p project, server string) service {
 	addr := fmt.Sprintf("tcp://127.0.0.1:%d", DockerPort)
 	return service{
 		Image: o.dockerImage(), PullPolicy: "missing", ContainerName: dockerName(server),
-		Privileged: true, NetworkMode: "service:" + serviceMachine,
+		Privileged: true, NetworkMode: "service:" + p.service(server),
 		Environment: map[string]string{"DOCKER_TLS_CERTDIR": ""},
 		Command:     []string{"dockerd", "--host=unix:///var/run/docker.sock", "--host=" + addr},
 		Healthcheck: &healthcheck{Test: []string{"CMD", "docker", "-H", addr, "info"}, Interval: "3s", Timeout: "5s", Retries: 20},
-		DependsOn:   map[string]dependsOn{serviceMachine: {Condition: "service_started", Restart: true}},
+		DependsOn:   map[string]dependsOn{p.service(server): {Condition: "service_started", Restart: true}},
 		Restart:     "unless-stopped",
-		Labels:      labelsOf(server, nil),
+		Labels:      labelsOf(p, server, nil),
 	}
 }
 

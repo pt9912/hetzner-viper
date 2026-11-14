@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -46,6 +45,8 @@ const (
 const (
 	labelManaged = model.LabelManaged
 	labelServer  = "viper-server"
+	// labelProject is the key of the compose project of the machine (see project): its server name, or g_<group>.
+	labelProject = "viper-project"
 )
 
 // Options are the settings of the adapter.
@@ -129,19 +130,9 @@ func checkName(name string) error {
 	return nil
 }
 
-func projectName(server string) string { return "viper-" + server }
-func homeVolume(server string) string  { return server + "-home" }
-func brewVolume(server string) string  { return server + "-brew" }
-func dockerName(server string) string  { return server + "-docker" }
-
-// ProjectDir is where the compose file and the keys of the machine are kept.
-func (c *Client) projectDir(server string) string {
-	return filepath.Join(c.opts.StateDir, "compose", server)
-}
-
-func (c *Client) composeFile(server string) string {
-	return filepath.Join(c.projectDir(server), "compose.yaml")
-}
+func homeVolume(server string) string { return server + "-home" }
+func brewVolume(server string) string { return server + "-brew" }
+func dockerName(server string) string { return server + "-docker" }
 
 // docker runs the docker program against the Docker host of the client. The context is given as a value of its own, and
 // one that begins with a dash is refused, so that it is never read as an option.
@@ -214,7 +205,7 @@ func notFound(err error) bool {
 	return false
 }
 
-// compose runs docker compose for the project of the server.
-func (c *Client) compose(ctx context.Context, server string, args ...string) (string, error) {
-	return c.docker(ctx, append([]string{"compose", "-p", projectName(server), "-f", c.composeFile(server)}, args...)...)
+// compose runs docker compose for the project.
+func (c *Client) compose(ctx context.Context, p project, args ...string) (string, error) {
+	return c.docker(ctx, append([]string{"compose", "-p", p.name(), "-f", c.composeFile(p)}, args...)...)
 }
