@@ -113,6 +113,9 @@ func (s *Service) Connect(ctx context.Context) error {
 	if _, err := nc.Subscribe(s.cfg.Names.TopicsSub(), s.onTopics); err != nil {
 		return err
 	}
+	if _, err := nc.Subscribe(s.cfg.Names.CapsSub(), s.onCaps); err != nil {
+		return err
+	}
 	if err := s.subscribeTopics(nc); err != nil {
 		return err
 	}
@@ -197,6 +200,7 @@ func (s *Service) publishPresence(state string, query bool) {
 		_ = s.publish(s.cfg.Names.Presence(), Envelope{V: 1, Kind: "presence", State: state, Query: query})
 		if state == "up" {
 			s.publishTopics() // with every sign of life: whoever came later or lost a message has them within half a minute
+			s.publishCaps()
 		}
 	}
 }
@@ -218,6 +222,36 @@ func (s *Service) publishTopics() {
 	if s.Connected() && !s.cfg.Quiet {
 		_ = s.publish(s.cfg.Names.Topics(), Envelope{V: 1, Kind: "topics", Text: strings.Join(s.subscribedTopics(), " ")})
 	}
+}
+
+// capabilities are what this viper-nats-mcp can do beyond the basics, sent to the group so that a sender knows what a
+// receiver understands (docs/plan/nats-objekte.md §5). None yet.
+func (*Service) capabilities() []string { return nil }
+
+// publishCaps tells the group which version this is and what it can do.
+func (s *Service) publishCaps() {
+	if s.Connected() && !s.cfg.Quiet && versionRe.MatchString(s.cfg.Version) {
+		_ = s.publish(s.cfg.Names.Caps(), Envelope{V: 1, Kind: "caps", Text: strings.TrimSpace(s.cfg.Version + " " + strings.Join(s.capabilities(), " "))})
+	}
+}
+
+// onCaps notes the version and the capabilities of another machine. Anything that does not parse is dropped.
+func (s *Service) onCaps(m *nats.Msg) {
+	in, ok := s.cfg.Names.Parse(m.Subject)
+	if !ok || in.Kind != "caps" {
+		return
+	}
+	e, err := Decode(m.Data, s.cfg.MaxText)
+	if err != nil || e.Kind != "caps" {
+		s.logLimited("refused a caps announcement from %s", in.From)
+		return
+	}
+	version, caps, err := ParseCaps(e.Text)
+	if err != nil {
+		s.logLimited("refused a caps announcement from %s: %v", in.From, err)
+		return
+	}
+	s.peers.SetCaps(in.From, version, caps, s.now())
 }
 
 // onTopics notes which topics another machine subscribed to. Anything that does not parse is dropped.

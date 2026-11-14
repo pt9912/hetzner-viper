@@ -116,6 +116,9 @@ func setupTopics(t *testing.T, pushFrom map[string][]string, quiet map[string]bo
 		m := &machine{}
 		cfg := natsmcp.Config{URL: srv.ClientURL(), SeedFile: seedFile[name], Names: natsmcp.Names{Group: "g", Me: name}, PushFrom: map[string]bool{},
 			MaxText: natsmcp.DefaultMaxText, PushPerMin: 3, InboxMax: 200, InboxPerMan: 50, Quiet: quiet[name], Topics: topics[name]}
+		if name != "c" { // c is like an older version: it says nothing about its version
+			cfg.Version = "v9.9.9"
+		}
 		for _, f := range pushFrom[name] {
 			cfg.PushFrom[f] = true
 		}
@@ -592,5 +595,31 @@ func TestTheTopicsToolShowsTheOwnTopicsAndThoseTheOthersSaidTheyReceive(t *testi
 	eventually(t, "a sees c", func() bool { return len(quiet["a"].svc.PeersTable().Present(time.Now())) >= 1 })
 	if txt, err := call(t, quiet["a"].svc, "topics", nil); err != nil || strings.Contains(txt, "- b:") {
 		t.Errorf("a quiet machine is not in the table: %q %v", txt, err)
+	}
+}
+
+func TestMachinesSayTheirVersionAndAnOlderOneSaysNothing(t *testing.T) {
+	x := newTrio(t, nil)
+	eventually(t, "a knows the version of b", func() bool {
+		for _, p := range x.a.svc.PeersTable().Present(time.Now()) {
+			if p.Name == "b" && p.CapsKnown {
+				return true
+			}
+		}
+		return false
+	})
+	txt, err := call(t, x.a.svc, "peers", nil)
+	if err != nil || !strings.Contains(txt, "- b (last seen") || !strings.Contains(txt, "viper-nats-mcp v9.9.9)") {
+		t.Fatalf("%q %v", txt, err)
+	}
+	for _, line := range strings.Split(txt, "\n") {
+		if strings.HasPrefix(line, "- c ") && strings.Contains(line, "viper-nats-mcp") {
+			t.Errorf("c said nothing about its version: %q", line)
+		}
+	}
+	for _, p := range x.a.svc.PeersTable().Present(time.Now()) {
+		if p.Name == "c" && p.CapsKnown {
+			t.Error("c is an older version: its capabilities are not known")
+		}
 	}
 }

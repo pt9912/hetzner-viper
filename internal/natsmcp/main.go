@@ -32,6 +32,7 @@ func Main(version string, args []string, stdin io.Reader, stdout, stderr io.Writ
 		fmt.Fprintln(stderr, "viper-nats-mcp:", err)
 		return 1
 	}
+	cfg.Version = version
 	if len(args) > 0 && IsCLICommand(args[0]) {
 		return cliMain(args[0], cfg, args[1:], stdin, stdout, stderr)
 	}

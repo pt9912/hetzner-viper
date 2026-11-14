@@ -23,6 +23,8 @@ type Config struct {
 	Names         Names
 	PushFrom      map[string]bool
 	Topics        []string // subscribed at the start and not to be unsubscribed (VIPER_NATS_MCP_TOPICS)
+	// Version is the version of this program, announced to the group (caps). Empty or not a version: nothing is announced.
+	Version string
 
 	MaxText     int // the longest text of a message in bytes
 	PushPerMin  int // messages per sender and minute that are pushed; more go only to the inbox

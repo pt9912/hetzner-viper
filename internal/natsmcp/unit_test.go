@@ -320,3 +320,67 @@ func TestPeersKnowTheTopicsOfAMachineOnlyAsLongAsTheMachineIsThereAndHasSaid(t *
 		}
 	}
 }
+
+func TestCapsAnnouncementsAreReadStrictly(t *testing.T) {
+	for text, want := range map[string]string{"v0.22.0": "v0.22.0|", "dev": "dev|", "v1 att": "v1|att", "v1 zip att att": "v1|att,zip"} {
+		v, caps, err := natsmcp.ParseCaps(text)
+		if err != nil || v+"|"+strings.Join(caps, ",") != want {
+			t.Errorf("%q: %v %v %v", text, v, caps, err)
+		}
+	}
+	for name, text := range map[string]string{"empty": "", "no version": " ", "a version with a slash": "v1/2", "a long version": strings.Repeat("1", 40),
+		"upper case capability": "v1 Att", "a dot": "v1 a.b", "a wildcard": "v1 >", "too many": "v1 a b c d e f g h i"} {
+		if v, caps, err := natsmcp.ParseCaps(text); err == nil {
+			t.Errorf("%s: accepted as %v %v", name, v, caps)
+		}
+	}
+	e, err := natsmcp.Decode([]byte(`{"v":1,"kind":"caps","text":"v1 att"}`), natsmcp.DefaultMaxText)
+	if err != nil || e.Kind != "caps" || e.Text != "v1 att" {
+		t.Errorf("%+v %v", e, err)
+	}
+	n := natsmcp.Names{Group: "g", Me: "a"}
+	if in, ok := n.Parse("viper.g.b.caps"); !ok || in.Kind != "caps" || in.From != "b" {
+		t.Errorf("%+v %v", in, ok)
+	}
+	for _, s := range []string{"viper.g.a.caps", "viper.h.b.caps", "viper.g.b.caps.x", "viper.g.B.caps"} {
+		if _, ok := n.Parse(s); ok {
+			t.Errorf("%s was accepted", s)
+		}
+	}
+}
+
+func TestPeersKnowTheCapabilitiesOfAMachineOnlyAsLongAsTheMachineIsThereAndHasSaid(t *testing.T) {
+	p := natsmcp.NewPeers(90 * time.Second)
+	now := time.Now()
+	p.Seen("old", now) // an older version says nothing
+	p.Seen("new", now)
+	p.SetCaps("new", "v1", []string{"att"}, now)
+	for _, x := range p.Present(now) {
+		if x.Name == "old" && x.CapsKnown || x.Name == "new" && (!x.CapsKnown || x.Version != "v1" || len(x.Caps) != 1) {
+			t.Errorf("%+v", x)
+		}
+	}
+	later := now.Add(60 * time.Second)
+	p.Seen("new", later) // seen again, but the announcement is 60 s old: still valid
+	find := func(at time.Time) (natsmcp.Peer, bool) {
+		for _, x := range p.Present(at) {
+			if x.Name == "new" {
+				return x, true
+			}
+		}
+		return natsmcp.Peer{}, false
+	}
+	if x, ok := find(later); !ok || !x.CapsKnown {
+		t.Errorf("%+v", x)
+	}
+	way := now.Add(100 * time.Second)
+	p.Seen("new", way)
+	if x, ok := find(way); !ok || x.CapsKnown {
+		t.Errorf("an announcement older than the time to live is not known: %+v", x)
+	}
+	p.SetCaps("new", "v1", nil, way)
+	p.Gone("new")
+	if _, ok := find(way); ok {
+		t.Error("a machine that said goodbye is gone")
+	}
+}

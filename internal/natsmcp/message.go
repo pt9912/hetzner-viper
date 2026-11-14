@@ -19,10 +19,10 @@ import (
 // Envelope is the content of every message the servers exchange.
 type Envelope struct {
 	V     int    `json:"v"`
-	Kind  string `json:"kind"`            // msg, req, res, presence, topics
+	Kind  string `json:"kind"`            // msg, req, res, presence, topics, caps
 	ID    string `json:"id,omitempty"`    // chosen by the sender of a request
 	Re    string `json:"re,omitempty"`    // the ID of the request an answer belongs to
-	Text  string `json:"text,omitempty"`  // the message; for topics the names of the topics, separated by blanks
+	Text  string `json:"text,omitempty"`  // the message; for topics the names of the topics, separated by blanks; for caps the version, then the capabilities
 	State string `json:"state,omitempty"` // presence: up or bye
 	Query bool   `json:"query,omitempty"` // presence: please answer with yours
 }
@@ -83,7 +83,7 @@ func checkKeys(data []byte) error {
 		switch key {
 		case "v", "kind", "id", "re", "text", "state", "query":
 		default:
-			return fmt.Errorf("unknown field %q", truncate(key, 32))
+			return fmt.Errorf("unknown field %q", truncate(key))
 		}
 		if seen[key] {
 			return fmt.Errorf("field %q twice", key)
@@ -105,9 +105,9 @@ func checkKeys(data []byte) error {
 
 func checkEnvelope(e Envelope, maxText int) error {
 	switch e.Kind {
-	case "msg", "req", "res", "presence", "topics":
+	case "msg", "req", "res", "presence", "topics", "caps":
 	default:
-		return fmt.Errorf("kind %q", truncate(e.Kind, 32))
+		return fmt.Errorf("kind %q", truncate(e.Kind))
 	}
 	if e.ID != "" && !idRe.MatchString(e.ID) || e.Kind == "req" && e.ID == "" {
 		return errors.New("bad id")
@@ -129,7 +129,15 @@ type Peers struct {
 	mu     sync.Mutex
 	seen   map[string]time.Time
 	topics map[string]topicList
+	caps   map[string]capsInfo
 	ttl    time.Duration
+}
+
+// capsInfo is what a machine said about its version and capabilities, and when.
+type capsInfo struct {
+	version string
+	caps    []string
+	at      time.Time
 }
 
 type topicList struct {
@@ -139,7 +147,7 @@ type topicList struct {
 
 // NewPeers returns a table in which a machine counts as present for ttl after its last message.
 func NewPeers(ttl time.Duration) *Peers {
-	return &Peers{seen: map[string]time.Time{}, topics: map[string]topicList{}, ttl: ttl}
+	return &Peers{seen: map[string]time.Time{}, topics: map[string]topicList{}, caps: map[string]capsInfo{}, ttl: ttl}
 }
 
 // SetTopics notes the topics a machine said it subscribed to.
@@ -149,6 +157,45 @@ func (p *Peers) SetTopics(name string, names []string, at time.Time) {
 	p.mu.Unlock()
 }
 
+// SetCaps notes the version and the capabilities a machine said it has.
+func (p *Peers) SetCaps(name, version string, caps []string, at time.Time) {
+	p.mu.Lock()
+	p.caps[name] = capsInfo{version: version, caps: caps, at: at}
+	p.mu.Unlock()
+}
+
+var (
+	versionRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,31}$`)
+	capRe     = regexp.MustCompile(`^[a-z][a-z0-9-]{0,15}$`)
+)
+
+const maxCaps = 8
+
+// ParseCaps reads the text of a caps announcement: a version, then the capabilities, separated by blanks. The version is
+// short and made of the characters of a version number, a capability is a short lower-case word, at most maxCaps of them,
+// none twice. The result is sorted.
+func ParseCaps(text string) (version string, caps []string, err error) {
+	f := strings.Fields(text)
+	if len(f) == 0 || !versionRe.MatchString(f[0]) {
+		return "", nil, errors.New("no version")
+	}
+	seen := map[string]bool{}
+	for _, c := range f[1:] {
+		if !capRe.MatchString(c) {
+			return "", nil, fmt.Errorf("%q is not a capability", truncate(c))
+		}
+		if !seen[c] {
+			seen[c] = true
+			caps = append(caps, c)
+		}
+	}
+	if len(caps) > maxCaps {
+		return "", nil, fmt.Errorf("%d capabilities", len(caps))
+	}
+	sort.Strings(caps)
+	return f[0], caps, nil
+}
+
 // ParseTopics reads the text of a topics announcement: the names, separated by blanks, each a valid name, at most limit of
 // them, none twice. The result is sorted.
 func ParseTopics(text string, limit int) ([]string, error) {
@@ -156,7 +203,7 @@ func ParseTopics(text string, limit int) ([]string, error) {
 	seen := map[string]bool{}
 	for _, t := range strings.Fields(text) {
 		if !ValidName(t) {
-			return nil, fmt.Errorf("%q is not a topic name", truncate(t, 32))
+			return nil, fmt.Errorf("%q is not a topic name", truncate(t))
 		}
 		if seen[t] {
 			continue
@@ -183,6 +230,7 @@ func (p *Peers) Gone(name string) {
 	p.mu.Lock()
 	delete(p.seen, name)
 	delete(p.topics, name)
+	delete(p.caps, name)
 	p.mu.Unlock()
 }
 
@@ -193,6 +241,11 @@ type Peer struct {
 	Age         time.Duration
 	Topics      []string
 	TopicsKnown bool
+	// Version and Caps are what the machine said about its viper-nats-mcp; CapsKnown is false for an older version (it says
+	// nothing), or while its announcement has not come yet or is older than the time to live.
+	Version   string
+	Caps      []string
+	CapsKnown bool
 }
 
 // Present returns the machines seen within the time to live, by name.
@@ -206,6 +259,9 @@ func (p *Peers) Present(now time.Time) []Peer {
 			if tl, ok := p.topics[n]; ok && now.Sub(tl.at) <= p.ttl {
 				peer.Topics, peer.TopicsKnown = tl.names, true
 			}
+			if ci, ok := p.caps[n]; ok && now.Sub(ci.at) <= p.ttl {
+				peer.Version, peer.Caps, peer.CapsKnown = ci.version, ci.caps, true
+			}
 			out = append(out, peer)
 		}
 	}
@@ -213,8 +269,9 @@ func (p *Peers) Present(now time.Time) []Peer {
 	return out
 }
 
-// truncate cuts s to n bytes (at a character) with "..." when it is longer: text of another machine in a log line.
-func truncate(s string, n int) string {
+// truncate cuts s to 32 bytes (at a character) with "..." when it is longer: text of another machine in a log line.
+func truncate(s string) string {
+	n := 32
 	if len(s) <= n {
 		return s
 	}

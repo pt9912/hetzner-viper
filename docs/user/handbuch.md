@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.122  
+Version: 1.123  
 Software-Version: v0.22.0  
 Stand: 14.11.2026  
 
@@ -672,7 +672,7 @@ Der Agent hat diese Werkzeuge:
 
 | Werkzeug | Wirkung |
 |---|---|
-| `peers` | Maschinen der Gruppe, die sich in den letzten 90 Sekunden gemeldet haben |
+| `peers` | Maschinen der Gruppe, die sich in den letzten 90 Sekunden gemeldet haben, mit der Version ihres `viper-nats-mcp`, soweit sie sie melden (eine ältere Version meldet sie nicht) |
 | `send` | Textnachricht an eine Maschine |
 | `broadcast`, `subscribe`, `unsubscribe` | Rundruf an ein Thema; Themen abonnieren und abbestellen (höchstens 16, die Themen aus `NATS_MCP_TOPICS` mitgezählt; diese sind schon beim Start abonniert und lassen sich nicht abbestellen) |
 | `topics` | die Themen: die, die der Agent selbst empfängt (die festen aus `NATS_MCP_TOPICS` sind gekennzeichnet), die, die die anderen Maschinen der Gruppe nach eigener Aussage empfangen, und je Thema die Maschinen, die es empfangen. Eine Maschine, die nichts gesagt hat (ein älteres `viper-nats-mcp`, oder ihre Meldung ist noch nicht da), steht als „has not said which topics“ da und nicht als eine ohne Themen. Die Meldungen kommen mit jedem Lebenszeichen (alle 30 Sekunden) und gleich nach `subscribe` und `unsubscribe` |
@@ -1576,3 +1576,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.120 | nach v0.21.1 | Die Befehlsübersicht nennt `--file` bei `viper nats`; die Software-Version im Kopf und die Dateinamen der Binaries stehen wieder auf v0.21.1 (es gibt kein Release v0.21.2). READMEs: Compose-Datei je Gruppe, `viper nats --file`. |
 | 1.121 | nach v0.21.1 | Docker Compose: Schlüsselort je Rechner richtig angegeben, Hinweis zu „context not found“ (`SERVER_LOCATION` ist der Docker-Kontext); Satzanfang bei `viper nats topics`. |
 | 1.122 | v0.22.0 | Release v0.22.0: die Änderungen 1.114 bis 1.121 (`viper nats --file` und `viper nats topics` mit den festen Themen; ein Rechner wird in der Gruppe verwaltet, in der er gestartet wurde; Zustandsverzeichnis `~/.local/state/viper`; DNS-Kommentar `managed by viper`; Docker Compose: eine Datei je Gruppe). |
+| 1.123 | nach v0.22.0 | Das MCP-Werkzeug `peers` nennt die Version von `viper-nats-mcp` der anderen Maschinen, soweit sie sie melden (neues Subject `viper.<gruppe>.<rechner>.caps`, das ältere Versionen ignorieren). |

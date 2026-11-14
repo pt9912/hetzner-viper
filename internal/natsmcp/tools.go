@@ -96,9 +96,17 @@ func (s *Service) toolPeers(context.Context, json.RawMessage) (string, error) {
 	}
 	b.WriteString("Present:\n")
 	for _, p := range ps {
-		fmt.Fprintf(&b, "- %s (last seen %d s ago)\n", p.Name, int(p.Age.Seconds()))
+		fmt.Fprintf(&b, "- %s (last seen %d s ago%s)\n", p.Name, int(p.Age.Seconds()), peerVersion(p))
 	}
 	return b.String(), nil
+}
+
+// peerVersion is ", viper-nats-mcp <version>" for a machine that said its version, else nothing: an older version says none.
+func peerVersion(p Peer) string {
+	if !p.CapsKnown {
+		return ""
+	}
+	return ", viper-nats-mcp " + p.Version
 }
 
 func (s *Service) toolSend(_ context.Context, args json.RawMessage) (string, error) {

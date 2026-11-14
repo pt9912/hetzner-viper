@@ -52,6 +52,13 @@ func (n Names) Topics() string { return fmt.Sprintf("viper.%s.%s.topics", n.Grou
 // TopicsSub is what this machine reads for the topics of the others.
 func (n Names) TopicsSub() string { return fmt.Sprintf("viper.%s.*.topics", n.Group) }
 
+// Caps is where this machine announces its version and its capabilities (docs/plan/nats-objekte.md §5). An older
+// viper-nats-mcp does not subscribe to this subject and does not see the announcement.
+func (n Names) Caps() string { return fmt.Sprintf("viper.%s.%s.caps", n.Group, n.Me) }
+
+// CapsSub is what this machine reads for the capabilities of the others.
+func (n Names) CapsSub() string { return fmt.Sprintf("viper.%s.*.caps", n.Group) }
+
 // InSub is what this machine reads for messages addressed to it.
 func (n Names) InSub() string { return fmt.Sprintf("viper.%s.*.out.%s", n.Group, n.Me) }
 
@@ -82,6 +89,15 @@ func (n Names) ParseDirect(subject string) (Inbound, bool) {
 	return Inbound{Kind: "out", From: t[2], To: t[4]}, true
 }
 
+// selfAnnouncement says whether the fourth token names a subject a machine announces itself on.
+func selfAnnouncement(token string) bool {
+	switch token {
+	case "presence", "topics", "caps":
+		return true
+	}
+	return false
+}
+
 // Parse takes a subject apart. It accepts exactly the shapes of the subscriptions and nothing
 // else: the number of tokens and the fixed fourth token must match, and the sender must be a
 // valid name other than this machine. The subtree viper.<group>.<x>.req.> is open to every
@@ -91,7 +107,7 @@ func (n Names) Parse(subject string) (Inbound, bool) {
 	if len(t) < 4 || t[0] != "viper" || t[1] != n.Group || !ValidName(t[2]) || t[2] == n.Me {
 		return Inbound{}, false
 	}
-	if len(t) == 4 && (t[3] == "presence" || t[3] == "topics") { // what a machine says about itself
+	if len(t) == 4 && selfAnnouncement(t[3]) { // what a machine says about itself
 		return Inbound{Kind: t[3], From: t[2]}, true
 	}
 	switch {
