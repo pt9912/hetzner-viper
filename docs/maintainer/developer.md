@@ -73,6 +73,12 @@ Zwei Werkzeuge sind gepinnt:
 
 Beide laufen in Docker, auch im Devcontainer, damit der Weg der Releases überall derselbe ist.
 
+### Tests des Objektspeichers
+
+* `internal/natsmcp/bucket_test.go` startet einen echten `nats-server` mit JetStream (als Bibliothek) und den Rechten, die `viper` schreibt (`natsserver.AuthorizationBlock(…, true)`): Ablegen und Holen, jede Verweigerung, der Bucket, ein 3-MiB-Objekt (**Flusskontrolle**: ohne `$JS.FC…` hängt das Lesen; kleine Objekte merken es nicht), der Rollup-Kopf. `attachments_test.go` hat die Prüfungen von Art, Namen und ZIP (auch eine Bombe mit gefälschtem Verzeichnis) und die Wege der Werkzeuge und Befehle durch einen echten Server.
+* Unter Windows: keine Pfade mit `\` in der Konfiguration von `nats-server` (`filepath.ToSlash`), kein `*` in Dateinamen, und die Meldung einer fehlenden Datei ist eine andere (nur den Namen der Datei prüfen).
+* Läufe gegen echte Maschinen sind nicht Teil von `make check`; die Läufe vom 14.11.2026 (Compose, k3d, Hetzner) stehen in `docs/plan/nats-objekte.md` §13. Wer sie wiederholt: eigene Namen (`ctest`, `ktest`, `vtest`), danach `viper down --group` und nur eigene Schlüssel und Firewalls löschen.
+
 ### Das Image der Maschinen
 
 Das Image `viper-machine` (`image/`) ist das der Anbieter `kubernetes` und `compose`.

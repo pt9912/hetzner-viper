@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.123  
+Version: 1.124  
 Software-Version: v0.22.0  
 Stand: 14.11.2026  
 
@@ -56,7 +56,7 @@ Sie haben kein Cloud-Konto oder wollen erst einmal ausprobieren? Dann beginnen S
 | `viper log [<rechner>]` | Zeigt die lokalen Protokolle: Ereignisse aller Rechner, eines Rechners oder mit `--full` dessen vollständige Ausgabe. |
 | `viper up --group <gruppe>`, `viper down --group <gruppe>`, `viper check --group <gruppe>`, `viper preflight --group <gruppe>`, `viper ssh --group <gruppe> --cmd …` | Dieselben Befehle für alle Rechner einer Gruppe aus `groups/<gruppe>.env`, gleichzeitig (siehe „Eine Gruppe von Rechnern gemeinsam starten und beenden“). |
 | `viper mcp-binary --arch amd64\|arm64` | Schreibt den in `viper` eingebauten MCP-Server `viper-nats-mcp` für die Architektur nach stdout (`> datei`), zum Ansehen, Prüfen oder als `NATS_MCP_BINARY`. Zeigt nichts auf dem Terminal. |
-| `viper nats peers\|topics\|listen\|send\|broadcast\|request <gruppe> …` | Sendet Nachrichten an die Rechner einer NATS-Gruppe (`--file DATEI` statt des Textes) und liest mit, als einer der Rechner der Gruppe (siehe „Nachrichten an eine NATS-Gruppe senden“). |
+| `viper nats peers\|topics\|listen\|send\|broadcast\|request <gruppe> …` | Sendet Nachrichten (und Bilder, PDFs und ZIP-Dateien) an die Rechner einer NATS-Gruppe (`--file DATEI` statt des Textes) und liest mit, als einer der Rechner der Gruppe (siehe „Nachrichten an eine NATS-Gruppe senden“). |
 | `viper help`, `viper version` | Zeigt alle Befehle bzw. die Version. |
 
 ### Wie ein Rechner benannt wird
@@ -574,7 +574,7 @@ nats --server $NATS_URL --tlsca $NATS_CA_FILE --nkey $NATS_NKEY_SEED_FILE pub vi
 * **Beim Löschen eines Clients** (`viper down beta`) entfernt `viper` zuerst seinen Schlüssel beim Server. Erst danach wird der Rechner gelöscht. Ist der Server nicht erreichbar, bleibt der Rechner bestehen; mit `--force` löschen Sie ihn trotzdem, der Eintrag bleibt dann bis zum Ende der Gruppe in der Serverkonfiguration.
 * Mit dem letzten Rechner der Gruppe löscht `viper down` auch das Netz der Gruppe `viper-nats-<gruppe>` (bei Kubernetes: die NetworkPolicy und den Service).
 * Ein Rechner wechselt nicht stillschweigend die Gruppe: Ändern Sie `NATS_GROUP` für einen vorhandenen Rechner, bricht `viper up` ab. Löschen Sie ihn zuerst.
-* Nicht enthalten: mehrere Server, automatischer Ersatz eines ausgefallenen Servers, JetStream (dauerhafte Nachrichten), Zugriff von außen und Gruppen über mehrere Anbieter.
+* Nicht enthalten: mehrere Server, automatischer Ersatz eines ausgefallenen Servers, dauerhaft gespeicherte Nachrichten (JetStream als Zwischenspeicher; nur der Speicher für Dateien ist möglich, siehe „Bilder, PDFs und ZIP-Dateien senden“), Zugriff von außen und Gruppen über mehrere Anbieter.
 
 ### Eine Gruppe von Rechnern gemeinsam starten und beenden (`groups/`)
 
@@ -673,11 +673,12 @@ Der Agent hat diese Werkzeuge:
 | Werkzeug | Wirkung |
 |---|---|
 | `peers` | Maschinen der Gruppe, die sich in den letzten 90 Sekunden gemeldet haben, mit der Version ihres `viper-nats-mcp`, soweit sie sie melden (eine ältere Version meldet sie nicht) |
-| `send` | Textnachricht an eine Maschine |
+| `send` | Nachricht an eine Maschine; mit `NATS_OBJECTS` auch mit einer Datei (Parameter `attachment`) |
 | `broadcast`, `subscribe`, `unsubscribe` | Rundruf an ein Thema; Themen abonnieren und abbestellen (höchstens 16, die Themen aus `NATS_MCP_TOPICS` mitgezählt; diese sind schon beim Start abonniert und lassen sich nicht abbestellen) |
 | `topics` | die Themen: die, die der Agent selbst empfängt (die festen aus `NATS_MCP_TOPICS` sind gekennzeichnet), die, die die anderen Maschinen der Gruppe nach eigener Aussage empfangen, und je Thema die Maschinen, die es empfangen. Eine Maschine, die nichts gesagt hat (ein älteres `viper-nats-mcp`, oder ihre Meldung ist noch nicht da), steht als „has not said which topics“ da und nicht als eine ohne Themen. Die Meldungen kommen mit jedem Lebenszeichen (alle 30 Sekunden) und gleich nach `subscribe` und `unsubscribe` |
-| `request`, `reply` | Anfrage mit Warten auf die Antwort (30 Sekunden, höchstens 120); Antwort auf eine Anfrage aus dem Posteingang |
-| `inbox` | die letzten 200 eingegangenen Nachrichten und Anfragen (jede Textzeile beginnt mit `| `) |
+| `request`, `reply` | Anfrage mit Warten auf die Antwort (30 Sekunden, höchstens 120; mit `NATS_OBJECTS` auch mit einer Datei); Antwort auf eine Anfrage aus dem Posteingang |
+| `fetch` | nur mit `NATS_OBJECTS`: holt die Datei einer Nachricht aus dem Posteingang (Handle) in den Ordner `~/.viper-nats/attachments/` und nennt den Pfad |
+| `inbox` | die letzten 200 eingegangenen Nachrichten und Anfragen (jede Textzeile beginnt mit `| `); eine Datei steht in einer eigenen Zeile mit Namen, Art und Größe |
 
 Der Absender einer Nachricht folgt aus dem Subject, das der NATS-Server nur dem Absender selbst erlaubt; ein Agent kann nicht als ein anderer Rechner senden. Anwesend ist ein Rechner nur, solange dort eine Claude-Code-Sitzung läuft (der Server läuft nur mit ihr). Nachrichten an einen Rechner ohne laufende Sitzung gehen verloren; es gibt keine Zwischenspeicherung.
 
@@ -753,6 +754,44 @@ viper nats broadcast entwicklung --topic news --file mitteilung.md   # Text aus 
 * **Agenten und der Betreiber:** Für die Agenten ist `operator` ein weiterer Absender, der Anweisungen schickt. `NATS_MCP_PUSH_FROM` darf `operator` nennen, dann schiebt der MCP-Server die Nachrichten des Betreibers von selbst in die Sitzung; Standard ist die leere Liste. Das ist Ihre Entscheidung über das Vertrauen, `viper` warnt dabei nicht.
 * **`listen --all`** zeigt zusätzlich die Direktnachrichten zwischen anderen Rechnern der Gruppe, mit Absender und Empfänger (`alpha -> beta: …`; `"to"` bei `--json`). Das ist kein neues Recht: der Server lässt jeden Rechner und den Betreiber die ganze Gruppe lesen. Es gibt in einer Gruppe keine Privatsphäre zwischen den Agenten. `--all` gilt nur für `listen`; `--topic` filtert nur Topic-Nachrichten, Direktnachrichten haben kein Topic.
 * **`listen`** beendet das Programm auf der Maschine, wenn die Verbindung abbricht; es kann bis zur nächsten Nachricht der Gruppe (spätestens 30 Sekunden) weiterlaufen.
+
+### Bilder, PDFs und ZIP-Dateien senden (`NATS_OBJECTS`)
+
+Eine Nachricht der Gruppe kann eine Datei tragen: ein Bild (PNG, JPEG, GIF, WebP), ein PDF oder eine ZIP-Datei. Die Datei liegt im **Speicher für Dateien** des NATS-Servers der Gruppe (nicht bei einem Cloud-Anbieter, nicht auf einem eigenen Dienst); die Nachricht nennt sie nur. Der Empfänger holt sie mit dem Werkzeug `fetch` (der Agent) oder mit `viper nats fetch` (Sie, als Betreiber) und liest sie dann aus einer Datei.
+
+#### Voraussetzung
+
+* In der **Gruppendatei** (`groups/<gruppe>.env`) steht `NATS_OBJECTS=true` neben `NATS_ENABLED=true` und `NATS_MCP=true`; die Grenzen sind `NATS_OBJECTS_MAX`, `NATS_OBJECTS_FILE_MAX` und `NATS_OBJECTS_TTL` (siehe Kapitel 4).
+* Die Einstellung gilt, wenn der Server der Gruppe **angelegt** wird. Haben Sie sie später eingeschaltet, meldet `viper check` es, und Sie legen die Gruppe neu an (`viper down --group G`, dann `viper up --group G`). Alle Rechner der Gruppe brauchen die Version von `viper`, die das kann (`viper up` installiert den passenden `viper-nats-mcp`); eine Maschine mit einer älteren Version lehnt eine Nachricht mit Datei ab, deshalb sendet `viper` Dateien nur an Maschinen, die gemeldet haben, dass sie sie verstehen.
+* Auf einer VM liegt der Speicher in `/var/lib/viper-nats`, in einem Pod oder Container im Heimverzeichnis des Servers (dort ein Volume). Der Server muss `NATS_OBJECTS_MAX` plus 1 GiB frei haben; `viper up` prüft es vorher. Erprobt auf Hetzner, in k3d und mit Docker Compose; bei AWS, Google Cloud und Azure läuft derselbe Weg wie bei Hetzner, ist dort aber nicht erprobt.
+
+#### Vorgehen
+
+Von Ihrem Rechner aus (als Maschine der Gruppe oder als Betreiber):
+
+```bash
+viper nats send      entwicklung "Bitte ansehen" --to beta --pdf bericht.pdf
+viper nats broadcast entwicklung --topic news --image bild.png          # ohne Text
+viper nats request   entwicklung "Passt das so?" --to beta --zip projekt.zip
+viper nats fetch     entwicklung 0123456789abcdef0123456789abcdef --sha256 <Prüfsumme> --out ./eingang
+```
+
+* `--pdf`, `--image` und `--zip` nehmen genau eine Datei; die Art wird an den ersten Bytes der Datei geprüft, nicht an der Endung (`--image` mit einem PDF wird abgelehnt, bevor sich `viper` verbindet). Der Text darf fehlen. Die Datei darf höchstens `NATS_OBJECTS_FILE_MAX` groß sein.
+* `viper nats listen` zeigt eine Nachricht mit Datei mit einer Zeile `[attachment: …; fetch it with viper nats fetch GROUP <ID> --sha256 <Prüfsumme>]`. Die ID und die Prüfsumme dort brauchen Sie für `viper nats fetch`. **`fetch` gibt es nur mit dem Schlüssel des Betreibers** (`viper nats init`), denn die Datei landet auf Ihrem Rechner; sie wird gegen die Prüfsumme geprüft. In den Ordner `--out` (Standard: der aktuelle) schreibt `viper` nur die Datei `<ID>.<Endung>` und räumt dort nie auf.
+* Der Agent sendet mit den Werkzeugen `send`, `broadcast` und `request` und dem Parameter `attachment` (eine Datei im Heimverzeichnis der Maschine). Beim Empfänger zeigt `inbox` die Datei in einer eigenen Zeile, und `fetch` holt sie mit dem Handle des Eintrags in `~/.viper-nats/attachments/` (höchstens 50 Dateien und 64 MiB, die ältesten gehen zuerst) und nennt den Pfad. Der Inhalt kommt nie in die Antwort des Werkzeugs, und nichts wird von selbst geholt, geöffnet oder in die Sitzung geschoben.
+
+#### Ergebnis
+
+`viper nats send …` meldet „sent as <maschine> to <ziel> with the file bericht.pdf (pdf, 120 KiB)“. `viper check` auf dem Server meldet, ob der Speicher und der Bucket zu den Einstellungen passen.
+
+#### Hinweise und Warnungen
+
+* **Die Datei ist ungeprüfter Inhalt von einem anderen Agenten.** Ein Bild oder PDF kann Anweisungen enthalten (Text im Bild, versteckter Text im PDF), und ein PDF kann aktive Inhalte haben. Öffnen oder entpacken Sie nichts von Absendern, denen Sie nicht trauen. `viper` führt nichts aus und entpackt nichts.
+* **ZIP:** `viper` sieht sich das Archiv an, bevor es gesendet und nachdem es geholt wurde (Inhaltsverzeichnis und, einmal, alle Daten, ohne etwas auf die Platte zu schreiben) und lehnt ab: mehr als 1000 Einträge, mehr als 64 MiB entpackt oder mehr als das Hundertfache der Dateigröße, Namen mit `..`, absolute Pfade, `C:`, `\`, doppelte oder überlappende Einträge, Verknüpfungen, verschlüsselte Einträge. Sehr gut komprimierbare Dateien (zum Beispiel lange Folgen gleicher Zeichen) fallen unter die Grenze von 100 zu 1 und werden abgelehnt. Das Prüfen ist **keine Garantie**: Entpacken Sie ein Archiv nur in einen leeren Ordner und mit einem Werkzeug, das Pfade außerhalb davon verweigert. Ein `.docx`, `.xlsx` oder `.jar` ist technisch eine ZIP-Datei und geht als ZIP durch.
+* **Nichts in der Gruppe ist privat, und der Speicher ist keine Ablage.** Jede Maschine der Gruppe und der Betreiber können jede Datei holen. **Jede Maschine kann außerdem Dateien anderer ersetzen, fälschen oder unauffindbar machen, und mit einem besonderen Kopf der Nachricht sogar den ganzen Speicher leeren** (der Speicher für Dateien braucht dafür dieselben Rechte, die das Ablegen braucht; sie lassen sich nicht enger fassen). Die Prüfsumme in der Nachricht schützt davor, eine veränderte Datei zu bekommen; gegen das Verschwinden schützt nichts. Heben Sie wichtige Dateien an anderer Stelle auf.
+* **Lebensdauer:** Eine Datei bleibt `NATS_OBJECTS_TTL` Tage (Standard 7), solange die Gruppe läuft. Mit dem Server der Gruppe (`viper down` der Server-Maschine, ein neuer Server, ein neues Volume) ist sie weg; ein Empfänger, der später holt, bekommt „not in the object store“. Ist der Speicher voll, schlägt das Senden mit „the object store of the group is full“ fehl, bis alte Dateien ablaufen.
+* **Dateien kommen nur an Maschinen, die sie verstehen.** Hat eine Maschine nichts über sich gemeldet (eine ältere Version, oder noch nicht), lehnt `viper` das Senden an sie ab. Die Meldung kommt eine Anfrage lang: Bei zwei Sendungen kurz hintereinander kann die zweite bis zu 10 Sekunden warten.
+* **Der Speicher ist kein Cloud-Dienst.** Er erscheint bei Hetzner, AWS oder Google nirgends als eigene Ressource; seine Dateien liegen auf der Platte des Servers.
 
 ### Ein privates Repository per SSH klonen
 
@@ -1090,7 +1129,11 @@ Die Einstellungen stehen in `.env.local`. Für einzelne Rechner können Sie sie 
 | `NATS_MCP` | `true`: `viper up` installiert auf dem Rechner den MCP-Server `viper-nats-mcp` und trägt ihn bei Claude Code ein (Benutzerbereich, Name `nats`); braucht `NATS_ENABLED=true` | `false` |
 | `NATS_MCP_PUSH_FROM` | Maschinennamen, durch Komma getrennt (der eigene Name wird übergangen, sodass dieselbe Liste in einer Gruppendatei für alle Rechner gilt), deren Nachrichten der Server in eine Claude-Code-Sitzung schiebt (nur wenn Sie Claude selbst mit dem Channel-Schalter starten, siehe unten); leer: nichts wird geschoben | leer |
 | `NATS_MCP_TOPICS` | Themen, durch Komma getrennt (höchstens 16, Namen wie bei `subscribe`), die der MCP-Server beim Start abonniert, wie mit dem Werkzeug `subscribe`, nur fest: `unsubscribe` lehnt sie ab. In einer Gruppendatei (`groups/<gruppe>.env`) gilt die Liste für alle Rechner der Gruppe; eine Änderung wirkt nach `viper up` und dem nächsten Start des Servers (neue Claude-Code-Sitzung) | leer |
-| `NATS_MCP_AUTOALLOW` | Welche Werkzeuge des MCP-Servers Claude Code ohne Nachfrage nutzen darf: `off`, `read` (`peers`, `inbox`, `topics`) oder `all`; ein früher gesetzter Eintrag wird bei jedem `viper up` ersetzt | `off` |
+| `NATS_OBJECTS` | `true`: Die Gruppe hat einen Speicher für Dateien (Bilder, PDFs, ZIP-Dateien), den der NATS-Server hält; braucht `NATS_MCP=true`. Steht in der **Gruppendatei** und gilt, wenn der Server der Gruppe angelegt wird; später ändern Sie es nur mit einem neuen Server (`viper down --group`, dann `viper up --group`) | `false` |
+| `NATS_OBJECTS_MAX` | Gesamtgröße des Speichers in MiB (16 bis 102400); `viper up` prüft vorher, ob dieser Wert plus 1 GiB auf der Platte frei ist | `256` |
+| `NATS_OBJECTS_FILE_MAX` | größte Datei in MiB (1 bis 64, höchstens `NATS_OBJECTS_MAX`) | `8` |
+| `NATS_OBJECTS_TTL` | wie lange eine Datei bleibt, in Tagen (1 bis 365) | `7` |
+| `NATS_MCP_AUTOALLOW` | Welche Werkzeuge des MCP-Servers Claude Code ohne Nachfrage nutzen darf: `off`, `read` (`peers`, `inbox`, `topics`) oder `all` (nur `all` erlaubt auch `fetch`, das eine Datei schreibt); ein früher gesetzter Eintrag wird bei jedem `viper up` ersetzt | `off` |
 | `NATS_MCP_BINARY` | Datei, die statt des in `viper` eingebauten MCP-Servers installiert wird (nötig für ein mit `go build` gebautes `viper` ohne `make`) | leer |
 | `DNS_PROVIDER` | Wer den DNS-Namen anlegt: `cloudflare` oder `none` (kein Eintrag, keine Domain, kein Cloudflare); wird nur aus den Einstellungsdateien gelesen | `cloudflare` |
 | `DNS_DOMAIN` | Ihre Domain; Pflichtangabe mit Cloudflare | leer |
@@ -1380,6 +1423,14 @@ Beim Start einer neuen NATS-Gruppe scheiterte der erste Rechner mit NATS, der de
 
 Die Binary von `viper-nats-mcp` auf dem Rechner läuft nicht (falsche Architektur bei `NATS_MCP_BINARY`) oder stammt aus einer anderen Version als Ihr `viper`. Wiederholen Sie `viper up <rechner>`; es ersetzt die Binary erst, nachdem die neue auf dem Rechner läuft.
 
+### Meldung: "did not say that it understands attachments" oder "the group has no object store" (Dateien senden)
+
+Zu „did not say …“: Die Maschine hat nicht gemeldet, dass sie Dateien versteht (eine ältere Version von `viper-nats-mcp`, noch keine Meldung, oder ihre Gruppe hat keinen Speicher für Dateien); sie würde die ganze Nachricht ablehnen. `viper up <rechner>` installiert die passende Version, und `peers` zeigt die Versionen. „The group … has no object store“: Setzen Sie `NATS_OBJECTS=true` in der Gruppendatei und legen Sie den Server neu an (`viper down --group G`, `viper up --group G`); `viper check` nennt es ebenfalls.
+
+### Meldung: "the object store of the group is full" oder "the file is not in the object store" (Dateien)
+
+Der Speicher ist voll (`NATS_OBJECTS_MAX`): Dateien gehen, wenn ihre Zeit um ist (`NATS_OBJECTS_TTL`), vorher hilft nur ein größerer Speicher mit einem neuen Server. „Not in the object store“: Die Datei ist abgelaufen, wurde von einer Maschine unauffindbar gemacht, oder der Server wurde neu angelegt. „Does not match the checksum“ oder „damaged“: Die Datei wurde verändert oder ist nicht die der Nachricht; sie wird nicht gespeichert.
+
 ### Meldung: "the server certificate has expired" (NATS)
 
 Das Zertifikat des NATS-Servers gilt einen Monat und wird nicht erneuert. Löschen Sie die Rechner der Gruppe und legen Sie sie neu an.
@@ -1577,3 +1628,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.121 | nach v0.21.1 | Docker Compose: Schlüsselort je Rechner richtig angegeben, Hinweis zu „context not found“ (`SERVER_LOCATION` ist der Docker-Kontext); Satzanfang bei `viper nats topics`. |
 | 1.122 | v0.22.0 | Release v0.22.0: die Änderungen 1.114 bis 1.121 (`viper nats --file` und `viper nats topics` mit den festen Themen; ein Rechner wird in der Gruppe verwaltet, in der er gestartet wurde; Zustandsverzeichnis `~/.local/state/viper`; DNS-Kommentar `managed by viper`; Docker Compose: eine Datei je Gruppe). |
 | 1.123 | nach v0.22.0 | Das MCP-Werkzeug `peers` nennt die Version von `viper-nats-mcp` der anderen Maschinen, soweit sie sie melden (neues Subject `viper.<gruppe>.<rechner>.caps`, das ältere Versionen ignorieren). |
+| 1.124 | nach v0.22.0 | Neu: Bilder, PDFs und ZIP-Dateien in NATS-Gruppen (`NATS_OBJECTS`, `NATS_OBJECTS_MAX`, `NATS_OBJECTS_FILE_MAX`, `NATS_OBJECTS_TTL`): `--pdf`, `--image`, `--zip` bei `viper nats send`, `broadcast` und `request`, `viper nats fetch`, die Werkzeuge `fetch` und der Parameter `attachment`; der Speicher liegt auf dem NATS-Server der Gruppe. Das Restrisiko (jede Maschine kann Dateien ersetzen oder alle löschen) steht in dem Kapitel. |
