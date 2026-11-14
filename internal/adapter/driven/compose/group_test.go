@@ -217,7 +217,7 @@ func TestLeftoversOfAMachineOfAGroup(t *testing.T) {
 	}
 	delete(h.containers, "claude-w1") // removed by hand
 	l, err := c.Leftovers(ctx, "claude-w1")
-	if err != nil || len(l) != 4 || !strings.Contains(strings.Join(l, " "), "secret/claude-w1") {
+	if err != nil || len(l) != 4 || !strings.Contains(strings.Join(l, " "), filepath.Join("secret", "claude-w1")) {
 		t.Fatalf("%v %v", l, err)
 	}
 	if l, err := c.Leftovers(ctx, "claude-w2"); err != nil || len(l) != 0 {
