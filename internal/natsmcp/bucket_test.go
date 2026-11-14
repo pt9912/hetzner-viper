@@ -283,3 +283,62 @@ func TestEnsureBucketAndBucketInfoRunAsCommandsOnTheServer(t *testing.T) {
 		}
 	}
 }
+
+// A larger object is read with flow control: the client answers the server on $JS.FC.<stream>.*, and without the right the
+// read hangs. Found on k3d with a 3 MiB file; a small object does not use it.
+func TestALargeObjectIsReadWithFlowControl(t *testing.T) {
+	o := newObjectServer(t, "g")
+	if _, _, err := natsmcp.EnsureBucket(ctx5(t), o.admin(t), testSpec()); err != nil {
+		t.Fatal(err)
+	}
+	data := bytes.Repeat([]byte("0123456789abcdef"), 3<<16) // 3 MiB
+	for _, name := range []string{"a", "operator"} {
+		js, err := jetstream.New(o.connect(t, name, "_INBOX."+name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ob, err := js.ObjectStore(ctx5(t), natsmcp.BucketName("g"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		if _, err := ob.PutBytes(ctx, name+"-big", data); err != nil {
+			cancel()
+			t.Fatalf("%s: put: %v", name, err)
+		}
+		got, err := ob.GetBytes(ctx, name+"-big")
+		cancel()
+		if err != nil || !bytes.Equal(got, data) {
+			t.Errorf("%s: a large object: %d bytes, %v", name, len(got), err)
+		}
+	}
+}
+
+// Documented risk (docs/plan/nats-objekte.md §4): the object store needs rollups for its metadata, so any member that may publish
+// to the subjects of the bucket can send a rollup header and empty the whole store. This test pins what is known: if a way to
+// forbid it is found, it fails and the plan and the manual are to be changed.
+func TestAMemberCanEmptyTheStoreWithARollupHeader(t *testing.T) {
+	o := newObjectServer(t, "g")
+	if _, _, err := natsmcp.EnsureBucket(ctx5(t), o.admin(t), testSpec()); err != nil {
+		t.Fatal(err)
+	}
+	nc := o.connect(t, "a", "_INBOX.a")
+	js, _ := jetstream.New(nc)
+	ob, err := js.ObjectStore(ctx5(t), natsmcp.BucketName("g"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ob.PutBytes(ctx5(t), "one", []byte("1")); err != nil {
+		t.Fatal(err)
+	}
+	m := nats.NewMsg("$O." + natsmcp.BucketName("g") + ".M.eA")
+	m.Header.Set("Nats-Rollup", "all")
+	if err := nc.PublishMsg(m); err != nil {
+		t.Fatal(err)
+	}
+	_ = nc.Flush()
+	time.Sleep(300 * time.Millisecond)
+	if _, err := ob.GetBytes(ctxShort(t), "one"); err == nil {
+		t.Skip("a rollup header no longer empties the store: update the plan and the manual")
+	}
+}

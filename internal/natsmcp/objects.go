@@ -60,44 +60,71 @@ func newObjectID() string {
 // readAttachmentFile reads a file of this machine for sending: below the home directory (after links are followed), a regular
 // file, not larger than the limit.
 func (s *Service) readAttachmentFile(path string) ([]byte, string, error) {
-	home, err := os.UserHomeDir()
+	resolved, err := homePath(path)
 	if err != nil {
 		return nil, "", err
 	}
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(home, path)
-	}
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return nil, "", fmt.Errorf("the attachment %s: %w", filepath.Base(path), errors.Unwrap(err))
-	}
-	realHome, err := filepath.EvalSymlinks(home)
-	if err != nil {
-		return nil, "", err
-	}
-	if rel, err := filepath.Rel(realHome, resolved); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return nil, "", errors.New("the attachment has to be a file in your home directory")
+	// look before opening: opening a FIFO blocks until someone writes to it
+	if st, err := os.Stat(resolved); err != nil {
+		return nil, "", fmt.Errorf("the attachment %s: %w", filepath.Base(resolved), errors.Unwrap(err))
+	} else if !st.Mode().IsRegular() {
+		return nil, "", errors.New("the attachment is no regular file")
 	}
 	f, err := os.Open(resolved)
 	if err != nil {
 		return nil, "", fmt.Errorf("the attachment %s: %w", filepath.Base(resolved), errors.Unwrap(err))
 	}
 	defer func() { _ = f.Close() }() // read only
-	st, err := f.Stat()
-	if err != nil {
-		return nil, "", err
-	}
-	if !st.Mode().IsRegular() {
-		return nil, "", errors.New("the attachment is no regular file")
-	}
-	if st.Size() < 1 || st.Size() > s.cfg.ObjectsFileMax {
-		return nil, "", fmt.Errorf("the attachment has %d bytes, at least 1 and at most %d are allowed", st.Size(), s.cfg.ObjectsFileMax)
-	}
-	b, err := io.ReadAll(io.LimitReader(f, s.cfg.ObjectsFileMax+1))
+	b, err := readLimited(f, s.cfg.ObjectsFileMax)
 	if err != nil {
 		return nil, "", err
 	}
 	return b, CleanName(filepath.Base(resolved)), nil
+}
+
+// homePath is the path of a file below the home directory, after links are followed; a file outside of it is refused.
+func homePath(path string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(home, path)
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", fmt.Errorf("the attachment %s: %w", filepath.Base(path), errors.Unwrap(err))
+	}
+	realHome, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		return "", err
+	}
+	if rel, err := filepath.Rel(realHome, resolved); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", errors.New("the attachment has to be a file in your home directory")
+	}
+	return resolved, nil
+}
+
+// readLimited reads an open regular file, not larger than the limit: by its size first, and again by what was read (a file may grow).
+func readLimited(f *os.File, limit int64) ([]byte, error) {
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !st.Mode().IsRegular() {
+		return nil, errors.New("the attachment is no regular file")
+	}
+	if st.Size() < 1 || st.Size() > limit {
+		return nil, fmt.Errorf("the attachment has %d bytes, at least 1 and at most %d are allowed", st.Size(), limit)
+	}
+	b, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > limit { // it grew after it was measured
+		return nil, fmt.Errorf("the attachment is larger than the %d bytes that are allowed", limit)
+	}
+	return b, nil
 }
 
 // PutAttachment puts a file of this machine into the object store and returns the reference for the message.
@@ -164,9 +191,9 @@ func (s *Service) FetchTo(ctx context.Context, id, sha, dir string) (string, err
 	if info.Size > uint64(s.cfg.ObjectsFileMax) {
 		return "", fmt.Errorf("the file has %d bytes, at most %d are allowed", info.Size, s.cfg.ObjectsFileMax)
 	}
-	data, err := ob.GetBytes(ctx, id)
+	data, err := readObject(ctx, ob, id, s.cfg.ObjectsFileMax)
 	if err != nil {
-		return "", fetchError(err)
+		return "", err
 	}
 	sum := sha256.Sum256(data)
 	if hex.EncodeToString(sum[:]) != sha {
@@ -196,9 +223,9 @@ func (s *Service) FetchAttachment(ctx context.Context, att *Attachment) (string,
 	if info.Size != uint64(att.Size) || att.Size > s.cfg.ObjectsFileMax {
 		return "", fmt.Errorf("the file is not the one the message names (%d bytes, the message says %d, at most %d are allowed)", info.Size, att.Size, s.cfg.ObjectsFileMax)
 	}
-	data, err := ob.GetBytes(ctx, att.ID)
+	data, err := readObject(ctx, ob, att.ID, s.cfg.ObjectsFileMax)
 	if err != nil {
-		return "", fetchError(err)
+		return "", err
 	}
 	sum := sha256.Sum256(data)
 	if int64(len(data)) != att.Size || hex.EncodeToString(sum[:]) != att.SHA256 {
@@ -243,6 +270,24 @@ func saveAttachment(dir string, prune bool, att *Attachment, data []byte) (strin
 		pruneAttachments(dir, path)
 	}
 	return path, nil
+}
+
+// readObject reads an object into memory, but never more than the limit: the size in its metadata is written by a member of the
+// group and may understate the chunks.
+func readObject(ctx context.Context, ob jetstream.ObjectStore, id string, limit int64) ([]byte, error) {
+	r, err := ob.Get(ctx, id)
+	if err != nil {
+		return nil, fetchError(err)
+	}
+	defer func() { _ = r.Close() }() // read only
+	data, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, fetchError(err)
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("the file is larger than the %d bytes that are allowed", limit)
+	}
+	return data, nil
 }
 
 func fetchError(err error) error {

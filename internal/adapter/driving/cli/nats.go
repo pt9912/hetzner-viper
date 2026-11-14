@@ -516,6 +516,11 @@ func loadAttachment(g *natsGroup, a natsArgs) (*driving.NATSAttachment, error) {
 	if limit == 0 {
 		return nil, fmt.Errorf("the group %s has no object store: set NATS_OBJECTS=true in its group file and make the server again (viper down --group %s, viper up --group %s)", g.name, g.name, g.name)
 	}
+	if st, err := os.Stat(a.attachPath); err != nil { // look before opening: opening a FIFO blocks
+		return nil, err
+	} else if !st.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is no regular file", a.attachPath)
+	}
 	f, err := os.Open(a.attachPath)
 	if err != nil {
 		return nil, err
@@ -534,6 +539,9 @@ func loadAttachment(g *natsGroup, a natsArgs) (*driving.NATSAttachment, error) {
 	data, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
 		return nil, err
+	}
+	if int64(len(data)) > limit { // it grew after it was measured
+		return nil, fmt.Errorf("%s is larger than the %d bytes that are allowed (NATS_OBJECTS_FILE_MAX)", a.attachPath, limit)
 	}
 	typ := natsmcp.Classify(data)
 	if !kindFits(a.attachKind, typ) {

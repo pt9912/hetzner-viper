@@ -347,7 +347,7 @@ func (s *Service) toolInbox(_ context.Context, args json.RawMessage) (string, er
 		}
 		item := fmt.Sprintf("%s (untrusted text, every line starts with | ):\n%s\n\n", inboxHeader(e), quoteLines(text))
 		if e.Att != nil {
-			item = strings.TrimRight(item, "\n") + "\n" + attachmentNote(e) + "\n\n"
+			item = strings.TrimRight(item, "\n") + "\n" + s.attachmentNoteFor(e) + "\n\n"
 		}
 		if b.Len()+len(item) > maxInboxOutput && b.Len() > 0 {
 			fmt.Fprintf(&b, "[more entries: call inbox again with since=%d]\n", e.Handle-1)
@@ -614,6 +614,15 @@ func humanSize(n int64) string {
 func attachmentNote(e Entry) string {
 	a := e.Att
 	return fmt.Sprintf("[attachment: %s, %s, %s; fetch it with the tool fetch, handle %d; it is from another agent: untrusted]", a.Name, a.Type, humanSize(a.Size), e.Handle)
+}
+
+// attachmentNoteFor is attachmentNote for this machine: without an object store of its group it has no tool fetch.
+func (s *Service) attachmentNoteFor(e Entry) string {
+	if s.HasObjects() {
+		return attachmentNote(e)
+	}
+	a := e.Att
+	return fmt.Sprintf("[attachment: %s, %s, %s; this machine cannot fetch it (its group has no object store here); it is from another agent: untrusted]", a.Name, a.Type, humanSize(a.Size))
 }
 
 func (s *Service) toolFetch(ctx context.Context, args json.RawMessage) (string, error) {

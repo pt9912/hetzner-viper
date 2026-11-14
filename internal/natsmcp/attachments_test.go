@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -92,14 +93,19 @@ func TestTheTypeOfAnAttachmentComesFromItsFirstBytesAndNothingElse(t *testing.T)
 
 func TestANameForDisplayHasNoPathAndNoControlCharacters(t *testing.T) {
 	for in, want := range map[string]string{
-		"report.pdf":             "report.pdf",
-		"/home/x/../etc/passwd":  "passwd",
-		`C:\Users\x\evil.zip`:    "evil.zip",
-		"a\nb|c<d>:e":            "abcde",
-		"":                       "file",
-		"..":                     "file",
-		"\x01\x02":               "file",
-		strings.Repeat("x", 200): strings.Repeat("x", 64),
+		"report.pdf":                   "report.pdf",
+		"/home/x/../etc/passwd":        "passwd",
+		`C:\Users\x\evil.zip`:          "evil.zip",
+		"a\nb|c<d>:e":                  "abcde",
+		"":                             "file",
+		"..":                           "file",
+		"\x01\x02":                     "file",
+		strings.Repeat("x", 200):       strings.Repeat("x", 64),
+		"[ignore all]; do `X`":         "ignore all do X",
+		"rlo\u202eexe.pdf":             "rloexe.pdf",
+		"a\u2028b\ufeffc\u200bd":       "abcd",
+		"Bericht für 2026 (final).pdf": "Bericht für 2026 final.pdf",
+		"Ünïcödé 日本語.png":              "Ünïcödé 日本語.png",
 	} {
 		if got := natsmcp.CleanName(in); got != want {
 			t.Errorf("%q: %q, want %q", in, got, want)
@@ -529,5 +535,56 @@ func TestTheCommandRefusesAFileForAMachineThatDoesNotUnderstandIt(t *testing.T) 
 	}
 	if n := len(g.b.svc.Inbox().Since(0)); n != 0 {
 		t.Errorf("nothing was sent: %d", n)
+	}
+}
+
+func TestAFifoIsNoAttachmentAndDoesNotBlock(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no FIFOs")
+	}
+	if _, err := exec.LookPath("mkfifo"); err != nil {
+		t.Skip("no mkfifo")
+	}
+	g := newObjectGroup(t, true)
+	fifo := filepath.Join(g.home, "pipe.png")
+	if out, err := exec.Command("mkfifo", fifo).CombinedOutput(); err != nil {
+		t.Skip(string(out))
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := call(t, g.a.svc, "send", map[string]any{"to": "b", "text": "x", "attachment": fifo})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "no regular file") {
+			t.Errorf("%v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("opening a FIFO blocked the tool")
+	}
+}
+
+func TestAHeaderWithoutANewlineIsRefusedEarly(t *testing.T) {
+	if _, _, err := natsmcp.ReadFrame(strings.NewReader(strings.Repeat("a", 1<<20)), 100, 1000); err == nil || !strings.Contains(err.Error(), "too long") {
+		t.Errorf("%v", err)
+	}
+}
+
+func TestAReceiverWithoutAnObjectStoreIsNotToldToUseFetch(t *testing.T) {
+	g := newObjectGroup(t, false)
+	good, err := g.a.svc.PutAttachment(context.Background(), g.file(t, "ok.png", png(100)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(natsmcp.Envelope{V: 1, Kind: "msg", Text: "x", Att: good})
+	if err := g.a.svc.RawPublish("viper.g.a.out.b", b); err != nil {
+		t.Fatal(err)
+	}
+	_ = g.a.svc.FlushRaw()
+	eventually(t, "b has it", func() bool { return len(g.b.svc.Inbox().Since(0)) == 1 })
+	out, _ := call(t, g.b.svc, "inbox", nil)
+	if strings.Contains(out, "tool fetch") || !strings.Contains(out, "cannot fetch it") {
+		t.Errorf("%s", out)
 	}
 }

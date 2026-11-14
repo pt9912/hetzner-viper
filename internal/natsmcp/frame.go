@@ -26,12 +26,28 @@ func AttachFrame(text, name string, data []byte) string {
 	return fmt.Sprintf("%s %d %d %s\n%s%s", frameWord, len(text), len(data), CleanName(name), text, data)
 }
 
+// readHeader reads the first line, at most 512 bytes: a header without a newline must not make the reader take it all.
+func readHeader(r *bufio.Reader) (string, error) {
+	var b strings.Builder
+	for b.Len() < 512 {
+		c, err := r.ReadByte()
+		if err != nil {
+			return "", errors.New("no header of the file on the standard input")
+		}
+		b.WriteByte(c)
+		if c == '\n' {
+			return b.String(), nil
+		}
+	}
+	return "", errors.New("the header of the file is too long")
+}
+
 // ReadFrame reads a frame. The lengths are checked against the limits before anything is read, and nothing may follow the file.
 func ReadFrame(in io.Reader, maxText int, maxFile int64) (text string, file *Framed, err error) {
 	r := bufio.NewReader(io.LimitReader(in, int64(maxText)+maxFile+512))
-	head, err := r.ReadString('\n')
+	head, err := readHeader(r)
 	if err != nil {
-		return "", nil, errors.New("no header of the file on the standard input")
+		return "", nil, err
 	}
 	f := strings.SplitN(strings.TrimSuffix(head, "\n"), " ", 4)
 	if len(f) != 4 || f[0] != frameWord {

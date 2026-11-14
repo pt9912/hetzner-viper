@@ -116,6 +116,9 @@ func objectRights(group string) []string {
 		fmt.Sprintf("$JS.API.DIRECT.GET.OBJ_%s.>", b),
 		fmt.Sprintf("$JS.API.CONSUMER.CREATE.OBJ_%s", b), fmt.Sprintf("$JS.API.CONSUMER.CREATE.OBJ_%s.>", b),
 		fmt.Sprintf("$JS.API.CONSUMER.DELETE.OBJ_%s.*", b),
+		// a read of a larger object (from about 1 MiB) uses flow control: the client answers the server on this subject, and a
+		// read without the right hangs ("read pipe: i/o timeout"). Measured on k3d with a 3 MiB file.
+		fmt.Sprintf("$JS.FC.OBJ_%s.>", b),
 	}
 }
 

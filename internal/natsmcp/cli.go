@@ -244,7 +244,7 @@ func (s *Service) prepareFile(ctx context.Context, a cliArgs, file *Framed, stde
 // a few seconds: they answer a query after up to two seconds.
 func (s *Service) waitForAnnouncements(ctx context.Context, to []string, topic bool) {
 	start := time.Now()
-	for time.Since(start) < 6*time.Second && ctx.Err() == nil {
+	for time.Since(start) < 10*time.Second && ctx.Err() == nil { // a machine answers a query after up to 2 seconds, and only every 5
 		if s.announced(to) && (!topic || time.Since(start) >= 3*time.Second) { // for a topic: whoever is there has had time to say it
 			return
 		}

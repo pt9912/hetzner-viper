@@ -431,7 +431,7 @@ func (s *Service) maybePush(e Entry) {
 	}
 	content := Safe(e.Text)
 	if e.Att != nil { // only that there is one: nothing is fetched by itself
-		content += "\n" + attachmentNote(e)
+		content += "\n" + s.attachmentNoteFor(e)
 		meta["attachment"] = e.Att.Type
 	}
 	if err := s.notify(content, meta); err != nil {

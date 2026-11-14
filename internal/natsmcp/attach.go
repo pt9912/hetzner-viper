@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -110,16 +111,17 @@ func CleanName(name string) string {
 	return "file"
 }
 
-// nameRune says whether a character may be in a name for display: no control characters, no characters that end up in a path or in
-// the markup of the inbox.
+// nameRune says whether a character may be in a name for display: letters and digits of any script and a few marks of file names.
+// Nothing else: no control, format or bidirectional characters (they hide or reorder text), no brackets, quotes, backticks or
+// other characters that a name could use to look like an instruction in the line that shows it.
 func nameRune(r rune) bool {
 	switch {
-	case r < 0x20 || r == 0x7f || r == utf8.RuneError || (r >= 0x80 && r < 0xa0):
+	case r == utf8.RuneError:
 		return false
-	case strings.ContainsRune(":|<>", r):
-		return false
+	case unicode.IsLetter(r) || unicode.IsDigit(r):
+		return true
 	}
-	return true
+	return strings.ContainsRune(". _-+", r)
 }
 
 // validAttachName says whether a name of an attachment in a message is as CleanName makes it.
