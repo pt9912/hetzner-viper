@@ -165,6 +165,11 @@ func (c *Client) CreateServer(ctx context.Context, s model.ServerSpec) (*model.S
 	if err != nil {
 		return nil, err
 	}
+	unlockMachine, err := c.lockMachine(p, s.Name)
+	if err != nil {
+		return nil, err
+	}
+	defer unlockMachine()
 	unlock, err := c.lock(p)
 	if err != nil {
 		return nil, err
@@ -191,17 +196,22 @@ func (c *Client) CreateServer(ctx context.Context, s model.ServerSpec) (*model.S
 	if p.shared() {
 		release()
 	}
-	if err := c.up(ctx, p, s.Name); err != nil {
-		return nil, &cloud.OpError{Op: "starting the machine " + s.Name, Write: true, Err: err}
+	return c.startAndRead(ctx, p, s.Name)
+}
+
+// startAndRead starts the machine and returns what docker says of its container.
+func (c *Client) startAndRead(ctx context.Context, p project, name string) (*model.Server, error) {
+	if err := c.up(ctx, p, name); err != nil {
+		return nil, &cloud.OpError{Op: "starting the machine " + name, Write: true, Err: err}
 	}
-	in, err := c.machine(ctx, s.Name)
+	in, err := c.machine(ctx, name)
 	if err != nil || in == nil {
 		if err == nil {
-			err = fmt.Errorf("the container %s is not there after docker compose up", s.Name)
+			err = fmt.Errorf("the container %s is not there after docker compose up", name)
 		}
 		return nil, err
 	}
-	return serverOf(s.Name, in), nil
+	return serverOf(name, in), nil
 }
 
 // projectFor is the project a new machine is made in: the one of its group, or one of its own.
@@ -268,6 +278,11 @@ func (c *Client) EnsureRunning(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
+	unlockMachine, err := c.lockMachine(p, name)
+	if err != nil {
+		return err
+	}
+	defer unlockMachine()
 	unlock, err := c.lock(p) // before the look: a viper down that holds the lock may remove the machine meanwhile
 	if err != nil {
 		return err
@@ -423,6 +438,11 @@ func (c *Client) dropStale(ctx context.Context, p project, name string) error {
 	if err := c.removeStateVolumes(ctx, name); err != nil {
 		return err
 	}
+	if p.shared() { // the keys and the file of a machine of an older version, which had a project of its own
+		if err := os.RemoveAll(c.projectDir(ownProject(name))); err != nil {
+			return err
+		}
+	}
 	return c.forgetMachine(p, name)
 }
 
@@ -522,6 +542,11 @@ func (c *Client) DeleteServer(ctx context.Context, id string) error {
 		return fmt.Errorf("%w: container %s is not the machine %s", ErrNotOurs, id, name)
 	}
 	p := projectFromLabels(in.Config.Labels, name)
+	unlockMachine, err := c.lockMachine(p, name)
+	if err != nil {
+		return err
+	}
+	defer unlockMachine()
 	unlock, err := c.lock(p)
 	if err != nil {
 		return err
@@ -633,6 +658,11 @@ func (c *Client) DeleteLeftovers(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
+	unlockMachine, err := c.lockMachine(p, name)
+	if err != nil {
+		return err
+	}
+	defer unlockMachine()
 	unlock, err := c.lock(p)
 	if err != nil {
 		return err

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/compose"
 	"github.com/pt9912/hetzner-viper/internal/model"
 )
 
@@ -240,5 +241,51 @@ func TestAGroupNameThatIsNoNameIsRefused(t *testing.T) {
 		if _, err := c.CreateServer(context.Background(), groupSpec("claude-w1", g)); err == nil {
 			t.Errorf("group %q was accepted", g)
 		}
+	}
+}
+
+// The state directory may have characters that a pattern takes for its own ([ ] * ?): the last machine is found anyway.
+func TestAStateDirectoryWithPatternCharactersIsNoProblem(t *testing.T) {
+	ctx := context.Background()
+	h := newHost()
+	state := filepath.Join(t.TempDir(), "a[b]*")
+	c, _ := newClient(t, h, func(o *compose.Options) { o.StateDir = state })
+	var ids []string
+	for _, n := range []string{"claude-w1", "claude-w2"} {
+		s, err := c.CreateServer(ctx, groupSpec(n, "dev"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, s.ID)
+	}
+	if err := c.DeleteServer(ctx, ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(filepath.Join(state, "compose", "g_dev", "secret", "claude-w2", "host_key")) || h.containers["claude-w2"] == nil {
+		t.Error("the keys of the machine that is left were removed")
+	}
+	if p, err := c.Leftovers(ctx, "claude-w2"); err != nil || len(p) != 0 {
+		t.Errorf("%v %v", p, err)
+	}
+}
+
+// The files of a machine of an older version (a project of its own) do not stay when the machine is made again in a group.
+func TestTheOldFilesOfAMachineAreDroppedWhenItIsMadeInAGroup(t *testing.T) {
+	ctx := context.Background()
+	h := newHost()
+	c, dir := newClient(t, h)
+	if _, err := c.CreateServer(ctx, spec("claude-w1")); err != nil {
+		t.Fatal(err)
+	}
+	delete(h.containers, "claude-w1")
+	delete(h.containers, "claude-w1-docker")
+	if _, err := c.CreateServer(ctx, groupSpec("claude-w1", "dev")); err != nil {
+		t.Fatal(err)
+	}
+	if exists(filepath.Join(dir, "compose", "claude-w1")) {
+		t.Error("the directory of the old project stays")
+	}
+	if !exists(filepath.Join(dir, "compose", "g_dev", "compose.yaml")) {
+		t.Error("no file of the group")
 	}
 }

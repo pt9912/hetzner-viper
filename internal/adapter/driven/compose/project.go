@@ -105,6 +105,16 @@ func (c *Client) lock(p project) (func(), error) {
 	return filelock.Lock(filepath.Join(c.opts.StateDir, "compose", p.key+".lock"))
 }
 
+// lockMachine takes the lock of one machine of a group, which a CreateServer holds through the start (the lock of the
+// group only covers the change of the file): two viper up of the same machine at once must not drop each other's keys.
+// It is always taken before the lock of the project. A machine of its own has the lock of its project only.
+func (c *Client) lockMachine(p project, name string) (func(), error) {
+	if !p.shared() {
+		return func() {}, nil
+	}
+	return c.lock(ownProject(name))
+}
+
 // projectOf finds the project of the machine: the label viper-project of its container or of a volume it has (no label:
 // the machine was made by a version that had a project for every machine), or else the directory that holds its keys.
 // A machine that has nothing yet is in a project of its own.
@@ -140,10 +150,14 @@ func (c *Client) projectWithKeys(name string) (project, bool) {
 	if _, err := os.Stat(c.projectDir(ownProject(name))); err == nil {
 		return ownProject(name), true
 	}
-	dirs, _ := filepath.Glob(filepath.Join(c.opts.StateDir, "compose", groupKeyPrefix+"*", "secret", name))
-	if len(dirs) > 0 {
-		key := filepath.Base(filepath.Dir(filepath.Dir(dirs[0])))
-		return projectOfKey(key), true
+	// no Glob: the path of the state directory may hold characters it takes for a pattern
+	entries, _ := os.ReadDir(filepath.Join(c.opts.StateDir, "compose"))
+	for _, e := range entries {
+		if e.IsDir() && strings.HasPrefix(e.Name(), groupKeyPrefix) {
+			if st, err := os.Stat(filepath.Join(c.opts.StateDir, "compose", e.Name(), "secret", name)); err == nil && st.IsDir() {
+				return projectOfKey(e.Name()), true
+			}
+		}
 	}
 	return project{}, false
 }
@@ -265,14 +279,16 @@ func (c *Client) machinesOf(p project) []string {
 	seen := map[string]bool{}
 	if f, ok, err := c.readFile(p); err == nil && ok {
 		for name, s := range f.Services {
-			if s.ContainerName == name { // a machine, not its sidecar
+			if s.ContainerName == name && !strings.HasSuffix(name, "-docker") { // a machine, not its sidecar (checkName: no machine ends so)
 				seen[name] = true
 			}
 		}
 	}
-	dirs, _ := filepath.Glob(filepath.Join(c.projectDir(p), "secret", "*"))
+	dirs, _ := os.ReadDir(filepath.Join(c.projectDir(p), "secret"))
 	for _, d := range dirs {
-		seen[filepath.Base(d)] = true
+		if d.IsDir() {
+			seen[d.Name()] = true
+		}
 	}
 	out := make([]string, 0, len(seen))
 	for n := range seen {
