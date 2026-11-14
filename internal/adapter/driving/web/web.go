@@ -11,10 +11,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
+	"path"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -46,6 +50,21 @@ type NATSGroup struct {
 	Operator bool     `json:"operator"`
 }
 
+// Setting is one line of a settings file: the name, and the value only for the names that are no credentials and no
+// private data (the cli decides; everything else is just "set").
+type Setting struct {
+	Key   string `json:"key"`
+	Value string `json:"value,omitempty"`
+	Shown bool   `json:"shown"`
+}
+
+// SettingsFile is one file of settings, or the environment ("environment").
+type SettingsFile struct {
+	Name     string    `json:"name"`
+	Settings []Setting `json:"settings"`
+	Error    string    `json:"error,omitempty"`
+}
+
 // Overview is what viper knows of this computer's machines and groups, from the files alone.
 type Overview struct {
 	Machines []Machine   `json:"machines"`
@@ -61,6 +80,8 @@ type Backend interface {
 	Overview(ctx context.Context) (Overview, error)
 	// Check runs viper check for the machine (in the group, if it has several) and returns the exit status.
 	Check(ctx context.Context, machine, group string, out io.Writer) (int, error)
+	// Settings reads the names of the settings files of the directory, and the values of those that are safe to show.
+	Settings(ctx context.Context) ([]SettingsFile, error)
 	// Log shows the log of the machine ("": the events of all machines).
 	Log(ctx context.Context, machine string, full bool, out io.Writer) error
 }
@@ -180,9 +201,10 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 // Handler is the whole site, behind the guard.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("GET /", http.FileServerFS(pages()))
+	mux.Handle("GET /", site())
 	mux.HandleFunc("GET /api/overview", s.overview)
 	mux.HandleFunc("GET /api/log", s.log)
+	mux.HandleFunc("GET /api/settings", s.settings)
 	mux.HandleFunc("POST /api/check", s.check)
 	mux.HandleFunc("GET /api/runs", s.listRuns)
 	mux.HandleFunc("GET /api/events", s.events)
@@ -198,19 +220,19 @@ func (s *Server) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		setHeaders(w.Header())
 		if s.host == "" || r.Host != s.host {
-			deny(w)
+			deny(w, r)
 			return
 		}
 		if t := r.URL.Query().Get("t"); t != "" && r.URL.Path == "/" && r.Method == http.MethodGet {
-			s.exchange(w, t)
+			s.exchange(w, r, t)
 			return
 		}
 		if c, err := r.Cookie(cookieName); err != nil || !equal(c.Value, s.cookie) {
-			deny(w)
+			deny(w, r)
 			return
 		}
 		if r.Method == http.MethodPost && !s.sameOrigin(r) {
-			deny(w)
+			deny(w, r)
 			return
 		}
 		select {
@@ -233,7 +255,29 @@ func setHeaders(h http.Header) {
 	h.Set("Cross-Origin-Resource-Policy", "same-origin")
 }
 
-func deny(w http.ResponseWriter) { http.Error(w, "forbidden", http.StatusForbidden) }
+// deny answers 403. A browser that opens the address gets a page that says what to do (no style, no script: nothing here is
+// served without the cookie); anything else gets the word.
+func deny(w http.ResponseWriter, r *http.Request) {
+	if wantsPage(r) {
+		errorPage(w, http.StatusForbidden, "Not allowed / Nicht erlaubt",
+			"Open viper ui with the address that viper printed in the terminal (the key in it works once). If you did, the session may have ended: start viper ui again.",
+			"Öffnen Sie viper ui mit der Adresse, die viper im Terminal ausgegeben hat (der Schlüssel darin gilt nur einmal). Wenn Sie das getan haben, ist die Sitzung vielleicht zu Ende: starten Sie viper ui neu.")
+		return
+	}
+	http.Error(w, "forbidden", http.StatusForbidden)
+}
+
+func wantsPage(r *http.Request) bool {
+	return r.Method == http.MethodGet && strings.Contains(r.Header.Get("Accept"), "text/html") && !strings.HasPrefix(r.URL.Path, "/api/")
+}
+
+// errorPage is a page of plain HTML; it needs no other file (the page of a refusal cannot load any).
+func errorPage(w http.ResponseWriter, code int, title, en, de string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(code)
+	_, _ = fmt.Fprintf(w, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>viper: %s</title></head><body><main><h1>%s</h1><p lang="en">%s</p><p lang="de">%s</p></main></body></html>`,
+		html.EscapeString(title), html.EscapeString(title), html.EscapeString(en), html.EscapeString(de))
+}
 
 func equal(a, b string) bool { return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
 
@@ -252,7 +296,7 @@ func (s *Server) sameOrigin(r *http.Request) bool {
 }
 
 // exchange gives the cookie for the one-time key: once, and in the first minute. The answer is a page that moves on to /.
-func (s *Server) exchange(w http.ResponseWriter, t string) {
+func (s *Server) exchange(w http.ResponseWriter, r *http.Request, t string) {
 	s.mu.Lock()
 	ok := !s.used && s.cfg.Now().Sub(s.started) < s.cfg.TokenTTL && equal(t, s.token)
 	if ok {
@@ -260,7 +304,7 @@ func (s *Server) exchange(w http.ResponseWriter, t string) {
 	}
 	s.mu.Unlock()
 	if !ok {
-		deny(w)
+		deny(w, r)
 		return
 	}
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: s.cookie, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
@@ -419,3 +463,38 @@ func (l *limited) String() string {
 
 // URL is the address of the server with the key, which the first request exchanges.
 func (s *Server) URL() string { return fmt.Sprintf("http://%s/?t=%s", s.host, s.token) }
+
+// site serves the pages of the program, and a page of its own for what is not there.
+func site() http.Handler {
+	files := http.FileServerFS(pages())
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		if name == "" {
+			name = "."
+		}
+		if st, err := fs.Stat(pages(), name); err != nil || (st.IsDir() && name != ".") {
+			errorPage(w, http.StatusNotFound, "Not found / Nicht gefunden", "There is no such page. Go back to the overview.", "Diese Seite gibt es nicht. Zurück zur Übersicht.")
+			return
+		}
+		files.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
+	files, err := s.cfg.Backend.Settings(r.Context())
+	if err != nil {
+		fail(w, http.StatusInternalServerError, s.show(err.Error()))
+		return
+	}
+	for i := range files {
+		files[i].Error = s.show(files[i].Error)
+		for j := range files[i].Settings {
+			if files[i].Settings[j].Shown {
+				files[i].Settings[j].Value = s.show(files[i].Settings[j].Value)
+			} else {
+				files[i].Settings[j].Value = ""
+			}
+		}
+	}
+	reply(w, map[string]any{"files": files})
+}

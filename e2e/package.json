@@ -2,6 +2,11 @@
   "name": "viper-ui-e2e",
   "private": true,
   "description": "Browser tests of viper ui (Playwright); not part of the program or its release",
-  "scripts": { "test": "playwright test" },
-  "devDependencies": { "@playwright/test": "1.55.0" }
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
+    "@playwright/test": "1.55.0"
+  }
 }

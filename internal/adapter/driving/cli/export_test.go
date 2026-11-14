@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pt9912/hetzner-viper/internal/adapter/driving/web"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 )
 
@@ -220,3 +221,9 @@ func UIBackend(p *Opts, env settings.Env) (*uiBackend, func(string) string) {
 
 // BrowserCommand is the program that opens a file in the browser on a system.
 func BrowserCommand(goos, file string) (string, []string) { return browserCommand(goos, file) }
+
+// UISettings are the settings files viper ui lists, with the environment given.
+func UISettings(p *Opts, env settings.Env) ([]web.SettingsFile, error) {
+	b := &uiBackend{o: p.options(), env: env, secrets: &secretValues{}}
+	return b.Settings(context.Background())
+}

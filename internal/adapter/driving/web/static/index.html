@@ -8,124 +8,152 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+<a class="skip" href="#main" data-i18n="skip">Skip to the content</a>
 <header>
   <h1>viper</h1>
-  <nav aria-label="Pages">
-    <button type="button" id="tab-overview" class="tab" aria-pressed="true">Overview</button>
-    <button type="button" id="tab-runs" class="tab" aria-pressed="false">Runs</button>
-    <button type="button" id="tab-nats" class="tab" aria-pressed="false">NATS</button>
-    <button type="button" id="tab-logs" class="tab" aria-pressed="false">Logs</button>
+  <nav aria-label="Pages" data-i18n-label="nav.label">
+    <div role="tablist" id="tabs">
+      <button type="button" role="tab" id="tab-overview" class="tab" aria-selected="true" aria-controls="page-overview" data-i18n="tab.overview">Overview</button>
+      <button type="button" role="tab" id="tab-runs" class="tab" aria-selected="false" aria-controls="page-runs" tabindex="-1" data-i18n="tab.runs">Runs</button>
+      <button type="button" role="tab" id="tab-nats" class="tab" aria-selected="false" aria-controls="page-nats" tabindex="-1" data-i18n="tab.nats">NATS</button>
+      <button type="button" role="tab" id="tab-settings" class="tab" aria-selected="false" aria-controls="page-settings" tabindex="-1" data-i18n="tab.settings">Settings</button>
+      <button type="button" role="tab" id="tab-logs" class="tab" aria-selected="false" aria-controls="page-logs" tabindex="-1" data-i18n="tab.logs">Logs</button>
+    </div>
   </nav>
   <span id="version" class="muted"></span>
+  <span class="lang">
+    <label for="lang" data-i18n="lang.label">Language</label>
+    <select id="lang"><option value="en">English</option><option value="de">Deutsch</option></select>
+  </span>
 </header>
-<main>
-  <section id="page-overview" aria-labelledby="h-overview">
-    <h2 id="h-overview">Machines</h2>
+<div id="banner" role="alert" class="banner" hidden></div>
+<main id="main" tabindex="-1">
+  <section id="page-overview" role="tabpanel" aria-labelledby="tab-overview">
+    <h2 id="h-overview" data-i18n="h.machines">Machines</h2>
     <p id="overview-note" class="muted" role="status"></p>
     <table id="machines">
-      <thead><tr><th>Machine</th><th>Group</th><th>Provider</th><th>Type</th><th>Location</th><th>NATS</th><th>State</th><th>Actions</th></tr></thead>
+      <caption class="sr" data-i18n="h.machines">Machines</caption>
+      <thead><tr>
+        <th scope="col" data-i18n="th.machine">Machine</th><th scope="col" data-i18n="th.group">Group</th><th scope="col" data-i18n="th.provider">Provider</th>
+        <th scope="col" data-i18n="th.type">Type</th><th scope="col" data-i18n="th.location">Location</th><th scope="col" data-i18n="th.nats">NATS</th>
+        <th scope="col" data-i18n="th.state">State</th><th scope="col" data-i18n="th.actions">Actions</th>
+      </tr></thead>
       <tbody></tbody>
     </table>
     <div class="row">
-      <label for="repo">Repository URL for up and preflight (optional)</label>
+      <label for="repo" data-i18n="repo.label">Repository URL for up and preflight (optional)</label>
       <input type="text" id="repo" autocomplete="off" spellcheck="false" size="40">
     </div>
-    <h2>Groups</h2>
-    <table id="groups"><thead><tr><th>Group</th><th>Machines</th><th>Actions</th></tr></thead><tbody></tbody></table>
-    <h2 id="h-check">Check</h2>
-    <p id="check-status" role="status" class="muted">Pick a machine and press Check: it runs <code>viper check</code> and shows what it says.</p>
-    <pre id="check-output" tabindex="0" aria-labelledby="h-check"></pre>
+    <h2 data-i18n="h.groups">Groups</h2>
+    <table id="groups">
+      <caption class="sr" data-i18n="h.groups">Groups</caption>
+      <thead><tr><th scope="col" data-i18n="th.group">Group</th><th scope="col" data-i18n="th.machines">Machines</th><th scope="col" data-i18n="th.actions">Actions</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <h2 id="h-check" data-i18n="h.check">Check</h2>
+    <p id="check-status" role="status" class="muted"></p>
+    <pre id="check-output" role="region" tabindex="0" aria-labelledby="h-check"></pre>
   </section>
-  <section id="page-runs" hidden aria-labelledby="h-runs">
-    <h2 id="h-runs">Runs</h2>
-    <p class="muted">A run is viper itself, as at the terminal. A question (Type DELETE ...) is answered below, with the word you type.</p>
-    <ul id="run-list"></ul>
+
+  <section id="page-runs" role="tabpanel" aria-labelledby="tab-runs" hidden>
+    <h2 id="h-runs" data-i18n="h.runs">Runs</h2>
+    <p class="muted" data-i18n="runs.intro">A run is viper itself, as at the terminal.</p>
+    <ul id="run-list" aria-labelledby="h-runs"></ul>
     <p id="run-status" role="status"></p>
-    <pre id="run-output" tabindex="0" aria-labelledby="h-runs" aria-live="off"></pre>
-    <p id="run-download" hidden><a id="run-download-link">Download the file</a></p>
+    <pre id="run-output" role="region" tabindex="0" aria-labelledby="h-runs" aria-live="off"></pre>
+    <p id="run-download" hidden><a id="run-download-link" data-i18n="run.download">Download the file</a></p>
     <form id="run-form" class="row" hidden>
-      <label for="run-answer">Answer</label>
+      <label for="run-answer" data-i18n="run.answer">Answer</label>
       <input type="text" id="run-answer" autocomplete="off" spellcheck="false" size="30">
-      <button type="submit">Send</button>
+      <button type="submit" data-i18n="run.send">Send</button>
     </form>
     <div class="row">
-      <button type="button" id="run-cancel" disabled>Cancel (like Ctrl-C)</button>
-      <span class="muted">Cancel does not undo: a server that was half made can remain.</span>
+      <button type="button" id="run-cancel" disabled data-i18n="run.cancel">Cancel (like Ctrl-C)</button>
+      <span class="muted" data-i18n="run.cancel.hint">Cancel does not undo: a server that was half made can remain.</span>
     </div>
   </section>
-  <section id="page-nats" hidden aria-labelledby="h-nats">
-    <h2 id="h-nats">NATS group</h2>
-    <p id="nats-none" class="muted" hidden>No group with NATS machines found (groups/&lt;name&gt;.env with NATS_ENABLED machines).</p>
+
+  <section id="page-nats" role="tabpanel" aria-labelledby="tab-nats" hidden>
+    <h2 id="h-nats" data-i18n="h.nats">NATS group</h2>
+    <p id="nats-none" class="muted" data-i18n="nats.none" hidden></p>
     <div id="nats-main">
       <div class="row">
-        <label for="nats-group">Group</label>
+        <label for="nats-group" data-i18n="nats.group">Group</label>
         <select id="nats-group"></select>
-        <label for="nats-from">Speak as</label>
+        <label for="nats-from" data-i18n="nats.from">Speak as</label>
         <select id="nats-from"></select>
       </div>
       <p id="nats-mode" class="muted" role="status"></p>
-      <h3>Who is there</h3>
+      <h3 data-i18n="h.who">Who is there</h3>
       <div class="row">
-        <label for="nats-timeout">Wait (seconds)</label>
+        <label for="nats-timeout" data-i18n="nats.wait">Wait (seconds)</label>
         <input type="number" id="nats-timeout" min="1" max="600" value="5">
-        <button type="button" id="nats-peers">Peers</button>
-        <button type="button" id="nats-topics">Topics</button>
+        <button type="button" id="nats-peers" data-i18n="nats.peers">Peers</button>
+        <button type="button" id="nats-topics" data-i18n="nats.topics">Topics</button>
       </div>
-      <h3>Listen</h3>
+      <h3 data-i18n="h.listen">Listen</h3>
       <div class="row">
-        <label for="nats-listen-topic">Topics (optional, with commas)</label>
+        <label for="nats-listen-topic" data-i18n="listen.topics">Topics (optional, with commas)</label>
         <input type="text" id="nats-listen-topic" autocomplete="off" size="24">
-        <label><input type="checkbox" id="nats-listen-all"> everything of the group</label>
-        <button type="button" id="nats-listen">Listen</button>
+        <label><input type="checkbox" id="nats-listen-all"> <span data-i18n="listen.all">everything of the group</span></label>
+        <button type="button" id="nats-listen" data-i18n="nats.listen">Listen</button>
       </div>
-      <h3>Send</h3>
+      <h3 data-i18n="h.send">Send</h3>
       <form id="nats-send" class="column">
         <div class="row">
-          <label for="nats-kind">What</label>
+          <label for="nats-kind" data-i18n="nats.kind">What</label>
           <select id="nats-kind">
-            <option value="send">Message to a machine</option>
-            <option value="request">Request to a machine (wait for the answer)</option>
-            <option value="broadcast">Round to a topic</option>
+            <option value="send" data-i18n="kind.send">Message to a machine</option>
+            <option value="request" data-i18n="kind.request">Request to a machine (wait for the answer)</option>
+            <option value="broadcast" data-i18n="kind.broadcast">Round to a topic</option>
           </select>
-          <label for="nats-to">To</label>
+          <label for="nats-to" data-i18n="nats.to">To</label>
           <select id="nats-to"></select>
-          <label for="nats-topic">Topic</label>
+          <label for="nats-topic" data-i18n="nats.topic">Topic</label>
           <input type="text" id="nats-topic" autocomplete="off" size="16">
         </div>
-        <label for="nats-text">Text (up to 16 KiB)</label>
+        <label for="nats-text" data-i18n="nats.text">Text (up to 16 KiB)</label>
         <textarea id="nats-text" rows="4" cols="60" maxlength="16384"></textarea>
         <div class="row">
-          <label for="nats-file">File (PDF, image or ZIP)</label>
+          <label for="nats-file" data-i18n="nats.file">File (PDF, image or ZIP)</label>
           <input type="file" id="nats-file" accept=".pdf,.zip,image/*">
-          <label><input type="checkbox" id="nats-yes"> send anyway if the agent there gets it pushed (--yes)</label>
+          <label><input type="checkbox" id="nats-yes"> <span data-i18n="nats.yes">send anyway (--yes)</span></label>
         </div>
-        <div class="row"><button type="submit">Send</button><span id="nats-send-status" class="muted" role="status"></span></div>
+        <div class="row"><button type="submit" data-i18n="nats.send">Send</button><span id="nats-send-status" class="muted" role="status"></span></div>
       </form>
-      <h3>Get a file</h3>
+      <h3 data-i18n="h.fetch">Get a file</h3>
       <form id="nats-fetch" class="row">
-        <label for="nats-id">ID</label>
+        <label for="nats-id" data-i18n="nats.id">ID</label>
         <input type="text" id="nats-id" autocomplete="off" size="24">
-        <label for="nats-sha">SHA-256</label>
+        <label for="nats-sha" data-i18n="nats.sha">SHA-256</label>
         <input type="text" id="nats-sha" autocomplete="off" size="40">
-        <button type="submit">Fetch</button>
+        <button type="submit" data-i18n="nats.fetch">Fetch</button>
       </form>
-      <p class="muted">A fetched file is from another agent: untrusted. Do not run it.</p>
+      <p class="muted" data-i18n="nats.untrusted">A fetched file is from another agent: untrusted. Do not run it.</p>
     </div>
   </section>
-  <section id="page-logs" hidden aria-labelledby="h-logs">
-    <h2 id="h-logs">Logs</h2>
+
+  <section id="page-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+    <h2 id="h-settings" data-i18n="h.settings">Settings</h2>
+    <p class="muted" data-i18n="settings.intro">The names of the settings in each file.</p>
+    <div id="settings-files"></div>
+  </section>
+
+  <section id="page-logs" role="tabpanel" aria-labelledby="tab-logs" hidden>
+    <h2 id="h-logs" data-i18n="h.logs">Logs</h2>
     <div class="row">
-      <label for="log-machine">Machine</label>
+      <label for="log-machine" data-i18n="log.machine">Machine</label>
       <select id="log-machine"></select>
-      <label><input type="checkbox" id="log-full"> complete output</label>
-      <label for="log-filter">Search</label>
+      <label><input type="checkbox" id="log-full"> <span data-i18n="log.full">complete output</span></label>
+      <label for="log-filter" data-i18n="log.search">Search</label>
       <input type="search" id="log-filter" autocomplete="off">
-      <button type="button" id="log-reload">Reload</button>
+      <button type="button" id="log-reload" data-i18n="log.reload">Reload</button>
     </div>
     <p id="log-status" role="status" class="muted"></p>
-    <pre id="log-output" tabindex="0" aria-labelledby="h-logs"></pre>
+    <pre id="log-output" role="region" tabindex="0" aria-labelledby="h-logs"></pre>
   </section>
 </main>
+<script src="/i18n.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

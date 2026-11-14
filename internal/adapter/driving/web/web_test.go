@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -36,6 +37,14 @@ func (f *fake) Check(_ context.Context, machine, group string, out io.Writer) (i
 	}
 	_, _ = io.WriteString(out, "token is s3cr3t-value-123 \x1b[31mred\x1b[0m\nCheck: 2 problem(s).\n")
 	return 1, nil
+}
+
+func (f *fake) Settings(context.Context) ([]web.SettingsFile, error) {
+	return []web.SettingsFile{{Name: ".env.local", Settings: []web.Setting{
+		{Key: "SERVER_TYPE", Value: "cpx22", Shown: true},
+		{Key: "HCLOUD_TOKEN", Value: "s3cr3t-value-123"}, // a backend that leaks: the server still drops the value
+		{Key: "NOTE", Value: "s3cr3t-value-123", Shown: true},
+	}}}, nil
 }
 
 func (f *fake) Log(_ context.Context, machine string, full bool, out io.Writer) error {
@@ -310,7 +319,7 @@ func TestThePagesHaveNothingThatTheModelForbids(t *testing.T) {
 		}
 		return nil
 	})
-	if err != nil || n != 4 {
+	if err != nil || n != 5 {
 		t.Fatalf("%d files, %v", n, err)
 	}
 }
@@ -344,5 +353,118 @@ func TestListenIsOnLoopbackOnly(t *testing.T) {
 	defer func() { _ = ln.Close() }()
 	if !strings.HasPrefix(ln.Addr().String(), "127.0.0.1:") || s.Host() != ln.Addr().String() {
 		t.Errorf("%s %s", ln.Addr(), s.Host())
+	}
+}
+
+func TestTheSettingsPageShowsNamesAndOnlyTheValuesTheBackendShows(t *testing.T) {
+	s, h := started(t, newFake(), nil)
+	c := login(t, s, h)
+	w := do(h, "GET", s.Host(), "/api/settings", c, "")
+	b := w.Body.String()
+	if w.Code != 200 || !strings.Contains(b, `"value":"cpx22"`) || strings.Contains(b, "s3cr3t") || !strings.Contains(b, `"key":"HCLOUD_TOKEN"`) {
+		t.Errorf("settings: %d %s", w.Code, b)
+	}
+	if !strings.Contains(b, `"value":"[hidden]"`) { // a shown value is redacted like any output
+		t.Errorf("redaction: %s", b)
+	}
+}
+
+func TestARefusalAndAMissingPageAreAnswersAPersonCanRead(t *testing.T) {
+	s, h := started(t, newFake(), nil)
+	html := map[string]string{"Accept": "text/html,application/xhtml+xml"}
+	w := do(h, "GET", s.Host(), "/", html, "")
+	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "<h1>") || !strings.Contains(w.Body.String(), "viper printed") || !strings.Contains(w.Body.String(), "Terminal") {
+		t.Errorf("refusal page: %d %s", w.Code, w.Body)
+	}
+	if strings.Contains(w.Body.String(), "<script") || strings.Contains(w.Body.String(), "style") {
+		t.Errorf("the page of a refusal loads nothing: %s", w.Body)
+	}
+	// the interface of programs stays plain
+	if w := do(h, "GET", s.Host(), "/api/overview", html, ""); w.Code != http.StatusForbidden || strings.Contains(w.Body.String(), "<h1>") {
+		t.Errorf("api refusal: %d %s", w.Code, w.Body)
+	}
+	c := login(t, s, h)
+	for k, v := range html {
+		c[k] = v
+	}
+	for _, p := range []string{"/nothing", "/static", "/app.js/x", "/%2e%2e/etc"} {
+		if w := do(h, "GET", s.Host(), p, c, ""); w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "<h1>") {
+			t.Errorf("%s: %d %q", p, w.Code, w.Body)
+		}
+	}
+	if w := do(h, "GET", s.Host(), "/", c, ""); w.Code != 200 {
+		t.Errorf("index: %d", w.Code)
+	}
+}
+
+func TestThePagesStaySmall(t *testing.T) {
+	total := 0
+	_ = fs.WalkDir(web.Pages(), ".", func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			b, _ := fs.ReadFile(web.Pages(), p)
+			total += len(b)
+		}
+		return nil
+	})
+	if total > 120<<10 {
+		t.Errorf("the pages are %d bytes: no build step, no library, so they stay small", total)
+	}
+}
+
+// Every text of the page is in both languages, and every key that the page asks for is there.
+func TestTheTwoLanguagesHaveTheSameKeysAndThePageAsksForNoOther(t *testing.T) {
+	read := func(name string) string {
+		b, err := fs.ReadFile(web.Pages(), name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	js := read("i18n.js")
+	block := func(name string) map[string]bool {
+		i := strings.Index(js, "const "+name+" = {")
+		j := strings.Index(js[i:], "\n  };")
+		if i < 0 || j < 0 {
+			t.Fatalf("no dictionary %s", name)
+		}
+		keys := map[string]bool{}
+		for _, m := range regexp.MustCompile(`'([a-z0-9.]+)':`).FindAllStringSubmatch(js[i:i+j], -1) {
+			keys[m[1]] = true
+		}
+		return keys
+	}
+	en, de := block("en"), block("de")
+	if len(en) < 80 {
+		t.Fatalf("only %d keys: the test does not read the file", len(en))
+	}
+	for k := range en {
+		if !de[k] {
+			t.Errorf("%s is missing in German", k)
+		}
+	}
+	for k := range de {
+		if !en[k] {
+			t.Errorf("%s is missing in English", k)
+		}
+	}
+	asked := map[string]bool{}
+	for _, m := range regexp.MustCompile(`data-i18n(?:-label)?="([a-z0-9.]+)"`).FindAllStringSubmatch(read("index.html"), -1) {
+		asked[m[1]] = true
+	}
+	for _, m := range regexp.MustCompile(`\bt\('([a-z0-9.]+)'`).FindAllStringSubmatch(read("app.js"), -1) {
+		asked[m[1]] = true
+	}
+	for _, a := range []string{"preflight", "up", "down"} {
+		for _, p := range []string{"btn.", "aria.", "btn.group.", "aria.group."} {
+			asked[p+a] = true
+		}
+	}
+	for _, k := range []string{"state.ready", "state.started", "state.none", "run.state.running", "run.state.waiting", "run.state.cancelling", "run.state.done"} {
+		asked[k] = true
+	}
+	for k := range asked {
+		if !en[k] && !strings.HasSuffix(k, ".") { // t('btn.' + name): the keys of that kind are listed above
+			t.Errorf("the page asks for %s, which has no text", k)
+		}
 	}
 }
