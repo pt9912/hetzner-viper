@@ -1,6 +1,6 @@
 # Plan: Bilder und PDFs in NATS-Gruppen (Object Store)
 
-**Ziel:** Ein Agent oder der Betreiber schickt einer Maschine (oder einem Thema) ein **Bild** oder ein **PDF**. Die Datei liegt im **Object Store** des NATS-Servers der Gruppe, die Nachricht trägt nur eine Referenz. Der Empfänger holt die Datei mit einem Werkzeug des MCP-Servers (`viper-nats-mcp`) in ein Verzeichnis auf seiner Maschine und liest sie von dort.
+**Ziel:** Ein Agent oder der Betreiber schickt einer Maschine (oder einem Thema) ein **Bild**, ein **PDF** oder ein **ZIP-Archiv**. Die Datei liegt im **Object Store** des NATS-Servers der Gruppe, die Nachricht trägt nur eine Referenz. Der Empfänger holt die Datei mit einem Werkzeug des MCP-Servers (`viper-nats-mcp`) in ein Verzeichnis auf seiner Maschine und liest sie von dort.
 
 **Stand:** Entwurf (14.11.2026), einmal unabhängig geprüft, die Rechte und das Verhalten bei Ablauf und vollem Speicher sind mit `nats-server` 2.15.2 und `nats.go` 1.55.0 gemessen (§4, §11); noch nichts gebaut. *[V]* heißt: im Code dieses Repositorys gelesen oder gemessen. *[?]* ist eine offene Vermutung.
 
@@ -23,7 +23,8 @@ Grundlage: [`nats.md`](nats.md) (Gruppe, Rechte, „JetStream wird nicht aktivie
 | Bucket | **Ein** Bucket je Gruppe, `viper-<gruppe>` (Stream `OBJ_viper-<gruppe>`). **`viper` legt ihn selbst an** (mit dem Schlüssel des Servers beim Einrichten, mit fester Konfiguration); die Maschinen dürfen ihn **nicht anlegen, ändern oder löschen**. |
 | Namen | Der Name des Objekts ist eine **zufällige ID** (32 Hexzeichen), die der Sender wählt; nie ein Dateiname des Senders. **Dass nie überschrieben wird, erzwingt der Server nicht:** Wer `$O.<b>.M.*` und `$O.<b>.C.*` schreiben darf, kann Metadaten und Stücke **jedes** Objekts ersetzen oder fälschen (gemessen, §11). Das ist ein bekanntes Restrisiko in einer Gruppe, in der „nichts privat“ ist; die **Prüfsumme in der Nachricht** (Absender ist durch das Subject bewiesen) ist der Schutz: Der Empfänger verwirft eine Datei, deren SHA-256 nicht passt. Der Dateiname des Senders wandert nur als bereinigte Anzeige in die Referenz. |
 | Löschen | Keine Maschine löscht, leert oder ändert den Stream: Die Rechte auf `STREAM.PURGE`, `…DELETE`, `…UPDATE`, `…CREATE` und `MSG.DELETE` fehlen (gemessen: verweigert, `ob.Delete` scheitert). Dateien verfallen nach der TTL. `deny_purge` und `deny_delete` am Stream gehen **nicht**: Der Object Store braucht Roll-ups für seine Metadaten (`err_code=10052`). |
-| Typen | Nur **PDF** (`application/pdf`) und **Bild** (PNG, JPEG, GIF, WebP). Der Typ wird an den **ersten Bytes** geprüft, vom Sender beim Senden und vom Empfänger beim Holen; die Endung und eine Angabe des Senders zählen nicht. |
+| Typen | Nur **PDF** (`application/pdf`), **Bild** (PNG, JPEG, GIF, WebP) und **ZIP** (`application/zip`). Der Typ wird an den **ersten Bytes** geprüft, vom Sender beim Senden und vom Empfänger beim Holen; die Endung und eine Angabe des Senders zählen nicht. Ein `.docx`, `.xlsx` oder `.jar` ist technisch ein ZIP und geht als `zip` durch. |
+| ZIP-Prüfung | Bei `zip` liest `viper` **nur das Inhaltsverzeichnis** (Go `archive/zip`, ohne zu entpacken), beim Senden und beim Holen, und lehnt ab bei: mehr als 1000 Einträgen; mehr als 64 MiB entpackter Größe laut Verzeichnis oder einem Verhältnis über 100:1; Namen mit `..`, mit absolutem Pfad oder Laufwerksbuchstaben, mit NUL oder Steuerzeichen; Verknüpfungen; verschlüsselten Einträgen; einem Verzeichnis, das nicht zur Datei passt. **`viper` entpackt nie.** Die Angaben im Verzeichnis kann ein Angreifer fälschen (die echte Größe kennt erst das Entpacken), das ist eine Vorprüfung und keine Garantie (§8). |
 | Prüfsumme | SHA-256 des Inhalts in der Referenz; der Empfänger prüft sie nach dem Holen. |
 
 ## 3 Der Server
@@ -58,7 +59,7 @@ Neues Feld im Umschlag (`json:"att,omitempty"`):
 {"v":1,"kind":"msg","text":"Bitte ansehen","att":{"id":"<32 hex>","type":"pdf","name":"bericht.pdf","size":123456,"sha256":"<64 hex>"}}
 ```
 
-* `type` ist `pdf`, `png`, `jpeg`, `gif` oder `webp`; `name` ist bereinigt (nur Anzeige, höchstens 64 Zeichen, keine Pfadtrenner, keine Steuerzeichen); `id` ist der Objektname; Größe und Prüfsumme begrenzt und geprüft. Ein Anhang gehört zu `msg` und `req`, nicht zu `res`, `presence`, `topics`.
+* `type` ist `pdf`, `zip`, `png`, `jpeg`, `gif` oder `webp`; `name` ist bereinigt (nur Anzeige, höchstens 64 Zeichen, keine Pfadtrenner, keine Steuerzeichen); `id` ist der Objektname; Größe und Prüfsumme begrenzt und geprüft. Ein Anhang gehört zu `msg` und `req`, nicht zu `res`, `presence`, `topics`.
 * **Älteres `viper-nats-mcp` lehnt die ganze Nachricht ab** (unbekanntes Feld). Damit der Absender das vorher weiß, melden die neuen Server ihre **Fähigkeiten** auf einem eigenen Subject `viper.<g>.<m>.caps` (wie die Themen auf `….topics`: ältere Server ignorieren ein Subject, das sie nicht abonnieren; ein neues Feld in `presence` täte das nicht, sie lehnen es ab). Inhalt: Version und `["att"]`. `send` an eine Maschine ohne `att` und `broadcast` an ein Thema, das so eine Maschine abonniert hat, **verweigert** den Anhang mit Namen der Maschine; ein Rundruf an unbekannte Empfänger warnt. `viper check` meldet eine Maschine mit alter Version.
 * Subject und Themen ändern sich nicht, `maxWire` und `MaxText` bleiben.
 
@@ -72,7 +73,7 @@ Neues Feld im Umschlag (`json:"att,omitempty"`):
 
 ## 7 `viper nats`
 
-* `viper nats send|broadcast|request GRUPPE … --pdf DATEI` und `--image DATEI` (genau eine von beiden oder keine; der Text darf dazukommen). `viper` prüft Typ und Größe lokal, **bevor** es sich verbindet.
+* `viper nats send|broadcast|request GRUPPE … --pdf DATEI`, `--image DATEI` und `--zip DATEI` (genau eine davon oder keine; der Text darf dazukommen). `viper` prüft Typ und Größe lokal, **bevor** es sich verbindet.
 * **Als Maschine** (ohne eigenen Schlüssel): ein **eigener Unterbefehl** `viper-nats-mcp attach-put` (nicht `send`): Die Standardeingabe trägt **nur** die Datei, mit einem kleinen Kopf zuerst (Typ, Größe, SHA-256, eine Zeile) und danach genau diese Bytes; der Text kommt als Argument oder aus `--file` (nie von der Standardeingabe, die heute den Text trägt *[V]*). `viper` liest die Datei lokal nur bis `NATS_OBJECTS_FILE_MAX` und bricht **vor** dem Verbinden ab, wenn sie größer ist. Der Unterbefehl legt die Datei ab und gibt die Referenz als JSON-Zeile aus; `viper` sendet dann die Nachricht wie bisher mit `att`.
 * **Als Betreiber:** direkt über den Tunnel mit dem Schlüssel des Betreibers.
 * `listen` zeigt eine Nachricht mit Anhang mit der Referenz; **`viper nats fetch GRUPPE ID [--out VERZEICHNIS]`** holt sie auf Ihren Rechner.
@@ -81,6 +82,7 @@ Neues Feld im Umschlag (`json:"att,omitempty"`):
 
 * **Lebensdauer:** Dateien leben, solange das Heimverzeichnis der Server-Maschine lebt. `viper down` der Server-Maschine, ein anderer Server oder ein neues Volume löschen sie; ein Empfänger, der später holt, bekommt „nicht gefunden“. Das gehört ins Handbuch.
 * **Fremde Inhalte:** Ein Bild oder PDF eines anderen Agenten kann Anweisungen enthalten (Text im Bild, versteckter Text im PDF) und aktive Inhalte (PDF). Kein Filter kann das sicher entfernen. Darum: nichts wird automatisch geholt, geöffnet oder in die Sitzung geschoben; der Typ wird an den Bytes geprüft; das Handbuch sagt es deutlich.
+* **ZIP:** Ein Archiv ist ein Weg für ZIP-Bomben und „zip slip“ (Einträge mit `../` oder absoluten Pfaden, die beim Entpacken Dateien außerhalb des Ziels überschreiben), für Verknüpfungen und ausführbare Dateien. `viper` und der MCP-Server **entpacken nie**; sie prüfen nur das Inhaltsverzeichnis (§2) und legen `<id>.zip` ab. Wer entpackt, tut es in ein **leeres** Verzeichnis und mit einem Werkzeug, das Pfade prüft; das Handbuch nennt das, und dass das Archiv fremder Agenten nicht vertrauenswürdig ist. Das Verzeichnis ist fälschbar, die Vorprüfung ersetzt das Entpacken mit Grenzen nicht.
 * **Pfad und Namen:** Nichts vom Sender wird zu einem Pfad; Dateiname = `<id>.<endung>` mit fester Endung je Typ.
 * **Speicher:** `max_file_store` und TTL schützen den Server. Ein Sender kann den Speicher mit vielen Dateien füllen (die ältesten fallen heraus): Das ist ein Angriff auf andere Anhänge, kein Ausfall des Servers. Das Limit je Datei und die TTL begrenzen es nur.
 * **Rechte:** Der Plan nimmt den Bucket als gemeinsam an. Wer in der Gruppe ist, holt alles. Wer Rechte auf `$JS.API.STREAM.PURGE` oder `…DELETE` hätte, leerte ihn; §4 verweigert beides.
@@ -92,7 +94,7 @@ Neues Feld im Umschlag (`json:"att,omitempty"`):
 0. **Prüfen: erledigt (14.11.2026, §4, §11).**
 1. **Server:** Einstellungen `NATS_OBJECTS*`, `Render` (`jetstream`-Block), die Unit der VM (`StateDirectory`), `natscheck.sh` (`objects=on|off`), `viper check`. Noch ohne Bucket und Rechte.
 2. **Rechte und Bucket:** die Menge aus §4 in `Permissions` und `OperatorPermissions` (nur bei `NATS_OBJECTS=true`), das Anlegen des Buckets durch `viper` mit den Grenzen aus §3, Tests (gegen einen echten Server, auch die Verweigerungen).
-3. **Nachricht und MCP-Server:** `att` (Lesen und Prüfen, strenge Grenzen), `caps` (Subject und Prüfung), die Parameter von `send`/`broadcast`/`request`, `fetch`, `inbox`, Obergrenze des Ordners, `MCPTools()`, `viper check`, Tests mit Prüfsumme und Typ an den Bytes, fehlendem Objekt und abgelaufenem Objekt (`object not found`, „digests do not match“ als „abgelaufen oder verändert“).
+3. **Nachricht und MCP-Server:** `att` (Lesen und Prüfen, strenge Grenzen), `caps` (Subject und Prüfung), die Parameter von `send`/`broadcast`/`request`, `fetch`, `inbox`, Obergrenze des Ordners, `MCPTools()`, `viper check`, Tests mit Prüfsumme und Typ an den Bytes, ZIP-Dateien (Bombe, `..`, absoluter Pfad, Verknüpfung, zu viele Einträge, Verzeichnis nicht zur Datei passend), fehlendem Objekt und abgelaufenem Objekt (`object not found`, „digests do not match“ als „abgelaufen oder verändert“).
 4. **CLI:** `--pdf`/`--image`, `attach-put`, `viper nats fetch`, Betreiber über den Tunnel.
 5. **Handbuch und Läufe:** Handbuch (NATS-Kapitel, Sicherheit, Grenzen, Restrisiko), `developer.md`, ein Lauf mit drei Maschinen gegen echtes Docker und, wenn möglich, gegen k3d.
 
