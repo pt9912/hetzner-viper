@@ -149,7 +149,7 @@ func TestViperUpMakesTheRegistryAndTheClusterAndPutsTheImageIntoTheRegistry(t *t
 	if err := k.PrepareImage(context.Background(), &out); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
-	for _, want := range []string{"k3d registry create reg", "k3d cluster create viper --registry-use k3d-reg:5000 --wait --agents 2",
+	for _, want := range []string{"k3d registry create reg", "k3d cluster create viper --registry-use k3d-reg:5000 --wait --kubeconfig-switch-context=false --agents 2",
 		"docker pull -- ghcr.io/pt9912/viper-machine:v1", "docker tag -- ghcr.io/pt9912/viper-machine:v1 localhost:5099/viper-machine:v1", "docker push -- localhost:5099/viper-machine:v1"} {
 		if h.called(want) != 1 {
 			t.Errorf("missing %q in\n%s", want, strings.Join(h.calls, "\n"))

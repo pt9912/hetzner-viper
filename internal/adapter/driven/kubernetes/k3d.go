@@ -215,7 +215,9 @@ func (c *Client) ensureCluster(ctx context.Context, cluster string, out io.Write
 	if !c.opts.K3DCreateCluster {
 		return fmt.Errorf("the k3d cluster %s does not exist: make it with k3d cluster create %s --registry-use %s:%s, or set K3D_CLUSTER_CREATE=1 and viper up makes it", cluster, cluster, c.opts.registryContainer(), k3dRegistryPort)
 	}
-	args := []string{"cluster", "create", cluster, "--registry-use", c.opts.registryContainer() + ":" + k3dRegistryPort, "--wait"}
+	// k3d enters the context of the cluster in the kubeconfig of the user (viper finds it there), but viper does not let it switch the
+	// current context: the user's kubectl keeps pointing where it did, and viper names its context itself (SERVER_LOCATION).
+	args := []string{"cluster", "create", cluster, "--registry-use", c.opts.registryContainer() + ":" + k3dRegistryPort, "--wait", "--kubeconfig-switch-context=false"}
 	if c.opts.K3DAgents > 0 {
 		args = append(args, "--agents", fmt.Sprint(c.opts.K3DAgents))
 	}

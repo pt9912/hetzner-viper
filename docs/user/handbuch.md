@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.129  
+Version: 1.130  
 Software-Version: v0.24.0  
 Stand: 14.11.2026  
 
@@ -258,6 +258,8 @@ K3D_AGENTS=2
 * `K3D_AGENTS`: wie viele Agent-Knoten ein Cluster bekommt, den `viper` anlegt (0 bis 16, Standard `0`: nur ein Server-Knoten).
 
 Dafür muss das Programm `k3d` auf Ihrem Computer installiert sein (`brew install k3d`); der Preflight prüft es und meldet sonst einen Fehler, bevor etwas angelegt wird. Ist die Registry schon da und nutzt der Cluster sie, braucht `viper` `k3d` nicht. `viper up` führt dann der Reihe nach aus: Registry anlegen oder (angehalten) starten, Cluster anlegen (nur mit `K3D_CLUSTER_CREATE=1`), das Image aus Docker nehmen oder mit `docker pull` laden, in die Registry schieben, und die Pods starten mit dem Namen aus der Registry. Alles steht in der Ausgabe von `viper up`. Bei einer Gruppe geschieht das einmal, die Rechner warten aufeinander. `viper preflight` sagt vorher, was passieren wird. Die Knoten holen das Image aus der Registry im lokalen Docker-Netz, ohne Download aus dem Internet; kopiert und entpackt wird auf jedem Knoten weiterhin (bei drei Knoten je 15 bis 29 Sekunden).
+
+**Ihre `kubeconfig` (für `kubectl`):** `viper` liest sie wie `kubectl` (die Dateien aus `KUBECONFIG`, sonst `~/.kube/config`) und nimmt immer den Kontext aus `SERVER_LOCATION`, nie den „aktuellen“. Legt `viper up` den Cluster an, trägt **k3d** den Cluster und den Kontext `k3d-<cluster>` in diese Datei ein; **den aktuellen Kontext stellt es nicht um**, `kubectl` zeigt also weiter auf den Cluster, mit dem Sie vorher gearbeitet haben (`viper` übergibt k3d dafür `--kubeconfig-switch-context=false`). Für `kubectl` auf den neuen Cluster nehmen Sie `kubectl --context k3d-<cluster> …` oder `kubectl config use-context k3d-<cluster>`. Mit `viper down` entfernt k3d den Eintrag wieder (der aktuelle Kontext bleibt, wie er war). Das ist mit k3d 5.9 geprüft. Cluster, die eine ältere Version von `viper` angelegt hat, haben den aktuellen Kontext umgestellt. Eine eigene Datei nur für diese Arbeit nehmen Sie mit `KUBECONFIG=/pfad/zur/datei viper up …` (`viper` und `k3d` nehmen sie beide); das habe ich nicht erprobt.
 
 Ein Cluster, der schon da ist und ohne die Registry angelegt wurde, bekommt sie nachträglich nicht (k3d kann das nicht). Dann spielt `viper up` das Image mit `k3d image import` in alle Knoten ein, sagt es und nennt die Lösung: den Cluster neu anlegen, am einfachsten mit `K3D_CLUSTER_CREATE=1`. 
 
@@ -1642,3 +1644,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.127 | nach v0.23.0 | `viper help` zeigt die Befehle in Gruppen mit einer Zeile je Befehl; `viper <befehl> --help` (auch `viper help <befehl>`, `viper nats <unterbefehl> --help`) beschreibt einen Befehl mit allen Optionen, Beispielen und dem Abschnitt im Handbuch. |
 | 1.128 | nach v0.23.0 | Ein falscher Aufruf nennt zur Aufrufzeile jetzt, wo die Optionen beschrieben sind (`viper <befehl> --help`, bei `viper nats` je Unterbefehl). |
 | 1.129 | v0.24.0 | Release v0.24.0: die Änderungen 1.127 und 1.128 (Hilfe: `viper help` in Gruppen, `viper <befehl> --help` mit allen Optionen; Hinweis auf die Hilfe bei falschem Aufruf) und die ergänzten Beispieldateien (`NATS_OBJECTS*` in `groups/example.env.example`). |
+| 1.130 | nach v0.24.0 | k3d: Legt `viper up` den Cluster an, stellt k3d den aktuellen Kontext der `kubeconfig` nicht mehr um (`--kubeconfig-switch-context=false`); der Abschnitt „Registry und Cluster von `viper up` anlegen lassen (k3d)“ sagt, wie `viper` die `kubeconfig` benutzt. |
