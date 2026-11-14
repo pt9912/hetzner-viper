@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.136  
+Version: 1.137  
 Software-Version: v0.24.0  
 Stand: 14.11.2026  
 
@@ -54,6 +54,7 @@ Sie haben kein Cloud-Konto oder wollen erst einmal ausprobieren? Dann beginnen S
 | `viper dns <rechner>` | Gibt den DNS-Namen des Rechners aus (`<SERVER_PREFIX>-<rechner>.<DNS_DOMAIN>`), ohne Zugriff auf den Anbieter oder Cloudflare. Mit `DNS_PROVIDER=none` gibt es keinen Namen; der Befehl nennt die zuletzt gespeicherte Adresse. |
 | `viper find` | Sucht bei allen Anbietern Server-Typen, die mindestens die gewünschten CPUs, den RAM und die Platte haben, und zeigt die günstigsten mit Preis. Liest nur und braucht keinen Rechner. |
 | `viper log [<rechner>]` | Zeigt die lokalen Protokolle: Ereignisse aller Rechner, eines Rechners oder mit `--full` dessen vollständige Ausgabe. |
+| `viper ui [--port N] [--no-open] [--readonly]` | Startet eine Weboberfläche auf `127.0.0.1` im Browser: Übersicht der Rechner, Prüfen, Vorprüfung/Up/Down, NATS, Einstellungen und Protokolle. Siehe „Die Oberfläche im Browser“. |
 | `viper up --group <gruppe>`, `viper down --group <gruppe>`, `viper check --group <gruppe>`, `viper preflight --group <gruppe>`, `viper ssh --group <gruppe> --cmd …` | Dieselben Befehle für alle Rechner einer Gruppe aus `groups/<gruppe>.env`, gleichzeitig (siehe „Eine Gruppe von Rechnern gemeinsam starten und beenden“). |
 | `viper mcp-binary --arch amd64\|arm64` | Schreibt den in `viper` eingebauten MCP-Server `viper-nats-mcp` für die Architektur nach stdout (`> datei`), zum Ansehen, Prüfen oder als `NATS_MCP_BINARY`. Zeigt nichts auf dem Terminal. |
 | `viper nats peers\|topics\|listen\|send\|broadcast\|request\|fetch\|init\|revoke <gruppe> …` | Sendet Nachrichten (und Bilder, PDFs und ZIP-Dateien) an die Rechner einer NATS-Gruppe (`--file DATEI` statt des Textes) und liest mit, als einer der Rechner der Gruppe (siehe „Nachrichten an eine NATS-Gruppe senden“); `fetch` holt eine Datei, `init` und `revoke` richten Ihren eigenen Schlüssel als Betreiber ein und entfernen ihn. |
@@ -391,7 +392,7 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 * Ereignisse eines Rechners: `viper log <rechner>`
 * Vollständige Ausgabe eines Rechners: `viper log <rechner> --full`
 
-`viper log` braucht keine Tokens. Eine Repo-URL mit Zugangsdaten (`https://user:token@…`) lehnt der Preflight ab, damit das Token weder in die Protokolle noch auf den Server gelangt. Die Protokolle werden nicht automatisch gekürzt; löschen Sie sie bei Bedarf von Hand. Protokolle auf dem Server (cloud-init, Homebrew) verschwinden dagegen mit dem Server.
+`viper log` braucht keine Tokens. Eine Repo-URL mit Zugangsdaten (`https://user:token@…`) lehnt der Preflight ab, damit das Token weder in die Protokolle noch auf den Server gelangt. Dasselbe zeigt die Seite **Protokolle** von `viper ui` (siehe „Die Oberfläche im Browser“). Die Protokolle werden nicht automatisch gekürzt; löschen Sie sie bei Bedarf von Hand. Protokolle auf dem Server (cloud-init, Homebrew) verschwinden dagegen mit dem Server.
 
 ### Die Oberfläche im Browser
 
@@ -400,22 +401,22 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 #### Voraussetzung
 
 * Ein Verzeichnis mit Einstellungen (`.env.local`, `machines/`, `groups/`) wie für die Befehle; es ist das aktuelle Verzeichnis oder `--dir`.
-* Ein Browser auf demselben Rechner. Die Oberfläche ist nur von diesem Rechner aus erreichbar.
+* Ein Browser auf demselben Computer. Die Oberfläche ist nur von diesem Computer aus erreichbar.
 * Für **Check** und die NATS-Seite `ssh`, wie für die Befehle selbst.
 
 #### Vorgehen
 
-1. Starten Sie `viper ui` im Verzeichnis mit den Einstellungen. Der Browser öffnet sich; die Adresse (`http://127.0.0.1:<port>/`) steht auch im Terminal. `Strg-C` im Terminal beendet die Oberfläche.
-2. **Übersicht:** Rechner und Gruppen mit Anbieter, Typ, Ort und NATS-Gruppe. Die Spalte „Zustand“ sagt, was dieser Rechner weiß: „eingerichtet“ (`viper up` ist durchgelaufen), „gestartet“ (der Server ist angelegt) oder „nicht gestartet“. Ob der Rechner wirklich läuft, beantwortet **Prüfen**: Das ist `viper check`, mit dessen Ausgabe; „in Ordnung“ heißt Exit-Status 0.
+1. Starten Sie `viper ui` im Verzeichnis mit den Einstellungen. Der Browser öffnet sich; die Adresse (`http://127.0.0.1:<port>/`) steht auch im Terminal. `Strg-C` im Terminal beendet die Oberfläche. Öffnet sich der Browser nicht, meldet `viper ui` das und nennt die Adresse mit dem Schlüssel (eine Minute gültig); mit `--no-open` startet es den Browser nicht, und der Schlüssel gilt zehn Minuten.
+2. **Übersicht:** Rechner und Gruppen mit Anbieter, Typ, Ort und NATS-Gruppe. Die Spalte „Zustand“ sagt, was dieser Computer weiß: „eingerichtet“ (`viper up` ist durchgelaufen), „gestartet“ (der Server ist angelegt) oder „nicht gestartet“. Ob der Rechner wirklich läuft, beantwortet **Prüfen**: Das ist `viper check`, mit dessen Ausgabe; „in Ordnung“ heißt Exit-Status 0.
 3. **Aktionen:** **Vorprüfung**, **Up** und **Down** je Rechner und je Gruppe starten `viper preflight`, `viper up` und `viper down` als eigenen Prozess. Das Feld „Repository-URL“ gilt für Up und Vorprüfung (`--repo`; eine URL mit Zugangsdaten lehnt die Oberfläche ab). Die Seite **Läufe** zeigt die Ausgabe, solange der Lauf geht. Ein neuer Tab findet laufende Läufe wieder, und das Schließen eines Tabs beendet nichts.
 4. **Rückfragen:** Fragt `viper` etwas (zum Beispiel „Type DELETE to continue“), erscheint unter der Ausgabe ein Eingabefeld. Sie tippen das Wort selbst; es gibt keinen Knopf, der für Sie bestätigt.
 5. **Abbrechen:** Der Knopf wirkt wie Strg-C am Terminal: `viper` bricht ab und räumt auf, was es kann. Es macht nichts rückgängig; ein halb angelegter Server kann bleiben. Das Beenden kann einige Sekunden dauern („Wird beendet …“); nach 20 Sekunden beendet die Oberfläche den Prozess hart.
-6. **NATS:** Die Seite zeigt die Gruppen aus `groups/*.env`, deren Rechner `NATS_ENABLED=true` haben. Die Zeile darunter sagt, wie `viper nats` spricht: **als Betreiber**, wenn dieser Rechner den Schlüssel der Gruppe hat (`viper nats init <gruppe>`), sonst **als Rechner der Gruppe** über ssh („Sprechen als“ wählt den Rechner). Jede Schaltfläche startet `viper nats …` als Lauf:
+6. **NATS:** Die Seite zeigt die Gruppen aus `groups/*.env`, deren Rechner `NATS_ENABLED=true` haben. Die Zeile darunter sagt, wie `viper nats` spricht: **als Betreiber**, wenn dieser Computer den Schlüssel der Gruppe hat (`viper nats init <gruppe>`), sonst **als Rechner der Gruppe** über ssh („Sprechen als“ wählt den Rechner). Jede Schaltfläche startet `viper nats …` als Lauf:
     * **Peers** und **Themen**: wer da ist und welche Themen die Rechner abonniert haben. „Warten (Sekunden)“ ist die Zeit, die `viper nats` auf Antworten wartet.
     * **Mitlesen**: liest mit, bis Sie **Abbrechen** drücken; ein Thema begrenzt (leer: die Themen der Einstellungen), „alles in der Gruppe“ zeigt alles. Hat eine Nachricht eine Datei, steht dort **Diese Datei holen**; der Knopf trägt ID und Prüfsumme in das Formular „Datei holen“ ein.
-    * **Senden:** Nachricht an einen Rechner, Anfrage (wartet „Auf die Antwort warten“ Sekunden, Standard 30) oder Rundruf an ein Thema; der Text bis 16 KiB. Eine Datei (PDF, Bild oder ZIP) geht nur an eine Gruppe mit Objektspeicher (`NATS_OBJECTS=true`; ohne ihn ist das Feld aus) und darf nicht größer sein als `NATS_OBJECTS_FILE_MAX` der Gruppe; die weiteren Prüfungen sind die von `viper nats`. Der Text steht nie in der Befehlszeile eines Programms. Nach dem Senden leert die Seite Text und Datei. Eine Datei, die niemand sendet (etwa weil die Nachricht abgelehnt wurde), löscht die Oberfläche selbst, spätestens nach 30 Minuten. Die Warnung, dass der Absender in `NATS_MCP_PUSH_FROM` eines Empfängers steht, erscheint als Fehler des Laufs; „trotzdem senden“ entspricht `--yes`.
+    * **Senden:** Nachricht an einen Rechner, Anfrage (wartet „Auf die Antwort warten“ Sekunden, Standard 30) oder Rundruf an ein Thema; der Text bis 16 KiB. Eine Datei (PDF, Bild oder ZIP) geht nur an eine Gruppe mit Objektspeicher (`NATS_OBJECTS=true`; ohne ihn ist das Feld aus) und darf nicht größer sein als `NATS_OBJECTS_FILE_MAX` der Gruppe, in der Oberfläche höchstens 64 MiB; höchstens acht Dateien warten zugleich auf das Senden. Die weiteren Prüfungen sind die von `viper nats`. Der Text steht nie in der Befehlszeile eines Programms. Nach dem Senden leert die Seite Text und Datei. Eine Datei, die niemand sendet (etwa weil die Nachricht abgelehnt wurde), löscht die Oberfläche selbst, spätestens nach 30 Minuten. Die Warnung, dass der Absender in `NATS_MCP_PUSH_FROM` eines Empfängers steht, erscheint als Fehler des Laufs; „trotzdem senden“ entspricht `--yes`.
     * **Datei holen** (`viper nats fetch`, nur mit dem Schlüssel des Betreibers): Nach dem Lauf erscheint **Datei herunterladen**. Die Datei stammt von einem anderen Agenten: nicht ausführen; die Seite lädt sie immer als Download, nie als Seite.
-7. **Einstellungen:** Die Seite zeigt die Namen der Einstellungen jeder Datei im Einstellungsverzeichnis (`.env.local`, `groups/*.env`, `machines/*.env.local`) und, was nur die Umgebung setzt. Den **Wert** zeigt sie nur für Einstellungen einer festen Liste, die keine Zugangsdaten sind und nichts Privates enthalten (zum Beispiel `PROVIDER`, `SERVER_TYPE`, `SERVER_LOCATION`, `GROUP_MACHINES`, die `NATS_*`-Einstellungen ohne Schlüssel, `K3D_*`); alles andere steht als „gesetzt“, auch eine Repo-URL, ein Token, ein Passwort und der Pfad eines Schlüssels. Werte, die ein Programm erst ausrechnen müsste (`$VAR`), zeigt sie nicht, aus der Umgebung nur die Namen. Ändern lässt sich hier nichts: Bearbeiten Sie die Dateien weiter selbst.
+7. **Einstellungen:** Die Seite zeigt die Namen der Einstellungen jeder Datei im Einstellungsverzeichnis (`.env.local`, `groups/*.env`, `machines/*.env.local`) und die Namen bekannter Einstellungen, die nur die Umgebung setzt. Den **Wert** zeigt sie nur für Einstellungen einer festen Liste, die keine Zugangsdaten sind und nichts Privates enthalten (zum Beispiel `PROVIDER`, `SERVER_TYPE`, `SERVER_LOCATION`, `GROUP_MACHINES`, die Einstellungen der NATS-Gruppe wie `NATS_ENABLED`, `NATS_GROUP`, `NATS_PORT`, `NATS_OBJECTS*` und `NATS_MCP_TOPICS`, dazu `K3D_*`); alles andere steht als „gesetzt“, auch eine Repo-URL, ein Token, ein Passwort und der Pfad eines Schlüssels. Werte, die ein Programm erst ausrechnen müsste (`$VAR`), zeigt sie nicht, aus der Umgebung nur die Namen. Ändern lässt sich hier nichts: Bearbeiten Sie die Dateien weiter selbst.
 8. **Protokolle:** die Ereignisse aller Rechner, eines Rechners oder dessen vollständige Ausgabe, mit Suchfeld; dasselbe wie `viper log`.
 
 **Sprache:** Oben rechts wählen Sie Deutsch oder Englisch; ohne Wahl entscheidet die Sprache des Browsers, die Wahl bleibt im Browser erhalten. Die Beschriftungen in diesem Abschnitt sind die deutschen. In der englischen Ansicht heißen sie:
@@ -425,6 +426,7 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 | Übersicht, Läufe, NATS, Einstellungen, Protokolle | Overview, Runs, NATS, Settings, Logs |
 | Zustand: eingerichtet, gestartet, nicht gestartet | State: set up, started, not started |
 | Prüfen, Vorprüfung, Up, Down, Protokoll | Check, Preflight, Up, Down, Log |
+| Gruppe vorprüfen, Gruppe: Up, Gruppe: Down | Preflight group, Up group, Down group |
 | Abbrechen, Antwort, Senden | Cancel, Answer, Send |
 | Peers, Themen, Mitlesen, Senden, Datei holen | Peers, Topics, Listen, Send, Get a file |
 | Sprechen als, Diese Datei holen, Datei herunterladen | Speak as, Fetch this file, Download the file |
@@ -435,6 +437,7 @@ Die Ausgaben von `viper` selbst (Läufe, Prüfungen, Protokolle) und die Fehler 
 
 #### Optionen
 
+* `--dir VERZEICHNIS`: das Verzeichnis mit den Einstellungen (Standard: das aktuelle).
 * `--port N`: auf diesem Port lauschen (Standard: ein freier).
 * `--no-open`: den Browser nicht öffnen; das Terminal zeigt die Adresse mit dem Schlüssel (gilt zehn Minuten, einmal).
 * `--readonly`: keine Aktion anbieten (kein Preflight, Up, Down und kein NATS, auch kein Hochladen); Ansehen, Prüfen, Protokolle und Einstellungen bleiben.
@@ -775,6 +778,8 @@ Claude Code fragt standardmäßig bei jedem Aufruf eines Werkzeugs. `viper` änd
 ### Nachrichten an eine NATS-Gruppe senden und mitlesen (`viper nats`)
 
 Mit `viper nats` sprechen Sie die Rechner einer NATS-Gruppe von Ihrem eigenen Rechner aus an, ohne eine Claude-Code-Sitzung zu öffnen: eine Nachricht an eine Maschine, ein Rundruf an ein Thema, eine Anfrage mit Antwort, die Anwesenheit der Gruppe, Mitlesen.
+
+Dasselbe mit Knöpfen statt Befehlen bietet die Seite **NATS** von `viper ui` (siehe „Die Oberfläche im Browser“).
 
 #### Voraussetzung
 
@@ -1525,6 +1530,17 @@ Das Zertifikat des NATS-Servers gilt einen Monat und wird nicht erneuert. Lösch
 **Ursache:** Das Host-Zertifikat ist nach sieben Tagen abgelaufen. Eine automatische Erneuerung gibt es nicht. Computer mit hinterlegtem Host-Schlüssel verbinden sich weiter. Das ist der Computer, der den Rechner angelegt hat, und jeder andere, der innerhalb der sieben Tage einmal `viper up` oder `viper down` ausgeführt hat (dabei wird der Schlüssel über die noch gültige CA-Prüfung nachgetragen). Betroffen sind Geräte, die nur der Host-CA vertrauen, etwa das iPad, und Computer, die den Rechner nie innerhalb der Gültigkeit erreicht haben.  
 **Lösung:** Arbeiten Sie von einem Computer mit hinterlegtem Schlüssel aus, pushen Sie dort Ihre Arbeit, beenden Sie den Rechner mit `viper down <rechner>` und starten Sie ihn neu.
 
+### Meldung: "viper ui: cannot listen on 127.0.0.1:…", die Seite zeigt „Nicht erlaubt“ oder „Die Sitzung ist zu Ende“
+
+**Ursache:** Der Port ist belegt, die Adresse wurde nicht so geöffnet, wie `viper ui` sie ausgibt, oder `viper ui` wurde inzwischen neu gestartet.  
+**Lösung:**
+
+* **„cannot listen … address already in use“:** Wählen Sie mit `viper ui --port N` einen freien Port, oder lassen Sie `--port` weg, dann nimmt `viper` einen freien.
+* **„Nicht erlaubt“ (403):** Öffnen Sie die Adresse genau so, wie `viper ui` sie im Terminal ausgegeben hat: mit `127.0.0.1` (nicht `localhost`), mit dem Schlüssel, der nur einmal und nur kurz nach dem Start gilt (eine Minute, mit `--no-open` zehn). Danach öffnen Sie die Seite im selben Browser ohne Schlüssel (`http://127.0.0.1:<port>/`).
+* **„Die Sitzung ist zu Ende“:** `viper ui` wurde neu gestartet. Starten Sie es neu und öffnen Sie die neue Adresse.
+* **Der Browser öffnet sich nicht** (`xdg-open`, unter macOS `open`, unter Windows `rundll32`): Öffnen Sie die Adresse mit dem Schlüssel, die `viper ui` ausgibt, von Hand, oder starten Sie mit `--no-open`.
+* **Eine Datei lässt sich nicht senden:** Die Gruppe braucht `NATS_OBJECTS=true`; die Datei darf nicht größer sein als `NATS_OBJECTS_FILE_MAX` der Gruppe (in der Oberfläche höchstens 64 MiB). Mit `--readonly` geht nichts.
+
 ## 8. FAQ
 
 **Kann ich einen Rechner nur pausieren?**  
@@ -1545,10 +1561,15 @@ Nein. Die Namen haben sich geändert (seit Handbuch 1.8 auch DNS-Namen und lokal
 **Darf ich die Tokens in die README oder in Git schreiben?**  
 Nein. Verwenden Sie die Shell oder `.env.local`, die nicht eingecheckt wird.
 
+**Kann ich die Oberfläche von einem anderen Rechner aus öffnen?**  
+Nein. `viper ui` lauscht nur auf `127.0.0.1` und ist nur von dem Computer aus erreichbar, auf dem es läuft. Wer von außen zugreifen will, tunnelt selbst, auf eigene Verantwortung: Die Oberfläche kann Server anlegen und löschen.
+
 ## 9. Glossar
 
 | Begriff | Bedeutung |
 |---|---|
+| Lauf | Ein Aufruf von `viper` aus der Oberfläche (`viper ui`) mit seiner Ausgabe, seinem Zustand und seinem Exit-Status |
+| Zustand | In der Übersicht von `viper ui`: was dieser Computer über einen Rechner weiß (eingerichtet, gestartet, nicht gestartet); ob er wirklich läuft, sagt erst `viper check` |
 | Rechner | Ein Server mit Namen, in der Regel für ein Repository |
 | Arbeitsverzeichnis | Verzeichnis auf dem Server, in dem die Repositories liegen (`WORKSPACE_DIR`) |
 | Host-CA | Lokale Zertifizierungsstelle, mit der der Server-Schlüssel signiert wird |
@@ -1705,9 +1726,10 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.128 | nach v0.23.0 | Ein falscher Aufruf nennt zur Aufrufzeile jetzt, wo die Optionen beschrieben sind (`viper <befehl> --help`, bei `viper nats` je Unterbefehl). |
 | 1.129 | v0.24.0 | Release v0.24.0: die Änderungen 1.127 und 1.128 (Hilfe: `viper help` in Gruppen, `viper <befehl> --help` mit allen Optionen; Hinweis auf die Hilfe bei falschem Aufruf) und die ergänzten Beispieldateien (`NATS_OBJECTS*` in `groups/example.env.example`). |
 | 1.130 | nach v0.24.0 | k3d: Legt `viper up` den Cluster an, stellt k3d den aktuellen Kontext der `kubeconfig` nicht mehr um (`--kubeconfig-switch-context=false`); der Abschnitt „Registry und Cluster von `viper up` anlegen lassen (k3d)“ sagt, wie `viper` die `kubeconfig` benutzt. |
-| 1.131 | nach v0.24.0 | Neu: `viper ui` (`--port`, `--no-open`, `--readonly`) startet eine Weboberfläche auf `127.0.0.1` mit der Übersicht der Rechner und Gruppen, `viper check` je Rechner und den Protokollen; Schlüssel nur einmal, Cookie, Prüfung von Host und Herkunft, Ausgaben ohne Zugangsdaten. |
-| 1.132 | nach v0.24.0 | `viper ui`: `Preflight`, `Up` und `Down` für Rechner und Gruppen, mit Ausgabe, Rückfragen (Eingabefeld) und Abbrechen; die Seite „Runs“. |
-| 1.133 | nach v0.24.0 | `viper ui`: die Seite „NATS“ (Peers, Topics, Mitlesen, Senden mit Text und Datei, Datei holen und herunterladen). |
-| 1.134 | nach v0.24.0 | `viper ui`: die Seite „Settings“ (Namen aller Einstellungsdateien, Werte nur bei einer Liste unbedenklicher Einstellungen), Deutsch und Englisch wählbar, Bedienung mit der Tastatur, Namen für Screenreader, Hinweis bei beendeter Sitzung, Fehlerseiten. |
-| 1.135 | nach v0.24.0 | `viper ui` nach dem Code-Review: abgelehnte Sendungen geben ihre Datei frei, eine Datei nur bei Objektspeicher und höchstens `NATS_OBJECTS_FILE_MAX`, `--readonly` sperrt auch NATS, Abbrechen geht mit offenen Strömen, Beenden unterbricht die Läufe sofort, Kopfzeile und zweiteilige Geheimnisse werden geschwärzt, ein Repo mit Zugangsdaten wird abgelehnt, nur die erste von zwei Antworten gilt, Strom und Download-Link je Lauf. |
+| 1.131 | nach v0.24.0 | Neu: `viper ui` (`--port`, `--no-open`, `--readonly`) startet eine Weboberfläche auf `127.0.0.1` mit der Übersicht der Rechner und Gruppen, `viper check` je Rechner und den Protokollen; sie antwortet nur unter `127.0.0.1`, der Schlüssel gilt einmal, die Ausgaben zeigen keine bekannten Zugangsdaten. |
+| 1.132 | nach v0.24.0 | `viper ui`: `Preflight`, `Up` und `Down` für Rechner und Gruppen, mit Ausgabe, Rückfragen (Eingabefeld) und Abbrechen; die Seite „Läufe“. |
+| 1.133 | nach v0.24.0 | `viper ui`: die Seite „NATS“ (Peers, Themen, Mitlesen, Senden mit Text und Datei, Datei holen und herunterladen). |
+| 1.134 | nach v0.24.0 | `viper ui`: die Seite „Einstellungen“ (Namen aller Einstellungsdateien, Werte nur bei einer Liste unbedenklicher Einstellungen), Deutsch und Englisch wählbar, Bedienung mit der Tastatur, Namen für Screenreader, Hinweis bei beendeter Sitzung, Fehlerseiten. |
+| 1.135 | nach v0.24.0 | `viper ui` nach einer Prüfung: abgelehnte Sendungen geben ihre Datei frei, eine Datei geht nur an eine Gruppe mit Objektspeicher und höchstens in der Größe von `NATS_OBJECTS_FILE_MAX`, `--readonly` sperrt auch NATS, Abbrechen geht auch bei vielen offenen Seiten, Beenden unterbricht die Läufe sofort, ein Repository mit Zugangsdaten wird abgelehnt, nur die erste von zwei Antworten gilt, der Download-Link gehört zum Lauf. |
 | 1.136 | nach v0.24.0 | `viper ui`: Kapitel „Die Oberfläche im Browser“ neu gefasst (Voraussetzung, deutsche Beschriftungen mit Tabelle der englischen, Grenzen und Sicherheit); Anfragen warten 30 Sekunden auf die Antwort; die Sitzung hängt am Port. |
+| 1.137 | nach v0.24.0 | Handbuch und READMEs nach der Prüfung: `viper ui` in der Befehlsübersicht, Fehlerbehebung (Port belegt, 403, Sitzung, Browser, Datei), FAQ und Glossar, die Optionen vollständig, die Beschriftungen der Gruppen-Knöpfe. |

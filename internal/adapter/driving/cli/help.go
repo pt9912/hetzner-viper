@@ -193,7 +193,7 @@ func helpsImages() map[string]commandDoc {
 			options: []optionDoc{
 				{"port", "N", "listen on this port (default: a free one)"},
 				{"no-open", "", "do not open the browser; print the address with the key (valid for ten minutes)"},
-				{"readonly", "", "offer no action: only look (no preflight, up or down)"},
+				{"readonly", "", "offer no action: only look (no preflight, up, down or NATS)"},
 			},
 			examples: []string{"viper ui", "viper ui --no-open --port 8787"},
 			manual:   "Die Oberfläche im Browser",
