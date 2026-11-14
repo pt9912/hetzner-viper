@@ -861,3 +861,10 @@ func TestLoadReadsTheObjectStoreSettingsOfAGroup(t *testing.T) {
 		}
 	}
 }
+
+func TestAMachineMayNotHaveTheNameOfTheEntryThatMakesTheObjectStore(t *testing.T) {
+	env := settings.Env{Lookup: envOf(nil), Home: "/h"}
+	if _, err := settingsfile.Load(setupDir(t, "DNS_DOMAIN=example.com\nNATS_ENABLED=true\nNATS_GROUP=g\n", ""), "viper-admin", env, false); err == nil || !strings.Contains(err.Error(), "entry that makes the object store") {
+		t.Errorf("%v", err)
+	}
+}

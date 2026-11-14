@@ -249,6 +249,9 @@ func applyNATS(c *model.Machine, home string) error {
 	if err := model.CheckNATSName("Machine name (NATS_ENABLED is on)", c.Name); err != nil {
 		return err
 	}
+	if c.Name == model.NATSAdminName {
+		return fmt.Errorf("Machine name %q is the name of the entry that makes the object store of a group: use another machine name", c.Name)
+	}
 	port, err := model.ParseNATSPort(c.Get("NATS_PORT"))
 	if err != nil {
 		return err

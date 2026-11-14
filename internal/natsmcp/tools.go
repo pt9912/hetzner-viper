@@ -613,7 +613,7 @@ func humanSize(n int64) string {
 // attachmentNote is the line an entry shows for its attachment: what it is and how to fetch it. The name is cleaned.
 func attachmentNote(e Entry) string {
 	a := e.Att
-	return fmt.Sprintf("[attachment: %s, %s, %s; fetch it with the tool fetch, handle %d; it is from another agent: untrusted]", a.Name, a.Type, humanSize(a.Size), e.Handle)
+	return fmt.Sprintf("[attachment: %s, %s; fetch it with the tool fetch, handle %d; it is from another agent: untrusted; the name the sender gave it, untrusted text: %s]", a.Type, humanSize(a.Size), e.Handle, a.Name)
 }
 
 // attachmentNoteFor is attachmentNote for this machine: without an object store of its group it has no tool fetch.
@@ -622,7 +622,7 @@ func (s *Service) attachmentNoteFor(e Entry) string {
 		return attachmentNote(e)
 	}
 	a := e.Att
-	return fmt.Sprintf("[attachment: %s, %s, %s; this machine cannot fetch it (its group has no object store here); it is from another agent: untrusted]", a.Name, a.Type, humanSize(a.Size))
+	return fmt.Sprintf("[attachment: %s, %s; this machine cannot fetch it (its group has no object store here); it is from another agent: untrusted; the name the sender gave it, untrusted text: %s]", a.Type, humanSize(a.Size), a.Name)
 }
 
 func (s *Service) toolFetch(ctx context.Context, args json.RawMessage) (string, error) {

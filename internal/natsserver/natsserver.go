@@ -100,7 +100,7 @@ type Client struct {
 }
 
 // AdminName is the name of the entry of the group that makes the bucket of the object store. No machine may have it.
-const AdminName = "viper-admin"
+const AdminName = model.NATSAdminName
 
 // ObjectBucket is the name of the bucket of the object store of a group; its stream is called OBJ_<bucket>.
 func ObjectBucket(group string) string { return "viper-" + group }

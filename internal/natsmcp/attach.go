@@ -111,14 +111,14 @@ func CleanName(name string) string {
 	return "file"
 }
 
-// nameRune says whether a character may be in a name for display: letters and digits of any script and a few marks of file names.
+// nameRune says whether a character may be in a name for display: letters, digits and combining marks of any script and a few marks of file names.
 // Nothing else: no control, format or bidirectional characters (they hide or reorder text), no brackets, quotes, backticks or
 // other characters that a name could use to look like an instruction in the line that shows it.
 func nameRune(r rune) bool {
 	switch {
 	case r == utf8.RuneError:
 		return false
-	case unicode.IsLetter(r) || unicode.IsDigit(r):
+	case unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsMark(r):
 		return true
 	}
 	return strings.ContainsRune(". _-+", r)

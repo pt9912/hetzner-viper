@@ -127,7 +127,7 @@ func TestTheAdminMakesTheBucketOnceAndReportsWhatDiffers(t *testing.T) {
 	if err != nil || info == nil {
 		t.Fatalf("%v %v", info, err)
 	}
-	if info.MaxBytes != 64<<20 || info.MaxAge != 24*time.Hour || info.MaxMsgs != 4096 || info.MaxMsgSize != 256<<10 || info.Storage != "file" || info.Replicas != 1 || info.Discard != "new" {
+	if info.MaxBytes != 64<<20 || info.MaxAge != 24*time.Hour || info.MaxMsgs != 4096 || info.MaxMsgSize != 256<<10 || info.MaxConsumers != 64 || info.Storage != "file" || info.Replicas != 1 || info.Discard != "new" {
 		t.Errorf("%+v", info)
 	}
 	created, diffs, err = natsmcp.EnsureBucket(ctx5(t), nc, testSpec())
@@ -277,7 +277,7 @@ func TestEnsureBucketAndBucketInfoRunAsCommandsOnTheServer(t *testing.T) {
 		t.Errorf("%d %q", code, out)
 	}
 	out, _, code = run("bucket-info")
-	for _, want := range []string{"bucket=ok", "bucket_max_bytes=67108864", "bucket_max_age=604800", "bucket_max_msgs=4096", "bucket_max_msg_size=262144", "bucket_discard=new"} {
+	for _, want := range []string{"bucket=ok", "bucket_max_bytes=67108864", "bucket_max_age=604800", "bucket_max_msgs=4096", "bucket_max_msg_size=262144", "bucket_max_consumers=64", "bucket_discard=new"} {
 		if code != 0 || !strings.Contains(out, want) {
 			t.Errorf("%q missing: %d %q", want, code, out)
 		}

@@ -26,6 +26,10 @@ func BucketName(group string) string { return "viper-" + group }
 
 func streamName(group string) string { return "OBJ_" + BucketName(group) }
 
+// maxConsumers bounds the consumers of the stream: a machine may create consumers (a read does), and without a bound one machine
+// could make as many as it likes. The ordered consumers of a read are deleted when it is done.
+const maxConsumers = 64
+
 // maxMsgSize is the largest message of the stream: a chunk of an object is 128 KiB, with its headers a little more.
 const maxMsgSize = 256 << 10
 
@@ -47,19 +51,20 @@ func (b BucketSpec) maxMsgs() int64 {
 
 // BucketInfo is the configuration of the stream of the bucket as the server has it.
 type BucketInfo struct {
-	MaxBytes   int64
-	MaxAge     time.Duration
-	MaxMsgs    int64
-	MaxMsgSize int32
-	Storage    string
-	Replicas   int
-	Discard    string
+	MaxBytes     int64
+	MaxAge       time.Duration
+	MaxMsgs      int64
+	MaxMsgSize   int32
+	MaxConsumers int
+	Storage      string
+	Replicas     int
+	Discard      string
 }
 
 // Lines are the values as key=value lines, for viper check.
 func (i BucketInfo) Lines() string {
-	return fmt.Sprintf("bucket_max_bytes=%d\nbucket_max_age=%d\nbucket_max_msgs=%d\nbucket_max_msg_size=%d\nbucket_storage=%s\nbucket_replicas=%d\nbucket_discard=%s\n",
-		i.MaxBytes, int64(i.MaxAge/time.Second), i.MaxMsgs, i.MaxMsgSize, i.Storage, i.Replicas, i.Discard)
+	return fmt.Sprintf("bucket_max_bytes=%d\nbucket_max_age=%d\nbucket_max_msgs=%d\nbucket_max_msg_size=%d\nbucket_max_consumers=%d\nbucket_storage=%s\nbucket_replicas=%d\nbucket_discard=%s\n",
+		i.MaxBytes, int64(i.MaxAge/time.Second), i.MaxMsgs, i.MaxMsgSize, i.MaxConsumers, i.Storage, i.Replicas, i.Discard)
 }
 
 func infoOf(c jetstream.StreamConfig) BucketInfo {
@@ -71,7 +76,7 @@ func infoOf(c jetstream.StreamConfig) BucketInfo {
 	if c.Discard == jetstream.DiscardNew {
 		discard = "new"
 	}
-	return BucketInfo{MaxBytes: c.MaxBytes, MaxAge: c.MaxAge, MaxMsgs: c.MaxMsgs, MaxMsgSize: c.MaxMsgSize, Storage: storage, Replicas: c.Replicas, Discard: discard}
+	return BucketInfo{MaxBytes: c.MaxBytes, MaxAge: c.MaxAge, MaxMsgs: c.MaxMsgs, MaxMsgSize: c.MaxMsgSize, MaxConsumers: c.MaxConsumers, Storage: storage, Replicas: c.Replicas, Discard: discard}
 }
 
 // Differences says in what the bucket differs from the spec, in words ("" lines for none).
@@ -88,6 +93,9 @@ func (b BucketSpec) Differences(i BucketInfo) []string {
 	}
 	if i.MaxMsgSize != maxMsgSize {
 		d = append(d, fmt.Sprintf("max_msg_size is %d, should be %d", i.MaxMsgSize, maxMsgSize))
+	}
+	if i.MaxConsumers != maxConsumers {
+		d = append(d, fmt.Sprintf("max_consumers is %d, should be %d", i.MaxConsumers, maxConsumers))
 	}
 	if i.Storage != "file" || i.Replicas != 1 {
 		d = append(d, fmt.Sprintf("storage is %s with %d replica(s), should be file with 1", i.Storage, i.Replicas))
@@ -122,7 +130,7 @@ func EnsureBucket(ctx context.Context, nc *nats.Conn, spec BucketSpec) (created 
 		return true, nil, fmt.Errorf("reading the stream: %w", err)
 	}
 	cfg := s.CachedInfo().Config
-	cfg.MaxMsgs, cfg.MaxMsgSize = spec.maxMsgs(), maxMsgSize
+	cfg.MaxMsgs, cfg.MaxMsgSize, cfg.MaxConsumers = spec.maxMsgs(), maxMsgSize, maxConsumers
 	if _, err := js.UpdateStream(ctx, cfg); err != nil {
 		return true, nil, fmt.Errorf("limiting the stream: %w", err)
 	}

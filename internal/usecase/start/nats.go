@@ -310,6 +310,9 @@ func (r *runner) natsServer(ctx context.Context, ip string) (int, error) {
 	if code, err := r.natsTools(ctx, true); code != 0 || err != nil {
 		return code, err
 	}
+	if err := r.natsObjectsMatch(ctx); err != nil {
+		return r.fail("%v", err)
+	}
 	host := r.natsHost(ip)
 	if _, err := r.remote(ctx, "", natsCertScript, natsserver.Dir, host, "viper-nats-"+c.NATS.Group); err != nil {
 		return fail("creating the certificate", err)
@@ -504,3 +507,21 @@ func onOff(on bool) string {
 
 // objectsReserve is what stays free next to the object store: the system and the logs.
 const objectsReserve = 1 << 30
+
+// natsObjectsMatch refuses to set up a server again whose object store is not the one the settings ask for: the store is fixed
+// when the server is made, and a server that is made with one and set up without (or the other way round) ends up with a unit
+// and a check that do not fit its configuration. Nothing has been changed yet.
+func (r *runner) natsObjectsMatch(ctx context.Context) error {
+	_, end, ok, err := r.ops().Registry(ctx, natsgroup.Self(r.c))
+	if err != nil || !ok {
+		return nil // a new server (or one that cannot be read: the steps after this say so)
+	}
+	has, want := end.Objects != nil, r.c.NATS.Objects
+	switch {
+	case has == want:
+		return nil
+	case want:
+		return fmt.Errorf("NATS_OBJECTS is on, but the server of the group %s was made without an object store; it is fixed when the server is made: viper down --group %s, then viper up --group %s (this deletes the machines of the group)", r.c.NATS.Group, r.c.NATS.Group, r.c.NATS.Group)
+	}
+	return fmt.Errorf("the server of the group %s has an object store, but NATS_OBJECTS is off in these settings; it is fixed when the server is made: set NATS_OBJECTS=true again, or viper down --group %s, then viper up --group %s (this deletes the machines of the group)", r.c.NATS.Group, r.c.NATS.Group, r.c.NATS.Group)
+}

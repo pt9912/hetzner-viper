@@ -49,6 +49,9 @@ const (
 	NATSFailed       NATSState = "failed"
 )
 
+// NATSAdminName is the name of the entry that makes the bucket of the object store; no machine may have it (natsserver.AdminName).
+const NATSAdminName = "viper-admin"
+
 // DefaultNATSOperator is the name of the operator in a NATS group unless NATS_OPERATOR_NAME says otherwise.
 const DefaultNATSOperator = "operator"
 

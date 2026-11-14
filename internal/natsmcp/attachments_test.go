@@ -303,11 +303,11 @@ func TestAFileGoesThroughTheObjectStoreAndIsFetchedAndCheckedByTheReceiver(t *te
 		t.Fatalf("%+v", e)
 	}
 	inbox, _ := call(t, g.b.svc, "inbox", nil)
-	if !strings.Contains(inbox, "[attachment: shot.png, png,") || !strings.Contains(inbox, "fetch it with the tool fetch, handle 1") {
+	if !strings.Contains(inbox, "[attachment: png, 300 KiB;") || !strings.Contains(inbox, "untrusted text: shot.png]") || !strings.Contains(inbox, "fetch it with the tool fetch, handle 1") {
 		t.Errorf("the inbox names the file:\n%s", inbox)
 	}
 	eventually(t, "b is told", func() bool { return len(g.b.pushed()) == 1 })
-	if p := g.b.pushed()[0]; !strings.Contains(p.content, "[attachment: shot.png") || p.meta["attachment"] != "png" {
+	if p := g.b.pushed()[0]; !strings.Contains(p.content, "[attachment: png,") || !strings.Contains(p.content, "untrusted text: shot.png]") || p.meta["attachment"] != "png" {
 		t.Errorf("%+v", p)
 	}
 	res, err := call(t, g.b.svc, "fetch", map[string]any{"handle": 1})

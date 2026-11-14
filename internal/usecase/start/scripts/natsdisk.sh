@@ -6,7 +6,8 @@ dir="$1"; need="$2"
 case "$need" in ''|*[!0-9]*) echo "nats disk: the size is no number: $need"; exit 1 ;; esac
 p="$dir"
 while [ ! -d "$p" ] && [ "$p" != / ]; do p=$(dirname "$p"); done
-avail=$(df --output=avail -B1 "$p" 2>/dev/null | tail -n 1 | tr -d ' ')
+# POSIX df (also busybox): -P one line per file system, -k blocks of 1024 bytes
+avail=$(df -Pk "$p" 2>/dev/null | awk 'NR == 2 {print $4 * 1024}')
 case "$avail" in ''|*[!0-9]*) echo "nats disk: cannot read the free space of $p"; exit 1 ;; esac
 if [ "$avail" -lt "$need" ]; then
   echo "nats disk: $((avail / 1048576)) MiB free at $p, the object store needs $((need / 1048576)) MiB (NATS_OBJECTS_MAX plus 1 GiB): lower NATS_OBJECTS_MAX or use a larger disk"
