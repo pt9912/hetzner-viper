@@ -209,14 +209,21 @@ func checkRead(text, name, value string, removed bool) error {
 	return nil
 }
 
-// userinfoURL says whether a value has a URL with credentials in it (https://user:token@host/...).
+// userinfoURL says whether a value has a URL with credentials in it (https://user:token@host/...). ssh://git@host/... names
+// the user of the SSH login, not a credential, and an @ after the host (a query) is none either (as preflight reads it).
 func userinfoURL(v string) bool {
 	for _, w := range strings.Fields(v) {
-		if _, rest, ok := strings.Cut(w, "://"); ok {
-			host, _, _ := strings.Cut(rest, "/")
-			if strings.Contains(host, "@") {
-				return true
-			}
+		scheme, rest, ok := strings.Cut(w, "://")
+		if !ok {
+			continue
+		}
+		host := rest
+		if i := strings.IndexAny(rest, "/?#"); i >= 0 {
+			host = rest[:i]
+		}
+		user, _, hasUser := strings.Cut(host, "@")
+		if hasUser && (scheme != "ssh" || strings.Contains(user, ":")) {
+			return true
 		}
 	}
 	return false
@@ -360,7 +367,7 @@ func previewOf(dir string, ch settings.Change, env settings.Env, pl credPlan, pr
 	}
 	p.Etag = pl.etag
 	p.Files = []settings.File{{Path: filepath.ToSlash(pl.rel), Text: strings.Join(pl.lines, "\n") + "\n"}}
-	problems2, broken := diffStatus(dir, env, pl.rel, pl.after, "")
+	problems2, broken := diffStatus(dir, env, map[string]string{pl.rel: pl.after}, "")
 	p.Problems = append(p.Problems, problems2...)
 	sort.Strings(broken)
 	p.Broken = broken
@@ -399,7 +406,7 @@ func createCredential(dir string, ch settings.Change, env settings.Env) (setting
 		p.Problems = append(p.Problems, "the file has changed since the preview: look at the preview again")
 		return p, errors.New("the file has changed")
 	}
-	name, err := writeBackup(env.Home, ch.Kind, pl)
+	name, err := writeBackup(env.Home, ch.Kind, []credPlan{pl})
 	if err != nil {
 		p.Problems = append(p.Problems, "no backup could be made: "+err.Error())
 		return p, errors.New("no backup")
@@ -444,32 +451,55 @@ func replaceFile(path, text string) error {
 	return werr
 }
 
+type backupEntry struct{ name, text string }
+
+// backupEntries are the files of a backup ZIP: each file as it was without its credentials, and the manifest.
+func backupEntries(action string, plans []credPlan, now time.Time) ([]backupEntry, error) {
+	var entries []backupEntry
+	var files, names strings.Builder
+	for _, pl := range plans {
+		before, err := emptied(pl.before)
+		if err != nil {
+			return nil, err
+		}
+		after, err := emptied(pl.after)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, backupEntry{filepath.ToSlash(pl.rel), before})
+		fmt.Fprintf(&files, "  - path: %s\n    saved-sha256: %s\n    after-sha256: %s\n", filepath.ToSlash(pl.rel), etagOf([]byte(before)), etagOf([]byte(after)))
+		for _, n := range pl.names {
+			if names.Len() > 0 {
+				names.WriteString(", ")
+			}
+			names.WriteString(n)
+		}
+	}
+	manifest := fmt.Sprintf("time: %s\naction: %s\nfiles:\n%scredentials: [%s]\nnote: the values of the known credentials, URLs with credentials and comments that name a credential are left out of the saved files; other text is as it was\n",
+		now.Format(time.RFC3339), action, files.String(), names.String())
+	return append(entries, backupEntry{"manifest.yaml", manifest}), nil
+}
+
 // writeBackup keeps what the file was, without its credentials, in a ZIP of its own in the backups directory of the state
 // (written once, never changed): the file under its logical name, and a manifest with the time, the action, the names of the
 // credentials that change and the hashes of the saved text before and after. It returns the name of the ZIP.
-func writeBackup(home, action string, pl credPlan) (string, error) {
+func writeBackup(home, action string, plans []credPlan) (string, error) {
 	dir := filepath.Join(model.StateDir(home), "backups")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	before, err := emptied(pl.before)
-	if err != nil {
-		return "", err
-	}
-	after, err := emptied(pl.after)
-	if err != nil {
-		return "", err
-	}
 	now := time.Now()
+	entries, err := backupEntries(action, plans, now)
+	if err != nil {
+		return "", err
+	}
 	tmp, err := os.CreateTemp(dir, ".viper-backup-*")
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }() // gone after the rename
 	zw := zip.NewWriter(tmp)
-	manifest := fmt.Sprintf("time: %s\naction: %s\nfiles:\n  - path: %s\n    saved-sha256: %s\n    after-sha256: %s\ncredentials: [%s]\nnote: the values of the known credentials, URLs with credentials and comments that name a credential are left out of the saved files; other text is as it was\n",
-		now.Format(time.RFC3339), action, filepath.ToSlash(pl.rel), etagOf([]byte(before)), etagOf([]byte(after)), strings.Join(pl.names, ", "))
-	for _, e := range []struct{ name, text string }{{filepath.ToSlash(pl.rel), before}, {"manifest.yaml", manifest}} {
+	for _, e := range entries {
 		w, err := zw.CreateHeader(&zip.FileHeader{Name: e.name, Method: zip.Deflate, Modified: now})
 		if err != nil {
 			return "", err
@@ -503,6 +533,20 @@ func writeBackup(home, action string, pl credPlan) (string, error) {
 }
 
 var backupName = regexp.MustCompile(`^(\d{8}T\d{6})-[a-z]+(?:-(\d+))?\.zip$`)
+
+// newer says whether the backup a was made after b: by the time in the name, and two in one second by their number.
+func newer(a, b string) bool {
+	ma, mb := backupName.FindStringSubmatch(a), backupName.FindStringSubmatch(b)
+	if ma == nil || mb == nil {
+		return a > b
+	}
+	if ma[1] != mb[1] {
+		return ma[1] > mb[1]
+	}
+	na, _ := strconv.Atoi(ma[2])
+	nb, _ := strconv.Atoi(mb[2])
+	return na > nb
+}
 
 // pruneBackups removes the backups of viper (by their name) that are older than 30 days, and those that are none of the five
 // newest of any file they hold. Anything else in the directory is left alone.
@@ -577,7 +621,7 @@ func (Files) Backups(env settings.Env) ([]settings.BackupInfo, error) {
 			out = append(out, settings.BackupInfo{Name: e.Name(), Time: t.Format(time.RFC3339), Files: filesOfBackup(filepath.Join(dir, e.Name()))})
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name > out[j].Name })
+	sort.Slice(out, func(i, j int) bool { return newer(out[i].Name, out[j].Name) })
 	return out, nil
 }
 

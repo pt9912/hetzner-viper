@@ -110,9 +110,12 @@ func (e *uiEditor) Create(_ context.Context, req web.EditRequest) (web.EditResul
 		for _, f := range p.Files {
 			paths = append(paths, f.Path)
 		}
-		if req.Kind == "credential" || req.Kind == "setting" {
+		switch req.Kind {
+		case "restore":
+			e.trace("restored " + strings.Join(paths, ", ") + " from " + req.Name + " (backup " + p.Backup + ")")
+		case "credential", "setting":
 			e.trace(traceChange(req, paths, p.Backup))
-		} else {
+		default:
 			e.trace("made " + strings.Join(paths, ", "))
 		}
 	}

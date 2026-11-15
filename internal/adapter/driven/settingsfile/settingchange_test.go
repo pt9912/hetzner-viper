@@ -185,3 +185,95 @@ func TestEverySettingOfTheCatalogHasAHelpInBothLanguagesAndTheHelpNamesNothingEl
 		}
 	}
 }
+
+func markServer(t *testing.T, env settings.Env, prefix, machine string) {
+	t.Helper()
+	marks := filepath.Join(env.Home, ".local", "state", "viper", "servers", prefix)
+	_ = os.MkdirAll(marks, 0o700)
+	_ = os.WriteFile(filepath.Join(marks, "id-"+prefix+"-"+machine), []byte("1\n"), 0o600)
+}
+
+func problemsOf(t *testing.T, dir string, env settings.Env, ch settings.Change) string {
+	t.Helper()
+	p, err := settingsfile.Files{}.Preview(dir, ch, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Join(p.Problems, "|")
+}
+
+func TestAServerIsFoundWhereverTheSettingsReachTheMachine(t *testing.T) {
+	env, _ := credEnv(t)
+	dir := setupDir(t, "SERVER_PREFIX=claude\nDNS_PROVIDER=none\n", compose)
+	writeIn(t, dir, "groups/g1.env", "GROUP_MACHINES=c\n")
+	writeIn(t, dir, "machines/c.env.local", "PROVIDER=compose\nSERVER_LOCATION=default\nCOMPOSE_IMAGE=x:1\n")
+	markServer(t, env, "claude", "c")
+	// a machine that only a group names, through the base file
+	base := settings.Change{Kind: "setting", Target: "base", Fields: map[string]string{"SERVER_LOCATION": "other"}}
+	if !strings.Contains(problemsOf(t, dir, env, base), "viper down first") {
+		t.Error("the base file moves a machine that has a server")
+	}
+	// the group takes a machine that has a server
+	grp := settings.Change{Kind: "setting", Target: "group", Name: "g1", Fields: map[string]string{"GROUP_MACHINES": "c,web"}}
+	if !strings.Contains(problemsOf(t, dir, env, grp), "viper down first") {
+		t.Error("the membership of a group with a server")
+	}
+	// the DNS name is deleted by the name the settings say
+	dns := settings.Change{Kind: "setting", Target: "machine", Name: "c", Fields: map[string]string{"DNS_DOMAIN": "example.org"}}
+	if !strings.Contains(problemsOf(t, dir, env, dns), "viper down first") {
+		t.Error("DNS_DOMAIN of a machine with a server")
+	}
+	// a machine that two groups name cannot be loaded: the mark is still found
+	writeIn(t, dir, "groups/g2.env", "GROUP_MACHINES=c\n")
+	if !strings.Contains(problemsOf(t, dir, env, settings.Change{Kind: "setting", Target: "machine", Name: "c", Fields: map[string]string{"SERVER_LOCATION": "other"}}), "viper down first") {
+		t.Error("a machine in two groups")
+	}
+}
+
+func TestValuesAreCheckedLikePreflightChecksThem(t *testing.T) {
+	dir, env := settingDir(t)
+	for _, c := range []struct {
+		name, value string
+		ok          bool
+	}{
+		{"REPO_URL", "ssh://git@github.com/o/r.git", true}, {"REPO_URL", "git@github.com:o/r.git", true}, {"REPO_URL", "https://h.example/x?a=b@c", true},
+		{"REPO_URL", "https://u:tok@h.example/x.git", false}, {"REPO_URL", "https://tok@h.example/x.git", false},
+		{"SSH_ALLOWED_CIDRS", "10.0.0.0/8,::/0", true}, {"SSH_ALLOWED_CIDRS", "junk", false}, {"SSH_ALLOWED_CIDRS", "10.0.0.0/8,evil", false},
+		{"VIPER_SWAP", "0", true}, {"VIPER_SWAP", "0.5", true}, {"VIPER_SWAP", "4G", true}, {"VIPER_SWAP", "9", false}, {"VIPER_SWAP", "lots", false},
+		{"VIPER_CODE_SERVER", "1", true}, {"VIPER_CODE_SERVER", "yes", false}, {"SERVER_TYPE", "", false},
+	} {
+		got := problemsOf(t, dir, env, setting(map[string]string{c.name: c.value}))
+		if (got == "") != c.ok {
+			t.Errorf("%s=%q: ok %v, problems %q", c.name, c.value, c.ok, got)
+		}
+	}
+}
+
+func TestTheOldValueIsOnlySaidWhenTheFileSaysItPlainly(t *testing.T) {
+	dir, env := settingDir(t)
+	writeIn(t, dir, "machines/web.env.local", compose+"WORKSPACE_DIR=$HOME/work\nSERVER_IMAGE=ubuntu-24.04\n")
+	p, _ := settingsfile.Files{}.Preview(dir, setting(map[string]string{"SERVER_IMAGE": "ubuntu-26.04"}), env)
+	if !strings.Contains(p.Files[0].Text, "~ SERVER_IMAGE: ubuntu-24.04 -> ubuntu-26.04") {
+		t.Errorf("%q", p.Files[0].Text)
+	}
+	p, _ = settingsfile.Files{}.Preview(dir, setting(map[string]string{"WORKSPACE_DIR": "/home/builder/w"}), env)
+	if !strings.Contains(p.Files[0].Text, "WORKSPACE_DIR: (set) -> /home/builder/w") {
+		t.Errorf("%q", p.Files[0].Text)
+	}
+}
+
+func TestTwoBackupsInOneSecondAreListedNewestFirst(t *testing.T) {
+	dir, env := settingDir(t)
+	a, err := apply(t, dir, env, setting(map[string]string{"SERVER_TYPE": "4x8"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := apply(t, dir, env, setting(map[string]string{"SERVER_TYPE": "8x16"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, _ := settingsfile.Files{}.Backups(env)
+	if len(list) != 2 || list[0].Name != b.Backup || list[1].Name != a.Backup {
+		t.Errorf("%v (a %s, b %s)", list, a.Backup, b.Backup)
+	}
+}

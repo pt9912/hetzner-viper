@@ -300,13 +300,22 @@ func missingMembers(dir string, ch settings.Change) (out []string) {
 // something the change breaks.
 // withFile is env with one settings file as the text says (in memory).
 func withFile(dir string, env settings.Env, path, text string) settings.Env {
-	env.Files = overlay{files: map[string][]byte{filepath.Clean(filepath.Join(dir, path)): []byte(text)}, base: env.Files}
+	return withFiles(dir, env, map[string]string{path: text})
+}
+
+// withFiles is env with several settings files as the texts say (in memory).
+func withFiles(dir string, env settings.Env, files map[string]string) settings.Env {
+	o := overlay{files: map[string][]byte{}, base: env.Files}
+	for p, t := range files {
+		o.files[filepath.Clean(filepath.Join(dir, p))] = []byte(t)
+	}
+	env.Files = o
 	return env
 }
 
-func diffStatus(dir string, env settings.Env, path, text, key string) (problems, broken []string) {
+func diffStatus(dir string, env settings.Env, files map[string]string, key string) (problems, broken []string) {
 	before := status(dir, env)
-	for k, msg := range status(dir, withFile(dir, env, path, text)) {
+	for k, msg := range status(dir, withFiles(dir, env, files)) {
 		if msg == "" {
 			continue
 		}
@@ -323,6 +332,10 @@ func diffStatus(dir string, env settings.Env, path, text, key string) (problems,
 
 // Preview says what the change would do, and writes nothing.
 func (Files) Preview(dir string, ch settings.Change, env settings.Env) (settings.Preview, error) {
+	if ch.Kind == "restore" {
+		p, _ := previewRestore(dir, ch, env)
+		return p, nil
+	}
 	if ch.Kind == "credential" || ch.Kind == "setting" {
 		return previewCredential(dir, ch, env)
 	}
@@ -341,7 +354,7 @@ func (Files) Preview(dir string, ch settings.Change, env settings.Env) (settings
 		return p, nil
 	}
 	key := ch.Kind + " " + ch.Name
-	problems2, broken := diffStatus(dir, env, path, text, key)
+	problems2, broken := diffStatus(dir, env, map[string]string{path: text}, key)
 	p.Problems = append(p.Problems, problems2...)
 	p.Broken = append(p.Broken, broken...)
 	sort.Strings(p.Broken)
@@ -355,6 +368,9 @@ func (Files) Preview(dir string, ch settings.Change, env settings.Env) (settings
 
 // Create makes the file of a change that Preview accepts.
 func (f Files) Create(dir string, ch settings.Change, env settings.Env) (settings.Preview, error) {
+	if ch.Kind == "restore" {
+		return createRestore(dir, ch, env)
+	}
 	if ch.Kind == "credential" || ch.Kind == "setting" {
 		return createCredential(dir, ch, env)
 	}

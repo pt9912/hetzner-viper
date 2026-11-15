@@ -1062,9 +1062,10 @@
   }
 
   // the control for the value follows the kind of the setting: a choice, a number, or text
-  function valueControl() {
+  function valueControl(keep) {
     const c = catalogOf($('ch-name').value);
     const box = $('ch-valuebox');
+    const typed = keep && $('ch-value') ? $('ch-value').value : '';
     box.textContent = '';
     let ctl;
     if (c && c.type === 'enum') {
@@ -1077,6 +1078,7 @@
     }
     ctl.id = 'ch-value';
     box.appendChild(ctl);
+    if (typed) { ctl.value = typed; } // a change of the language keeps what was typed
     $('ch-help').textContent = (c && c.help && (c.help[window.viperI18n.lang()] || c.help.en)) || ''; // from the server, in the language of the page
     $('ch-limits').textContent = [c && c.type === 'int' ? t('change.limits.int', c.min, c.max) : '', c && c.danger ? t('change.limits.danger') : ''].filter(Boolean).join(' ');
   }
@@ -1093,16 +1095,19 @@
     nameSel.textContent = '';
     for (const c of templates.catalog) { addOption(nameSel, c.name, c.name); }
     if (keepName) { nameSel.value = keepName; }
-    if (!$('ch-value')) { valueControl(); }
+    if (!$('ch-value')) { valueControl(false); }
     $('ch-preview').disabled = templates.files.length === 0;
     if (templates.files.length === 0) { $('ch-status').textContent = t('change.nofile'); }
     loadRows();
   }
 
+  let rowsSeq = 0;
   async function loadRows() {
+    const mine = ++rowsSeq; // quick changes of the file: the last answer is the one shown
     changeRows = [];
     try {
       const files = await api('/api/settings');
+      if (mine !== rowsSeq) { return; }
       const f = files.files.find((x) => x.name === $('ch-file').value);
       changeRows = f ? f.settings : [];
     } catch (e) { $('ch-status').textContent = e.message; }
@@ -1114,7 +1119,7 @@
       cell(tr, s.key, 'mono');
       cell(tr, s.shown ? s.value : (s.set ? t('change.shownot') : ''), s.shown ? '' : 'muted');
       const act = cell(tr, '', 'actions');
-      act.appendChild(button(t('change.edit'), t('change.edit') + ' ' + s.key, () => { $('ch-name').value = s.key; valueControl(); if (s.shown && $('ch-value')) { $('ch-value').value = s.value; } $('ch-value').focus(); }, false, 'quiet'));
+      act.appendChild(button(t('change.edit'), t('change.edit') + ' ' + s.key, () => { $('ch-name').value = s.key; valueControl(false); if (s.shown && $('ch-value')) { $('ch-value').value = s.value; } $('ch-value').focus(); }, false, 'quiet'));
       const rm = button(t('change.remove'), t('change.remove') + ' ' + s.key, () => removeSetting(s.key, rm), false, 'danger');
       rm.addEventListener('blur', () => { removeAskedFor = ''; rm.textContent = t('change.remove'); rm.setAttribute('aria-label', t('change.remove') + ' ' + s.key); });
       act.appendChild(rm);
@@ -1123,6 +1128,8 @@
   }
 
   function changeResult(res) {
+    restoring = null;
+    $('ch-restore-go').hidden = true; // a preview that is not of a restore has no button for it
     const ul = $('ch-problems');
     ul.textContent = '';
     const add = (text) => { const li = document.createElement('li'); li.textContent = text; ul.appendChild(li); };
@@ -1147,7 +1154,7 @@
     if (!res.done) { $('ch-status').textContent = t('create.refused'); return; }
     changePreview = '';
     $('ch-apply').disabled = true;
-    $('ch-status').textContent = t('change.done', (req.remove[0] || Object.keys(req.fields)[0]), res.backup);
+    $('ch-status').textContent = t('change.done', req.kind === 'restore' ? req.name : (req.remove[0] || Object.keys(req.fields)[0]), res.backup);
     await loadTemplates();
     loadBackups();
     $('ch-status').setAttribute('tabindex', '-1');
@@ -1192,15 +1199,49 @@
       const pre = await api('/api/edit/preview', req);
       changeResult(pre);
       if (!changeOk(pre)) { $('ch-status').textContent = t('create.refused'); return; }
-      if (pre.confirmWord) { $('ch-status').textContent = t('change.confirm', pre.confirmWord); $('ch-confirm').focus(); changePreview = JSON.stringify(req); changeEtag = pre.etag; return; }
+      if (pre.confirmWord) { // asks for the word: the button under the preview takes it out when the word is typed
+        restoring = { req, etag: pre.etag };
+        $('ch-restore-go').textContent = t('change.remove.go');
+        $('ch-restore-go').hidden = false;
+        $('ch-status').textContent = t('change.confirm', pre.confirmWord);
+        $('ch-confirm').focus();
+        return;
+      }
       await changeApply(req, pre.etag, '');
     } catch (e) { $('ch-status').textContent = e.message; }
   }
 
   // typing the word of the confirmation does not make the preview out of date; changing the setting or the value does
   $('change-form').addEventListener('input', (ev) => { if (ev.target.id === 'ch-confirm') { return; } $('ch-apply').disabled = true; changePreview = ''; });
-  $('ch-name').addEventListener('change', valueControl);
+  $('ch-name').addEventListener('change', () => valueControl(false));
   $('ch-file').addEventListener('change', loadRows);
+
+  // restoring: the preview says what the copy would change; the button under it does it (the credentials that are there stay)
+  let restoring = null; // { req, etag } of a preview that has no problem and waits for the button under it (a restore, or taking out a dangerous setting)
+
+  async function restorePreview(b) {
+    const req = { kind: 'restore', name: b.name, target: '', fields: {}, members: [], remove: [], etag: '', confirm: '' };
+    $('ch-status').textContent = '';
+    try {
+      const res = await api('/api/edit/preview', req);
+      changeResult(res);
+      const ok = changeOk(res);
+      restoring = ok ? { req, etag: res.etag } : null;
+      $('ch-restore-go').textContent = t('backups.restore.go');
+      $('ch-restore-go').hidden = !ok;
+      $('ch-status').textContent = ok ? t('backups.restoring', b.files.join(', ')) : t('create.refused');
+      $('ch-result').scrollIntoView({ block: 'nearest' });
+    } catch (e) { $('ch-status').textContent = e.message; }
+  }
+
+  $('ch-restore-go').addEventListener('click', async () => {
+    if (!restoring) { return; }
+    if (changeWord && $('ch-confirm').value !== changeWord) { $('ch-confirm').focus(); $('ch-status').textContent = t('change.confirm', changeWord); return; }
+    const { req, etag } = restoring;
+    restoring = null;
+    $('ch-restore-go').hidden = true;
+    try { await changeApply(req, etag, $('ch-confirm').value); } catch (e) { $('ch-status').textContent = e.message; }
+  });
 
   async function loadBackups() {
     const ul = $('backup-list');
@@ -1215,7 +1256,8 @@
         a.textContent = t('backups.download');
         a.setAttribute('aria-label', t('backups.aria', b.files.join(', ')));
         a.setAttribute('download', b.name);
-        li.append(document.createTextNode(b.time.replace('T', ' ').slice(0, 19) + '  ' + b.files.join(', ') + '  '), a);
+        const back = button(t('backups.restore'), t('backups.restore.aria', b.files.join(', ')), () => restorePreview(b), false, 'quiet');
+        li.append(document.createTextNode(b.time.replace('T', ' ').slice(0, 19) + '  ' + b.files.join(', ') + '  '), a, document.createTextNode(' '), back);
         ul.appendChild(li);
       }
     } catch (e) { ul.textContent = ''; }
@@ -1227,7 +1269,7 @@
     renderAll();
     renderCreate();
     renderSecrets();
-    valueControl();
+    valueControl(true);
     if (templates) { loadRows(); }
     disarmRemove();
     if (page === 'settings') { loadSettings(); }

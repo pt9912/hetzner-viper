@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
@@ -38,7 +40,7 @@ func flag(name string) spec { return enum(name, false, false, "true", "false") }
 // catalog is what a change may name. VIPER_POST_CLONE (commands that run on the server) is not on it: change it at the terminal.
 func catalog() []spec {
 	return []spec{
-		enum("PROVIDER", false, true, model.ProviderNames()...), enum("DNS_PROVIDER", false, false, "cloudflare", "none"), text("DNS_DOMAIN", false, false),
+		enum("PROVIDER", false, true, model.ProviderNames()...), enum("DNS_PROVIDER", false, true, "cloudflare", "none"), text("DNS_DOMAIN", false, true),
 		text("SERVER_PREFIX", false, true), text("SERVER_TYPE", false, false), text("SERVER_LOCATION", false, true), text("SERVER_IMAGE", false, false),
 		text("COMPOSE_IMAGE", false, false), text("K8S_IMAGE", false, false), enum("K8S_DOCKER", true, false, "none", "dind", "remote"),
 		enum("COMPOSE_DOCKER", true, false, "none", "dind", "remote"), text("WORKSPACE_DIR", true, false), text("REPO_URL", false, false), text("REPO_BRANCH", false, false),
@@ -47,7 +49,7 @@ func catalog() []spec {
 		text("NATS_MCP_PUSH_FROM", false, false), text("NATS_MCP_TOPICS", false, false), flag("NATS_OBJECTS"), number("NATS_OBJECTS_MAX", 16, 102400),
 		number("NATS_OBJECTS_FILE_MAX", 1, 64), number("NATS_OBJECTS_TTL", 1, 365),
 		enum("VIPER_HOMEBREW", false, false, "0", "1"), enum("VIPER_BREWFILE", false, false, "0", "1"), text("VIPER_BREW_TAPS", false, false), text("VIPER_BREW_TRUST", false, false),
-		text("VIPER_BREW_PACKAGES", false, false), text("VIPER_CODE_SERVER", false, false), text("VIPER_SWAP", false, false), text("VIPER_CLAUDE_MODEL", false, false),
+		text("VIPER_BREW_PACKAGES", false, false), enum("VIPER_CODE_SERVER", false, false, "0", "1"), text("VIPER_SWAP", false, false), text("VIPER_CLAUDE_MODEL", false, false),
 		number("VIPER_CLAUDE_MAX_CONTEXT_TOKENS", 1000, 10_000_000),
 	}
 }
@@ -77,6 +79,8 @@ const maxSettingText = 1024
 // checkValue is the value of a setting by its kind: the limits of the kind, one line, and nothing a URL with credentials.
 func (s spec) checkValue(v string) error {
 	switch {
+	case v == "":
+		return errors.New("empty: take the setting out instead")
 	case len(v) > maxSettingText:
 		return fmt.Errorf("longer than %d characters", maxSettingText)
 	case strings.ContainsFunc(v, func(r rune) bool { return r < ' ' || (r >= 0x7f && r <= 0x9f) }) || !validUTF8(v):
@@ -113,8 +117,34 @@ func (s spec) checkByName(v string) error {
 		if _, err := parseGroupMachines(v); err != nil {
 			return err
 		}
+	case "SSH_ALLOWED_CIDRS":
+		for _, n := range strings.Split(strings.TrimSuffix(v, ","), ",") {
+			if !cidr4.MatchString(n) && !cidr6.MatchString(n) {
+				return fmt.Errorf("%q is not a network (a.b.c.d/n or an IPv6 network)", n)
+			}
+		}
+	case "VIPER_SWAP":
+		return checkSwap(v)
 	}
 	return nil
+}
+
+var (
+	cidr4 = regexp.MustCompile(`^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$`)
+	cidr6 = regexp.MustCompile(`^[0-9a-fA-F:]+/[0-9]{1,3}$`)
+)
+
+// checkSwap is VIPER_SWAP as preflight reads it: 0, a factor of the RAM from 0.1 to 4, or a size (4G, 512M).
+func checkSwap(v string) error {
+	if v == "0" || regexp.MustCompile(`^[1-9][0-9]*[MG]$`).MatchString(v) {
+		return nil
+	}
+	if regexp.MustCompile(`^[0-9]*\.?[0-9]+$`).MatchString(v) {
+		if x, err := strconv.ParseFloat(v, 64); err == nil && x >= 0.1 && x <= 4 {
+			return nil
+		}
+	}
+	return errors.New("0, a factor of the RAM from 0.1 to 4, or a size like 4G or 512M")
 }
 
 func validUTF8(v string) bool { return strings.ToValidUTF8(v, "�") == v }
@@ -146,16 +176,18 @@ func checkSettings(ch settings.Change) (problems []string) {
 	return problems
 }
 
-// oldValue is the value the file has for a name now ("" if none).
+// oldValue is the value the file has for a name now ("" if none, or if the file takes it from a variable or a ~: what the page
+// would say would not be what the shell reads).
 func (pl credPlan) oldValue(name string) string {
 	as, err := Assignments(pl.before)
 	if err != nil {
 		return ""
 	}
-	if a, found, _ := only(as, name); found {
-		return a.Value
+	a, found, _ := only(as, name)
+	if !found || strings.ContainsAny(pl.before[a.Start:a.End], "$~`") {
+		return ""
 	}
-	return ""
+	return a.Value
 }
 
 // describe is the line of the preview for one setting: for a credential never a value, for a setting the old and the new one.
@@ -178,17 +210,48 @@ func describe(kind, name, value, old string, existed bool) string {
 	return "+ " + name + " = " + value
 }
 
-// machinesOf are the machines whose settings the file gives: all for .env.local, the members of a group, the machine itself.
+// machinesOf are the machines whose settings the file gives: the machines of .env.local (those that have a file and those a group
+// names), the machines of a group (those it names now and those the change makes it name), the machine itself.
 func machinesOf(dir string, ch settings.Change, env settings.Env) []string {
+	set := map[string]bool{}
+	add := func(ms ...string) {
+		for _, m := range ms {
+			set[m] = true
+		}
+	}
 	switch ch.Target {
 	case "machine":
-		return []string{ch.Name}
+		add(ch.Name)
 	case "group":
-		if g, err := LoadGroup(dir, ch.Name, env); err == nil {
-			return g.Machines
+		add(groupMembers(dir, ch.Name, env)...)
+		if v, ok := ch.Fields["GROUP_MACHINES"]; ok {
+			ms, _ := parseGroupMachines(v)
+			add(ms...)
 		}
-		return nil
+	default:
+		add(machineFiles(dir, env)...)
+		for _, g := range groupFiles(dir, env) {
+			add(groupMembers(dir, g, env)...)
+		}
 	}
+	return slices.Sorted(func(yield func(string) bool) {
+		for m := range set {
+			if !yield(m) {
+				return
+			}
+		}
+	})
+}
+
+func groupMembers(dir, name string, env settings.Env) []string {
+	if g, err := LoadGroup(dir, name, env); err == nil {
+		return g.Machines
+	}
+	return nil
+}
+
+// machineFiles are the machines that have a file (not the examples).
+func machineFiles(dir string, env settings.Env) []string {
 	var out []string
 	ents, _ := readDir(env, filepath.Join(dir, "machines"))
 	for _, e := range ents {
@@ -196,7 +259,6 @@ func machinesOf(dir string, ch settings.Change, env settings.Env) []string {
 			out = append(out, n)
 		}
 	}
-	sort.Strings(out)
 	return out
 }
 
@@ -205,16 +267,40 @@ func exists(path string) bool {
 	return err == nil
 }
 
-// withServer are the machines of the list that have a mark of this computer: a server that viper down has to find.
+// withServer are the machines of the list that have a mark of this computer: a server that viper down has to find. A machine
+// that is named in several groups is looked at in each of them; one that cannot be read at all counts as having a server if a
+// mark with its name is there (it may, and a wrong guess only keeps a setting where it is).
 func withServer(dir string, env settings.Env, machines []string) []string {
 	var out []string
 	for _, m := range machines {
-		c, err := load(dir, m, env, false)
-		if err == nil && (exists(c.IDState) || exists(c.ReadyState) || exists(c.GroupState)) {
+		if hasServer(dir, env, m) {
 			out = append(out, m)
 		}
 	}
 	return out
+}
+
+func marked(c *model.Machine) bool {
+	return exists(c.IDState) || exists(c.ReadyState) || exists(c.GroupState)
+}
+
+func hasServer(dir string, env settings.Env, m string) bool {
+	if c, err := load(dir, m, env, false); err == nil {
+		return marked(c)
+	}
+	for _, g := range groupFiles(dir, env) {
+		e := env
+		e.Group = g
+		if c, err := load(dir, m, e, false); err == nil && marked(c) {
+			return true
+		}
+	}
+	for _, kind := range []string{"id", "ready", "group"} {
+		if hits, _ := filepath.Glob(filepath.Join(model.StateDir(env.Home), "servers", "*", kind+"-*-"+m)); len(hits) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // confirmWord is what a person types to confirm a dangerous change: the name of the file's machine or group, or the file.

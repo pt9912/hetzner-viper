@@ -62,6 +62,45 @@ test('a setting is added, changed and taken out; every change keeps a copy that 
   expect(log).toMatch(/ui\s+edit\s+changed SERVER_TYPE in machines\/web\.env\.local \(backup /);
 });
 
+test('an earlier version is put back: the preview says what changes, the credentials that are there stay, and the restore keeps a copy', async ({ page }) => {
+  ui = await startUI(['--edit'], 0);
+  await open(page);
+  await page.selectOption('#ch-name', 'SERVER_TYPE');
+  for (const v of ['2x4', '4x8']) {
+    await page.fill('#ch-value', v);
+    await page.click('#ch-preview');
+    await page.click('#ch-apply');
+    await expect.poll(() => fs.readFileSync(web(), 'utf8')).toBe(`SERVER_TYPE='${v}'\n`);
+  }
+  await expect(page.locator('#backup-list li')).toHaveCount(2);
+  await page.locator('#backup-list li').first().getByRole('button', { name: /^Restore the copy of/ }).click();
+  await expect(page.locator('#ch-text')).toContainText('~ SERVER_TYPE: 4x8 -> 2x4');
+  await expect(page.locator('#ch-restore-go')).toBeVisible();
+  expect(fs.readFileSync(web(), 'utf8')).toBe("SERVER_TYPE='4x8'\n"); // the preview wrote nothing
+  await page.click('#ch-restore-go');
+  await expect.poll(() => fs.readFileSync(web(), 'utf8')).toContain("2x4");
+  await expect(page.locator('#backup-list li')).toHaveCount(3); // the restore kept a copy of what it replaced
+  await expect(page.locator('#ch-restore-go')).toBeHidden();
+  const log = fs.readFileSync(path.join(ui.home, '.local', 'state', 'viper', 'events.log'), 'utf8');
+  expect(log).toMatch(/ui\s+edit\s+restored machines\/web\.env\.local from \d{8}T\d{6}-setting(-\d+)?\.zip \(backup /);
+});
+
+test('a dangerous setting is taken out only after its word is typed', async ({ page }) => {
+  ui = await startUI(['--edit'], 0);
+  fs.writeFileSync(web(), "COMPOSE_DOCKER='none'\n");
+  await open(page);
+  await page.locator('#ch-table tbody tr', { hasText: 'COMPOSE_DOCKER' }).getByRole('button', { name: 'Remove COMPOSE_DOCKER' }).click();
+  await page.getByRole('button', { name: 'Press again to remove COMPOSE_DOCKER' }).click();
+  await expect(page.locator('#ch-confirmrow')).toBeVisible();
+  await expect(page.locator('#ch-restore-go')).toHaveText('Remove the setting');
+  await page.click('#ch-restore-go');
+  await expect(page.locator('#ch-status')).toContainText('Type web to confirm');
+  expect(fs.readFileSync(web(), 'utf8')).toContain('COMPOSE_DOCKER');
+  await page.fill('#ch-confirm', 'web');
+  await page.click('#ch-restore-go');
+  await expect.poll(() => fs.readFileSync(web(), 'utf8')).toBe('');
+});
+
 test('the help of a setting is in the language of the page', async ({ browser }) => {
   ui = await startUI(['--edit'], 0);
   const ctx = await browser.newContext({ locale: 'de' });

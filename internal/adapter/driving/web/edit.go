@@ -229,7 +229,7 @@ func (s *Server) editApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.editMu.Unlock()
-	if req.Kind == "credential" || req.Kind == "setting" {
+	if req.Kind == "credential" || req.Kind == "setting" || req.Kind == "restore" {
 		if !s.beginEdit() {
 			fail(w, http.StatusConflict, "a run is going: wait for it or cancel it, then change the settings")
 			return
