@@ -323,7 +323,7 @@ func diffStatus(dir string, env settings.Env, path, text, key string) (problems,
 
 // Preview says what the change would do, and writes nothing.
 func (Files) Preview(dir string, ch settings.Change, env settings.Env) (settings.Preview, error) {
-	if ch.Kind == "credential" {
+	if ch.Kind == "credential" || ch.Kind == "setting" {
 		return previewCredential(dir, ch, env)
 	}
 	var p settings.Preview
@@ -355,7 +355,7 @@ func (Files) Preview(dir string, ch settings.Change, env settings.Env) (settings
 
 // Create makes the file of a change that Preview accepts.
 func (f Files) Create(dir string, ch settings.Change, env settings.Env) (settings.Preview, error) {
-	if ch.Kind == "credential" {
+	if ch.Kind == "credential" || ch.Kind == "setting" {
 		return createCredential(dir, ch, env)
 	}
 	p, err := f.Preview(dir, ch, env)

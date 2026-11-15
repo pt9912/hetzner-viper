@@ -218,3 +218,49 @@ func TestADuplicateDoesNotFollowALinkAndSuggestsAFreeNameInAnyCase(t *testing.T)
 		t.Errorf("%+v %v", c, err)
 	}
 }
+
+func TestTheEditorChangesASettingAndListsTheBackupAndTheCatalog(t *testing.T) {
+	env, home := nativeEnv(t)
+	dir := t.TempDir()
+	write(t, dir, ".env.local", "SERVER_PREFIX=ui\nDNS_PROVIDER=none\n")
+	write(t, dir, "machines/web.env.local", "PROVIDER=compose\nSERVER_LOCATION=default\nCOMPOSE_IMAGE=x:1\nSERVER_TYPE=2x4\n")
+	ed, _ := cli.UIEditor(&cli.Opts{Host: testHost(), Dir: dir}, env)
+	tpl, err := ed.Templates(context.Background())
+	if err != nil || len(tpl.Catalog) < 20 {
+		t.Fatalf("%v %v", len(tpl.Catalog), err)
+	}
+	for _, c := range tpl.Catalog {
+		if c.Name == "VIPER_POST_CLONE" || strings.Contains(c.Name, "TOKEN") && c.Name != "VIPER_CLAUDE_MAX_CONTEXT_TOKENS" {
+			t.Errorf("%s is offered", c.Name)
+		}
+	}
+	req := web.EditRequest{Kind: "setting", Target: "machine", Name: "web", Fields: map[string]string{"SERVER_TYPE": "4x8"}}
+	pv, err := ed.Preview(context.Background(), req)
+	if err != nil || len(pv.Problems) > 0 || pv.Etag == "" {
+		t.Fatalf("%+v %v", pv, err)
+	}
+	req.Etag = pv.Etag
+	res, err := ed.Create(context.Background(), req)
+	if err != nil {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "machines", "web.env.local")); !strings.Contains(string(b), "SERVER_TYPE='4x8'") {
+		t.Errorf("%q", b)
+	}
+	log, _ := os.ReadFile(filepath.Join(home, ".local", "state", "viper", "events.log"))
+	if !strings.Contains(string(log), "changed SERVER_TYPE in machines/web.env.local (backup "+res.Backup+")") || strings.Contains(string(log), "4x8") {
+		t.Errorf("events.log %q", log)
+	}
+	bs, err := ed.Backups(context.Background())
+	if err != nil || len(bs) != 1 || bs[0].Name != res.Backup {
+		t.Fatalf("%v %v", bs, err)
+	}
+	rc, err := ed.OpenBackup(context.Background(), bs[0].Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = rc.Close()
+	if _, err := ed.OpenBackup(context.Background(), "../../etc/passwd"); err == nil {
+		t.Error("a path was opened")
+	}
+}

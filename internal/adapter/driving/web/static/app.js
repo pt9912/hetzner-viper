@@ -4,7 +4,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const { t } = window.viperI18n;
-  const PAGES = ['overview', 'runs', 'nats', 'settings', 'secrets', 'create', 'logs'];
+  const PAGES = ['overview', 'runs', 'nats', 'settings', 'change', 'secrets', 'create', 'logs'];
   let overview = { machines: [], groups: [], nats: [] };
   let logText = '';
   let page = 'overview';
@@ -248,7 +248,8 @@
     renderVersion();
     $('tab-create').hidden = !overview.edit;
     $('tab-secrets').hidden = !overview.edit;
-    if (!overview.edit && (page === 'create' || page === 'secrets')) { show('overview'); }
+    $('tab-change').hidden = !overview.edit;
+    if (!overview.edit && (page === 'create' || page === 'secrets' || page === 'change')) { show('overview'); }
     renderMachines();
     renderLogChoices();
     renderNats();
@@ -707,11 +708,12 @@
     if (name === 'logs') { loadLog(); }
     if (name === 'runs') { loadRuns(); }
     if (name === 'settings') { loadSettings(); }
-    if (name === 'create' || name === 'secrets') { loadTemplates(); }
+    if (name === 'create' || name === 'secrets' || name === 'change') { loadTemplates(); }
+    if (name === 'change') { loadBackups(); }
     if (name !== 'secrets') { wipeSecret(); }
   }
 
-  const shownPages = () => PAGES.filter((p) => (p !== 'create' && p !== 'secrets') || overview.edit);
+  const shownPages = () => PAGES.filter((p) => !['create', 'secrets', 'change'].includes(p) || overview.edit);
 
   $('tabs').addEventListener('keydown', (ev) => {
     const pages = shownPages();
@@ -811,6 +813,7 @@
       templates = await api('/api/templates');
       renderCreate();
       renderSecrets();
+      renderChange();
     } catch (e) {
       $('c-status').textContent = e.message;
     }
@@ -1040,12 +1043,191 @@
   window.addEventListener('pagehide', wipeSecret);
   window.addEventListener('pageshow', (ev) => { if (ev.persisted) { wipeSecret(); } });
 
+  // ---- change: one setting of a file that exists (viper ui --edit); the server checks every machine and group first ----
+  let changeRows = []; // the settings of the file that is chosen, as the settings page lists them
+  let changePreview = '';
+  let changeEtag = '';
+  let changeWord = '';
+  let removeAskedFor = '';
+
+  const catalogOf = (n) => templates && templates.catalog.find((c) => c.name === n);
+  const fileOf = (p) => templates && templates.files.find((f) => f.path === p);
+
+  function changeRequest(remove) {
+    const f = fileOf($('ch-file').value) || { target: '', name: '' };
+    const name = remove || $('ch-name').value;
+    const req = { kind: 'setting', target: f.target, name: f.name, fields: {}, members: [], remove: [], etag: '', confirm: '' };
+    if (remove) { req.remove = [remove]; } else { req.fields[name] = $('ch-value').value; }
+    return req;
+  }
+
+  // the control for the value follows the kind of the setting: a choice, a number, or text
+  function valueControl() {
+    const c = catalogOf($('ch-name').value);
+    const box = $('ch-valuebox');
+    box.textContent = '';
+    let ctl;
+    if (c && c.type === 'enum') {
+      ctl = document.createElement('select');
+      for (const o of c.options) { addOption(ctl, o, o); }
+    } else {
+      ctl = document.createElement('input');
+      ctl.type = c && c.type === 'int' ? 'number' : 'text';
+      if (c && c.type === 'int') { ctl.min = String(c.min); ctl.max = String(c.max); } else { ctl.size = 30; ctl.spellcheck = false; }
+    }
+    ctl.id = 'ch-value';
+    box.appendChild(ctl);
+    $('ch-limits').textContent = [c && c.type === 'int' ? t('change.limits.int', c.min, c.max) : '', c && c.danger ? t('change.limits.danger') : ''].filter(Boolean).join(' ');
+  }
+
+  function renderChange() {
+    if (!templates) { return; }
+    const sel = $('ch-file');
+    const keep = sel.value;
+    sel.textContent = '';
+    for (const f of templates.files) { addOption(sel, f.path, f.path); }
+    if (keep) { sel.value = keep; }
+    const nameSel = $('ch-name');
+    const keepName = nameSel.value;
+    nameSel.textContent = '';
+    for (const c of templates.catalog) { addOption(nameSel, c.name, c.name); }
+    if (keepName) { nameSel.value = keepName; }
+    if (!$('ch-value')) { valueControl(); }
+    $('ch-preview').disabled = templates.files.length === 0;
+    if (templates.files.length === 0) { $('ch-status').textContent = t('change.nofile'); }
+    loadRows();
+  }
+
+  async function loadRows() {
+    changeRows = [];
+    try {
+      const files = await api('/api/settings');
+      const f = files.files.find((x) => x.name === $('ch-file').value);
+      changeRows = f ? f.settings : [];
+    } catch (e) { $('ch-status').textContent = e.message; }
+    const body = $('ch-table').tBodies[0];
+    body.textContent = '';
+    for (const s of changeRows) {
+      if (!catalogOf(s.key)) { continue; } // what this page cannot change is not offered
+      const tr = document.createElement('tr');
+      cell(tr, s.key, 'mono');
+      cell(tr, s.shown ? s.value : (s.set ? t('change.shownot') : ''), s.shown ? '' : 'muted');
+      const act = cell(tr, '', 'actions');
+      act.appendChild(button(t('change.edit'), t('change.edit') + ' ' + s.key, () => { $('ch-name').value = s.key; valueControl(); if (s.shown && $('ch-value')) { $('ch-value').value = s.value; } $('ch-value').focus(); }, false, 'quiet'));
+      const rm = button(t('change.remove'), t('change.remove') + ' ' + s.key, () => removeSetting(s.key, rm), false, 'danger');
+      rm.addEventListener('blur', () => { removeAskedFor = ''; rm.textContent = t('change.remove'); rm.setAttribute('aria-label', t('change.remove') + ' ' + s.key); });
+      act.appendChild(rm);
+      body.appendChild(tr);
+    }
+  }
+
+  function changeResult(res) {
+    const ul = $('ch-problems');
+    ul.textContent = '';
+    const add = (text) => { const li = document.createElement('li'); li.textContent = text; ul.appendChild(li); };
+    for (const p of res.problems) { add(t('create.problem', p)); }
+    for (const p of res.broken) { add(t('create.broken', p)); }
+    for (const p of res.confirm) { add(p); }
+    for (const p of res.notes) { add(p); }
+    $('ch-text').textContent = res.files.map((f) => '# ' + f.path + '\n' + f.text).join('\n');
+    $('ch-result').hidden = false;
+    changeWord = res.confirmWord || '';
+    $('ch-confirmrow').hidden = !changeWord;
+    if (changeWord) { $('ch-confirm-label').textContent = t('change.confirm', changeWord); $('ch-confirm').value = ''; }
+  }
+
+  function changeOk(res) { return res.problems.length === 0 && res.broken.length === 0; }
+
+  async function changeApply(req, etag, word) {
+    req.etag = etag;
+    req.confirm = word;
+    const res = await api('/api/edit/apply', req);
+    changeResult(res);
+    if (!res.done) { $('ch-status').textContent = t('create.refused'); return; }
+    changePreview = '';
+    $('ch-apply').disabled = true;
+    $('ch-status').textContent = t('change.done', (req.remove[0] || Object.keys(req.fields)[0]), res.backup);
+    await loadTemplates();
+    loadBackups();
+    $('ch-status').setAttribute('tabindex', '-1');
+    $('ch-status').focus();
+  }
+
+  $('ch-preview').addEventListener('click', async () => {
+    if (!$('ch-value').value) { $('ch-status').textContent = t('change.nothing'); return; }
+    const req = changeRequest('');
+    $('ch-status').textContent = '';
+    try {
+      const res = await api('/api/edit/preview', req);
+      changeResult(res);
+      const ok = changeOk(res);
+      $('ch-status').textContent = ok ? t('secrets.ok') : t('create.refused');
+      changePreview = ok ? JSON.stringify(req) : '';
+      changeEtag = ok ? res.etag : '';
+      $('ch-apply').disabled = !ok;
+    } catch (e) { $('ch-status').textContent = e.message; }
+  });
+
+  $('change-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const req = changeRequest('');
+    if (!changePreview || changePreview !== JSON.stringify(req)) { $('ch-apply').disabled = true; $('ch-status').textContent = t('secrets.changed'); return; }
+    if (changeWord && $('ch-confirm').value !== changeWord) { $('ch-confirm').focus(); $('ch-status').textContent = t('change.confirm', changeWord); return; }
+    $('ch-apply').disabled = true;
+    try { await changeApply(req, changeEtag, $('ch-confirm').value); } catch (e) { $('ch-status').textContent = e.message; }
+  });
+
+  // taking a setting out asks twice, in the button itself
+  async function removeSetting(name, btn) {
+    if (removeAskedFor !== name) {
+      removeAskedFor = name;
+      btn.textContent = t('change.remove.arm', name);
+      btn.setAttribute('aria-label', t('change.remove.arm', name));
+      return;
+    }
+    removeAskedFor = '';
+    const req = changeRequest(name);
+    try {
+      const pre = await api('/api/edit/preview', req);
+      changeResult(pre);
+      if (!changeOk(pre)) { $('ch-status').textContent = t('create.refused'); return; }
+      if (pre.confirmWord) { $('ch-status').textContent = t('change.confirm', pre.confirmWord); $('ch-confirm').focus(); changePreview = JSON.stringify(req); changeEtag = pre.etag; return; }
+      await changeApply(req, pre.etag, '');
+    } catch (e) { $('ch-status').textContent = e.message; }
+  }
+
+  // typing the word of the confirmation does not make the preview out of date; changing the setting or the value does
+  $('change-form').addEventListener('input', (ev) => { if (ev.target.id === 'ch-confirm') { return; } $('ch-apply').disabled = true; changePreview = ''; });
+  $('ch-name').addEventListener('change', valueControl);
+  $('ch-file').addEventListener('change', loadRows);
+
+  async function loadBackups() {
+    const ul = $('backup-list');
+    try {
+      const res = await api('/api/backups');
+      ul.textContent = '';
+      if (res.backups.length === 0) { const li = document.createElement('li'); li.className = 'muted'; li.textContent = t('backups.none'); ul.appendChild(li); }
+      for (const b of res.backups) {
+        const li = document.createElement('li');
+        const a = document.createElement('a');
+        a.href = '/api/backups/' + encodeURIComponent(b.name);
+        a.textContent = t('backups.download');
+        a.setAttribute('aria-label', t('backups.aria', b.files.join(', ')));
+        a.setAttribute('download', b.name);
+        li.append(document.createTextNode(b.time.replace('T', ' ').slice(0, 19) + '  ' + b.files.join(', ') + '  '), a);
+        ul.appendChild(li);
+      }
+    } catch (e) { ul.textContent = ''; }
+  }
+
   function translate() {
     window.viperI18n.apply();
     $('lang').value = window.viperI18n.lang();
     renderAll();
     renderCreate();
     renderSecrets();
+    valueControl();
+    if (templates) { loadRows(); }
     disarmRemove();
     if (page === 'settings') { loadSettings(); }
     if (page === 'runs') { loadRuns(); }

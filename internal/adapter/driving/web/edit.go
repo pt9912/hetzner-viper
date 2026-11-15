@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 )
 
@@ -20,6 +21,8 @@ type EditRequest struct {
 	Target string   `json:"target"`
 	Remove []string `json:"remove"`
 	Etag   string   `json:"etag"`
+	// kind "setting" changes settings that are no credentials (Fields: name -> value); Confirm is the word a dangerous one asks for.
+	Confirm string `json:"confirm"`
 }
 
 // EditFile is a file a request makes, as text.
@@ -37,6 +40,26 @@ type EditResult struct {
 	Done     bool       `json:"done"`
 	Etag     string     `json:"etag"`
 	Backup   string     `json:"backup"`
+	// a change that asks to be confirmed: the reasons, and the word to type
+	Confirm     []string `json:"confirm"`
+	ConfirmWord string   `json:"confirmWord"`
+}
+
+// SettingInfo is a setting that a form may change: its kind of value and the limits.
+type SettingInfo struct {
+	Name    string   `json:"name"`
+	Type    string   `json:"type"`
+	Options []string `json:"options"`
+	Min     int      `json:"min"`
+	Max     int      `json:"max"`
+	Danger  bool     `json:"danger"`
+}
+
+// BackupInfo is a backup of a change.
+type BackupInfo struct {
+	Name  string   `json:"name"`
+	Time  string   `json:"time"`
+	Files []string `json:"files"`
 }
 
 // Template is a provider with the defaults the form offers.
@@ -63,6 +86,7 @@ type Templates struct {
 	Base        bool             `json:"base"`
 	Credentials []string         `json:"credentials"`
 	Files       []CredentialFile `json:"files"`
+	Catalog     []SettingInfo    `json:"catalog"`
 }
 
 // Copy is what a form takes over from a machine or group that exists (names and values of the settings that the form knows,
@@ -78,6 +102,9 @@ type Copy struct {
 type Editor interface {
 	// Duplicate reads what a copy of the machine or group (kind "machine" or "group") starts from.
 	Duplicate(ctx context.Context, kind, name string) (Copy, error)
+	// Backups lists the backups of changes; OpenBackup opens one by its name.
+	Backups(ctx context.Context) ([]BackupInfo, error)
+	OpenBackup(ctx context.Context, name string) (io.ReadCloser, error)
 	Templates(ctx context.Context) (Templates, error)
 	Preview(ctx context.Context, req EditRequest) (EditResult, error)
 	Create(ctx context.Context, req EditRequest) (EditResult, error)
@@ -136,7 +163,7 @@ func (s *Server) editBody(w http.ResponseWriter, r *http.Request) (EditRequest, 
 }
 
 func (s *Server) showResult(res EditResult) EditResult {
-	out := EditResult{Files: []EditFile{}, Problems: []string{}, Broken: []string{}, Notes: []string{}, Done: res.Done, Etag: res.Etag, Backup: s.show(res.Backup)}
+	out := EditResult{Files: []EditFile{}, Problems: []string{}, Broken: []string{}, Notes: []string{}, Done: res.Done, Etag: res.Etag, Backup: s.show(res.Backup), Confirm: []string{}, ConfirmWord: s.show(res.ConfirmWord)}
 	for _, f := range res.Files {
 		out.Files = append(out.Files, EditFile{Path: s.show(f.Path), Text: s.cfg.Redact(f.Text)}) // the text is a file: its line ends stay
 	}
@@ -148,6 +175,9 @@ func (s *Server) showResult(res EditResult) EditResult {
 	}
 	for _, p := range res.Notes {
 		out.Notes = append(out.Notes, s.show(p))
+	}
+	for _, p := range res.Confirm {
+		out.Confirm = append(out.Confirm, s.show(p))
 	}
 	return out
 }
@@ -198,9 +228,9 @@ func (s *Server) editApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.editMu.Unlock()
-	if req.Kind == "credential" {
+	if req.Kind == "credential" || req.Kind == "setting" {
 		if !s.beginEdit() {
-			fail(w, http.StatusConflict, "a run is going: wait for it or cancel it, then change the credentials")
+			fail(w, http.StatusConflict, "a run is going: wait for it or cancel it, then change the settings")
 			return
 		}
 		defer s.endEdit()
@@ -213,4 +243,32 @@ func (s *Server) editApply(w http.ResponseWriter, r *http.Request) {
 	}
 	res.Done = err == nil // a refusal is an answer (200, done: false) with its reasons
 	reply(w, s.showResult(res))
+}
+
+func (s *Server) backups(w http.ResponseWriter, r *http.Request) {
+	if !s.editing(w) {
+		return
+	}
+	list, err := s.cfg.Editor.Backups(r.Context())
+	if err != nil {
+		fail(w, http.StatusInternalServerError, s.show(err.Error()))
+		return
+	}
+	reply(w, map[string][]BackupInfo{"backups": list})
+}
+
+// backup gives a backup as a download: the ZIP, never shown as a page (it holds the files without their credentials).
+func (s *Server) backup(w http.ResponseWriter, r *http.Request) {
+	if !s.editing(w) {
+		return
+	}
+	rc, err := s.cfg.Editor.OpenBackup(r.Context(), r.PathValue("name"))
+	if err != nil {
+		fail(w, http.StatusNotFound, "no such backup")
+		return
+	}
+	defer func() { _ = rc.Close() }() // read only
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+r.PathValue("name")+`"`)
+	_, _ = io.Copy(w, rc)
 }

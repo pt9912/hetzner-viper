@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -30,6 +31,10 @@ func (e *uiEditor) Templates(ctx context.Context) (web.Templates, error) {
 	}
 	t.Base = exists(filepath.Join(e.b.dir(), ".env.local"))
 	t.Credentials = model.SecretNames()
+	t.Catalog = []web.SettingInfo{}
+	for _, s := range e.b.o.host().Services.SettingsEditor.Catalog() {
+		t.Catalog = append(t.Catalog, web.SettingInfo{Name: s.Name, Type: s.Type, Options: s.Options, Min: s.Min, Max: s.Max, Danger: s.Danger})
+	}
 	t.Files = []web.CredentialFile{}
 	files, err := e.b.Settings(ctx)
 	if err != nil {
@@ -66,7 +71,7 @@ func credentialFile(f web.SettingsFile) (web.CredentialFile, bool) {
 }
 
 func change(req web.EditRequest) settings.Change {
-	return settings.Change{Kind: req.Kind, Name: req.Name, Fields: req.Fields, Members: req.Members, Target: req.Target, Remove: req.Remove, Etag: req.Etag}
+	return settings.Change{Kind: req.Kind, Name: req.Name, Fields: req.Fields, Members: req.Members, Target: req.Target, Remove: req.Remove, Etag: req.Etag, Confirm: req.Confirm}
 }
 
 // learn gives the redaction the values of a request before anything is done with them, so that no answer can hold one.
@@ -79,7 +84,7 @@ func (e *uiEditor) learn(req web.EditRequest) {
 }
 
 func result(p settings.Preview) web.EditResult {
-	r := web.EditResult{Problems: p.Problems, Broken: p.Broken, Notes: p.Notes, Etag: p.Etag, Backup: p.Backup}
+	r := web.EditResult{Problems: p.Problems, Broken: p.Broken, Notes: p.Notes, Etag: p.Etag, Backup: p.Backup, Confirm: p.Confirm, ConfirmWord: p.ConfirmWord}
 	for _, f := range p.Files {
 		r.Files = append(r.Files, web.EditFile{Path: f.Path, Text: f.Text})
 	}
@@ -105,8 +110,8 @@ func (e *uiEditor) Create(_ context.Context, req web.EditRequest) (web.EditResul
 		for _, f := range p.Files {
 			paths = append(paths, f.Path)
 		}
-		if req.Kind == "credential" {
-			e.trace(traceCredentials(req, paths, p.Backup))
+		if req.Kind == "credential" || req.Kind == "setting" {
+			e.trace(traceChange(req, paths, p.Backup))
 		} else {
 			e.trace("made " + strings.Join(paths, ", "))
 		}
@@ -128,14 +133,17 @@ func (e *uiEditor) trace(text string) {
 	fmt.Fprintf(f, "%s %-24s %-9s %s\n", time.Now().Format("2006-01-02T15:04:05-07:00"), "ui", "edit", text)
 }
 
-// traceCredentials says which credentials changed in which file, and where the copy is: the names, never a value.
-func traceCredentials(req web.EditRequest, paths []string, backup string) string {
+// traceChange says which settings changed in which file, and where the copy is: the names, never a value.
+func traceChange(req web.EditRequest, paths []string, backup string) string {
 	names := make([]string, 0, len(req.Fields)+len(req.Remove))
 	for n := range req.Fields {
 		names = append(names, n)
 	}
 	slices.Sort(names)
 	text := "set " + strings.Join(names, ", ")
+	if req.Kind == "setting" {
+		text = "changed " + strings.Join(names, ", ")
+	}
 	if len(req.Remove) > 0 {
 		text += "; removed " + strings.Join(req.Remove, ", ")
 	}
@@ -187,4 +195,17 @@ func (e *uiEditor) Duplicate(ctx context.Context, kind, name string) (web.Copy, 
 		c.Name = fmt.Sprintf("%s-%d", name, i)
 	}
 	return c, ctx.Err()
+}
+
+func (e *uiEditor) Backups(context.Context) ([]web.BackupInfo, error) {
+	list, err := e.b.o.host().Services.SettingsEditor.Backups(e.b.env)
+	out := make([]web.BackupInfo, 0, len(list))
+	for _, b := range list {
+		out = append(out, web.BackupInfo{Name: b.Name, Time: b.Time, Files: b.Files})
+	}
+	return out, err
+}
+
+func (e *uiEditor) OpenBackup(_ context.Context, name string) (io.ReadCloser, error) {
+	return e.b.o.host().Services.SettingsEditor.OpenBackup(e.b.env, name)
 }

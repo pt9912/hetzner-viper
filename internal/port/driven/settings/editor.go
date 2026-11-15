@@ -1,6 +1,9 @@
 package settings
 
-import "io/fs"
+import (
+	"io"
+	"io/fs"
+)
 
 // FS is how the settings files are read. nil (Env.Files) is the disk; a preview reads the files as they would be after a
 // change, without writing anything.
@@ -24,6 +27,25 @@ type Change struct {
 	Target string
 	Remove []string
 	Etag   string
+	// Confirm is the word that a change of a dangerous setting asks to be typed (the preview names it).
+	Confirm string
+}
+
+// SettingInfo is a setting that Kind "setting" may change: its kind of value ("text", "bool", "enum", "int") and the limits.
+type SettingInfo struct {
+	Name    string   `json:"name"`
+	Type    string   `json:"type"`
+	Options []string `json:"options"`
+	Min     int      `json:"min"`
+	Max     int      `json:"max"`
+	Danger  bool     `json:"danger"`
+}
+
+// BackupInfo is a backup of a change: the file name, the time it was made, the files it holds.
+type BackupInfo struct {
+	Name  string   `json:"name"`
+	Time  string   `json:"time"`
+	Files []string `json:"files"`
 }
 
 // File is a file a change would make: its path under the settings directory and its text.
@@ -45,6 +67,9 @@ type Preview struct {
 	Etag string
 	// Backup is the file the change left in the backups directory (after Create).
 	Backup string
+	// Confirm says why a change asks to be confirmed, and ConfirmWord is what has to be typed.
+	Confirm     []string
+	ConfirmWord string
 }
 
 // Editor makes new settings files, and sets the credentials of the files that exist (a copy without the credentials is kept
@@ -54,4 +79,9 @@ type Editor interface {
 	Preview(dir string, ch Change, env Env) (Preview, error)
 	// Create writes the files of a change that Preview accepts. A file that exists is an error (nothing is replaced).
 	Create(dir string, ch Change, env Env) (Preview, error)
+	// Catalog lists the settings that Kind "setting" may change.
+	Catalog() []SettingInfo
+	// Backups lists the backups of changes (the newest first); OpenBackup opens one of them by its name (a name of the list).
+	Backups(env Env) ([]BackupInfo, error)
+	OpenBackup(env Env, name string) (io.ReadCloser, error)
 }

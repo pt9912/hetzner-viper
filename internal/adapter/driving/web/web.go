@@ -300,6 +300,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/download", s.download)
 	mux.HandleFunc("GET /api/templates", s.templates)
 	mux.HandleFunc("GET /api/duplicate", s.duplicate)
+	mux.HandleFunc("GET /api/backups", s.backups)
+	mux.HandleFunc("GET /api/backups/{name}", s.backup)
 	mux.HandleFunc("POST /api/edit/preview", s.editPreview)
 	mux.HandleFunc("POST /api/edit/apply", s.editApply)
 	return s.guard(mux)

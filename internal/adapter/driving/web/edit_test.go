@@ -3,6 +3,7 @@ package web_test
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -20,6 +21,17 @@ type fakeEditor struct {
 
 func (e *fakeEditor) Templates(context.Context) (web.Templates, error) {
 	return web.Templates{Providers: []web.Template{{Name: "hetzner", Type: "cpx32", Location: "fsn1"}}, Machines: []string{"web"}, Base: true}, nil
+}
+
+func (e *fakeEditor) Backups(context.Context) ([]web.BackupInfo, error) {
+	return []web.BackupInfo{{Name: "20260101T000000-setting.zip", Time: "2026-01-01T00:00:00Z", Files: []string{".env.local"}}}, nil
+}
+
+func (e *fakeEditor) OpenBackup(_ context.Context, name string) (io.ReadCloser, error) {
+	if name != "20260101T000000-setting.zip" {
+		return nil, errors.New("no such backup")
+	}
+	return io.NopCloser(strings.NewReader("PK-fake")), nil
 }
 
 func (e *fakeEditor) Duplicate(_ context.Context, kind, name string) (web.Copy, error) {
@@ -218,5 +230,25 @@ func TestADuplicateIsOnlyOfferedWithEdit(t *testing.T) {
 	s2, h2, c2 := editServer(t, nil, false)
 	if w := do(h2, "GET", s2.Host(), "/api/duplicate?kind=machine&name=web", c2, ""); w.Code != http.StatusForbidden {
 		t.Errorf("without edit: %d", w.Code)
+	}
+}
+
+func TestBackupsAreListedAndDownloadedOnlyWithEdit(t *testing.T) {
+	s, h, c := editServer(t, &fakeEditor{}, false)
+	if w := do(h, "GET", s.Host(), "/api/backups", c, ""); w.Code != 200 || !strings.Contains(w.Body.String(), "20260101T000000-setting.zip") {
+		t.Errorf("%d %s", w.Code, w.Body)
+	}
+	w := do(h, "GET", s.Host(), "/api/backups/20260101T000000-setting.zip", c, "")
+	if w.Code != 200 || w.Header().Get("Content-Type") != "application/octet-stream" || !strings.Contains(w.Header().Get("Content-Disposition"), "attachment") {
+		t.Errorf("%d %v", w.Code, w.Header())
+	}
+	if w := do(h, "GET", s.Host(), "/api/backups/nope.zip", c, ""); w.Code != http.StatusNotFound {
+		t.Errorf("%d", w.Code)
+	}
+	s2, h2, c2 := editServer(t, nil, false)
+	for _, p := range []string{"/api/backups", "/api/backups/20260101T000000-setting.zip"} {
+		if w := do(h2, "GET", s2.Host(), p, c2, ""); w.Code != http.StatusForbidden {
+			t.Errorf("%s without edit: %d", p, w.Code)
+		}
 	}
 }

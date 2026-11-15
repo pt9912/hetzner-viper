@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -38,7 +39,8 @@ type credPlan struct {
 	before, after string
 	etag          string
 	lines         []string // what the change does, one line each (no values)
-	names         []string // the credentials it touches
+	names         []string // the settings it touches
+	removed       []string // those that are taken out
 }
 
 func etagOf(b []byte) string {
@@ -264,6 +266,9 @@ func mentionsSecret(comment string, secrets []string) bool {
 
 // checkCredentials are the reasons a change of credentials is refused before any file is read.
 func checkCredentials(ch settings.Change) (problems []string) {
+	if ch.Kind == "setting" {
+		return checkSettings(ch)
+	}
 	secrets := model.SecretNames()
 	for n, v := range ch.Fields {
 		if !slices.Contains(secrets, n) {
@@ -300,11 +305,7 @@ func (pl *credPlan) edit(ch settings.Change) error {
 		}
 		pl.after = next
 		pl.names = append(pl.names, n)
-		verb := "+ " + n + ": set"
-		if existed {
-			verb = "~ " + n + ": replaced"
-		}
-		pl.lines = append(pl.lines, verb)
+		pl.lines = append(pl.lines, describe(ch.Kind, n, ch.Fields[n], pl.oldValue(n), existed))
 	}
 	for _, n := range slices.Sorted(slices.Values(ch.Remove)) {
 		next, err := removeAssignment(pl.after, n)
@@ -314,11 +315,17 @@ func (pl *credPlan) edit(ch settings.Change) error {
 		pl.after = next
 		pl.names = append(pl.names, n)
 		pl.lines = append(pl.lines, "- "+n+": removed")
+		pl.removed = append(pl.removed, n)
 	}
 	return nil
 }
 
 func planCredential(dir string, ch settings.Change) (credPlan, []string) {
+	pl, problems := planEdit(dir, ch)
+	return pl, problems
+}
+
+func planEdit(dir string, ch settings.Change) (credPlan, []string) {
 	var pl credPlan
 	rel, err := targetRel(ch)
 	if err != nil {
@@ -362,6 +369,9 @@ func previewOf(dir string, ch settings.Change, env settings.Env, pl credPlan, pr
 			p.Notes = append(p.Notes, n+": the environment of viper ui has it, and viper takes the value from there when the file does not set it")
 		}
 	}
+	if ch.Kind == "setting" {
+		checkSettingChange(dir, ch, env, &p)
+	}
 	return p
 }
 
@@ -376,6 +386,10 @@ func createCredential(dir string, ch settings.Change, env settings.Env) (setting
 	if len(p.Problems) > 0 || len(p.Broken) > 0 {
 		return p, errors.New("the change is refused")
 	}
+	if p.ConfirmWord != "" && ch.Confirm != p.ConfirmWord {
+		p.Problems = append(p.Problems, "type "+p.ConfirmWord+" to confirm")
+		return p, errors.New("not confirmed")
+	}
 	if ch.Etag == "" || ch.Etag != pl.etag { // the same read that the text of the change comes from
 		p.Problems = append(p.Problems, "the file has changed since the preview: look at the preview again")
 		return p, errors.New("the file has changed")
@@ -385,7 +399,7 @@ func createCredential(dir string, ch settings.Change, env settings.Env) (setting
 		p.Problems = append(p.Problems, "the file has changed since the preview: look at the preview again")
 		return p, errors.New("the file has changed")
 	}
-	name, err := writeBackup(env.Home, "credential", pl)
+	name, err := writeBackup(env.Home, ch.Kind, pl)
 	if err != nil {
 		p.Problems = append(p.Problems, "no backup could be made: "+err.Error())
 		return p, errors.New("no backup")
@@ -544,4 +558,37 @@ func filesOfBackup(path string) []string {
 		}
 	}
 	return out
+}
+
+// Backups lists the backups of changes, the newest first.
+func (Files) Backups(env settings.Env) ([]settings.BackupInfo, error) {
+	dir := filepath.Join(model.StateDir(env.Home), "backups")
+	ents, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return []settings.BackupInfo{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := []settings.BackupInfo{}
+	for _, e := range ents {
+		if m := backupName.FindStringSubmatch(e.Name()); m != nil && e.Type().IsRegular() {
+			t, _ := time.ParseInLocation("20060102T150405", m[1], time.Local)
+			out = append(out, settings.BackupInfo{Name: e.Name(), Time: t.Format(time.RFC3339), Files: filesOfBackup(filepath.Join(dir, e.Name()))})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name > out[j].Name })
+	return out, nil
+}
+
+// OpenBackup opens a backup of the list by its name (a name of the pattern, never a path).
+func (Files) OpenBackup(env settings.Env, name string) (io.ReadCloser, error) {
+	if !backupName.MatchString(name) {
+		return nil, errors.New("no such backup")
+	}
+	path := filepath.Join(model.StateDir(env.Home), "backups", name)
+	if st, err := os.Lstat(path); err != nil || !st.Mode().IsRegular() {
+		return nil, errors.New("no such backup")
+	}
+	return os.Open(path)
 }
