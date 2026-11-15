@@ -3,7 +3,9 @@ package settingsfile_test
 import (
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -79,7 +81,9 @@ func TestOnlyTheSettingsOfTheListAndOnlyValuesOfTheirKind(t *testing.T) {
 		want string
 	}{
 		"credential":      {setting(map[string]string{"HCLOUD_TOKEN": "abcdefgh123"}), "not a setting this page changes"},
-		"post clone":      {setting(map[string]string{"VIPER_POST_CLONE": "rm -rf /"}), "not a setting this page changes"},
+		"lines empty":     {setting(map[string]string{"VIPER_POST_CLONE": "  \n "}), "empty"},
+		"lines control":   {setting(map[string]string{"VIPER_POST_CLONE": "a\rb"}), "no other control character"},
+		"on error":        {setting(map[string]string{"VIPER_POST_CLONE_ON_ERROR": "explode"}), "one of retry, ignore, abort"},
 		"unknown":         {setting(map[string]string{"NOPE": "x"}), "not a setting"},
 		"enum":            {setting(map[string]string{"NATS_ENABLED": "yes"}), "one of true, false"},
 		"number":          {setting(map[string]string{"NATS_PORT": "70000"}), "a number from 1024 to 65535"},
@@ -275,5 +279,74 @@ func TestTwoBackupsInOneSecondAreListedNewestFirst(t *testing.T) {
 	list, _ := settingsfile.Files{}.Backups(env)
 	if len(list) != 2 || list[0].Name != b.Backup || list[1].Name != a.Backup {
 		t.Errorf("%v (a %s, b %s)", list, a.Backup, b.Backup)
+	}
+}
+
+func TestCommandsOverSeveralLinesAreWrittenSafelyAndAskForTheName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no bash")
+	}
+	dir, env := settingDir(t)
+	cmd := "npm ci\nexport X='it'\"'s'\nmake \"$HOME\" `date` $(id) \\ ; echo done\n\tindented"
+	ch := setting(map[string]string{"VIPER_POST_CLONE": cmd})
+	p, _ := settingsfile.Files{}.Preview(dir, ch, env)
+	if p.ConfirmWord != "web" || len(p.Confirm) != 1 || !strings.Contains(p.Confirm[0], "shell commands") || !strings.Contains(p.Files[0].Text, "+ VIPER_POST_CLONE = npm ci") {
+		t.Fatalf("%+v", p)
+	}
+	ch.Etag = p.Etag
+	if _, err := (settingsfile.Files{}).Create(dir, ch, env); err == nil {
+		t.Fatal("written without the name")
+	}
+	ch.Confirm = "web"
+	if _, err := (settingsfile.Files{}).Create(dir, ch, env); err != nil {
+		t.Fatal(err)
+	}
+	f := filepath.Join(dir, "machines", "web.env.local")
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("no bash")
+	}
+	out, err := exec.Command(bash, "-c", `source "$1"; printf %s "$VIPER_POST_CLONE"`, "_", f).Output()
+	if err != nil || string(out) != cmd {
+		t.Errorf("bash reads %q (%v)", out, err)
+	}
+	m, err := settingsfile.Load(dir, "web", env, false)
+	if err != nil || m.Get("VIPER_POST_CLONE") != cmd {
+		t.Errorf("viper reads %q (%v)", m.Get("VIPER_POST_CLONE"), err)
+	}
+	// reading it back for the page, and nothing else
+	got, err := settingsfile.Files{}.ReadSetting(dir, "machine", "web", "VIPER_POST_CLONE", env)
+	if err != nil || got != cmd {
+		t.Errorf("%q %v", got, err)
+	}
+	for _, other := range []string{"SERVER_TYPE", "HCLOUD_TOKEN", "REPO_URL", "NOPE"} {
+		if _, err := (settingsfile.Files{}).ReadSetting(dir, "machine", "web", other, env); err == nil {
+			t.Errorf("%s was given out", other)
+		}
+	}
+	if _, err := (settingsfile.Files{}).ReadSetting(dir, "machine", "../x", "VIPER_POST_CLONE", env); err == nil {
+		t.Error("a path was read")
+	}
+	// the preview of a change says the old commands, and taking them out asks for the name as well
+	p, _ = settingsfile.Files{}.Preview(dir, setting(map[string]string{"VIPER_POST_CLONE": "make"}), env)
+	if !strings.Contains(p.Files[0].Text, "~ VIPER_POST_CLONE: npm ci\n      export") || p.ConfirmWord != "web" {
+		t.Errorf("%+v", p)
+	}
+	p, _ = settingsfile.Files{}.Preview(dir, setting(nil, "VIPER_POST_CLONE"), env)
+	if p.ConfirmWord != "web" {
+		t.Errorf("%+v", p)
+	}
+}
+
+func TestWhatTheShellExpandsIsFoundOutsideSingleQuotes(t *testing.T) {
+	dir, env := settingDir(t)
+	writeIn(t, dir, "machines/web.env.local", compose+"SERVER_IMAGE='$HOME'\nWORKSPACE_DIR=$HOME/w\n")
+	p, _ := settingsfile.Files{}.Preview(dir, setting(map[string]string{"SERVER_IMAGE": "x"}), env)
+	if !strings.Contains(p.Files[0].Text, "SERVER_IMAGE: $HOME -> x") {
+		t.Errorf("a $ in single quotes is a letter: %q", p.Files[0].Text)
+	}
+	p, _ = settingsfile.Files{}.Preview(dir, setting(map[string]string{"WORKSPACE_DIR": "/home/builder/x"}), env)
+	if !strings.Contains(p.Files[0].Text, "WORKSPACE_DIR: (set) ->") {
+		t.Errorf("%q", p.Files[0].Text)
 	}
 }

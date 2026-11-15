@@ -216,7 +216,7 @@ func sortedNames(maps ...map[string]string) []string {
 // opaque says whether the file takes the value of a name from a variable or a ~: the page would not say what the shell reads.
 func opaque(text string, as []Assignment, name string) bool {
 	for _, a := range as {
-		if a.Name == name && strings.ContainsAny(text[a.Start:a.End], "$~`") {
+		if a.Name == name && expands(text[a.Start:a.End]) {
 			return true
 		}
 	}
@@ -351,11 +351,6 @@ func previewRestore(dir string, ch settings.Change, env settings.Env) (settings.
 		sub := changeOf(pl)
 		if len(sub.Fields)+len(sub.Remove) > 0 {
 			checkSettingChange(dir, sub, env, &p)
-		}
-		for _, n := range pl.names {
-			if n == "VIPER_POST_CLONE" || n == "VIPER_POST_CLONE_ON_ERROR" {
-				p.Confirm = append(p.Confirm, n+": commands that run on the server")
-			}
 		}
 	}
 	p.Notes = append(p.Notes, "the credentials of the files that are there now stay: a backup holds none")

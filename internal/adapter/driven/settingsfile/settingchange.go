@@ -35,9 +35,14 @@ func number(name string, lo, hi int) spec {
 	return spec{SettingInfo: settings.SettingInfo{Name: name, Type: "int", Min: lo, Max: hi}}
 }
 
+// lines is a setting whose value is text over several lines (commands).
+func lines(name string, danger bool) spec {
+	return spec{SettingInfo: settings.SettingInfo{Name: name, Type: "lines", Danger: danger}}
+}
+
 func flag(name string) spec { return enum(name, false, false, "true", "false") }
 
-// catalog is what a change may name. VIPER_POST_CLONE (commands that run on the server) is not on it: change it at the terminal.
+// catalog is what a change may name. VIPER_POST_CLONE (commands that run on the server) is on it as a danger: it asks for the word.
 func catalog() []spec {
 	return []spec{
 		enum("PROVIDER", false, true, model.ProviderNames()...), enum("DNS_PROVIDER", false, true, "cloudflare", "none"), text("DNS_DOMAIN", false, true),
@@ -51,6 +56,7 @@ func catalog() []spec {
 		enum("VIPER_HOMEBREW", false, false, "0", "1"), enum("VIPER_BREWFILE", false, false, "0", "1"), text("VIPER_BREW_TAPS", false, false), text("VIPER_BREW_TRUST", false, false),
 		text("VIPER_BREW_PACKAGES", false, false), enum("VIPER_CODE_SERVER", false, false, "0", "1"), text("VIPER_SWAP", false, false), text("VIPER_CLAUDE_MODEL", false, false),
 		number("VIPER_CLAUDE_MAX_CONTEXT_TOKENS", 1000, 10_000_000),
+		lines("VIPER_POST_CLONE", true), enum("VIPER_POST_CLONE_ON_ERROR", false, false, "retry", "ignore", "abort"),
 	}
 }
 
@@ -74,10 +80,16 @@ func (Files) Catalog() []settings.SettingInfo {
 	return out
 }
 
-const maxSettingText = 1024
+const (
+	maxSettingText = 1024
+	maxLinesText   = 8 << 10 // commands over several lines
+)
 
 // checkValue is the value of a setting by its kind: the limits of the kind, one line, and nothing a URL with credentials.
 func (s spec) checkValue(v string) error {
+	if s.Type == "lines" {
+		return checkLines(v)
+	}
 	switch {
 	case v == "":
 		return errors.New("empty: take the setting out instead")
@@ -88,6 +100,14 @@ func (s spec) checkValue(v string) error {
 	case userinfoURL(v):
 		return errors.New("a URL with credentials (use VIPER_GH_TOKEN or GIT_DEPLOY_KEY_FILE)")
 	}
+	if err := s.checkKind(v); err != nil {
+		return err
+	}
+	return s.checkByName(v)
+}
+
+// checkKind is the limits of the kind of value: a choice, or a number from .. to ..
+func (s spec) checkKind(v string) error {
 	switch s.Type {
 	case "enum":
 		if !slices.Contains(s.Options, v) {
@@ -99,7 +119,7 @@ func (s spec) checkValue(v string) error {
 			return fmt.Errorf("a number from %d to %d", s.Min, s.Max)
 		}
 	}
-	return s.checkByName(v)
+	return nil
 }
 
 // checkByName is what a setting asks besides its kind.
@@ -147,6 +167,20 @@ func checkSwap(v string) error {
 	return errors.New("0, a factor of the RAM from 0.1 to 4, or a size like 4G or 512M")
 }
 
+// checkLines is a value over several lines: text with line breaks (\n) and tabs, nothing else that is a control character, and \r
+// never (the files have Unix line ends).
+func checkLines(v string) error {
+	switch {
+	case strings.TrimSpace(v) == "":
+		return errors.New("empty: take the setting out instead")
+	case len(v) > maxLinesText:
+		return fmt.Errorf("longer than %d characters", maxLinesText)
+	case !validUTF8(v) || strings.ContainsFunc(v, func(r rune) bool { return (r < ' ' && r != '\n' && r != '\t') || (r >= 0x7f && r <= 0x9f) }):
+		return errors.New("text with line breaks, no other control character")
+	}
+	return nil
+}
+
 func validUTF8(v string) bool { return strings.ToValidUTF8(v, "�") == v }
 
 func checkSettings(ch settings.Change) (problems []string) {
@@ -184,11 +218,32 @@ func (pl credPlan) oldValue(name string) string {
 		return ""
 	}
 	a, found, _ := only(as, name)
-	if !found || strings.ContainsAny(pl.before[a.Start:a.End], "$~`") {
+	if !found || expands(pl.before[a.Start:a.End]) {
 		return ""
 	}
 	return a.Value
 }
+
+// expands says whether the shell would expand something in a statement (a $, a backtick or a ~ outside single quotes): then the
+// value the page knows is not the one that is meant.
+func expands(raw string) bool {
+	single := false
+	for i := 0; i < len(raw); i++ {
+		switch c := raw[i]; {
+		case c == '\'':
+			single = !single
+		case single:
+		case c == '\\':
+			i++
+		case c == '$' || c == '`' || (c == '~' && (i == 0 || raw[i-1] == '=' || raw[i-1] == ':')):
+			return true
+		}
+	}
+	return false
+}
+
+// indent puts a value over several lines under its name.
+func indent(v string) string { return strings.ReplaceAll(v, "\n", "\n      ") }
 
 // describe is the line of the preview for one setting: for a credential never a value, for a setting the old and the new one.
 func describe(kind, name, value, old string, existed bool) string {
@@ -205,9 +260,9 @@ func describe(kind, name, value, old string, existed bool) string {
 		return v
 	}
 	if existed {
-		return "~ " + name + ": " + shown(old) + " -> " + value
+		return "~ " + name + ": " + indent(shown(old)) + " -> " + indent(value)
 	}
-	return "+ " + name + " = " + value
+	return "+ " + name + " = " + indent(value)
 }
 
 // machinesOf are the machines whose settings the file gives: the machines of .env.local (those that have a file and those a group
@@ -316,6 +371,8 @@ func dangerous(s spec, value string, removed bool) string {
 	switch {
 	case !s.Danger:
 		return ""
+	case s.Type == "lines":
+		return s.Name + ": shell commands that run on the server after the clone, with everything the user there may do"
 	case removed:
 		return s.Name + ": taking it out gives the setting its default or the environment's value"
 	case s.Name == "K8S_DOCKER" || s.Name == "COMPOSE_DOCKER":
@@ -369,4 +426,32 @@ func checkSettingChange(dir string, ch settings.Change, env settings.Env, p *set
 	if len(running) > 0 && len(p.Problems) == 0 {
 		p.Notes = append(p.Notes, strings.Join(running, ", ")+": has a server; the change applies from the next viper up")
 	}
+}
+
+// ReadSetting gives the value of a setting of a file that exists, for the settings that are text over several lines (the page of
+// the settings cannot show them: it reads a line at a time). Nothing else is given out here.
+func (Files) ReadSetting(dir, target, name, setting string, _ settings.Env) (string, error) {
+	if sp, ok := specOf(setting); !ok || sp.Type != "lines" {
+		return "", errors.New("this page gives out only the commands of a machine")
+	}
+	rel, err := targetRel(settings.Change{Target: target, Name: name})
+	if err != nil {
+		return "", err
+	}
+	if err := plainFile(dir, rel); err != nil {
+		return "", err
+	}
+	b, err := os.ReadFile(filepath.Join(dir, rel))
+	if err != nil {
+		return "", err
+	}
+	as, err := Assignments(string(b))
+	if err != nil {
+		return "", err
+	}
+	a, found, err := only(as, setting)
+	if err != nil || !found || expands(string(b)[a.Start:a.End]) {
+		return "", errors.New(setting + " is not set here, or the file takes it from a variable")
+	}
+	return a.Value, nil
 }

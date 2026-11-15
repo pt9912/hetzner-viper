@@ -103,6 +103,8 @@ type Copy struct {
 type Editor interface {
 	// Duplicate reads what a copy of the machine or group (kind "machine" or "group") starts from.
 	Duplicate(ctx context.Context, kind, name string) (Copy, error)
+	// ReadSetting gives a setting that is text over several lines (target base, machine or group; the name of the file's machine or group).
+	ReadSetting(ctx context.Context, target, name, setting string) (string, error)
 	// Backups lists the backups of changes; OpenBackup opens one by its name.
 	Backups(ctx context.Context) ([]BackupInfo, error)
 	OpenBackup(ctx context.Context, name string) (io.ReadCloser, error)
@@ -272,4 +274,19 @@ func (s *Server) backup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+r.PathValue("name")+`"`)
 	_, _ = io.Copy(w, rc)
+}
+
+// setting gives the commands of a machine (the text over several lines that the settings page cannot show), for the form that
+// changes them. Only for the settings of that kind; the text goes through the redaction like any other.
+func (s *Server) setting(w http.ResponseWriter, r *http.Request) {
+	if !s.editing(w) {
+		return
+	}
+	q := r.URL.Query()
+	v, err := s.cfg.Editor.ReadSetting(r.Context(), q.Get("target"), q.Get("name"), q.Get("setting"))
+	if err != nil {
+		fail(w, http.StatusNotFound, s.show(err.Error()))
+		return
+	}
+	reply(w, map[string]string{"value": s.cfg.Redact(v)}) // line breaks stay: it is text for a field
 }

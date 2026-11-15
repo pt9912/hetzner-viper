@@ -23,6 +23,13 @@ func (e *fakeEditor) Templates(context.Context) (web.Templates, error) {
 	return web.Templates{Providers: []web.Template{{Name: "hetzner", Type: "cpx32", Location: "fsn1"}}, Machines: []string{"web"}, Base: true}, nil
 }
 
+func (e *fakeEditor) ReadSetting(_ context.Context, target, name, setting string) (string, error) {
+	if setting != "VIPER_POST_CLONE" {
+		return "", errors.New("no")
+	}
+	return "npm ci\nmake s3cr3t-value-123", nil
+}
+
 func (e *fakeEditor) Backups(context.Context) ([]web.BackupInfo, error) {
 	return []web.BackupInfo{{Name: "20260101T000000-setting.zip", Time: "2026-01-01T00:00:00Z", Files: []string{".env.local"}}}, nil
 }
@@ -250,5 +257,20 @@ func TestBackupsAreListedAndDownloadedOnlyWithEdit(t *testing.T) {
 		if w := do(h2, "GET", s2.Host(), p, c2, ""); w.Code != http.StatusForbidden {
 			t.Errorf("%s without edit: %d", p, w.Code)
 		}
+	}
+}
+
+func TestTheCommandsOfAMachineAreGivenOnlyWithEditAndAreRedacted(t *testing.T) {
+	s, h, c := editServer(t, &fakeEditor{}, false)
+	w := do(h, "GET", s.Host(), "/api/setting?target=machine&name=web&setting=VIPER_POST_CLONE", c, "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `npm ci\nmake`) || strings.Contains(w.Body.String(), "s3cr3t-value-123") {
+		t.Errorf("%d %s", w.Code, w.Body)
+	}
+	if w := do(h, "GET", s.Host(), "/api/setting?target=machine&name=web&setting=SERVER_TYPE", c, ""); w.Code != http.StatusNotFound {
+		t.Errorf("%d", w.Code)
+	}
+	s2, h2, c2 := editServer(t, nil, false)
+	if w := do(h2, "GET", s2.Host(), "/api/setting?target=machine&name=web&setting=VIPER_POST_CLONE", c2, ""); w.Code != http.StatusForbidden {
+		t.Errorf("without edit: %d", w.Code)
 	}
 }

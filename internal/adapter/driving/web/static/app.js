@@ -1071,6 +1071,12 @@
     if (c && c.type === 'enum') {
       ctl = document.createElement('select');
       for (const o of c.options) { addOption(ctl, o, o); }
+    } else if (c && c.type === 'lines') {
+      ctl = document.createElement('textarea');
+      ctl.rows = 8;
+      ctl.cols = 60;
+      ctl.spellcheck = false;
+      ctl.className = 'code';
     } else {
       ctl = document.createElement('input');
       ctl.type = c && c.type === 'int' ? 'number' : 'text';
@@ -1080,7 +1086,7 @@
     box.appendChild(ctl);
     if (typed) { ctl.value = typed; } // a change of the language keeps what was typed
     $('ch-help').textContent = (c && c.help && (c.help[window.viperI18n.lang()] || c.help.en)) || ''; // from the server, in the language of the page
-    $('ch-limits').textContent = [c && c.type === 'int' ? t('change.limits.int', c.min, c.max) : '', c && c.danger ? t('change.limits.danger') : ''].filter(Boolean).join(' ');
+    $('ch-limits').textContent = [c && c.type === 'int' ? t('change.limits.int', c.min, c.max) : '', c && c.type === 'lines' ? t('change.limits.lines') : '', c && c.danger ? t('change.limits.danger') : ''].filter(Boolean).join(' ');
   }
 
   function renderChange() {
@@ -1119,12 +1125,28 @@
       cell(tr, s.key, 'mono');
       cell(tr, s.shown ? s.value : (s.set ? t('change.shownot') : ''), s.shown ? '' : 'muted');
       const act = cell(tr, '', 'actions');
-      act.appendChild(button(t('change.edit'), t('change.edit') + ' ' + s.key, () => { $('ch-name').value = s.key; valueControl(false); if (s.shown && $('ch-value')) { $('ch-value').value = s.value; } $('ch-value').focus(); }, false, 'quiet'));
+      act.appendChild(button(t('change.edit'), t('change.edit') + ' ' + s.key, () => editRow(s), false, 'quiet'));
       const rm = button(t('change.remove'), t('change.remove') + ' ' + s.key, () => removeSetting(s.key, rm), false, 'danger');
       rm.addEventListener('blur', () => { removeAskedFor = ''; rm.textContent = t('change.remove'); rm.setAttribute('aria-label', t('change.remove') + ' ' + s.key); });
       act.appendChild(rm);
       body.appendChild(tr);
     }
+  }
+
+  // the form for a setting of the file: its value if the page may show it; the commands (text over several lines) are read apart
+  async function editRow(s) {
+    $('ch-name').value = s.key;
+    valueControl(false);
+    const f = fileOf($('ch-file').value);
+    if (catalogOf(s.key).type === 'lines' && f) {
+      try {
+        const r = await api('/api/setting?target=' + encodeURIComponent(f.target) + '&name=' + encodeURIComponent(f.name) + '&setting=' + encodeURIComponent(s.key));
+        $('ch-value').value = r.value;
+      } catch (e) { $('ch-status').textContent = e.message; }
+    } else if (s.shown) {
+      $('ch-value').value = s.value;
+    }
+    $('ch-value').focus();
   }
 
   function changeResult(res) {

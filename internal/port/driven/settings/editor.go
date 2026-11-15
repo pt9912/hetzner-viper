@@ -81,6 +81,8 @@ type Editor interface {
 	Preview(dir string, ch Change, env Env) (Preview, error)
 	// Create writes the files of a change that Preview accepts. A file that exists is an error (nothing is replaced).
 	Create(dir string, ch Change, env Env) (Preview, error)
+	// ReadSetting gives the value of a setting that is text over several lines (target "base", "machine" or "group", and the name).
+	ReadSetting(dir, target, name, setting string, env Env) (string, error)
 	// Catalog lists the settings that Kind "setting" may change.
 	Catalog() []SettingInfo
 	// Backups lists the backups of changes (the newest first); OpenBackup opens one of them by its name (a name of the list).

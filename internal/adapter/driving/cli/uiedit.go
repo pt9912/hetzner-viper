@@ -212,3 +212,7 @@ func (e *uiEditor) Backups(context.Context) ([]web.BackupInfo, error) {
 func (e *uiEditor) OpenBackup(_ context.Context, name string) (io.ReadCloser, error) {
 	return e.b.o.host().Services.SettingsEditor.OpenBackup(e.b.env, name)
 }
+
+func (e *uiEditor) ReadSetting(_ context.Context, target, name, setting string) (string, error) {
+	return e.b.o.host().Services.SettingsEditor.ReadSetting(e.b.dir(), target, name, setting, e.b.env)
+}

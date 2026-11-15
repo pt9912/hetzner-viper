@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { startUI, UI } from '../fixture';
@@ -101,6 +102,39 @@ test('a dangerous setting is taken out only after its word is typed', async ({ p
   await expect.poll(() => fs.readFileSync(web(), 'utf8')).toBe('');
 });
 
+test('commands over several lines are written, read back into the form, and taken out only with the name', async ({ page }) => {
+  ui = await startUI(['--edit'], 0);
+  await open(page);
+  await page.selectOption('#ch-name', 'VIPER_POST_CLONE');
+  await expect(page.locator('textarea#ch-value')).toBeVisible();
+  await expect(page.locator('#ch-help')).toContainText('Shell commands that run once');
+  const cmd = "npm ci\nexport X='it'\\''s'\nmake \"$HOME\"";
+  await page.fill('#ch-value', cmd);
+  await page.click('#ch-preview');
+  await expect(page.locator('#ch-text')).toContainText('+ VIPER_POST_CLONE = npm ci');
+  await expect(page.locator('#ch-problems')).toContainText('shell commands that run on the server');
+  await page.click('#ch-apply');
+  await expect(page.locator('#ch-status')).toContainText('Type web to confirm');
+  expect(fs.readFileSync(web(), 'utf8')).toBe('');
+  await page.fill('#ch-confirm', 'web');
+  await page.click('#ch-apply');
+  await expect.poll(() => fs.readFileSync(web(), 'utf8')).toContain('VIPER_POST_CLONE=');
+  // what the file holds is what bash reads
+  if (process.platform !== 'win32') {
+    expect(execFileSync('bash', ['-c', 'source "$1"; printf %s "$VIPER_POST_CLONE"', '_', web()]).toString()).toBe(cmd);
+  }
+  // the row's Change button reads the commands into the field
+  await page.locator('#ch-table tbody tr', { hasText: 'VIPER_POST_CLONE' }).getByRole('button', { name: 'Change VIPER_POST_CLONE' }).click();
+  await expect(page.locator('#ch-value')).toHaveValue(cmd);
+  // taken out: the name again
+  await page.locator('#ch-table tbody tr', { hasText: 'VIPER_POST_CLONE' }).getByRole('button', { name: 'Remove VIPER_POST_CLONE' }).click();
+  await page.getByRole('button', { name: 'Press again to remove VIPER_POST_CLONE' }).click();
+  await expect(page.locator('#ch-restore-go')).toHaveText('Remove the setting');
+  await page.fill('#ch-confirm', 'web');
+  await page.click('#ch-restore-go');
+  await expect.poll(() => fs.readFileSync(web(), 'utf8')).toBe('');
+});
+
 test('the help of a setting is in the language of the page', async ({ browser }) => {
   ui = await startUI(['--edit'], 0);
   const ctx = await browser.newContext({ locale: 'de' });
@@ -150,10 +184,11 @@ for (const scheme of ['light', 'dark'] as const) {
       const ctx = await browser.newContext({ colorScheme: scheme, locale: lang });
       const page = await ctx.newPage();
       await open(page);
-      await page.selectOption('#ch-name', 'COMPOSE_DOCKER');
-      await page.selectOption('#ch-value', 'dind');
+      await page.selectOption('#ch-name', 'VIPER_POST_CLONE'); // the field over several lines, with the confirmation
+      await page.fill('#ch-value', 'npm ci\nmake');
       await page.click('#ch-preview');
       await expect(page.locator('#ch-result')).toBeVisible();
+      await expect(page.locator('#ch-confirmrow')).toBeVisible();
       const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice']).analyze();
       expect(result.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`), `${scheme} ${lang}`).toEqual([]);
       await ctx.close();

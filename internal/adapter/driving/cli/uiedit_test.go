@@ -230,7 +230,7 @@ func TestTheEditorChangesASettingAndListsTheBackupAndTheCatalog(t *testing.T) {
 		t.Fatalf("%v %v", len(tpl.Catalog), err)
 	}
 	for _, c := range tpl.Catalog {
-		if c.Name == "VIPER_POST_CLONE" || strings.Contains(c.Name, "TOKEN") && c.Name != "VIPER_CLAUDE_MAX_CONTEXT_TOKENS" {
+		if strings.Contains(c.Name, "TOKEN") && c.Name != "VIPER_CLAUDE_MAX_CONTEXT_TOKENS" {
 			t.Errorf("%s is offered", c.Name)
 		}
 	}

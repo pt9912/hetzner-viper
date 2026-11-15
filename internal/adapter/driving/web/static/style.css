@@ -159,3 +159,5 @@ pre { background: var(--panel); border: 1px solid var(--line); border-radius: 8p
 #c-result { margin-top: .8rem; max-width: 50rem; }
 #c-text { max-height: 24rem; overflow: auto; }
 .issues { margin: .4rem 0; padding-left: 1.2rem; }
+
+textarea.code { font-family: var(--mono); font-size: .92rem; min-width: 20rem; }
