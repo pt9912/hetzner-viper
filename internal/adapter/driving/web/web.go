@@ -23,6 +23,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // Machine is one row of the overview.
@@ -65,7 +66,8 @@ type Setting struct {
 	Key   string `json:"key"`
 	Value string `json:"value,omitempty"`
 	Shown bool   `json:"shown"`
-	Set   bool   `json:"set"` // the file gives it a value (which is not said)
+	Set   bool   `json:"set"`           // the file gives it a value (which is not said)
+	Cut   bool   `json:"cut,omitempty"` // the value is longer than the page shows: what is there is its beginning
 }
 
 // SettingsFile is one file of settings, or the environment ("environment").
@@ -636,7 +638,11 @@ func (s *Server) shownSetting(st Setting) Setting {
 	}
 	v := s.show(st.Value)
 	if len(v) > settingValueMax {
-		v = v[:settingValueMax] + " ..."
+		cut := settingValueMax
+		for cut > 0 && !utf8.RuneStart(v[cut]) { // not in the middle of a character
+			cut--
+		}
+		v, st.Cut = v[:cut]+" ...", true
 	}
 	st.Value = v
 	return st

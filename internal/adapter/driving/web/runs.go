@@ -271,7 +271,7 @@ func repoUsable(req runRequest) bool {
 	if r == "" {
 		return true
 	}
-	if req.Action == "down" || len(r) > 512 || strings.HasPrefix(r, "-") || strings.ContainsFunc(r, func(c rune) bool { return unicode.IsControl(c) || unicode.IsSpace(c) }) {
+	if req.Action == "down" || req.Action == "check" || len(r) > 512 || strings.HasPrefix(r, "-") || strings.ContainsFunc(r, func(c rune) bool { return unicode.IsControl(c) || unicode.IsSpace(c) }) {
 		return false
 	}
 	if i := strings.Index(r, "://"); i >= 0 {

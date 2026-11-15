@@ -2,6 +2,7 @@ package web_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driving/web"
 )
@@ -583,5 +585,37 @@ func TestTheSettingsAreAnsweredInPagesAndSearchesWithLimits(t *testing.T) {
 	}
 	if code, b := get("?q=NOPE_NOT_THERE"); code != 200 || strings.Contains(b, `"file"`) || !strings.Contains(b, `"more":false`) {
 		t.Errorf("a search without a hit: %s", b)
+	}
+}
+
+func TestALongValueIsCutAtACharacterAndSaysSo(t *testing.T) {
+	long := strings.Repeat("ä", 400) // 800 bytes
+	f := &many{fake: newFake(), files: []web.SettingsFile{{Name: ".env.local", Settings: []web.Setting{{Key: "VIPER_BREW_PACKAGES", Value: long, Shown: true}, {Key: "SERVER_TYPE", Value: "cpx22", Shown: true}}}}}
+	srv := web.New(web.Config{Backend: f, Version: "vtest"})
+	ln, err := srv.Listen(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	h := srv.Handler()
+	c := login(t, srv, h)
+	w := do(h, "GET", srv.Host(), "/api/settings?file=.env.local", c, "")
+	var r struct {
+		File struct {
+			Settings []struct {
+				Key, Value string
+				Cut        bool
+			}
+		}
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &r); err != nil {
+		t.Fatal(err)
+	}
+	got := r.File.Settings
+	if len(got) != 2 || !got[0].Cut || got[1].Cut {
+		t.Fatalf("%+v", got)
+	}
+	if !utf8.ValidString(got[0].Value) || len(got[0].Value) > 512+4 || !strings.HasSuffix(got[0].Value, " ...") {
+		t.Errorf("a value cut in the middle of a character, or not cut: %d bytes valid=%v", len(got[0].Value), utf8.ValidString(got[0].Value))
 	}
 }

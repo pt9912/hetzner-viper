@@ -184,6 +184,17 @@ test('a preview is not wiped by the changes of the person themself or by the mar
   await expect.poll(() => fs.readFileSync(web(), 'utf8')).toBe("SERVER_TYPE='4x8'\n");
 });
 
+test('a value that is longer than the page shows is not put in the field to be written back', async ({ page }) => {
+  ui = await startUI(['--edit'], 0);
+  const long = Array.from({ length: 80 }, (_, i) => `package${i}name`).join(' '); // more than 512 characters
+  fs.writeFileSync(web(), `VIPER_BREW_PACKAGES='${long}'\n`);
+  await open(page);
+  await page.locator('#ch-table tbody tr', { hasText: 'VIPER_BREW_PACKAGES' }).getByRole('button', { name: 'Change VIPER_BREW_PACKAGES' }).click();
+  await expect(page.locator('#ch-value')).toHaveValue('');
+  await expect(page.locator('#ch-status')).toContainText('longer than the page shows');
+  expect(fs.readFileSync(web(), 'utf8')).toContain(long); // nothing was written
+});
+
 test('the help of a setting is in the language of the page', async ({ browser }) => {
   ui = await startUI(['--edit'], 0);
   const ctx = await browser.newContext({ locale: 'de' });

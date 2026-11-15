@@ -172,7 +172,8 @@
     led.className = 'led';
     const word = document.createElement('span');
     const plain = members.length === 0 ? t('group.empty') : t(kind === 'partial' ? 'state.partial' : 'state.' + kind) + (kind === 'partial' ? ' (' + detail + ')' : '');
-    word.textContent = busy.length ? t('busy.' + busy[0].busy) + ' ' + busy.length + '/' + members.length + ' (' + plain + ')' : plain;
+    const doing = new Set(busy.map((m) => m.busy));
+    word.textContent = busy.length ? (doing.size === 1 ? t('busy.' + busy[0].busy) : t('busy.mixed')) + ' ' + busy.length + '/' + members.length + ' (' + plain + ')' : plain;
     box.append(led, word);
     td.appendChild(box);
     tr.appendChild(td);
@@ -359,8 +360,10 @@
   // loadFile fills the block of a file with a page of its settings (from offset on), and a button for the rest
   async function loadFile(det, f, offset) {
     const body = det.querySelector('.file-body');
+    const pressed = body.querySelector('button.more');
+    if (pressed) { pressed.disabled = true; } // a second click would ask for the same page
     let r;
-    try { r = await api('/api/settings?file=' + encodeURIComponent(f.name) + '&offset=' + offset + '&limit=' + settingsPage); } catch (e) { body.textContent = e.message; return; }
+    try { r = await api('/api/settings?file=' + encodeURIComponent(f.name) + '&offset=' + offset + '&limit=' + settingsPage); } catch (e) { if (pressed) { pressed.disabled = false; } body.append(document.createTextNode(e.message)); return; }
     const list = (r.file && r.file.settings) || [];
     if (offset === 0) { body.replaceChildren(); }
     if (r.file && r.file.error) { const p = document.createElement('p'); p.className = 'bad'; p.textContent = t('error.prefix', r.file.error); body.appendChild(p); return; }
@@ -387,15 +390,15 @@
     sum.className = 'file-title';
     sum.textContent = fileTitle(f.name) + (f.error ? '' : ' (' + t('settings.count', f.count) + ')');
     det.appendChild(sum);
+    if (f.name === 'environment') {
+      const p = document.createElement('p');
+      p.className = 'muted file-note';
+      p.textContent = t('settings.envnote');
+      det.appendChild(p);
+    }
     const body = document.createElement('div');
     body.className = 'file-body';
     det.appendChild(body);
-    if (f.name === 'environment') {
-      const p = document.createElement('p');
-      p.className = 'muted';
-      p.textContent = t('settings.envnote');
-      body.appendChild(p);
-    }
     if (f.error) { const p = document.createElement('p'); p.className = 'bad'; p.textContent = t('error.prefix', f.error); body.appendChild(p); det.open = open; return det; }
     let loaded = false;
     det.loadOnce = () => { if (!loaded) { loaded = true; loadFile(det, f, 0); } };
@@ -765,7 +768,12 @@
     $('nats-listen-status').textContent = t('listen.on', group);
     const out = $('nats-listen-out');
     listenSource = new EventSource('/api/events?id=' + encodeURIComponent(id));
-    listenSource.onerror = () => { if (listenSource && listenSource.readyState === EventSource.CLOSED) { api('/api/runs').catch(() => {}); } };
+    listenSource.onerror = () => {
+      if (listenSource && listenSource.readyState === EventSource.CLOSED) { // the server refused the stream (the session is gone, or too many streams are open)
+        api('/api/runs').catch(() => {});
+        listenEnd(t('listen.nostream'));
+      }
+    };
     listenSource.addEventListener('out', (ev) => {
       const e = JSON.parse(ev.data);
       const atEnd = out.scrollTop + out.clientHeight >= out.scrollHeight - 24; // a person who reads back is not pulled down
@@ -801,7 +809,7 @@
     if (!listenId) { return; }
     $('nats-listen-stop').disabled = true;
     $('nats-listen-status').textContent = t('listen.ending');
-    try { await api('/api/cancel', { id: listenId }); } catch (e) { $('nats-listen-status').textContent = e.message; }
+    try { await api('/api/cancel', { id: listenId }); } catch (e) { $('nats-listen-status').textContent = e.message; $('nats-listen-stop').disabled = false; }
   }
 
   // a page that was opened or loaded again finds a listen run that is still going and follows it
@@ -1366,6 +1374,7 @@
       const r = await api('/api/settings?file=' + encodeURIComponent($('ch-file').value) + '&limit=1000');
       if (mine !== rowsSeq) { return; }
       changeRows = (r.file && r.file.settings) || [];
+      if (r.file && r.file.count > changeRows.length) { $('ch-status').textContent = t('change.many', changeRows.length, r.file.count); }
     } catch (e) { $('ch-status').textContent = e.message; }
     const body = $('ch-table').tBodies[0];
     body.textContent = '';
@@ -1395,6 +1404,8 @@
         const r = await api('/api/setting?target=' + encodeURIComponent(f.target) + '&name=' + encodeURIComponent(f.name) + '&setting=' + encodeURIComponent(s.key));
         if (mine === editSeq) { $('ch-value').value = r.value; }
       } catch (e) { $('ch-status').textContent = e.message; }
+    } else if (s.cut) {
+      $('ch-status').textContent = t('change.cut'); // the page has only the beginning: it is not put in the field to be written back
     } else if (s.shown) {
       $('ch-value').value = s.value;
     }
