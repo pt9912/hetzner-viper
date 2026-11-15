@@ -454,7 +454,7 @@ func TestTheTwoLanguagesHaveTheSameKeysAndThePageAsksForNoOther(t *testing.T) {
 		}
 	}
 	asked := map[string]bool{}
-	for _, m := range regexp.MustCompile(`data-i18n(?:-label)?="([a-z0-9.]+)"`).FindAllStringSubmatch(read("index.html"), -1) {
+	for _, m := range regexp.MustCompile(`data-i18n(?:-label|-placeholder)?="([a-z0-9.]+)"`).FindAllStringSubmatch(read("index.html"), -1) {
 		asked[m[1]] = true
 	}
 	for _, m := range regexp.MustCompile(`\bt\('([a-z0-9.]+)'`).FindAllStringSubmatch(read("app.js"), -1) {

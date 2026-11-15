@@ -16,7 +16,7 @@
     'note.none': 'No machines found: machines/<name>.env.local or groups/<name>.env in the settings directory name them.',
     'note.state': 'State is what this computer knows; Check asks the machine.',
     'note.load': 'Could not load: {0}',
-    'state.partial': 'partly', 'group.none': 'No group', 'group.empty': 'no machines', 'state.ready': 'set up', 'state.started': 'started', 'state.none': 'not started',
+    'filter.label': 'Filter', 'filter.placeholder': 'name, group, provider, type ...', 'filter.state': 'State', 'filter.allstates': 'All states', 'filter.clear': 'Clear the filter', 'filter.count': '{0} of {1} machines', 'filter.none': 'No machine matches the filter.', 'sort.label': 'Sort by {0}', 'state.partial': 'partly', 'group.none': 'No group', 'group.empty': 'no machines', 'state.ready': 'set up', 'state.started': 'started', 'state.none': 'not started',
     'error.prefix': 'error: {0}',
     'repo.label': 'Repository URL for up and preflight (optional)',
     'h.groups': 'Groups',
@@ -73,7 +73,7 @@
     'note.none': 'Keine Rechner gefunden: machines/<name>.env.local oder groups/<name>.env im Einstellungsverzeichnis nennen sie.',
     'note.state': 'Der Zustand ist, was dieser Computer weiß; „Prüfen“ fragt den Rechner.',
     'note.load': 'Konnte nicht laden: {0}',
-    'state.partial': 'teilweise', 'group.none': 'Ohne Gruppe', 'group.empty': 'keine Rechner', 'state.ready': 'eingerichtet', 'state.started': 'gestartet', 'state.none': 'nicht gestartet',
+    'filter.label': 'Filter', 'filter.placeholder': 'Name, Gruppe, Anbieter, Typ ...', 'filter.state': 'Zustand', 'filter.allstates': 'Alle Zustände', 'filter.clear': 'Filter löschen', 'filter.count': '{0} von {1} Rechnern', 'filter.none': 'Kein Rechner passt zum Filter.', 'sort.label': 'Sortieren nach {0}', 'state.partial': 'teilweise', 'group.none': 'Ohne Gruppe', 'group.empty': 'keine Rechner', 'state.ready': 'eingerichtet', 'state.started': 'gestartet', 'state.none': 'nicht gestartet',
     'error.prefix': 'Fehler: {0}',
     'repo.label': 'Repository-URL für Up und Preflight (optional)',
     'h.groups': 'Gruppen',
@@ -136,6 +136,7 @@
     document.title = t('title');
     for (const el of document.querySelectorAll('[data-i18n]')) { el.textContent = t(el.dataset.i18n); }
     for (const el of document.querySelectorAll('[data-i18n-label]')) { el.setAttribute('aria-label', t(el.dataset.i18nLabel)); }
+    for (const el of document.querySelectorAll('[data-i18n-placeholder]')) { el.setAttribute('placeholder', t(el.dataset.i18nPlaceholder)); }
   }
 
   function setLang(l) {

@@ -32,13 +32,30 @@
   <section id="page-overview" role="tabpanel" aria-labelledby="tab-overview">
     <h2 id="h-overview" data-i18n="h.machines">Machines</h2>
     <p id="overview-note" class="muted" role="status"></p>
+    <div class="filter row" role="search">
+      <label for="f-text" data-i18n="filter.label">Filter</label>
+      <input type="search" id="f-text" autocomplete="off" spellcheck="false" size="26" data-i18n-placeholder="filter.placeholder" placeholder="name, group, provider, type ...">
+      <label for="f-state" data-i18n="filter.state">State</label>
+      <select id="f-state">
+        <option value="" data-i18n="filter.allstates">All states</option>
+        <option value="ready" data-i18n="state.ready">set up</option>
+        <option value="started" data-i18n="state.started">started</option>
+        <option value="none" data-i18n="state.none">not started</option>
+      </select>
+      <button type="button" id="f-clear" class="quiet" hidden data-i18n="filter.clear">Clear the filter</button>
+      <span id="f-count" class="muted" role="status"></span>
+    </div>
     <div class="scroll">
     <table id="machines">
       <caption class="sr" data-i18n="h.machines">Machines</caption>
       <thead><tr>
-        <th scope="col" data-i18n="th.machine">Machine</th><th scope="col" data-i18n="th.provider">Provider</th>
-        <th scope="col" data-i18n="th.type">Type</th><th scope="col" data-i18n="th.location">Location</th><th scope="col" data-i18n="th.nats">NATS</th>
-        <th scope="col" data-i18n="th.state">State</th><th scope="col" data-i18n="th.actions">Actions</th>
+        <th scope="col" aria-sort="none"><button type="button" class="sort" data-sort="name" data-i18n="th.machine">Machine</button></th>
+        <th scope="col" aria-sort="none"><button type="button" class="sort" data-sort="provider" data-i18n="th.provider">Provider</button></th>
+        <th scope="col" aria-sort="none"><button type="button" class="sort" data-sort="type" data-i18n="th.type">Type</button></th>
+        <th scope="col" aria-sort="none"><button type="button" class="sort" data-sort="location" data-i18n="th.location">Location</button></th>
+        <th scope="col" aria-sort="none"><button type="button" class="sort" data-sort="nats" data-i18n="th.nats">NATS</button></th>
+        <th scope="col" aria-sort="none"><button type="button" class="sort" data-sort="state" data-i18n="th.state">State</button></th>
+        <th scope="col" data-i18n="th.actions">Actions</th>
       </tr></thead>
     </table>
     </div>

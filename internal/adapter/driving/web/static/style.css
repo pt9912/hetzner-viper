@@ -74,6 +74,17 @@ td.actions { white-space: nowrap; text-align: right; }
 td.actions button + button { margin-left: .25rem; }
 #settings-files table td:first-child { font-family: var(--mono); font-size: .92rem; }
 
+/* the filter, and the headers that sort */
+.filter { margin: .8rem 0; }
+.filter input[type="search"] { min-width: 14rem; }
+button.sort { all: unset; cursor: pointer; font: 600 .82rem var(--sans); color: var(--muted); padding: .1rem .2rem; border-radius: 4px; }
+button.sort:hover { color: var(--fg); }
+button.sort:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent-fill) 55%, var(--fg)); outline-offset: 2px; }
+th[aria-sort="ascending"] button.sort, th[aria-sort="descending"] button.sort { color: var(--fg); }
+/* the arrow is decoration: aria-sort says it (the second content has an empty alternative text, so it is not read as part of the name) */
+th[aria-sort="ascending"] button.sort::after { content: " \25B2"; content: " \25B2" / ""; font-size: .7em; }
+th[aria-sort="descending"] button.sort::after { content: " \25BC"; content: " \25BC" / ""; font-size: .7em; }
+
 /* buttons: the one that is likely the next step is filled; the others are quiet; what deletes is brick */
 button, select, input, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: .3rem .75rem; font-weight: 600; font-size: .9rem; }

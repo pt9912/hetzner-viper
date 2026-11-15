@@ -57,6 +57,49 @@
 
   // The overview is the groups first, each a rack with its machines as units; the machines without a group come last. A machine
   // that is in several groups stands under each of them.
+  // ---- filter and sort of the units (the groups stay by name, a group stays together) ----
+  let sortKey = '';
+  let sortDir = 1; // 1 ascending, -1 descending
+  const STATE_RANK = { ready: 0, started: 1, none: 2 };
+
+  function sortValue(m, key) {
+    if (key === 'state') { return STATE_RANK[m.state || 'none']; }
+    return (m[key] || '').toLowerCase();
+  }
+
+  function sortedUnits(units) {
+    if (!sortKey) { return units; }
+    return units.slice().sort((a, b) => {
+      const x = sortValue(a, sortKey);
+      const y = sortValue(b, sortKey);
+      const c = typeof x === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true });
+      return c * sortDir || a.name.localeCompare(b.name);
+    });
+  }
+
+  function filterTerms() { return $('f-text').value.toLowerCase().split(/\s+/).filter(Boolean); }
+
+  function hay(m) { return [m.name, m.group, m.provider, m.type, m.location, m.nats, stateText(m.state)].join(' ').toLowerCase(); }
+
+  // the units of a group that the filter lets through: a group whose name fits shows all its machines (of the state asked for)
+  function visibleUnits(g, members) {
+    const terms = filterTerms();
+    const st = $('f-state').value;
+    const groupHit = !!g && terms.length > 0 && terms.every((x) => g.name.toLowerCase().includes(x));
+    return members.filter((m) => (!st || (m.state || 'none') === st) && (terms.length === 0 || groupHit || terms.every((x) => hay(m).includes(x))));
+  }
+
+  function filtering() { return filterTerms().length > 0 || $('f-state').value !== ''; }
+
+  function renderSortState() {
+    for (const th of document.querySelectorAll('#machines thead th')) {
+      const b = th.querySelector('button.sort');
+      if (!b) { continue; }
+      const on = b.dataset.sort === sortKey;
+      th.setAttribute('aria-sort', on ? (sortDir === 1 ? 'ascending' : 'descending') : 'none');
+    }
+  }
+
   function renderMachines() {
     const table = $('machines');
     for (const old of Array.from(table.tBodies)) { old.remove(); }
@@ -65,22 +108,37 @@
     for (const m of overview.machines) {
       if (m.group) { if (!byGroup.has(m.group)) { byGroup.set(m.group, []); } byGroup.get(m.group).push(m); } else { loose.push(m); }
     }
-    for (const g of overview.groups) { table.appendChild(rack(g, byGroup.get(g.name) || [])); byGroup.delete(g.name); }
+    let shown = 0;
+    const add = (g, members) => {
+      const units = sortedUnits(visibleUnits(g, members));
+      shown += units.length;
+      const groupNameFits = !!g && filterTerms().length > 0 && filterTerms().every((x) => g.name.toLowerCase().includes(x));
+      // with a filter a group without a visible machine is left out (an empty group shows when its name is asked for)
+      if (!filtering() || units.length > 0 || (g && g.error && filterTerms().length === 0) || (groupNameFits && $('f-state').value === '' && members.length === 0)) {
+        table.appendChild(rack(g, units, filtering()));
+      }
+    };
+    for (const g of overview.groups) { add(g, byGroup.get(g.name) || []); byGroup.delete(g.name); }
     for (const rest of byGroup.values()) { loose.push(...rest); } // of a group that the overview does not list
-    if (loose.length > 0) { table.appendChild(rack(null, loose)); }
+    if (loose.length > 0) { add(null, loose); }
+    const total = overview.machines.length;
+    $('f-count').textContent = filtering() ? (shown === 0 ? t('filter.none') : t('filter.count', shown, total)) : '';
+    $('f-clear').hidden = !filtering();
+    renderSortState();
     $('overview-note').textContent = overview.machines.length === 0 && overview.groups.length === 0 ? t('note.none') : t('note.state');
   }
 
   // one group (or the machines without one) as a body of the table: the head, then the units
-  function rack(g, members) {
+  function rack(g, members, filtered) {
     const body = document.createElement('tbody');
     body.className = 'rack';
-    if (g || overview.groups.length > 0) { body.appendChild(groupHead(g, members)); }
+    if (g || overview.groups.length > 0) { body.appendChild(groupHead(g, members, filtered)); }
     if (!g || !g.error) { for (const m of members) { body.appendChild(unit(m)); } }
     return body;
   }
 
-  function groupHead(g, members) {
+  // (the state of a group is that of all its machines, also when the filter shows some of them)
+  function groupHead(g, members, filtered) {
     const tr = document.createElement('tr');
     tr.className = g ? 'grouphead real' : 'grouphead';
     const th = document.createElement('th');
@@ -95,6 +153,7 @@
     if (g.error) { const td = cell(tr, t('error.prefix', g.error), 'bad'); td.colSpan = 2; return tr; }
     // the state of the group: what its machines say, as a lamp and a word, with how many of them are set up
     const count = (s) => members.filter((m) => (m.state || 'none') === s).length;
+    if (filtered && g) { members = overview.machines.filter((m) => m.group === g.name); }
     const ready = count('ready');
     const kind = members.length === 0 || count('none') === members.length ? 'none' : ready === members.length ? 'ready' : 'partial';
     // a group that is only partly there says how many machines are in which state
@@ -664,6 +723,17 @@
     if (page === 'runs') { loadRuns(); }
   }
 
+  // the filter and the sort
+  $('f-text').addEventListener('input', renderMachines);
+  $('f-state').addEventListener('change', renderMachines);
+  $('f-clear').addEventListener('click', () => { $('f-text').value = ''; $('f-state').value = ''; renderMachines(); $('f-text').focus(); });
+  for (const b of document.querySelectorAll('button.sort')) {
+    b.addEventListener('click', () => {
+      // a second click turns it round, a third one takes the sort away
+      if (sortKey !== b.dataset.sort) { sortKey = b.dataset.sort; sortDir = 1; } else if (sortDir === 1) { sortDir = -1; } else { sortKey = ''; sortDir = 1; }
+      renderMachines();
+    });
+  }
   $('lang').addEventListener('change', () => { window.viperI18n.setLang($('lang').value); translate(); });
   $('nats-group').addEventListener('change', natsGroupChanged);
   $('nats-kind').addEventListener('change', natsKindChanged);

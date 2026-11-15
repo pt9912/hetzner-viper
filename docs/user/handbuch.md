@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.141  
+Version: 1.142  
 Software-Version: v0.25.0  
 Stand: 14.11.2026  
 
@@ -408,6 +408,7 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 
 1. Starten Sie `viper ui` im Verzeichnis mit den Einstellungen. Der Browser öffnet sich; die Adresse (`http://127.0.0.1:<port>/`) steht auch im Terminal. `Strg-C` im Terminal beendet die Oberfläche. Öffnet sich der Browser nicht, meldet `viper ui` das und nennt die Adresse mit dem Schlüssel (eine Minute gültig); mit `--no-open` startet es den Browser nicht, und der Schlüssel gilt zehn Minuten.
 2. **Übersicht:** Links stehen die Seiten (bei schmalem Fenster als Leiste oben). Die Übersicht ist nach **Gruppen** gegliedert: Jede Gruppe aus `groups/*.env` ist ein Block mit einer Kopfzeile (Name, **Zustand der Gruppe** und die Knöpfe der Gruppe), darunter ihre Rechner; Rechner ohne Gruppe stehen zuletzt unter „Ohne Gruppe“, ein Rechner in mehreren Gruppen unter jeder. Je Rechner gibt es Anbieter, Typ, Ort und NATS-Gruppe. Die Spalte „Zustand“ zeigt eine **Lampe mit Wort**, was dieser Computer weiß: „eingerichtet“ (`viper up` ist durchgelaufen), „gestartet“ (der Server ist angelegt) oder „nicht gestartet“; ein farbiger Streifen am Rand der Zeile wiederholt es. Der Zustand der Gruppe ist „eingerichtet“, wenn alle Rechner es sind, „nicht gestartet“, wenn keiner angelegt ist, sonst „teilweise“ mit den Zahlen („1 eingerichtet, 1 gestartet“). Die wahrscheinlich nächste Aktion ist gefüllt (ein Rechner, der nicht da ist: **Up**; einer, der da ist: **Prüfen**), **Down** ist rot. Ob der Rechner wirklich läuft, beantwortet **Prüfen**: Das ist `viper check`, mit dessen Ausgabe; „in Ordnung“ heißt Exit-Status 0.
+   **Filtern und sortieren:** Über der Tabelle filtert das Feld „Filter“ nach Wörtern (alle Wörter müssen zu Name, Gruppe, Anbieter, Typ, Ort, NATS-Gruppe oder Zustand eines Rechners passen; passt der Name einer Gruppe, zeigt sie alle ihre Rechner), die Auswahl „Zustand“ nach dem Zustand; „Filter löschen“ nimmt beides zurück, und daneben steht, wie viele Rechner passen. Die Überschriften der Spalten Rechner, Anbieter, Typ, Ort, NATS und Zustand sortieren die Rechner **innerhalb jeder Gruppe** (ein zweiter Klick kehrt um, ein dritter hebt die Sortierung auf; nach Zustand: eingerichtet, gestartet, nicht gestartet); die Gruppen bleiben nach Namen geordnet. Der Zustand einer Gruppe zählt immer alle ihre Rechner, auch wenn der Filter nur einige zeigt. Filter und Sortierung bleiben, bis Sie die Seite neu laden.
 3. **Aktionen:** **Vorprüfung**, **Up** und **Down** je Rechner und je Gruppe starten `viper preflight`, `viper up` und `viper down` als eigenen Prozess. Das Feld „Repository-URL“ gilt für Up und Vorprüfung (`--repo`; eine URL mit Zugangsdaten lehnt die Oberfläche ab). Die Seite **Läufe** zeigt die Ausgabe, solange der Lauf geht. Ein neuer Tab findet laufende Läufe wieder, und das Schließen eines Tabs beendet nichts.
 4. **Rückfragen:** Fragt `viper` etwas (zum Beispiel „Type DELETE to continue“), erscheint unter der Ausgabe ein Eingabefeld. Sie tippen das Wort selbst; es gibt keinen Knopf, der für Sie bestätigt.
 5. **Abbrechen:** Der Knopf wirkt wie Strg-C am Terminal: `viper` bricht ab und räumt auf, was es kann. Es macht nichts rückgängig; ein halb angelegter Server kann bleiben. Das Beenden kann einige Sekunden dauern („Wird beendet …“); nach 20 Sekunden beendet die Oberfläche den Prozess hart.
@@ -427,6 +428,7 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 | Übersicht, Läufe, NATS, Einstellungen, Protokolle | Overview, Runs, NATS, Settings, Logs |
 | Zustand: eingerichtet, gestartet, nicht gestartet, teilweise | State: set up, started, not started, partly |
 | Ohne Gruppe | No group |
+| Filter, Alle Zustände, Filter löschen | Filter, All states, Clear the filter |
 | Prüfen, Vorprüfung, Up, Down, Protokoll | Check, Preflight, Up, Down, Log |
 | Gruppe vorprüfen, Gruppe: Up, Gruppe: Down | Preflight group, Up group, Down group |
 | Abbrechen, Antwort, Senden | Cancel, Answer, Send |
@@ -1741,3 +1743,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.139 | nach v0.25.0 | `viper ui`: die NATS-Seite meldet den Betreiber an und ab (`viper nats init` und `revoke`), das Abmelden mit zweiter Nachfrage. |
 | 1.140 | nach v0.25.0 | `viper ui`: Dateien und Text lassen sich auf das Sendeformular ziehen und mit Strg+V einfügen (Bild, PDF, ZIP, Textdatei, Text); „Datei entfernen“. |
 | 1.141 | nach v0.25.0 | `viper ui`: neue Gestalt der Übersicht (Seiten links, Gruppen zuerst mit dem Zustand der Gruppe, Lampe mit Wort und Streifen je Rechner, Knöpfe nach Gewicht, Terminal mit der Rückfrage als Zeile). |
+| 1.142 | nach v0.25.0 | `viper ui`: die Übersicht lässt sich filtern (Wörter, Zustand) und nach Spalten sortieren (je Gruppe). |
