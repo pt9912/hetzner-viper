@@ -78,7 +78,7 @@ func (s *Server) natsArgv(req runRequest, ov Overview) (argv []string, files *ru
 	if !ok {
 		return nil, nil, fmt.Errorf("no such NATS group")
 	}
-	if !slices.Contains([]string{"peers", "topics", "listen", "send", "broadcast", "request", "fetch"}, req.Sub) {
+	if !slices.Contains([]string{"peers", "topics", "listen", "send", "broadcast", "request", "fetch", "init", "revoke"}, req.Sub) {
 		return nil, nil, fmt.Errorf("no such subcommand")
 	}
 	for _, m := range []string{req.To, req.From} {
@@ -90,7 +90,7 @@ func (s *Server) natsArgv(req runRequest, ov Overview) (argv []string, files *ru
 	if err := checkNATSFields(req); err != nil {
 		return nil, nil, err
 	}
-	if req.From != "" {
+	if req.From != "" && req.Sub != "init" && req.Sub != "revoke" { // they speak to the server as the operator, whoever "speaks as"
 		argv = append(argv, "--from="+req.From)
 	}
 	if req.Timeout > 0 && (req.Sub == "peers" || req.Sub == "topics" || req.Sub == "request") {
@@ -99,6 +99,9 @@ func (s *Server) natsArgv(req runRequest, ov Overview) (argv []string, files *ru
 	files, err = s.natsOptions(req, &argv)
 	if err != nil {
 		return nil, nil, err
+	}
+	if req.Sub == "init" || req.Sub == "revoke" {
+		return argv, files, nil // they say what they did in a sentence, and take no option
 	}
 	return append(argv, "--json"), files, nil
 }

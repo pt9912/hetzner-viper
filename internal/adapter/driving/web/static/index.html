@@ -84,6 +84,11 @@
         <select id="nats-from"></select>
       </div>
       <p id="nats-mode" class="muted" role="status"></p>
+      <div class="row">
+        <button type="button" id="nats-init" data-i18n="nats.init">Register as operator</button>
+        <button type="button" id="nats-revoke" data-i18n="nats.revoke">Remove the operator</button>
+        <span id="nats-operator-hint" class="muted" data-i18n="nats.operatorhint">The operator is an entry of its own at the NATS server, with a key that stays on this computer; the agents see it as the sender, and it can read everything in the group.</span>
+      </div>
       <h3 data-i18n="h.who">Who is there</h3>
       <div class="row">
         <label for="nats-timeout" data-i18n="nats.wait">Wait (seconds)</label>

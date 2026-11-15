@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.138  
+Version: 1.139  
 Software-Version: v0.25.0  
 Stand: 14.11.2026  
 
@@ -412,6 +412,7 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 4. **Rückfragen:** Fragt `viper` etwas (zum Beispiel „Type DELETE to continue“), erscheint unter der Ausgabe ein Eingabefeld. Sie tippen das Wort selbst; es gibt keinen Knopf, der für Sie bestätigt.
 5. **Abbrechen:** Der Knopf wirkt wie Strg-C am Terminal: `viper` bricht ab und räumt auf, was es kann. Es macht nichts rückgängig; ein halb angelegter Server kann bleiben. Das Beenden kann einige Sekunden dauern („Wird beendet …“); nach 20 Sekunden beendet die Oberfläche den Prozess hart.
 6. **NATS:** Die Seite zeigt die Gruppen aus `groups/*.env`, deren Rechner `NATS_ENABLED=true` haben. Die Zeile darunter sagt, wie `viper nats` spricht: **als Betreiber**, wenn dieser Computer den Schlüssel der Gruppe hat (`viper nats init <gruppe>`), sonst **als Rechner der Gruppe** über ssh („Sprechen als“ wählt den Rechner). Jede Schaltfläche startet `viper nats …` als Lauf:
+    * **Als Betreiber anmelden** (`viper nats init <gruppe>`; nur sichtbar, solange dieser Computer keinen Schlüssel hat): legt den Schlüssel des Betreibers auf diesem Computer an und meldet den Betreiber am NATS-Server der Gruppe an (über einen SSH-Tunnel; der Server der Gruppe muss laufen). Danach sendet `viper nats` als Betreiber. Der Betreiber kann alles in der Gruppe lesen, und die Agenten sehen ihn als Absender. **Betreiber abmelden** (`viper nats revoke <gruppe>`; sichtbar, solange der Schlüssel da ist) entfernt ihn am Server und löscht den Schlüssel; der Knopf fragt vorher ein zweites Mal.
     * **Peers** und **Themen**: wer da ist und welche Themen die Rechner abonniert haben. „Warten (Sekunden)“ ist die Zeit, die `viper nats` auf Antworten wartet.
     * **Mitlesen**: liest mit, bis Sie **Abbrechen** drücken; ein Thema begrenzt (leer: die Themen der Einstellungen), „alles in der Gruppe“ zeigt alles. Hat eine Nachricht eine Datei, steht dort **Diese Datei holen**; der Knopf trägt ID und Prüfsumme in das Formular „Datei holen“ ein.
     * **Senden:** Nachricht an einen Rechner, Anfrage (wartet „Auf die Antwort warten“ Sekunden, Standard 30) oder Rundruf an ein Thema; der Text bis 16 KiB. Eine Datei (PDF, Bild oder ZIP) geht nur an eine Gruppe mit Objektspeicher (`NATS_OBJECTS=true`; ohne ihn ist das Feld aus) und darf nicht größer sein als `NATS_OBJECTS_FILE_MAX` der Gruppe, in der Oberfläche höchstens 64 MiB; höchstens acht Dateien warten zugleich auf das Senden. Die weiteren Prüfungen sind die von `viper nats`. Der Text steht nie in der Befehlszeile eines Programms. Nach dem Senden leert die Seite Text und Datei. Eine Datei, die niemand sendet (etwa weil die Nachricht abgelehnt wurde), löscht die Oberfläche selbst, spätestens nach 30 Minuten. Die Warnung, dass der Absender in `NATS_MCP_PUSH_FROM` eines Empfängers steht, erscheint als Fehler des Laufs; „trotzdem senden“ entspricht `--yes`.
@@ -429,6 +430,7 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 | Gruppe vorprüfen, Gruppe: Up, Gruppe: Down | Preflight group, Up group, Down group |
 | Abbrechen, Antwort, Senden | Cancel, Answer, Send |
 | Peers, Themen, Mitlesen, Senden, Datei holen | Peers, Topics, Listen, Send, Get a file |
+| Als Betreiber anmelden, Betreiber abmelden | Register as operator, Remove the operator |
 | Sprechen als, Diese Datei holen, Datei herunterladen | Speak as, Fetch this file, Download the file |
 
 Die Ausgaben von `viper` selbst (Läufe, Prüfungen, Protokolle) und die Fehler des Servers bleiben in beiden Ansichten englisch.
@@ -1734,3 +1736,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.136 | nach v0.24.0 | `viper ui`: Kapitel „Die Oberfläche im Browser“ neu gefasst (Voraussetzung, deutsche Beschriftungen mit Tabelle der englischen, Grenzen und Sicherheit); Anfragen warten 30 Sekunden auf die Antwort; die Sitzung hängt am Port. |
 | 1.137 | nach v0.24.0 | Handbuch und READMEs nach der Prüfung: `viper ui` in der Befehlsübersicht, Fehlerbehebung (Port belegt, 403, Sitzung, Browser, Datei), FAQ und Glossar, die Optionen vollständig, die Beschriftungen der Gruppen-Knöpfe. |
 | 1.138 | v0.25.0 | Release v0.25.0: die Änderungen 1.130 bis 1.137 (neu: `viper ui`, die Oberfläche im Browser mit Übersicht, Prüfen, Vorprüfung/Up/Down, NATS, Einstellungen und Protokollen, auf Deutsch und Englisch; k3d stellt den aktuellen Kontext der `kubeconfig` nicht mehr um). |
+| 1.139 | nach v0.25.0 | `viper ui`: die NATS-Seite meldet den Betreiber an und ab (`viper nats init` und `revoke`), das Abmelden mit zweiter Nachfrage. |

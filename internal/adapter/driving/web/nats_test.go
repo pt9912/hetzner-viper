@@ -126,14 +126,55 @@ func TestAMessageGoesByFilesOfTheRunNotByTheCommandLine(t *testing.T) {
 
 func exists(p string) bool { _, err := os.Stat(p); return err == nil }
 
+// init registers the operator of the group at its server (with a key made on this computer), revoke removes it again: neither
+// takes an option, and neither asks anything. What else the request carries does not reach the command line.
+func TestTheOperatorIsRegisteredAndRemovedByInitAndRevoke(t *testing.T) {
+	st := live(t, false)
+	for _, sub := range []string{"init", "revoke"} {
+		if _, c := st.start(t, `{"action":"nats","sub":"`+sub+`","nats":"dev","timeout":5,"topic":"x","text":"y","from":"dev1","query":true}`); c != 200 {
+			t.Fatalf("%s: %d", sub, c)
+		}
+		p := st.spawn.next(t)
+		if got, want := strings.Join(p.argv, " "), "nats "+sub+" dev"; got != want {
+			t.Errorf("%s: argv %q, want %q", sub, got, want)
+		}
+		p.end(0)
+		waitIdle(t, st)
+	}
+	if _, c := st.start(t, `{"action":"nats","sub":"init","nats":"nope"}`); c != http.StatusBadRequest {
+		t.Errorf("init of a group that is not there: %d", c)
+	}
+	ro := live(t, true)
+	if _, c := ro.start(t, `{"action":"nats","sub":"init","nats":"dev"}`); c != http.StatusForbidden {
+		t.Errorf("init when read only: %d", c)
+	}
+}
+
+// waitIdle waits until the runs of the site have ended (their machines are free again).
+func waitIdle(t *testing.T, st *site) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := st.c.Get(st.base + "/api/runs")
+		if err == nil {
+			b, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if !strings.Contains(string(b), `"state":"running"`) && !strings.Contains(string(b), `"state":"waiting"`) {
+				return
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 func TestNATSRequestsAreChecked(t *testing.T) {
 	st := live(t, false)
 	long := strings.Repeat("x", 16<<10+1)
 	for name, body := range map[string]string{
 		"group":          `{"action":"nats","sub":"peers","nats":"nope"}`,
 		"no group":       `{"action":"nats","sub":"peers"}`,
-		"subcommand":     `{"action":"nats","sub":"init","nats":"dev"}`,
-		"revoke":         `{"action":"nats","sub":"revoke","nats":"dev"}`,
+		"subcommand":     `{"action":"nats","sub":"delete","nats":"dev"}`,
+		"mcp-binary":     `{"action":"nats","sub":"mcp-binary","nats":"dev"}`,
 		"to":             `{"action":"nats","sub":"send","nats":"dev","to":"web","text":"x"}`,
 		"from":           `{"action":"nats","sub":"peers","nats":"dev","from":"--help"}`,
 		"no to":          `{"action":"nats","sub":"send","nats":"dev","text":"x"}`,

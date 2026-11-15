@@ -148,3 +148,39 @@ test('a stream that the server refuses says that the session is gone', async ({ 
   await expect(page.locator('#banner')).toBeVisible();
   await expect(page.locator('#banner')).toContainText('session has ended');
 });
+
+test('the operator is registered by one click, and removed after a second look', async ({ page }) => {
+  await page.goto(ui.start);
+  await expect(page.locator('#machines tbody tr')).toHaveCount(3);
+  const bodies: Array<Record<string, unknown>> = [];
+  await page.route('**/api/run', (route) => {
+    bodies.push(route.request().postDataJSON());
+    route.fulfill({ contentType: 'application/json', body: '{"id":"op"}' });
+  });
+  await page.route('**/api/runs', (r) => r.fulfill({ contentType: 'application/json', body: '{"runs":[]}' }));
+  await page.route('**/api/events?id=op', (r) => r.fulfill({ contentType: 'text/event-stream', body: sse([['out', { seq: 0, text: 'The operator operator is registered.\n' }], ['state', { state: 'done', code: 0 }]]) }));
+  await page.click('#tab-nats');
+  // no key of the operator here: it can be registered, not removed
+  await expect(page.locator('#nats-init')).toBeVisible();
+  await expect(page.locator('#nats-revoke')).toBeHidden();
+  await page.click('#nats-init');
+  await expect.poll(() => bodies.length).toBe(1);
+  expect(bodies[0]).toEqual({ action: 'nats', nats: 'dev', sub: 'init' });
+  await expect(page.locator('#run-output')).toContainText('The operator operator is registered.');
+  // a computer with the key: the other way round, and the removal asks once more
+  await page.route('**/api/overview', async (route) => {
+    const j = await (await route.fetch()).json();
+    for (const g of j.nats) { g.operator = true; }
+    await route.fulfill({ json: j });
+  });
+  await page.reload();
+  await page.click('#tab-nats');
+  await expect(page.locator('#nats-init')).toBeHidden();
+  await expect(page.locator('#nats-revoke')).toBeVisible();
+  await page.click('#nats-revoke');
+  expect(bodies.length).toBe(1); // the first click only asks
+  await expect(page.locator('#nats-revoke')).toContainText('Sure?');
+  await page.click('#nats-revoke');
+  await expect.poll(() => bodies.length).toBe(2);
+  expect(bodies[1]).toEqual({ action: 'nats', nats: 'dev', sub: 'revoke' });
+});

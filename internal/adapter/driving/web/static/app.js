@@ -233,6 +233,12 @@
     const off = !!overview.readonly || !g;
     for (const id of ['nats-peers', 'nats-topics', 'nats-listen', 'nats-timeout', 'nats-reqtimeout', 'nats-listen-topic', 'nats-listen-all', 'nats-kind', 'nats-to', 'nats-topic', 'nats-text', 'nats-yes', 'nats-id', 'nats-sha', 'nats-from']) { $(id).disabled = off; }
     for (const f of ['nats-send', 'nats-fetch']) { for (const el of $(f).querySelectorAll('button')) { el.disabled = off; } }
+    // the operator: made (init) when this computer has no key, removed (revoke) when it has; the removal asks once more
+    $('nats-init').hidden = !g || g.operator;
+    $('nats-revoke').hidden = !g || !g.operator;
+    $('nats-init').disabled = off;
+    $('nats-revoke').disabled = off;
+    if (!g || !g.operator) { disarmRevoke(); }
     const noFile = off || !g.file_max;
     $('nats-file').disabled = noFile;
     $('nats-nofile').hidden = !g || off || g.file_max > 0;
@@ -270,6 +276,18 @@
     const req = Object.assign({ action: 'nats', nats: g.name }, extra);
     if ($('nats-from').value) { req.from = $('nats-from').value; }
     return startRun(req);
+  }
+
+  let revokeArmed = false;
+  function disarmRevoke() { revokeArmed = false; $('nats-revoke').textContent = t('nats.revoke'); }
+
+  async function natsInit() { await natsRun({ sub: 'init' }); }
+
+  // removing the operator deletes its key: the first click asks, the second does it
+  async function natsRevoke() {
+    if (!revokeArmed) { revokeArmed = true; $('nats-revoke').textContent = t('nats.revoke.sure'); return; }
+    disarmRevoke();
+    await natsRun({ sub: 'revoke' });
   }
 
   async function natsSend(ev) {
@@ -488,6 +506,9 @@
   $('nats-peers').addEventListener('click', () => natsRun({ sub: 'peers', timeout: Number($('nats-timeout').value) || 5 }));
   $('nats-topics').addEventListener('click', () => natsRun({ sub: 'topics', timeout: Number($('nats-timeout').value) || 5 }));
   $('nats-listen').addEventListener('click', () => natsRun({ sub: 'listen', topic: $('nats-listen-topic').value.trim(), all: $('nats-listen-all').checked }));
+  $('nats-init').addEventListener('click', natsInit);
+  $('nats-revoke').addEventListener('click', natsRevoke);
+  $('nats-revoke').addEventListener('blur', disarmRevoke);
   $('nats-send').addEventListener('submit', natsSend);
   $('nats-fetch').addEventListener('submit', (ev) => { ev.preventDefault(); natsRun({ sub: 'fetch', id: $('nats-id').value.trim(), sha256: $('nats-sha').value.trim().toLowerCase() }); });
   $('log-reload').addEventListener('click', loadLog);
