@@ -10,7 +10,7 @@ test.afterEach(async () => { await ui.stop(); });
 const names = (page: import('@playwright/test').Page) => page.locator('#machines tr.unit td:first-child').allInnerTexts();
 
 test('the overview is filtered by text and by state, and the filter can be cleared', async ({ page }) => {
-  // web is set up, a is started, b is not started (the marks of this computer)
+  // web is started (set up: the mark ready), a is created (a server, not set up), b is not started (the marks of this computer)
   const marks = path.join(ui.home, '.local', 'state', 'viper', 'servers', 'e2e');
   fs.mkdirSync(marks, { recursive: true });
   fs.writeFileSync(path.join(marks, 'id-e2e-web'), '1\n'); fs.writeFileSync(path.join(marks, 'ready-e2e-web'), '1\n');
@@ -35,7 +35,7 @@ test('the overview is filtered by text and by state, and the filter can be clear
   await expect(page.locator('#machines tr.grouphead.real')).toHaveCount(1);
   // the state; the state of the group head is still that of the whole group
   await page.fill('#f-text', '');
-  await page.selectOption('#f-state', 'started');
+  await page.selectOption('#f-state', { value: 'started' });
   await expect(page.locator('#machines tr.unit')).toHaveCount(1);
   await expect(page.locator('#machines tr.grouphead.real')).toContainText('partly');
   await page.click('#f-clear');
@@ -61,9 +61,9 @@ test('the columns sort the machines of each group; a second click turns it, a th
   expect(await inGroup()).toEqual(['b', 'a']);
   await page.getByRole('button', { name: /^Machine/ }).click();
   await expect(name).toHaveAttribute('aria-sort', 'none');
-  // by state: set up, then started, then not started; the groups stay where they are
+  // by state: started, then created, then not started; the groups stay where they are
   await page.getByRole('button', { name: /^State/ }).click();
-  expect(await inGroup()).toEqual(['a', 'b']); // started before not started
+  expect(await inGroup()).toEqual(['a', 'b']); // created before not started
   await page.getByRole('button', { name: /^State/ }).click();
   expect(await inGroup()).toEqual(['b', 'a']);
   await expect(page.locator('#machines tr.grouphead').first()).toContainText('dev');

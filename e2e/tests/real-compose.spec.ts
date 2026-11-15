@@ -28,7 +28,7 @@ test('a machine on real Docker: preflight, up, check, down with the question typ
     expect(mine()).toContain('m5t-web');
 
     await page.click('#tab-overview');
-    await expect(page.locator('#machines tr.unit', { hasText: 'web' })).toContainText('set up');
+    await expect(page.locator('#machines tr.unit', { hasText: 'web' })).toContainText('started');
     await page.getByRole('button', { name: 'Check web', exact: true }).click();
     await expect(page.locator('#check-status')).toContainText('web: OK', { timeout: 5 * 60_000 });
 

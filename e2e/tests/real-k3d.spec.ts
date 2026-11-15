@@ -36,7 +36,7 @@ test('a machine in a k3d cluster that viper makes: up, check and down with both 
     expect(registries()).toContain(k3dRegistry);
 
     await page.click('#tab-overview');
-    await expect(page.locator('#machines tr.unit', { hasText: 'web' })).toContainText('set up');
+    await expect(page.locator('#machines tr.unit', { hasText: 'web' })).toContainText('started');
     await page.getByRole('button', { name: 'Check web', exact: true }).click();
     await expect(page.locator('#check-status')).toContainText('web: OK', { timeout: 5 * 60_000 });
 
