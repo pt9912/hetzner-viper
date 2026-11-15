@@ -17,7 +17,7 @@ let driver: WebDriver;
 
 test.beforeEach(async () => {
   const withFile = test.info().title.startsWith('the start file'); // the first test needs the start file, the others the address with the key
-  ui = await startUI([], 30, withFile);
+  ui = await startUI([], 0, withFile); // a docker that answers at once: a preflight ends with problems after a moment
   driver = await new Builder().forBrowser(Browser.SAFARI).build();
 });
 test.afterEach(async () => {
@@ -58,7 +58,6 @@ test('the start file leads to the page in Safari (by itself, or by its link), an
 });
 
 
-test.describe.configure({ mode: 'serial' });
 test('Safari: the language, a refused page, a run with its exit status', async () => {
   await driver.get(ui.start);
   await driver.wait(until.urlIs(ui.base + '/'), 15000).catch(async () => { await driver.findElement(By.linkText('viper ui')).click(); await driver.wait(until.urlIs(ui.base + '/'), 10000); });
