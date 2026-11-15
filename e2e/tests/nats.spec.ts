@@ -168,11 +168,10 @@ test('the operator is registered by one click, and removed after a second look',
   expect(bodies[0]).toEqual({ action: 'nats', nats: 'dev', sub: 'init' });
   await expect(page.locator('#run-output')).toContainText('The operator operator is registered.');
   // a computer with the key: the other way round, and the removal asks once more
-  await page.route('**/api/overview', async (route) => {
-    const j = await (await route.fetch()).json();
-    for (const g of j.nats) { g.operator = true; }
-    await route.fulfill({ json: j });
-  });
+  // (the real overview, read by the page itself, with the key of the operator added)
+  const overview = await page.evaluate(() => fetch('/api/overview', { credentials: 'same-origin' }).then((r) => r.json()));
+  for (const g of overview.nats) { g.operator = true; }
+  await page.route('**/api/overview', (route) => route.fulfill({ json: overview }));
   await page.reload();
   await page.click('#tab-nats');
   await expect(page.locator('#nats-init')).toBeHidden();

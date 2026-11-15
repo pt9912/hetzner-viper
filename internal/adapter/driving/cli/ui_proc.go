@@ -59,11 +59,17 @@ func startProcess(exe string, args []string) (*process, error) {
 	return p, nil
 }
 
+// statusControlCExit is STATUS_CONTROL_C_EXIT (0xC000013A), the exit status of a Windows program that the system ended with Ctrl-C.
+const statusControlCExit = 0xC000013A
+
 // statusOf is the exit status of the process: 0 for none, and for a program that keeps the pipe open after it ended (it went
 // to the background) the status of the process, not the error of Wait.
 func statusOf(cmd *exec.Cmd, err error) int {
 	if err == nil {
 		return 0 // exitCode(nil) is 1: it is meant for an error
+	}
+	if code := exitCode(err); code == statusControlCExit {
+		return 130 // Windows: a Ctrl-C (CTRL_BREAK) that came before viper had its handler ended it as Ctrl-C ends a program
 	}
 	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil {
 		if code := cmd.ProcessState.ExitCode(); code >= 0 {

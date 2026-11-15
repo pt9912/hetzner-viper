@@ -29,7 +29,8 @@ jobs:
           go-version-file: go.mod
       - run: go test ./...
 
-  # The same tests on macOS: the Unix tests run there too (signals, process groups, file modes) with the tools of BSD.
+  # The tests of the interface on macOS (signals, process groups, the programs of the system). The other packages have Unix tests
+  # that were written for Linux (bash 5, GNU tools) and are not run here.
   macos:
     runs-on: macos-latest
     timeout-minutes: 20
@@ -38,4 +39,4 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - run: go test ./...
+      - run: go test ./internal/adapter/driving/... ./internal/model/...
