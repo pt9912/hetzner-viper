@@ -255,3 +255,74 @@ func TestACredentialWrittenIsWhatBashReads(t *testing.T) {
 		}
 	}
 }
+
+func TestRemovingAStatementLeavesAFileThatReadsAsBefore(t *testing.T) {
+	env, _ := credEnv(t)
+	for text, want := range map[string]string{
+		"X=1;GH_TOKEN=old-token-1;Y=2\n":     "X=1;Y=2\n",
+		"export GH_TOKEN=old-token-1\nA=1\n": "A=1\n",
+		"A=1 GH_TOKEN=old-token-1 B=2\n":     "A=1  B=2\n",
+		"A=1\nGH_TOKEN=old-token-1":          "A=1\n",
+		"A=1;GH_TOKEN=old-token-1\n":         "A=1\n",
+	} {
+		dir := setupDir(t, text, "")
+		if _, err := setCred(t, dir, env, credChange(nil, "GH_TOKEN")); err != nil {
+			t.Fatalf("%q: %v", text, err)
+		}
+		got, _ := os.ReadFile(filepath.Join(dir, ".env.local"))
+		if string(got) != want {
+			t.Errorf("%q -> %q, want %q", text, got, want)
+		}
+		if _, err := settingsfile.Assignments(string(got)); err != nil {
+			t.Errorf("%q: %v", got, err)
+		}
+	}
+}
+
+func TestTheBackupLeavesOutURLsWithCredentialsAndCommentsThatNameOne(t *testing.T) {
+	env, home := credEnv(t)
+	text := "# HCLOUD_TOKEN=commented-secret-1\n# plain comment\nREPO_URL=https://u:tok12345@h.example/x.git\nA=1\nVIPER_GH_TOKEN=ghp_oldoldold\nB='# HCLOUD_TOKEN=inside-a-value'\n"
+	dir := setupDir(t, text, "")
+	p, err := setCred(t, dir, env, credChange(map[string]string{"HCLOUD_TOKEN": "abcdefgh12345"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, _ := zip.OpenReader(filepath.Join(home, ".local", "state", "viper", "backups", p.Backup))
+	defer func() { _ = zr.Close() }()
+	for _, f := range zr.File {
+		rc, _ := f.Open()
+		b, _ := io.ReadAll(rc)
+		_ = rc.Close()
+		for _, leak := range []string{"commented-secret-1", "tok12345", "ghp_oldoldold", "abcdefgh12345"} {
+			if strings.Contains(string(b), leak) {
+				t.Errorf("%s holds %q", f.Name, leak)
+			}
+		}
+		if f.Name == ".env.local" && (!strings.Contains(string(b), "# plain comment") || !strings.Contains(string(b), "A=1")) {
+			t.Errorf("the rest must stay: %q", b)
+		}
+	}
+}
+
+func TestPruningTouchesOnlyBackupsOfViperAndKeepsTheNewestInASecond(t *testing.T) {
+	env, home := credEnv(t)
+	dir := setupDir(t, base, "")
+	bdir := filepath.Join(home, ".local", "state", "viper", "backups")
+	_ = os.MkdirAll(bdir, 0o700)
+	_ = os.WriteFile(filepath.Join(bdir, "other.zip"), []byte("not ours"), 0o600)
+	_ = os.WriteFile(filepath.Join(bdir, "notes.txt"), []byte("x"), 0o600)
+	for i := 0; i < 7; i++ { // more in one second than are kept
+		if _, err := setCred(t, dir, env, credChange(map[string]string{"HCLOUD_TOKEN": "abcdefgh1234" + string(rune('a'+i))})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, n := range []string{"other.zip", "notes.txt"} {
+		if _, err := os.Stat(filepath.Join(bdir, n)); err != nil {
+			t.Errorf("%s was removed", n)
+		}
+	}
+	ents, _ := os.ReadDir(bdir)
+	if len(ents) != 5+2 {
+		t.Errorf("%d entries", len(ents))
+	}
+}

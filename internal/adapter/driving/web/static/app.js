@@ -1000,6 +1000,9 @@
   $('s-remove').addEventListener('blur', disarmRemove);
   $('secret-form').addEventListener('input', () => { $('s-apply').disabled = true; secretPreview = ''; });
   $('s-name').addEventListener('change', () => { if (templates) { pickFile(); } });
+  // a page that is left or restored from the cache (Back) keeps no value in the field
+  window.addEventListener('pagehide', wipeSecret);
+  window.addEventListener('pageshow', (ev) => { if (ev.persisted) { wipeSecret(); } });
 
   function translate() {
     window.viperI18n.apply();

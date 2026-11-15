@@ -173,3 +173,24 @@ func TestACredentialRequestIsRefusedAsAFormAndWithoutEdit(t *testing.T) {
 		t.Errorf("%d %s", code, b)
 	}
 }
+
+func TestNoRunStartsWhileACredentialIsWritten(t *testing.T) {
+	ed := &fakeEditor{enter: make(chan struct{}), release: make(chan struct{})}
+	st := liveWith(t, false, func(c *web.Config) { c.Editor = ed })
+	done := make(chan int, 1)
+	go func() {
+		code, _ := st.post(t, "/api/edit/apply", `{"kind":"credential","target":"base","fields":{"HCLOUD_TOKEN":"abcdefgh12345"},"etag":"x"}`)
+		done <- code
+	}()
+	<-ed.enter
+	if _, code := st.start(t, `{"action":"preflight","machine":"web"}`); code != http.StatusConflict {
+		t.Errorf("a run started while the credential is written: %d", code)
+	}
+	close(ed.release)
+	if code := <-done; code != 200 {
+		t.Errorf("apply: %d", code)
+	}
+	if _, code := st.start(t, `{"action":"preflight","machine":"web"}`); code != 200 {
+		t.Errorf("after the change: %d", code)
+	}
+}

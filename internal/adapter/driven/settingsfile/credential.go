@@ -9,8 +9,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -127,12 +129,17 @@ func setAssignment(text, name, value string) (out string, existed bool, err erro
 	}
 	stmt := name + "=" + quote(value)
 	if found {
-		return text[:a.Start] + stmt + text[a.End:], true, nil
+		out = text[:a.Start] + stmt + text[a.End:]
+	} else {
+		if text != "" && !strings.HasSuffix(text, "\n") {
+			text += "\n"
+		}
+		out = text + stmt + "\n"
 	}
-	if text != "" && !strings.HasSuffix(text, "\n") {
-		text += "\n"
+	if err := checkRead(out, name, value, false); err != nil {
+		return "", false, err
 	}
-	return text + stmt + "\n", false, nil
+	return out, found, nil
 }
 
 // removeAssignment takes the statement of the name out (its line, if nothing else is on it).
@@ -148,14 +155,73 @@ func removeAssignment(text, name string) (string, error) {
 	if !found {
 		return "", fmt.Errorf("%s is not set in this file", name)
 	}
-	start, end := a.Start, a.End
-	if (start == 0 || text[start-1] == '\n') && (end == len(text) || text[end] == '\n') && end < len(text) {
-		end++
+	start, end := statementRange(text, a)
+	out := text[:start] + text[end:]
+	if err := checkRead(out, name, "", true); err != nil {
+		return "", err
 	}
-	return text[:start] + text[end:], nil
+	return out, nil
 }
 
-// emptied is the text with the value of every credential taken out (NAME=”).
+// exportStart is where an "export " that stands before the name begins (the name's own start if there is none).
+func exportStart(text string, start int) int {
+	p := start
+	for p > 0 && (text[p-1] == ' ' || text[p-1] == '\t') {
+		p--
+	}
+	if p < start && p >= 6 && text[p-6:p] == "export" && (p == 6 || strings.IndexByte(" \t\n;", text[p-7]) >= 0) {
+		return p - 6
+	}
+	return start
+}
+
+// statementRange is what goes with a statement that is taken out: an "export " before it, and a ";" next to it (X=1;GH=a;Y=2
+// must not become X=1;;Y=2) or else its whole line.
+func statementRange(text string, a Assignment) (start, end int) {
+	start, end = exportStart(text, a.Start), a.End
+	switch {
+	case end < len(text) && text[end] == ';':
+		end++
+	case start > 0 && text[start-1] == ';':
+		start--
+	case (start == 0 || text[start-1] == '\n') && (end == len(text) || text[end] == '\n') && end < len(text):
+		end++
+	}
+	return start, end
+}
+
+// checkRead reads an edited text again and says an error if it is not what was meant: it must be readable, and the name must
+// have the value (or, removed, no statement at all).
+func checkRead(text, name, value string, removed bool) error {
+	as, err := Assignments(text)
+	if err != nil {
+		return fmt.Errorf("the change would leave the file unreadable (%v): change it at the terminal", err)
+	}
+	a, found, err := only(as, name)
+	switch {
+	case err != nil:
+		return err
+	case removed && found, !removed && (!found || a.Value != value):
+		return errors.New("the change would not read back as meant: change it at the terminal")
+	}
+	return nil
+}
+
+// userinfoURL says whether a value has a URL with credentials in it (https://user:token@host/...).
+func userinfoURL(v string) bool {
+	for _, w := range strings.Fields(v) {
+		if _, rest, ok := strings.Cut(w, "://"); ok {
+			host, _, _ := strings.Cut(rest, "/")
+			if strings.Contains(host, "@") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// emptied is the text for a backup: the value of every credential taken out (NAME=”), the value of any setting that holds a URL
+// with credentials, and a comment that names a credential with a value (# NAME=...). Anything else stays as it is.
 func emptied(text string) (string, error) {
 	as, err := Assignments(text)
 	if err != nil {
@@ -163,11 +229,37 @@ func emptied(text string) (string, error) {
 	}
 	secrets := model.SecretNames()
 	for i := len(as) - 1; i >= 0; i-- {
-		if slices.Contains(secrets, as[i].Name) {
+		if slices.Contains(secrets, as[i].Name) || userinfoURL(as[i].Value) {
 			text = text[:as[i].Start] + as[i].Name + "=''" + text[as[i].End:]
 		}
 	}
-	return text, nil
+	as, err = Assignments(text)
+	if err != nil {
+		return "", err
+	}
+	var out strings.Builder
+	pos := 0
+	for _, line := range strings.SplitAfter(text, "\n") {
+		inside := false
+		for _, a := range as {
+			inside = inside || (pos > a.Start && pos < a.End)
+		}
+		if t := strings.TrimSpace(line); !inside && strings.HasPrefix(t, "#") && mentionsSecret(t, secrets) {
+			line = "# (a comment that named a credential was left out)\n"
+		}
+		out.WriteString(line)
+		pos += len(line)
+	}
+	return out.String(), nil
+}
+
+func mentionsSecret(comment string, secrets []string) bool {
+	for _, n := range secrets {
+		if strings.Contains(comment, n+"=") {
+			return true
+		}
+	}
+	return false
 }
 
 // checkCredentials are the reasons a change of credentials is refused before any file is read.
@@ -253,12 +345,11 @@ func planCredential(dir string, ch settings.Change) (credPlan, []string) {
 	return pl, nil
 }
 
-func previewCredential(dir string, ch settings.Change, env settings.Env) (settings.Preview, error) {
-	var p settings.Preview
-	pl, problems := planCredential(dir, ch)
-	p.Problems = problems
+// previewOf is the preview of a plan that was read once (the apply compares the same read with the etag of the page).
+func previewOf(dir string, ch settings.Change, env settings.Env, pl credPlan, problems []string) settings.Preview {
+	p := settings.Preview{Problems: problems}
 	if len(problems) > 0 {
-		return p, nil
+		return p
 	}
 	p.Etag = pl.etag
 	p.Files = []settings.File{{Path: filepath.ToSlash(pl.rel), Text: strings.Join(pl.lines, "\n") + "\n"}}
@@ -267,38 +358,42 @@ func previewCredential(dir string, ch settings.Change, env settings.Env) (settin
 	sort.Strings(broken)
 	p.Broken = broken
 	for _, n := range ch.Remove {
-		if v := env.Getenv(n); v != "" {
+		if env.Getenv(n) != "" {
 			p.Notes = append(p.Notes, n+": the environment of viper ui has it, and viper takes the value from there when the file does not set it")
 		}
 	}
-	return p, nil
+	return p
+}
+
+func previewCredential(dir string, ch settings.Change, env settings.Env) (settings.Preview, error) {
+	pl, problems := planCredential(dir, ch)
+	return previewOf(dir, ch, env, pl, problems), nil
 }
 
 func createCredential(dir string, ch settings.Change, env settings.Env) (settings.Preview, error) {
-	p, err := previewCredential(dir, ch, env)
-	if err != nil {
-		return p, err
-	}
+	pl, problems := planCredential(dir, ch)
+	p := previewOf(dir, ch, env, pl, problems)
 	if len(p.Problems) > 0 || len(p.Broken) > 0 {
 		return p, errors.New("the change is refused")
 	}
-	if ch.Etag == "" || ch.Etag != p.Etag {
+	if ch.Etag == "" || ch.Etag != pl.etag { // the same read that the text of the change comes from
 		p.Problems = append(p.Problems, "the file has changed since the preview: look at the preview again")
 		return p, errors.New("the file has changed")
 	}
-	pl, _ := planCredential(dir, ch)
+	// the file must still be what the preview saw, right before anything is made
+	if cur, err := os.ReadFile(pl.path); err != nil || etagOf(cur) != pl.etag {
+		p.Problems = append(p.Problems, "the file has changed since the preview: look at the preview again")
+		return p, errors.New("the file has changed")
+	}
 	name, err := writeBackup(env.Home, "credential", pl)
 	if err != nil {
 		p.Problems = append(p.Problems, "no backup could be made: "+err.Error())
 		return p, errors.New("no backup")
 	}
 	p.Backup = name
-	// the file must still be what the preview saw, right before it is replaced
-	if cur, err := os.ReadFile(pl.path); err != nil || etagOf(cur) != pl.etag {
-		p.Problems = append(p.Problems, "the file has changed since the preview: look at the preview again")
-		return p, errors.New("the file has changed")
-	}
 	if err := replaceFile(pl.path, pl.after); err != nil {
+		_ = os.Remove(filepath.Join(model.StateDir(env.Home), "backups", name)) // a copy of a change that was not made is no copy
+		p.Backup = ""
 		return p, err
 	}
 	return p, nil
@@ -358,7 +453,7 @@ func writeBackup(home, action string, pl credPlan) (string, error) {
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }() // gone after the rename
 	zw := zip.NewWriter(tmp)
-	manifest := fmt.Sprintf("time: %s\naction: %s\nfiles:\n  - path: %s\n    saved-sha256: %s\n    after-sha256: %s\ncredentials: [%s]\nnote: the values of credentials are empty in the saved files\n",
+	manifest := fmt.Sprintf("time: %s\naction: %s\nfiles:\n  - path: %s\n    saved-sha256: %s\n    after-sha256: %s\ncredentials: [%s]\nnote: the values of the known credentials, URLs with credentials and comments that name a credential are left out of the saved files; other text is as it was\n",
 		now.Format(time.RFC3339), action, filepath.ToSlash(pl.rel), etagOf([]byte(before)), etagOf([]byte(after)), strings.Join(pl.names, ", "))
 	for _, e := range []struct{ name, text string }{{filepath.ToSlash(pl.rel), before}, {"manifest.yaml", manifest}} {
 		w, err := zw.CreateHeader(&zip.FileHeader{Name: e.name, Method: zip.Deflate, Modified: now})
@@ -393,32 +488,45 @@ func writeBackup(home, action string, pl credPlan) (string, error) {
 	return name, nil
 }
 
-// pruneBackups removes the backups older than 30 days, and those that are none of the five newest of any file they hold.
+var backupName = regexp.MustCompile(`^(\d{8}T\d{6})-[a-z]+(?:-(\d+))?\.zip$`)
+
+// pruneBackups removes the backups of viper (by their name) that are older than 30 days, and those that are none of the five
+// newest of any file they hold. Anything else in the directory is left alone.
 func pruneBackups(dir string, now time.Time) {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
-	var names []string
+	type backup struct {
+		name string
+		at   string // the time in the name
+		seq  int    // two in one second: -2, -3 ...
+	}
+	var list []backup
 	for _, e := range ents {
-		if strings.HasSuffix(e.Name(), ".zip") && !strings.HasPrefix(e.Name(), ".") {
-			names = append(names, e.Name())
+		if m := backupName.FindStringSubmatch(e.Name()); m != nil && e.Type().IsRegular() {
+			seq, _ := strconv.Atoi(m[2])
+			list = append(list, backup{e.Name(), m[1], seq})
 		}
 	}
-	sort.Sort(sort.Reverse(sort.StringSlice(names))) // the names begin with the time: the newest first
+	sort.Slice(list, func(i, j int) bool { // the newest first
+		if list[i].at != list[j].at {
+			return list[i].at > list[j].at
+		}
+		return list[i].seq > list[j].seq
+	})
 	seen := map[string]int{}
-	for _, n := range names {
-		files := filesOfBackup(filepath.Join(dir, n))
+	for _, b := range list {
 		keep := false
-		for _, f := range files {
+		for _, f := range filesOfBackup(filepath.Join(dir, b.name)) {
 			seen[f]++
 			keep = keep || seen[f] <= keepBackups
 		}
-		if st, err := os.Stat(filepath.Join(dir, n)); err == nil && now.Sub(st.ModTime()) > backupMaxAge {
+		if st, err := os.Stat(filepath.Join(dir, b.name)); err == nil && now.Sub(st.ModTime()) > backupMaxAge {
 			keep = false
 		}
 		if !keep {
-			_ = os.Remove(filepath.Join(dir, n))
+			_ = os.Remove(filepath.Join(dir, b.name))
 		}
 	}
 }

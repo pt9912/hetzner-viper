@@ -195,6 +195,7 @@ type runTable struct {
 	closing bool // the server ends: no new run
 	runs    []*run
 	held    map[string]string // machine -> the run that has it
+	editing bool              // credentials are being changed: no run starts
 }
 
 type runRequest struct {
@@ -364,6 +365,9 @@ func (s *Server) hold(r *run) (int, string) {
 	defer t.mu.Unlock()
 	if t.closing {
 		return http.StatusServiceUnavailable, "viper ui is ending"
+	}
+	if t.editing && r.Action != "nats" {
+		return http.StatusConflict, "settings are being changed: try again in a moment"
 	}
 	active := 0
 	for _, o := range t.runs {

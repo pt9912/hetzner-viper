@@ -126,18 +126,25 @@ func (s *Server) showResult(res EditResult) EditResult {
 	return out
 }
 
-// runActive says whether a run of an action is going: a credential is not changed under it (it read the files at its start, and
-// the next one should read the new ones).
-func (s *Server) runActive() bool {
+// beginEdit says whether a credential may be changed now: no run of an action goes (it read the files at its start, and the
+// next one should read the new ones), and none is started until endEdit (the check and the write are one step for runs).
+func (s *Server) beginEdit() bool {
 	t := &s.runs
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	for _, o := range t.runs {
 		if o.Action != "nats" && o.current() != stateDone {
-			return true
+			return false
 		}
 	}
-	return false
+	t.editing = true
+	return true
+}
+
+func (s *Server) endEdit() {
+	s.runs.mu.Lock()
+	s.runs.editing = false
+	s.runs.mu.Unlock()
 }
 
 func (s *Server) editPreview(w http.ResponseWriter, r *http.Request) {
@@ -160,15 +167,18 @@ func (s *Server) editApply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if req.Kind == "credential" && s.runActive() {
-		fail(w, http.StatusConflict, "a run is going: wait for it or cancel it, then change the credentials")
-		return
-	}
 	if !s.editMu.TryLock() {
 		fail(w, http.StatusConflict, "another change is being made")
 		return
 	}
 	defer s.editMu.Unlock()
+	if req.Kind == "credential" {
+		if !s.beginEdit() {
+			fail(w, http.StatusConflict, "a run is going: wait for it or cancel it, then change the credentials")
+			return
+		}
+		defer s.endEdit()
+	}
 	res, err := s.cfg.Editor.Create(r.Context(), req)
 	s.forgetOverview()
 	if err != nil && len(res.Problems) == 0 && len(res.Broken) == 0 {
