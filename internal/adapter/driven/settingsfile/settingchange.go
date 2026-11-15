@@ -64,8 +64,9 @@ func specOf(name string) (spec, bool) {
 // Catalog lists the settings a change may name.
 func (Files) Catalog() []settings.SettingInfo {
 	out := make([]settings.SettingInfo, 0, len(catalog()))
+	texts := helpTexts()
 	for _, s := range catalog() {
-		s.Help = map[string]string{"en": help[s.Name][0], "de": help[s.Name][1]}
+		s.Help = map[string]string{"en": texts[s.Name][0], "de": texts[s.Name][1]}
 		out = append(out, s.SettingInfo)
 	}
 	return out

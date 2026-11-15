@@ -3,7 +3,7 @@ package settingsfile
 // HelpNames are the settings that have a help text.
 func HelpNames() []string {
 	var out []string
-	for n := range help {
+	for n := range helpTexts() {
 		out = append(out, n)
 	}
 	return out
