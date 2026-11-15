@@ -550,8 +550,6 @@ func TestTheSettingsAreAnsweredInPagesAndSearchesWithLimits(t *testing.T) {
 	}
 	files = append([]web.SettingsFile{big}, files...)
 	f := &many{fake: newFake(), files: files}
-	s, h := started(t, f.fake, nil)
-	_ = s
 	cfg := web.Config{Backend: f, Version: "vtest"}
 	srv := web.New(cfg)
 	ln, err := srv.Listen(0)
@@ -559,7 +557,7 @@ func TestTheSettingsAreAnsweredInPagesAndSearchesWithLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = ln.Close() })
-	h = srv.Handler()
+	h := srv.Handler()
 	c := login(t, srv, h)
 	get := func(q string) (int, string) {
 		w := do(h, "GET", srv.Host(), "/api/settings"+q, c, "")
