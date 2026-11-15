@@ -107,3 +107,29 @@ test('nothing of the table is cut off at the right: the buttons wrap when the wi
     } finally { await ctx.close(); await g.stop(); }
   }
 });
+
+test('the overview follows the marks of this computer also while a button of the table has the focus, and keeps the focus on it', async ({ page }) => {
+  ui = await startUI([], 0);
+  const marks = path.join(ui.home, '.local', 'state', 'viper', 'servers', 'e2e');
+  fs.mkdirSync(marks, { recursive: true });
+  await page.goto(ui.start);
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3);
+  const sort = page.getByRole('button', { name: /^Machine/ });
+  await sort.click(); // a header of the table keeps the focus
+  await expect(sort).toBeFocused();
+  fs.writeFileSync(path.join(marks, 'id-e2e-web'), '1\n'); fs.writeFileSync(path.join(marks, 'ready-e2e-web'), '1\n');
+  await expect(page.locator('#machines tr.unit', { hasText: /^web/ }).locator('.state')).toContainText('started', { timeout: 15_000 });
+  await expect(page.getByRole('button', { name: /^Machine/ })).toBeFocused(); // the table was built anew: the focus is where it was
+});
+
+test('while a run goes on the table follows the marks within a few seconds', async ({ page }) => {
+  ui = await startUI([], 60);
+  const marks = path.join(ui.home, '.local', 'state', 'viper', 'servers', 'e2e');
+  fs.mkdirSync(marks, { recursive: true });
+  await page.goto(ui.start);
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Up web', exact: true }).click();
+  await page.click('#tab-overview');
+  fs.writeFileSync(path.join(marks, 'id-e2e-web'), '1\n');
+  await expect(page.locator('#machines tr.unit', { hasText: /^web/ }).locator('.state')).toContainText('(created)', { timeout: 6_000 });
+});

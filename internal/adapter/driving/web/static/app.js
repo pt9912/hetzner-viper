@@ -100,7 +100,27 @@
     }
   }
 
+  // the table is built anew when the overview changes: the button that has the focus has it again afterwards (found by its name)
+  function focusKey() {
+    const el = document.activeElement;
+    if (!el || !$('machines').contains(el)) { return null; }
+    return el.dataset.sort ? { sort: el.dataset.sort } : { label: el.getAttribute('aria-label') || el.textContent };
+  }
+
+  function restoreFocus(key) {
+    if (!key) { return; }
+    const els = Array.from($('machines').querySelectorAll('button'));
+    const hit = els.find((b) => (key.sort ? b.dataset.sort === key.sort : (b.getAttribute('aria-label') || b.textContent) === key.label));
+    if (hit && !hit.disabled) { hit.focus(); }
+  }
+
   function renderMachines() {
+    const key = focusKey();
+    renderMachinesBody();
+    restoreFocus(key);
+  }
+
+  function renderMachinesBody() {
     const table = $('machines');
     for (const old of Array.from(table.tBodies)) { old.remove(); }
     const loose = [];
@@ -1557,11 +1577,12 @@
   // ---- keeping up with the files: while the page is seen it asks for a short stamp every few seconds (and when it is seen again),
   // and when the stamp differs it loads what it shows anew. A preview that waits for "apply" is out of date only when the settings
   // files changed (not when a run changed the marks), and nothing is rebuilt under the hands of the person: while a button of a
-  // table or a field of a form has the focus, or a second click is waited for, the refresh waits for the next poll. ----
+  // table or a field of a form has the focus, or a second click is waited for (the table of the overview is rebuilt: the focus stays on its button), the refresh waits for the next poll. ----
   let stamp = '';
   let filesStamp = '';
   let polling = false;
   const pollEvery = 5000;
+  const pollWhileRunning = 2000; // while a run goes on the marks change: the table follows closer
   let pollTimer = 0;
 
   function staleStatus() {
@@ -1574,7 +1595,7 @@
   function busy() {
     const el = document.activeElement;
     const inside = (id) => !!el && !!$(id) && $(id).contains(el);
-    return removeAskedFor !== '' || removeArmed || inside('machines') || inside('ch-table') || inside('create-form') || inside('secret-form') || inside('change-form');
+    return removeAskedFor !== '' || removeArmed || inside('ch-table') || inside('create-form') || inside('secret-form') || inside('change-form');
   }
 
   async function refreshPages() {
@@ -1594,8 +1615,9 @@
     } catch (e) { /* the next poll sets it */ }
   }
 
+  let sessionGone = false;
   async function poll() {
-    if (document.hidden || polling) { return; }
+    if (document.hidden || polling || sessionGone) { return; }
     polling = true;
     try {
       const r = await api('/api/stamp');
@@ -1604,7 +1626,7 @@
       if (busy()) { return; } // the stamp stays the old one: the next poll tries again
       if (await refreshPages()) { stamp = r.stamp; filesStamp = r.files; }
     } catch (e) {
-      if (e.status === 403) { clearInterval(pollTimer); } // the session is gone: the banner says it, and asking again helps nobody
+      if (e.status === 403) { sessionGone = true; } // the session is gone: the banner says it, and asking again helps nobody
     } finally {
       polling = false;
     }
@@ -1612,7 +1634,11 @@
 
   document.addEventListener('visibilitychange', poll);
   window.addEventListener('focus', poll);
-  pollTimer = setInterval(poll, pollEvery);
+  function pollLater() {
+    const going = (overview.machines || []).some((m) => m.busy) || (runs || []).some((r) => r.state === 'running' || r.state === 'waiting' || r.state === 'cancelling');
+    pollTimer = setTimeout(async () => { await poll(); pollLater(); }, going ? pollWhileRunning : pollEvery);
+  }
+  pollLater();
 
   function translate() {
     window.viperI18n.apply();
