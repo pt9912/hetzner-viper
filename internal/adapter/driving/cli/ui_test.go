@@ -180,7 +180,7 @@ func TestTheOverviewNamesTheNATSGroupsAndWhetherThereIsAnOperatorKey(t *testing.
 func TestTheSettingsShowNamesAndOnlyTheValuesOfThePositiveList(t *testing.T) {
 	env, _ := nativeEnv(t)
 	dir := t.TempDir()
-	write(t, dir, ".env.local", "# a comment SERVER_TYPE=hidden\nexport PROVIDER=hetzner\nHCLOUD_TOKEN=tok-0123456789\nSERVER_TYPE=cpx22   # note\nNATS_MCP_TOPICS=\"build news\"\nDNS_DOMAIN=$DOMAIN\nK3D_CLUSTER_NAME='kc'\nAWS_ROOT_GB=40\nVIPER_GH_TOKEN=\nREPO_URL=https://user:pw@example.org/r.git\n")
+	write(t, dir, ".env.local", "# a comment SERVER_TYPE=hidden\nexport PROVIDER=hetzner\nHCLOUD_TOKEN=tok-0123456789\nSERVER_TYPE=cpx22   # note\nNATS_MCP_TOPICS=\"build news\"\nDNS_DOMAIN=$DOMAIN\nK3D_CLUSTER_NAME='kc'\nAWS_ROOT_GB=40\nVIPER_GH_TOKEN=\nVIPER_BREW_PACKAGES=\"ripgrep fd\"\nREPO_URL=https://user:pw@example.org/r.git\n")
 	write(t, dir, "groups/dev.env", "GROUP_MACHINES=a,b\n")
 	write(t, dir, "machines/a.env.local", "SERVER_LOCATION=nbg1\nREPO_URL=https://github.com/pt9912/x.git\n")
 	write(t, dir, "machines/example.env.local.example", "SERVER_TYPE=x\n")
@@ -205,7 +205,7 @@ func TestTheSettingsShowNamesAndOnlyTheValuesOfThePositiveList(t *testing.T) {
 	if strings.Join(names, ",") != ".env.local,groups/dev.env,machines/a.env.local,environment" {
 		t.Errorf("files %v", names)
 	}
-	for k, want := range map[string]string{".env.local PROVIDER": "hetzner", ".env.local SERVER_TYPE": "cpx22", ".env.local NATS_MCP_TOPICS": "build news", ".env.local K3D_CLUSTER_NAME": "kc", ".env.local AWS_ROOT_GB": "40", "groups/dev.env GROUP_MACHINES": "a,b", "machines/a.env.local SERVER_LOCATION": "nbg1", "machines/a.env.local REPO_URL": "https://github.com/pt9912/x.git"} {
+	for k, want := range map[string]string{".env.local PROVIDER": "hetzner", ".env.local SERVER_TYPE": "cpx22", ".env.local NATS_MCP_TOPICS": "build news", ".env.local K3D_CLUSTER_NAME": "kc", ".env.local AWS_ROOT_GB": "40", ".env.local VIPER_BREW_PACKAGES": "ripgrep fd", "groups/dev.env GROUP_MACHINES": "a,b", "machines/a.env.local SERVER_LOCATION": "nbg1", "machines/a.env.local REPO_URL": "https://github.com/pt9912/x.git"} {
 		if got[k] != want || !shown[k] {
 			t.Errorf("%s = %q (shown %v), want %q", k, got[k], shown[k], want)
 		}

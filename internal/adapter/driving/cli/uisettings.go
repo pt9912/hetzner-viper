@@ -23,7 +23,7 @@ func shownNames() map[string]bool {
 		"REPO_URL": true, "REPO_BRANCH": true, "SSH_ALLOWED_CIDRS": true, "AWS_TAGS_SHARED": true,
 		"NATS_ENABLED": true, "NATS_GROUP": true, "NATS_PORT": true, "NATS_MCP": true, "NATS_MCP_AUTOALLOW": true, "NATS_MCP_PUSH_FROM": true,
 		"NATS_MCP_TOPICS": true, "NATS_OBJECTS": true, "NATS_OBJECTS_MAX": true, "NATS_OBJECTS_FILE_MAX": true, "NATS_OBJECTS_TTL": true,
-		"NATS_OPERATOR_NAME": true, "VIPER_HOMEBREW": true, "VIPER_CODE_SERVER": true, "VIPER_SWAP": true, "VIPER_CLAUDE_MODEL": true,
+		"NATS_OPERATOR_NAME": true, "VIPER_HOMEBREW": true, "VIPER_BREW_PACKAGES": true, "VIPER_CODE_SERVER": true, "VIPER_SWAP": true, "VIPER_CLAUDE_MODEL": true,
 		"VIPER_CLAUDE_MAX_CONTEXT_TOKENS": true,
 	}
 }
