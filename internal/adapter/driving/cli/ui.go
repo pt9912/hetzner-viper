@@ -86,7 +86,7 @@ func openStart(h *Host, srv *web.Server) string {
 	dir, err := os.MkdirTemp("", "viper-ui-")
 	if err == nil {
 		file := filepath.Join(dir, "start.html")
-		page := `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=` + srv.URL() + `"><title>viper</title>`
+		page := `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=` + srv.URL() + `"><title>viper</title><p><a href="` + srv.URL() + `">viper ui</a>`
 		if err = os.WriteFile(file, []byte(page), 0o600); err == nil {
 			name, args := browserCommand(runtime.GOOS, file)
 			_, err = h.OutputTool(name, args...)

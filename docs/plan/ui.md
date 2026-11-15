@@ -2,7 +2,7 @@
 
 **Ziel:** `viper ui` startet auf dem eigenen Rechner einen kleinen Webserver im selben Programm, öffnet den Browser und zeigt dort, was `viper` weiß und kann: die Rechner und Gruppen dieses Rechners, ihren Zustand (`viper check`), die Protokolle, die NATS-Gruppen (Anwesenheit, Themen, Nachrichten mitlesen und senden, Dateien) und, in einer späteren Stufe, `up`, `down` und `preflight` mit Ausgabe und Rückfragen. Es gibt keine neue Bibliothek, kein cgo und keinen Build-Schritt für die Seiten (eingebettet mit `embed`, reines HTML, CSS und JavaScript), die Release-Binaries bleiben reines Go für fünf Ziele.
 
-**Stand:** Entwurf (14.11.2026), einmal unabhängig gegen den Code geprüft (§10); Meilenstein 0 bis 5 sind gemacht (§6; offen bleiben Läufe auf macOS, Windows und WebKit). *[V]* heißt: im Code gelesen; *[?]* ist eine Vermutung, die vor dem Bauen zu prüfen ist.
+**Stand:** Entwurf (14.11.2026), einmal unabhängig gegen den Code geprüft (§10); Meilenstein 0 bis 5 sind gemacht (§6; offen bleiben Läufe auf macOS und Windows). *[V]* heißt: im Code gelesen; *[?]* ist eine Vermutung, die vor dem Bauen zu prüfen ist.
 
 ## 1 Ausgangslage
 
@@ -70,7 +70,7 @@ Sprache der Oberfläche: Englisch wie die Hilfe von `viper` und die Meldungen; e
 2. **Aktionen (gemacht, nach v0.24.0):** Läufe als Prozess mit Ausgabe, Rückfragen, Abbrechen, ein Lauf je Rechner; `preflight`, `up`, `down`.
 3. **NATS (gemacht, nach v0.24.0):** Anwesenheit, Themen, Mitlesen, Senden, Dateien; mit dem Betreiber-Schlüssel und als Maschine.
 4. **Einstellungen (lesend), Deutsch, Feinschliff (gemacht, nach v0.24.0; axe prüft alle Seiten in Hell und Dunkel, Englisch und Deutsch):** Zugänglichkeit (Tastatur, Kontrast, Screenreader-Namen), Größe der Seiten, Fehlerseiten.
-5. **Handbuch und Läufe (Handbuch gemacht; Läufe: Chromium und Firefox auf Linux, echtes Docker per Browser; WebKit, macOS, Windows, k3d und Hetzner nicht):** Kapitel „Oberfläche im Browser“, `developer.md`, Läufe mit Firefox und Chrome auf Linux, macOS und Windows (so weit erreichbar), gegen echte Docker-Maschinen (Compose), k3d und, mit Erlaubnis, Hetzner.
+5. **Handbuch und Läufe (gemacht auf Linux: Chromium, Firefox und WebKit; echtes Docker, echtes k3d und echtes Hetzner (Check und Down über die Oberfläche); nicht gemacht: macOS und Windows):** Kapitel „Oberfläche im Browser“, `developer.md`, Läufe mit Firefox und Chrome auf Linux, macOS und Windows (so weit erreichbar), gegen echte Docker-Maschinen (Compose), k3d und, mit Erlaubnis, Hetzner.
 
 ### Ergebnis von Meilenstein 0 (14.11.2026, Linux)
 

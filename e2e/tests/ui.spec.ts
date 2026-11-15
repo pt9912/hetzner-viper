@@ -90,7 +90,10 @@ test('a preflight runs as viper itself and ends with its exit status', async ({ 
   await expect(page.locator('#run-output')).not.toContainText('ghp_e2esecretvalue123');
 });
 
-test('the start file that opens the browser leads to the page, and the key is not in the command line', async ({ page }) => {
+test('the start file that opens the browser leads to the page, and the key is not in the command line', async ({ page, browserName }) => {
+  // Playwright's WebKit build does not follow any navigation from a file:// page to http:// (meta refresh, script or a click on a
+  // link), also for a plain test page; not seen in a real Safari, and Jupyter uses the same start file. Not verified there.
+  test.skip(browserName === 'webkit', 'the WebKit build of Playwright does not leave a file:// page');
   await ui.stop();
   ui = await startUI([], 30, true);
   await page.goto(ui.start); // file://...start.html: a refresh to http://127.0.0.1:port/?t=key, then the redirect

@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium, firefox]
+        browser: [chromium, firefox, webkit]
     name: ${{ matrix.browser }}
     runs-on: ubuntu-24.04 # a system that this Playwright supports (ubuntu-latest is newer)
     timeout-minutes: 15

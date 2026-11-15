@@ -8,12 +8,25 @@ import { freePort, UI } from './fixture';
 // nothing of the user's is touched. For the tests that are run by hand (E2E_REAL_COMPOSE=1); CI has no Docker image of the
 // machines and does not run them.
 export async function startRealCompose(image: string): Promise<UI & { prefix: string }> {
+  const prefix = 'm5t';
+  return startReal(prefix, `PROVIDER=compose\nSERVER_PREFIX=${prefix}\nSERVER_LOCATION=default\nCOMPOSE_IMAGE=${image}\nDNS_PROVIDER=none\nCOMPOSE_DOCKER=none\nVIPER_HOMEBREW=0\n`, []);
+}
+
+// A viper ui on a real k3d cluster that viper up makes (PROVIDER=kubernetes, K3D_CLUSTER_CREATE=1): the cluster m5k and its
+// registry k3d-m5k-registry are the only things made, and they are deleted by name. The kubeconfig is that of the own home.
+export const k3dCluster = 'm5k';
+export const k3dRegistry = 'k3d-m5k-registry';
+export async function startRealK3d(image: string): Promise<UI & { prefix: string }> {
+  const prefix = 'm5k';
+  return startReal(prefix, `PROVIDER=kubernetes\nSERVER_PREFIX=${prefix}\nSERVER_LOCATION=k3d-${k3dCluster}\nK8S_IMAGE=${image}\nK8S_DOCKER=none\nDNS_PROVIDER=none\nVIPER_HOMEBREW=0\nK3D_REGISTRY=m5k-registry\nK3D_CLUSTER_CREATE=1\nK3D_AGENTS=0\n`, ['--delete-registry']);
+}
+
+async function startReal(prefix: string, settings: string, downArgs: string[]): Promise<UI & { prefix: string }> {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'viper-e2e-real-'));
   const home = path.join(root, 'home');
   const work = path.join(root, 'work');
   for (const d of [home, path.join(work, 'machines')]) { fs.mkdirSync(d, { recursive: true }); }
-  const prefix = 'm5t';
-  fs.writeFileSync(path.join(work, '.env.local'), `PROVIDER=compose\nSERVER_PREFIX=${prefix}\nSERVER_LOCATION=default\nCOMPOSE_IMAGE=${image}\nDNS_PROVIDER=none\nCOMPOSE_DOCKER=none\nVIPER_HOMEBREW=0\n`, { mode: 0o600 });
+  fs.writeFileSync(path.join(work, '.env.local'), settings, { mode: 0o600 });
   fs.writeFileSync(path.join(work, 'machines', 'web.env.local'), '', { mode: 0o600 });
   const viper = process.env.VIPER_BIN as string;
   const env = { ...process.env, HOME: home };
@@ -35,7 +48,7 @@ export async function startRealCompose(image: string): Promise<UI & { prefix: st
       }
       // what the test may have left: delete by name, with this prefix only
       try {
-        execFileSync(viper, ['down', 'web', '--force', '--dir', work], { cwd: work, env, input: 'DELETE\nDELETE\n', stdio: 'pipe', timeout: 180000 });
+        execFileSync(viper, ['down', 'web', '--force', ...downArgs, '--dir', work], { cwd: work, env, input: 'DELETE\nDELETE\n', stdio: 'pipe', timeout: 180000 });
       } catch { /* nothing was left, or it asks something else: the test checks docker itself */ }
       fs.rmSync(root, { recursive: true, force: true });
     },
