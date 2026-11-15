@@ -682,8 +682,26 @@
       const b = button(runLabel(run), '', () => attach(run.id));
       b.setAttribute('aria-pressed', String(run.id === current));
       li.appendChild(b);
+      if (run.state === 'done') { li.appendChild(button(t('runs.remove'), t('runs.remove.aria', runLabel(run)), () => removeRuns(run.id), false, 'quiet')); }
       ul.appendChild(li);
     }
+    $('run-clear').disabled = !runs.some((x) => x.state === 'done');
+  }
+
+  // finished runs leave the list (one, or all): what is shown of one of them goes with it
+  async function removeRuns(id) {
+    try { await api('/api/runs/remove', { id }); } catch (e) { $('run-status').textContent = e.message; return; }
+    await loadRuns();
+    if (current && !runs.some((r) => r.id === current)) {
+      if (source) { source.close(); source = null; }
+      current = '';
+      $('run-output').textContent = '';
+      $('run-status').textContent = '';
+      $('run-form').hidden = true;
+      $('run-download').hidden = true;
+      $('run-cancel').disabled = true;
+    }
+    $('run-list').focus();
   }
 
   function attach(id) {
@@ -739,6 +757,7 @@
     $('run-answer').value = '';
     try { await api('/api/answer', { id: current, text }); } catch (e) { $('run-status').textContent = e.message; }
   });
+  $('run-clear').addEventListener('click', () => removeRuns(''));
   $('run-cancel').addEventListener('click', async () => {
     try { await api('/api/cancel', { id: current }); } catch (e) { $('run-status').textContent = e.message; }
   });

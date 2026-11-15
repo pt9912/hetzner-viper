@@ -168,3 +168,8 @@ textarea.code { font-family: var(--mono); font-size: .92rem; min-width: 20rem; }
 /* the name of a machine or group is a button that leads to its settings: it looks like text with an underline */
 button.namebtn { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-decoration: underline dotted; text-underline-offset: .2em; cursor: pointer; min-height: 0; }
 button.namebtn:hover { text-decoration-style: solid; }
+
+.ledger li { display: flex; gap: .3rem; align-items: stretch; }
+.ledger li > button:first-child { flex: 1; min-width: 0; }
+.ledger li > button.quiet { width: auto; flex: none; font: 500 .8rem var(--sans); }
+.runlist > p { margin: 0 0 .5rem; }

@@ -115,3 +115,46 @@ test('Up of a group is accepted by viper (the options the page adds are the ones
     expect(out).toMatch(/\[a\]|\[b\]/); // the machines of the group were looked at: the command ran as a group
   } finally { await g.stop(); }
 });
+
+test('finished runs can be removed one by one or all at once; the one that is shown goes with it, a running one stays', async ({ page }) => {
+  const g = await startUI([], 0);
+  try {
+    await page.goto(g.start);
+    await expect(page.locator('#machines tr.unit')).toHaveCount(3);
+    for (const m of ['web', 'a']) { // the fake docker answers at once: the preflights end
+      await page.getByRole('button', { name: `Preflight ${m}`, exact: true }).first().click();
+      await expect(page.locator('#run-status')).toContainText(/Ended|exit/, { timeout: 60_000 });
+      await page.click('#tab-overview');
+    }
+    await page.click('#tab-runs');
+    await expect(page.locator('#run-list li')).toHaveCount(2);
+    await expect(page.locator('#run-clear')).toBeEnabled();
+    // one: the one that is not shown stays, the shown one empties the terminal
+    await page.locator('#run-list li').first().getByRole('button', { name: /^Remove the run/ }).click();
+    await expect(page.locator('#run-list li')).toHaveCount(1);
+    await expect(page.locator('#run-list')).toBeFocused();
+    // all of the finished ones
+    await page.locator('#run-list li button').first().click(); // shown
+    await expect(page.locator('#run-output')).not.toHaveText('');
+    await page.click('#run-clear');
+    await expect(page.locator('#run-list li.muted')).toBeVisible();
+    await expect(page.locator('#run-output')).toHaveText('');
+    await expect(page.locator('#run-clear')).toBeDisabled();
+  } finally { await g.stop(); }
+});
+
+test('a running run is not removed by "remove finished runs"', async ({ page }) => {
+  const g = await startUI([], 30);
+  try {
+    await page.goto(g.start);
+    await expect(page.locator('#machines tr.unit')).toHaveCount(3);
+    await page.getByRole('button', { name: 'Up web', exact: true }).click();
+    await expect(page.locator('#run-status')).toContainText('Running');
+    await expect(page.locator('#run-clear')).toBeDisabled(); // nothing is finished
+    await expect(page.locator('#run-list li')).toHaveCount(1);
+    await expect(page.locator('#run-list li').first().getByRole('button', { name: /^Remove the run/ })).toHaveCount(0);
+    await page.click('#run-cancel');
+    await expect(page.locator('#run-status')).toContainText('exit 130', { timeout: 40_000 });
+    await expect(page.locator('#run-clear')).toBeEnabled();
+  } finally { await g.stop(); }
+});

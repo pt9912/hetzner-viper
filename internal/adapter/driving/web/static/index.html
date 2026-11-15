@@ -75,7 +75,10 @@
     <h2 id="h-runs" data-i18n="h.runs">Runs</h2>
     <p class="muted lead" data-i18n="runs.intro">A run is viper itself, as at the terminal.</p>
     <div class="runs">
-      <ul id="run-list" class="ledger" aria-labelledby="h-runs"></ul>
+      <div class="runlist">
+      <p><button type="button" id="run-clear" class="quiet" disabled data-i18n="runs.clear">Remove finished runs</button></p>
+      <ul id="run-list" class="ledger" aria-labelledby="h-runs" tabindex="-1"></ul>
+      </div>
       <div class="terminal">
         <div class="termbar">
           <p id="run-status" role="status"></p>

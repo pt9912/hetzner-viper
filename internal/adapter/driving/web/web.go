@@ -295,6 +295,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/check", s.check)
 	mux.HandleFunc("GET /api/runs", s.listRuns)
 	mux.HandleFunc("GET /api/events", s.events)
+	mux.HandleFunc("POST /api/runs/remove", s.removeRuns)
 	mux.HandleFunc("POST /api/run", s.startRun)
 	mux.HandleFunc("POST /api/answer", s.answer)
 	mux.HandleFunc("POST /api/cancel", s.cancelRun)

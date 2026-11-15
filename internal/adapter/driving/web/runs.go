@@ -619,6 +619,44 @@ func (s *Server) listRuns(w http.ResponseWriter, _ *http.Request) {
 	reply(w, map[string]any{"runs": out})
 }
 
+// removeRuns takes finished runs out of the table (with the files they held): one by its id, or all of them (no id). A run that
+// is not finished is not removed: it is cancelled first.
+func (s *Server) removeRuns(w http.ResponseWriter, r *http.Request) {
+	var req idRequest
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		fail(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	t := &s.runs
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	removed := 0
+	kept := t.runs[:0:0]
+	for _, o := range t.runs {
+		switch {
+		case req.ID != "" && o.ID != req.ID:
+			kept = append(kept, o)
+		case o.current() != stateDone:
+			if req.ID != "" {
+				fail(w, http.StatusConflict, "the run is not finished: cancel it first")
+				return
+			}
+			kept = append(kept, o)
+		default:
+			o.files.remove()
+			removed++
+		}
+	}
+	if req.ID != "" && removed == 0 {
+		fail(w, http.StatusNotFound, "no such run")
+		return
+	}
+	t.runs = kept
+	reply(w, map[string]int{"removed": removed})
+}
+
 type idRequest struct {
 	ID   string `json:"id"`
 	Text string `json:"text"`

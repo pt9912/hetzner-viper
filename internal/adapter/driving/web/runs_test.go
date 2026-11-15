@@ -431,3 +431,58 @@ func TestTheServerEndsItsRunsWithCtrlC(t *testing.T) {
 		t.Fatal("the server did not end")
 	}
 }
+
+func TestFinishedRunsCanBeRemovedOneByOneOrAllAndARunningOneStays(t *testing.T) {
+	st := live(t, false)
+	end := func(argv string) string {
+		id, code := st.start(t, argv)
+		if code != 200 {
+			t.Fatalf("%s: %d", argv, code)
+		}
+		return id
+	}
+	a := end(`{"action":"preflight","machine":"web"}`)
+	pa := st.spawn.next(t)
+	pa.end(0)
+	st.attach(t, a).until(t, state("done"))
+	b := end(`{"action":"preflight","machine":"dev2","group":"dev"}`)
+	pb := st.spawn.next(t)
+	pb.end(1)
+	st.attach(t, b).until(t, state("done"))
+	running := end(`{"action":"up","machine":"dev1","group":"dev"}`)
+	pr := st.spawn.next(t)
+	count := func() int {
+		resp, err := st.c.Get(st.base + "/api/runs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		var r struct{ Runs []struct{ ID string } }
+		_ = json.NewDecoder(resp.Body).Decode(&r)
+		return len(r.Runs)
+	}
+	if count() != 3 {
+		t.Fatalf("%d runs", count())
+	}
+	// a running run is not removed (one by id: refused; all: skipped)
+	if code, _ := st.post(t, "/api/runs/remove", `{"id":"`+running+`"}`); code != http.StatusConflict {
+		t.Errorf("removing a running run: %d", code)
+	}
+	if code, _ := st.post(t, "/api/runs/remove", `{"id":"nope"}`); code != http.StatusNotFound {
+		t.Errorf("removing an unknown run: %d", code)
+	}
+	if code, body := st.post(t, "/api/runs/remove", `{"id":"`+a+`"}`); code != 200 || !strings.Contains(body, `"removed":1`) || count() != 2 {
+		t.Errorf("one: %d %s (%d left)", code, body, count())
+	}
+	if code, body := st.post(t, "/api/runs/remove", `{}`); code != 200 || !strings.Contains(body, `"removed":1`) || count() != 1 {
+		t.Errorf("all finished: %d %s (%d left)", code, body, count())
+	}
+	if code, _ := st.post(t, "/api/runs/remove", `{"id":"x","text":"y"}`); code != http.StatusBadRequest && code != http.StatusNotFound {
+		t.Errorf("odd request: %d", code)
+	}
+	pr.end(0)
+	st.attach(t, running).until(t, state("done"))
+	if code, body := st.post(t, "/api/runs/remove", `{}`); code != 200 || !strings.Contains(body, `"removed":1`) || count() != 0 {
+		t.Errorf("the run that ended: %d %s", code, body)
+	}
+}
