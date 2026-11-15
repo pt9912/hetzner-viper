@@ -64,3 +64,27 @@ jobs:
           name: playwright-traces-${{ matrix.os }}-${{ matrix.browser }}
           path: e2e/test-results
           retention-days: 7
+
+  # The real Safari of a Mac (safaridriver), which Playwright's WebKit is not: the start file, the Tab key, the language and a run.
+  safari:
+    name: macos-latest safari
+    runs-on: macos-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - run: npm ci
+      - run: sudo safaridriver --enable
+      - run: npx playwright test
+        env:
+          E2E_BROWSERS: safari

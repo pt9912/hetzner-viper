@@ -10,6 +10,8 @@ const all = {
   chromium: { name: 'chromium', use: { browserName: 'chromium' as const, channel: 'chromium', launchOptions: { args: chromiumArgs } } },
   firefox: { name: 'firefox', use: { browserName: 'firefox' as const } },
   webkit: { name: 'webkit', use: { browserName: 'webkit' as const } },
+  // the real Safari of a Mac, driven by safaridriver (Selenium): Playwright cannot drive it; macOS only (see safari/)
+  safari: { name: 'safari', testDir: './safari', use: {} },
 };
 
 export default defineConfig({
