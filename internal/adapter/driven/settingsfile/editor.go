@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/pt9912/hetzner-viper/internal/filelock"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 )
@@ -378,6 +379,19 @@ func (Files) Preview(dir string, ch settings.Change, env settings.Env) (settings
 
 // Create makes the file of a change that Preview accepts.
 func (f Files) Create(dir string, ch settings.Change, env settings.Env) (settings.Preview, error) {
+	// one change at a time on this computer, also between two viper ui: the check of the file and the write are one step
+	if err := os.MkdirAll(model.StateDir(env.Home), 0o700); err != nil {
+		return settings.Preview{}, err
+	}
+	unlock, err := filelock.Lock(filepath.Join(model.StateDir(env.Home), "settings-edit.lock"))
+	if err != nil {
+		return settings.Preview{}, fmt.Errorf("cannot take the lock of the settings: %w", err)
+	}
+	defer unlock()
+	return f.create(dir, ch, env)
+}
+
+func (f Files) create(dir string, ch settings.Change, env settings.Env) (settings.Preview, error) {
 	if ch.Kind == "restore" {
 		return createRestore(dir, ch, env)
 	}

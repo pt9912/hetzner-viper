@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
@@ -324,5 +325,38 @@ func TestPruningTouchesOnlyBackupsOfViperAndKeepsTheNewestInASecond(t *testing.T
 	ents, _ := os.ReadDir(bdir)
 	if len(ents) != 5+2 {
 		t.Errorf("%d entries", len(ents))
+	}
+}
+
+func TestOnlyOneOfSeveralChangesFromTheSamePreviewIsMade(t *testing.T) {
+	env, home := credEnv(t)
+	dir := setupDir(t, base, "")
+	ch := credChange(map[string]string{"HCLOUD_TOKEN": "abcdefgh12345"})
+	p, err := settingsfile.Files{}.Preview(dir, ch, env)
+	if err != nil || len(p.Problems) > 0 {
+		t.Fatalf("%v %+v", err, p)
+	}
+	ch.Etag = p.Etag
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	made := 0
+	for i := 0; i < 8; i++ { // as eight viper ui would, each with its own preview of the same file
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := (settingsfile.Files{}).Create(dir, ch, env); err == nil {
+				mu.Lock()
+				made++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	if made != 1 {
+		t.Errorf("%d changes were made from one preview", made)
+	}
+	ents, _ := os.ReadDir(filepath.Join(home, ".local", "state", "viper", "backups"))
+	if len(ents) != 1 {
+		t.Errorf("%d backups for one change", len(ents))
 	}
 }

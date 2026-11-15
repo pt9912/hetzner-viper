@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.157  
+Version: 1.158  
 Software-Version: v0.25.0  
 Stand: 14.11.2026  
 
@@ -1765,3 +1765,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.155 | nach v0.25.0 | `viper ui --edit` nach einer Prüfung: die Sicherung lässt Zugangsdaten überall weg, wo sie mit Wert genannt sind (Kommentar, Befehl, URL); Wiederherstellen bemerkt, was es dadurch verliert, verlangt das Wort bei Namen außerhalb der Einstellungen der Seite, hält die Sicherung im Etag fest und überspringt Dateien, die schon wie in der Sicherung sind; eine URL mit Zugangsdaten im Befehl wird abgelehnt; `$` in doppelten Anführungszeichen mit `'` darin wird als Variable erkannt; die Einstellungsseite erkennt mehrzeilige Werte mit `'\''` richtig. |
 | 1.156 | nach v0.25.0 | `viper ui --edit` nach der Gesamtprüfung: ein leeres Verzeichnis funktioniert (Anlegen, Zugangsdaten, Ändern), die Blöcke der Seite „Anlegen“ und die Bestätigungszeile erscheinen nur, wenn sie gebraucht werden; die Sicherung lässt Zugangsdaten auch in `'\''`-Schreibweise und nach Rückstrich weg; die Prüfung „alle Rechner“ umfasst auch Rechner, die nur eine Gruppe nennt; die Listen von Homebrew werden wie bei der Vorprüfung geprüft; ein Entfernen oder Setzen ändert nie eine andere Einstellung (auch nicht nach einem Rückstrich am Zeilenende); zwei `viper ui` überschreiben keine Sicherung des anderen; Startmeldung, `--help` und Beschreibung sind angeglichen. |
 | 1.157 | nach v0.25.0 | Handbuch: der Hinweis zu Tokens in Befehlen steht nur noch bei der Seite „Ändern“ (nicht mehr bei der Liste der angezeigten Einstellungen). |
+| 1.158 | nach v0.25.0 | `viper ui --edit`: Änderungen von Einstellungen laufen nacheinander, auch wenn zwei `viper ui` auf demselben Computer laufen (Sperre `settings-edit.lock` im Zustandsverzeichnis); aus einer Vorschau wird höchstens eine Änderung gemacht. |

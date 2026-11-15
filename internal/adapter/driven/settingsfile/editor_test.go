@@ -12,7 +12,10 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 )
 
-func editEnv() settings.Env { return settings.Env{Lookup: envOf(nil), Home: "/h", Version: "v0.0.0"} }
+func editEnv(t *testing.T) settings.Env {
+	t.Helper()
+	return settings.Env{Lookup: envOf(nil), Home: t.TempDir(), Version: "v0.0.0"}
+}
 
 func machineChange(name string, f map[string]string) settings.Change {
 	return settings.Change{Kind: "machine", Name: name, Fields: f}
@@ -27,7 +30,7 @@ func mustProblem(t *testing.T, p settings.Preview, want string) {
 
 func TestPreviewWritesNothingAndShowsTheFile(t *testing.T) {
 	dir := setupDir(t, "SERVER_PREFIX=claude\nDNS_PROVIDER=none\n", "")
-	p, err := settingsfile.Files{}.Preview(dir, machineChange("web", map[string]string{"PROVIDER": "hetzner", "SERVER_TYPE": "cpx22"}), editEnv())
+	p, err := settingsfile.Files{}.Preview(dir, machineChange("web", map[string]string{"PROVIDER": "hetzner", "SERVER_TYPE": "cpx22"}), editEnv(t))
 	if err != nil || len(p.Problems) > 0 || len(p.Broken) > 0 {
 		t.Fatalf("%v %+v", err, p)
 	}
@@ -45,7 +48,7 @@ func TestPreviewWritesNothingAndShowsTheFile(t *testing.T) {
 func TestCreateMakesTheFileThatLoads(t *testing.T) {
 	dir := setupDir(t, "SERVER_PREFIX=claude\nDNS_PROVIDER=none\n", "")
 	ch := machineChange("box", map[string]string{"PROVIDER": "compose", "SERVER_LOCATION": "default"})
-	if _, err := (settingsfile.Files{}).Create(dir, ch, editEnv()); err != nil {
+	if _, err := (settingsfile.Files{}).Create(dir, ch, editEnv(t)); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "machines", "box.env.local")
@@ -63,11 +66,11 @@ func TestCreateMakesTheFileThatLoads(t *testing.T) {
 	if ents, _ := os.ReadDir(filepath.Join(dir, "machines")); len(ents) != 1 {
 		t.Errorf("a temporary file stayed: %v", ents)
 	}
-	m, err := settingsfile.Load(dir, "box", editEnv(), false)
+	m, err := settingsfile.Load(dir, "box", editEnv(t), false)
 	if err != nil || m.Provider != "compose" {
 		t.Fatalf("%v %v", m, err)
 	}
-	if _, err := (settingsfile.Files{}).Create(dir, ch, editEnv()); err == nil {
+	if _, err := (settingsfile.Files{}).Create(dir, ch, editEnv(t)); err == nil {
 		t.Error("a second create replaced the file")
 	}
 }
@@ -78,14 +81,14 @@ func TestNamesAndValuesAreRefused(t *testing.T) {
 		"Web": "lowercase", "../x": "lowercase", "": "lowercase", "con": "reserved", "com1": "reserved", "example-a": "reserved",
 		"viper-admin": "reserved", strings.Repeat("a", 32): "31",
 	} {
-		p, _ := settingsfile.Files{}.Preview(dir, machineChange(name, nil), editEnv())
+		p, _ := settingsfile.Files{}.Preview(dir, machineChange(name, nil), editEnv(t))
 		mustProblem(t, p, want)
 	}
 	for _, f := range []map[string]string{
 		{"SERVER_TYPE": "a\nB=1"}, {"SERVER_TYPE": "a\x00"}, {"SERVER_TYPE": "a\rb"}, {"SERVER_TYPE": "a\tb"}, {"SERVER_TYPE": strings.Repeat("x", 300)},
 		{"SERVER_TYPE": "\xff"}, {"PROVIDER": "evil"}, {"HCLOUD_TOKEN": "secret-token-value"}, {"VIPER_POST_CLONE": "rm -rf /"},
 	} {
-		p, _ := settingsfile.Files{}.Preview(dir, machineChange("web", f), editEnv())
+		p, _ := settingsfile.Files{}.Preview(dir, machineChange("web", f), editEnv(t))
 		if len(p.Problems) == 0 {
 			t.Errorf("%q was accepted", f)
 		}
@@ -94,11 +97,11 @@ func TestNamesAndValuesAreRefused(t *testing.T) {
 
 func TestNothingIsReplacedNotEvenInOtherCase(t *testing.T) {
 	dir := setupDir(t, "SERVER_PREFIX=claude\n", "PROVIDER=hetzner\n")
-	p, _ := settingsfile.Files{}.Preview(dir, machineChange("web", nil), editEnv())
+	p, _ := settingsfile.Files{}.Preview(dir, machineChange("web", nil), editEnv(t))
 	mustProblem(t, p, "exists already")
 	other := filepath.Join(dir, "machines", "Dev.env.local")
 	_ = os.WriteFile(other, nil, 0o600)
-	p, _ = settingsfile.Files{}.Preview(dir, machineChange("dev", nil), editEnv())
+	p, _ = settingsfile.Files{}.Preview(dir, machineChange("dev", nil), editEnv(t))
 	mustProblem(t, p, "exists already")
 }
 
@@ -111,9 +114,9 @@ func TestALinkedDirectoryIsNotWrittenThrough(t *testing.T) {
 	if err := os.Symlink(elsewhere, filepath.Join(dir, "machines")); err != nil {
 		t.Fatal(err)
 	}
-	p, _ := settingsfile.Files{}.Preview(dir, machineChange("web", nil), editEnv())
+	p, _ := settingsfile.Files{}.Preview(dir, machineChange("web", nil), editEnv(t))
 	mustProblem(t, p, "link")
-	if _, err := (settingsfile.Files{}).Create(dir, machineChange("web", nil), editEnv()); err == nil {
+	if _, err := (settingsfile.Files{}).Create(dir, machineChange("web", nil), editEnv(t)); err == nil {
 		t.Error("written through a link")
 	}
 	if ents, _ := os.ReadDir(elsewhere); len(ents) != 0 {
@@ -123,16 +126,16 @@ func TestALinkedDirectoryIsNotWrittenThrough(t *testing.T) {
 
 func TestAMachineNeedsTheBaseFile(t *testing.T) {
 	dir := t.TempDir()
-	p, _ := settingsfile.Files{}.Preview(dir, machineChange("web", map[string]string{"PROVIDER": "compose"}), editEnv())
+	p, _ := settingsfile.Files{}.Preview(dir, machineChange("web", map[string]string{"PROVIDER": "compose"}), editEnv(t))
 	mustProblem(t, p, ".env.local")
-	p, _ = settingsfile.Files{}.Preview(dir, settings.Change{Kind: "base", Fields: map[string]string{"DNS_PROVIDER": "none"}}, editEnv())
+	p, _ = settingsfile.Files{}.Preview(dir, settings.Change{Kind: "base", Fields: map[string]string{"DNS_PROVIDER": "none"}}, editEnv(t))
 	if len(p.Problems) > 0 || len(p.Files) != 1 || p.Files[0].Path != ".env.local" {
 		t.Fatalf("%+v", p)
 	}
-	if _, err := (settingsfile.Files{}).Create(dir, settings.Change{Kind: "base", Fields: map[string]string{"DNS_PROVIDER": "none"}}, editEnv()); err != nil {
+	if _, err := (settingsfile.Files{}).Create(dir, settings.Change{Kind: "base", Fields: map[string]string{"DNS_PROVIDER": "none"}}, editEnv(t)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := settingsfile.LoadFile(dir, editEnv()); err != nil {
+	if _, err := settingsfile.LoadFile(dir, editEnv(t)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -140,19 +143,19 @@ func TestAMachineNeedsTheBaseFile(t *testing.T) {
 func TestAGroupNeedsItsMachinesAndCanBreakNone(t *testing.T) {
 	dir := setupDir(t, "SERVER_PREFIX=claude\nDNS_PROVIDER=none\n", "PROVIDER=compose\nSERVER_LOCATION=default\n")
 	writeIn(t, dir, "machines/db.env.local", "PROVIDER=compose\nSERVER_LOCATION=default\n")
-	p, _ := settingsfile.Files{}.Preview(dir, settings.Change{Kind: "group", Name: "dev", Members: []string{"web", "nope"}}, editEnv())
+	p, _ := settingsfile.Files{}.Preview(dir, settings.Change{Kind: "group", Name: "dev", Members: []string{"web", "nope"}}, editEnv(t))
 	mustProblem(t, p, "no machine nope")
-	p, _ = settingsfile.Files{}.Preview(dir, settings.Change{Kind: "group", Name: "dev", Members: nil}, editEnv())
+	p, _ = settingsfile.Files{}.Preview(dir, settings.Change{Kind: "group", Name: "dev", Members: nil}, editEnv(t))
 	mustProblem(t, p, "at least one")
-	if _, err := (settingsfile.Files{}).Create(dir, settings.Change{Kind: "group", Name: "dev", Members: []string{"web", "db"}, Fields: map[string]string{"NATS_ENABLED": "true"}}, editEnv()); err != nil {
+	if _, err := (settingsfile.Files{}).Create(dir, settings.Change{Kind: "group", Name: "dev", Members: []string{"web", "db"}, Fields: map[string]string{"NATS_ENABLED": "true"}}, editEnv(t)); err != nil {
 		t.Fatal(err)
 	}
-	g, err := settingsfile.LoadGroup(dir, "dev", editEnv())
+	g, err := settingsfile.LoadGroup(dir, "dev", editEnv(t))
 	if err != nil || len(g.Machines) != 2 {
 		t.Fatalf("%v %v", g, err)
 	}
 	// a second group that names a machine of the first makes it ambiguous: it is said, and nothing is written
-	p, err = settingsfile.Files{}.Create(dir, settings.Change{Kind: "group", Name: "ops", Members: []string{"web"}}, editEnv())
+	p, err = settingsfile.Files{}.Create(dir, settings.Change{Kind: "group", Name: "ops", Members: []string{"web"}}, editEnv(t))
 	if err == nil || len(p.Broken) != 1 || !strings.HasPrefix(p.Broken[0], "machine web:") || !strings.Contains(p.Broken[0], "--in-group") {
 		t.Fatalf("%v %+v", err, p)
 	}
@@ -171,12 +174,12 @@ func TestWhatIsWrittenIsWhatBashReads(t *testing.T) {
 	}
 	for _, v := range []string{"plain", "it's", "ü€", "$HOME `x` \\ \"q\"", "a b #c", "'", "x\\"} {
 		dir := setupDir(t, "SERVER_PREFIX=claude\nDNS_PROVIDER=none\n", "")
-		if _, err := (settingsfile.Files{}).Create(dir, machineChange("web", map[string]string{"PROVIDER": "hetzner", "SERVER_TYPE": v}), editEnv()); err != nil {
+		if _, err := (settingsfile.Files{}).Create(dir, machineChange("web", map[string]string{"PROVIDER": "hetzner", "SERVER_TYPE": v}), editEnv(t)); err != nil {
 			t.Fatalf("%q: %v", v, err)
 		}
 		f := filepath.Join(dir, "machines", "web.env.local")
 		out, err := exec.Command(bash, "-c", `source "$1"; printf %s "$SERVER_TYPE"`, "_", f).Output()
-		m, lerr := settingsfile.Load(dir, "web", editEnv(), false)
+		m, lerr := settingsfile.Load(dir, "web", editEnv(t), false)
 		if err != nil || string(out) != v {
 			t.Errorf("%q: bash reads %q (%v)", v, out, err)
 		}
@@ -188,10 +191,10 @@ func TestWhatIsWrittenIsWhatBashReads(t *testing.T) {
 
 func TestANewFailureOfAMachineThatFailedBeforeIsBroken(t *testing.T) {
 	dir := setupDir(t, "SERVER_PREFIX=c\n", "PROVIDER=hetzner\n") // no DNS_DOMAIN: web fails already
-	if _, err := (settingsfile.Files{}).Create(dir, settings.Change{Kind: "group", Name: "g1", Members: []string{"web"}}, editEnv()); err != nil {
+	if _, err := (settingsfile.Files{}).Create(dir, settings.Change{Kind: "group", Name: "g1", Members: []string{"web"}}, editEnv(t)); err != nil {
 		t.Fatal(err)
 	}
-	p, err := settingsfile.Files{}.Create(dir, settings.Change{Kind: "group", Name: "g2", Members: []string{"web"}}, editEnv())
+	p, err := settingsfile.Files{}.Create(dir, settings.Change{Kind: "group", Name: "g2", Members: []string{"web"}}, editEnv(t))
 	if err == nil || len(p.Broken) == 0 {
 		t.Fatalf("%v %+v", err, p)
 	}
@@ -208,10 +211,10 @@ func TestAGroupMayNameALinkedMachineAndOnlyRealNames(t *testing.T) {
 	if err := os.Symlink(target, filepath.Join(dir, "machines", "web.env.local")); err != nil {
 		t.Fatal(err)
 	}
-	p, _ := settingsfile.Files{}.Preview(dir, settings.Change{Kind: "group", Name: "dev", Members: []string{"web"}}, editEnv())
+	p, _ := settingsfile.Files{}.Preview(dir, settings.Change{Kind: "group", Name: "dev", Members: []string{"web"}}, editEnv(t))
 	if len(p.Problems) > 0 {
 		t.Errorf("%v", p.Problems)
 	}
-	p, _ = settingsfile.Files{}.Preview(dir, settings.Change{Kind: "group", Name: "dev", Members: []string{"../x"}}, editEnv())
+	p, _ = settingsfile.Files{}.Preview(dir, settings.Change{Kind: "group", Name: "dev", Members: []string{"../x"}}, editEnv(t))
 	mustProblem(t, p, "not a machine name")
 }
