@@ -174,6 +174,11 @@
     <h2 id="h-settings" data-i18n="h.settings">Settings</h2>
     <p class="muted" data-i18n="settings.intro">The names of the settings in each file.</p>
     <p id="settings-note" class="muted" role="status"></p>
+    <div class="row" role="search">
+      <label for="settings-q" data-i18n="settings.q.label">Search the settings</label>
+      <input type="search" id="settings-q" autocomplete="off" spellcheck="false" size="26" data-i18n-placeholder="settings.q.placeholder" placeholder="a part of the name of a setting">
+    </div>
+    <div id="settings-hits" hidden></div>
     <div id="settings-files"></div>
   </section>
 

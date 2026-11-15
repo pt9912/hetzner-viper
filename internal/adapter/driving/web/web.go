@@ -71,8 +71,15 @@ type Setting struct {
 // SettingsFile is one file of settings, or the environment ("environment").
 type SettingsFile struct {
 	Name     string    `json:"name"`
-	Settings []Setting `json:"settings"`
+	Count    int       `json:"count"`              // how many settings the file has (the list below has a part of them)
+	Settings []Setting `json:"settings,omitempty"` // only when one file is asked for
 	Error    string    `json:"error,omitempty"`
+}
+
+// SettingHit is a setting that a search found: the file, and the setting as the page of the settings shows it.
+type SettingHit struct {
+	File string `json:"file"`
+	Setting
 }
 
 // Overview is what viper knows of this computer's machines and groups, from the files alone.
@@ -613,23 +620,97 @@ func site() http.Handler {
 	})
 }
 
+const (
+	settingsPage    = 200  // the settings of a file that the page gets at once
+	settingsPageMax = 1000 // and the most that it may ask for
+	settingsFiles   = 5000 // the files of the list
+	settingsHits    = 500  // the hits of a search
+	settingValueMax = 512  // the longest value that is shown (a longer one is cut)
+)
+
+// shownSetting makes a setting fit for the page: the value is the one the backend shows or none, cut, with the secrets out.
+func (s *Server) shownSetting(st Setting) Setting {
+	if !st.Shown {
+		st.Value = ""
+		return st
+	}
+	v := s.show(st.Value)
+	if len(v) > settingValueMax {
+		v = v[:settingValueMax] + " ..."
+	}
+	st.Value = v
+	return st
+}
+
+// settings answers three questions, each small however many files there are: the list of the files (name, how many settings,
+// the error; no settings), the settings of one file in pages (?file=NAME&offset=N&limit=N), and the settings of all files whose
+// name has a word (?q=WORD).
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 	files, err := s.cfg.Backend.Settings(r.Context())
 	if err != nil {
 		fail(w, http.StatusInternalServerError, s.show(err.Error()))
 		return
 	}
-	for i := range files {
-		files[i].Error = s.show(files[i].Error)
-		for j := range files[i].Settings {
-			if files[i].Settings[j].Shown {
-				files[i].Settings[j].Value = s.show(files[i].Settings[j].Value)
-			} else {
-				files[i].Settings[j].Value = ""
+	q := r.URL.Query()
+	switch {
+	case q.Get("q") != "":
+		s.settingsSearch(w, files, strings.ToLower(q.Get("q")))
+	case q.Get("file") != "":
+		s.settingsOfFile(w, files, q.Get("file"), atoiOr(q.Get("offset"), 0), atoiOr(q.Get("limit"), settingsPage))
+	default:
+		out := make([]SettingsFile, 0, len(files))
+		for _, f := range files {
+			out = append(out, SettingsFile{Name: f.Name, Count: len(f.Settings), Error: s.show(f.Error)})
+			if len(out) == settingsFiles {
+				break
 			}
 		}
+		reply(w, map[string]any{"files": out, "more": len(files) - len(out)})
 	}
-	reply(w, map[string]any{"files": files})
+}
+
+func atoiOr(v string, def int) int {
+	if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+		return n
+	}
+	return def
+}
+
+func (s *Server) settingsOfFile(w http.ResponseWriter, files []SettingsFile, name string, offset, limit int) {
+	limit = min(max(limit, 1), settingsPageMax)
+	for _, f := range files {
+		if f.Name != name {
+			continue
+		}
+		lo := min(offset, len(f.Settings))
+		hi := min(lo+limit, len(f.Settings))
+		out := SettingsFile{Name: f.Name, Count: len(f.Settings), Error: s.show(f.Error), Settings: make([]Setting, 0, hi-lo)}
+		for _, st := range f.Settings[lo:hi] {
+			out.Settings = append(out.Settings, s.shownSetting(st))
+		}
+		reply(w, map[string]any{"file": out, "offset": lo})
+		return
+	}
+	fail(w, http.StatusNotFound, "no such file")
+}
+
+func (s *Server) settingsSearch(w http.ResponseWriter, files []SettingsFile, word string) {
+	hits := []SettingHit{}
+	more := false
+search:
+	for _, f := range files {
+		for _, st := range f.Settings {
+			if !strings.Contains(strings.ToLower(st.Key), word) {
+				continue
+			}
+			if len(hits) == settingsHits {
+				more = true
+				break search
+			}
+			hits = append(hits, SettingHit{File: f.Name, Setting: s.shownSetting(st)})
+		}
+	}
+	reply(w, map[string]any{"hits": hits, "more": more})
 }
 
 // markBusy tells of each machine the action that a run of this server does with it now (the machines a run holds).

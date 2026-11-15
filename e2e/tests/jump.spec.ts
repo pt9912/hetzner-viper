@@ -14,12 +14,12 @@ test('without --edit the name of a machine leads to the file in the settings pag
   await expect(page.locator('#machines tr.unit')).toHaveCount(3);
   await page.getByRole('button', { name: 'Settings of web', exact: true }).click();
   await expect(page.locator('#page-settings')).toBeVisible();
-  await expect(page.locator('h3.file-title', { hasText: 'machines/web.env.local' })).toBeFocused();
+  await expect(page.locator('summary.file-title', { hasText: 'machines/web.env.local' })).toBeFocused();
   await expect(page.locator('#settings-note')).toHaveText('');
   // a group leads to its file
   await page.click('#tab-overview');
   await page.getByRole('button', { name: 'Settings of group dev', exact: true }).click();
-  await expect(page.locator('h3.file-title', { hasText: 'groups/dev.env' })).toBeFocused();
+  await expect(page.locator('summary.file-title', { hasText: 'groups/dev.env' })).toBeFocused();
 });
 
 test('a machine that only a group names leads to the group file, and says so', async ({ page }) => {
@@ -29,7 +29,7 @@ test('a machine that only a group names leads to the group file, and says so', a
   await page.goto(ui.start);
   await expect(page.locator('#machines tr.unit').first()).toBeVisible();
   await page.getByRole('button', { name: 'Settings of a', exact: true }).first().click();
-  await expect(page.locator('h3.file-title', { hasText: 'groups/dev.env' })).toBeFocused();
+  await expect(page.locator('summary.file-title', { hasText: 'groups/dev.env' })).toBeFocused();
   await expect(page.locator('#settings-note')).toContainText('has no file of its own');
 });
 

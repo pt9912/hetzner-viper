@@ -180,3 +180,9 @@ pre.listen { min-height: 8rem; max-height: 24rem; overflow: auto; background: va
 /* a machine that a run is busy with: the lamp beats (the one movement of the page that goes on without the person) */
 .state.is-busy .led { animation: beat 1.4s ease-in-out infinite; background: var(--warn); border-color: var(--warn); }
 @media (prefers-reduced-motion: reduce) { .state.is-busy .led { animation: none; } }
+
+/* the settings: a block of each file that opens */
+details.file { margin: .4rem 0; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+details.file > summary { padding: .45rem .7rem; cursor: pointer; font: 600 1rem var(--mono); }
+details.file > .file-body { padding: 0 .7rem .6rem; }
+details.file[open] > summary { border-bottom: 1px solid var(--line); margin-bottom: .5rem; }

@@ -328,43 +328,135 @@
   }
 
   // ---- settings: names, and the values the server shows ----
+  // The list has the files (a block each that opens); the settings of a file are asked for when it opens, 200 at a time, and a
+  // search asks the server for the settings of all files by their name: neither the server nor the page has all of it at once.
+  const settingsPage = 200;
+
+  function fileTitle(name) { return name === 'environment' ? t('settings.env') : name; }
+
+  function settingsTable(name, list) {
+    const table = document.createElement('table');
+    const cap = document.createElement('caption');
+    cap.className = 'sr';
+    cap.textContent = fileTitle(name);
+    table.appendChild(cap);
+    const head = table.createTHead().insertRow();
+    for (const k of ['th.key', 'th.value']) { const th = document.createElement('th'); th.scope = 'col'; th.textContent = t(k); head.appendChild(th); }
+    table.createTBody();
+    addSettingRows(table, list);
+    return table;
+  }
+
+  function addSettingRows(table, list) {
+    const body = table.tBodies[0];
+    for (const st of list) {
+      const tr = body.insertRow();
+      cell(tr, st.key);
+      cell(tr, st.shown ? st.value : t('settings.set'), st.shown ? '' : 'muted');
+    }
+  }
+
+  // loadFile fills the block of a file with a page of its settings (from offset on), and a button for the rest
+  async function loadFile(det, f, offset) {
+    const body = det.querySelector('.file-body');
+    let r;
+    try { r = await api('/api/settings?file=' + encodeURIComponent(f.name) + '&offset=' + offset + '&limit=' + settingsPage); } catch (e) { body.textContent = e.message; return; }
+    const list = (r.file && r.file.settings) || [];
+    if (offset === 0) { body.replaceChildren(); }
+    if (r.file && r.file.error) { const p = document.createElement('p'); p.className = 'bad'; p.textContent = t('error.prefix', r.file.error); body.appendChild(p); return; }
+    if (offset === 0 && list.length === 0) { const p = document.createElement('p'); p.className = 'muted'; p.textContent = t('settings.noentries'); body.appendChild(p); return; }
+    let table = body.querySelector('table');
+    if (!table) { table = settingsTable(f.name, []); body.appendChild(table); }
+    addSettingRows(table, list);
+    const old = body.querySelector('button.more');
+    if (old) { old.remove(); }
+    const shown = r.offset + list.length;
+    if (shown < r.file.count) {
+      const left = r.file.count - shown;
+      const more = button(t('settings.more', Math.min(settingsPage, left), left), '', () => loadFile(det, f, shown), false, 'quiet more');
+      body.appendChild(more);
+    }
+  }
+
+  // the block of a file: closed, with its name and how many settings it has; the settings come when it opens
+  function fileBlock(f, open) {
+    const det = document.createElement('details');
+    det.className = 'file';
+    det.dataset.file = f.name;
+    const sum = document.createElement('summary');
+    sum.className = 'file-title';
+    sum.textContent = fileTitle(f.name) + (f.error ? '' : ' (' + t('settings.count', f.count) + ')');
+    det.appendChild(sum);
+    const body = document.createElement('div');
+    body.className = 'file-body';
+    det.appendChild(body);
+    if (f.name === 'environment') {
+      const p = document.createElement('p');
+      p.className = 'muted';
+      p.textContent = t('settings.envnote');
+      body.appendChild(p);
+    }
+    if (f.error) { const p = document.createElement('p'); p.className = 'bad'; p.textContent = t('error.prefix', f.error); body.appendChild(p); det.open = open; return det; }
+    let loaded = false;
+    det.loadOnce = () => { if (!loaded) { loaded = true; loadFile(det, f, 0); } };
+    det.addEventListener('toggle', () => { if (det.open) { det.loadOnce(); } });
+    det.open = open;
+    return det;
+  }
+
+  let settingsSeq = 0;
   async function loadSettings() {
+    const mine = ++settingsSeq;
     const box = $('settings-files');
+    const wasOpen = new Set(Array.from(box.querySelectorAll('details.file[open]')).map((d) => d.dataset.file));
     let r;
     try { r = await api('/api/settings'); } catch (e) { box.textContent = e.message; return; }
+    if (mine !== settingsSeq) { return; }
     box.replaceChildren();
     if (!r.files || r.files.length === 0) { box.textContent = t('settings.empty'); return; }
+    const first = wasOpen.size === 0 && !box.dataset.shown; // the first time: .env.local is open
+    box.dataset.shown = '1';
     for (const f of r.files) {
-      const h = document.createElement('h3');
-      h.className = 'file-title';
-      h.dataset.file = f.name;
-      h.tabIndex = -1; // a button of the overview brings the person here
-      h.textContent = f.name === 'environment' ? t('settings.env') : f.name;
-      box.appendChild(h);
-      if (f.name === 'environment') {
-        const p = document.createElement('p');
-        p.className = 'muted';
-        p.textContent = t('settings.envnote');
-        box.appendChild(p);
-      }
-      if (f.error) { const p = document.createElement('p'); p.className = 'bad'; p.textContent = t('error.prefix', f.error); box.appendChild(p); continue; }
-      if (!(f.settings || []).length) { const p = document.createElement('p'); p.className = 'muted'; p.textContent = t('settings.noentries'); box.appendChild(p); continue; }
-      const table = document.createElement('table');
-      const cap = document.createElement('caption');
-      cap.className = 'sr';
-      cap.textContent = f.name === 'environment' ? t('settings.env') : f.name;
-      table.appendChild(cap);
-      const head = table.createTHead().insertRow();
-      for (const k of ['th.key', 'th.value']) { const th = document.createElement('th'); th.scope = 'col'; th.textContent = t(k); head.appendChild(th); }
-      const body = table.createTBody();
-      for (const s of (f.settings || [])) {
-        const tr = body.insertRow();
-        cell(tr, s.key);
-        cell(tr, s.shown ? s.value : t('settings.set'), s.shown ? '' : 'muted');
-      }
-      box.appendChild(table);
+      const det = fileBlock(f, wasOpen.has(f.name) || (first && f.name === '.env.local') || f.name === pendingFile);
+      box.appendChild(det);
+      if (det.open && det.loadOnce) { det.loadOnce(); } // the blocks that were open stay open, and have their settings again
     }
+    if (r.more > 0) { const p = document.createElement('p'); p.className = 'muted'; p.textContent = t('settings.morefiles', r.more); box.appendChild(p); }
     showPendingFile();
+  }
+
+  // the search: the settings of all files whose name has the word
+  let searchTimer = 0;
+  async function searchSettings() {
+    const q = $('settings-q').value.trim();
+    const hits = $('settings-hits');
+    $('settings-files').hidden = q !== '';
+    hits.hidden = q === '';
+    if (q === '') { hits.replaceChildren(); return; }
+    let r;
+    try { r = await api('/api/settings?q=' + encodeURIComponent(q)); } catch (e) { hits.textContent = e.message; return; }
+    if ($('settings-q').value.trim() !== q) { return; } // an older answer
+    hits.replaceChildren();
+    const p = document.createElement('p');
+    p.setAttribute('role', 'status');
+    p.textContent = t('settings.hits', r.hits.length) + (r.more ? ' ' + t('settings.hits.more') : '');
+    hits.appendChild(p);
+    if (r.hits.length === 0) { return; }
+    const table = document.createElement('table');
+    const cap = document.createElement('caption');
+    cap.className = 'sr';
+    cap.textContent = t('settings.q.label');
+    table.appendChild(cap);
+    const head = table.createTHead().insertRow();
+    for (const k of ['th.file', 'th.key', 'th.value']) { const th = document.createElement('th'); th.scope = 'col'; th.textContent = t(k); head.appendChild(th); }
+    const body = table.createTBody();
+    for (const h of r.hits) {
+      const tr = body.insertRow();
+      cell(tr, h.file, 'mono');
+      cell(tr, h.key);
+      cell(tr, h.shown ? h.value : t('settings.set'), h.shown ? '' : 'muted');
+    }
+    hits.appendChild(table);
   }
 
   // ---- from the overview to the settings of a machine or group ----
@@ -392,9 +484,9 @@
   // the file block of the settings page that was asked for gets the focus
   function showPendingFile() {
     if (!pendingFile || page !== 'settings') { return; }
-    const h = Array.from(document.querySelectorAll('#settings-files h3.file-title')).find((x) => x.dataset.file === pendingFile);
+    const d = Array.from(document.querySelectorAll('#settings-files details.file')).find((x) => x.dataset.file === pendingFile);
     pendingFile = '';
-    if (h) { h.scrollIntoView({ block: 'start' }); h.focus(); }
+    if (d) { d.open = true; const sum = d.querySelector('summary'); sum.scrollIntoView({ block: 'start' }); sum.focus(); }
   }
 
   // ---- NATS: viper nats as runs; the page only builds the request ----
@@ -1271,10 +1363,9 @@
     const mine = ++rowsSeq; // quick changes of the file: the last answer is the one shown
     changeRows = [];
     try {
-      const files = await api('/api/settings');
+      const r = await api('/api/settings?file=' + encodeURIComponent($('ch-file').value) + '&limit=1000');
       if (mine !== rowsSeq) { return; }
-      const f = files.files.find((x) => x.name === $('ch-file').value);
-      changeRows = (f && f.settings) || [];
+      changeRows = (r.file && r.file.settings) || [];
     } catch (e) { $('ch-status').textContent = e.message; }
     const body = $('ch-table').tBodies[0];
     body.textContent = '';
@@ -1551,6 +1642,7 @@
   $('nats-revoke').addEventListener('blur', disarmRevoke);
   $('nats-send').addEventListener('submit', natsSend);
   $('nats-fetch').addEventListener('submit', (ev) => { ev.preventDefault(); natsRun({ sub: 'fetch', id: $('nats-id').value.trim(), sha256: $('nats-sha').value.trim().toLowerCase() }); });
+  $('settings-q').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(searchSettings, 250); });
   $('log-reload').addEventListener('click', loadLog);
   $('log-machine').addEventListener('change', loadLog);
   $('log-full').addEventListener('change', loadLog);

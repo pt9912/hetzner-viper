@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -365,7 +366,11 @@ func TestListenIsOnLoopbackOnly(t *testing.T) {
 func TestTheSettingsPageShowsNamesAndOnlyTheValuesTheBackendShows(t *testing.T) {
 	s, h := started(t, newFake(), nil)
 	c := login(t, s, h)
-	w := do(h, "GET", s.Host(), "/api/settings", c, "")
+	list := do(h, "GET", s.Host(), "/api/settings", c, "").Body.String()
+	if !strings.Contains(list, `"count":3`) || strings.Contains(list, `"key"`) || strings.Contains(list, "cpx22") {
+		t.Errorf("the list of the files has the files, not their settings: %s", list)
+	}
+	w := do(h, "GET", s.Host(), "/api/settings?file=.env.local", c, "")
 	b := w.Body.String()
 	if w.Code != 200 || !strings.Contains(b, `"value":"cpx22"`) || strings.Contains(b, "s3cr3t") || !strings.Contains(b, `"key":"HCLOUD_TOKEN"`) {
 		t.Errorf("settings: %d %s", w.Code, b)
@@ -523,5 +528,62 @@ func TestTheStampChangesWhenTheOverviewOrTheBackendStampDoes(t *testing.T) {
 	}
 	if w := do(h2, "GET", s2.Host(), "/api/stamp", nil, ""); w.Code != http.StatusForbidden {
 		t.Errorf("without the cookie: %d", w.Code)
+	}
+}
+
+// many files, many settings, a long value: the answers stay small and say what they leave out
+type many struct {
+	*fake
+	files []web.SettingsFile
+}
+
+func (m *many) Settings(context.Context) ([]web.SettingsFile, error) { return m.files, nil }
+
+func TestTheSettingsAreAnsweredInPagesAndSearchesWithLimits(t *testing.T) {
+	var files []web.SettingsFile
+	for i := 0; i < 6000; i++ { // more files than the list gives
+		files = append(files, web.SettingsFile{Name: "machines/m" + strconv.Itoa(i) + ".env.local", Settings: []web.Setting{{Key: "SERVER_TYPE", Value: "cpx22", Shown: true}, {Key: "NOTE", Value: "x"}}})
+	}
+	big := web.SettingsFile{Name: "groups/big.env"}
+	for i := 0; i < 2500; i++ {
+		big.Settings = append(big.Settings, web.Setting{Key: "K" + strconv.Itoa(i), Value: strings.Repeat("v", 2000), Shown: true})
+	}
+	files = append([]web.SettingsFile{big}, files...)
+	f := &many{fake: newFake(), files: files}
+	s, h := started(t, f.fake, nil)
+	_ = s
+	cfg := web.Config{Backend: f, Version: "vtest"}
+	srv := web.New(cfg)
+	ln, err := srv.Listen(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	h = srv.Handler()
+	c := login(t, srv, h)
+	get := func(q string) (int, string) {
+		w := do(h, "GET", srv.Host(), "/api/settings"+q, c, "")
+		return w.Code, w.Body.String()
+	}
+	if code, b := get(""); code != 200 || len(b) > 600<<10 || !strings.Contains(b, `"more":1001`) || strings.Count(b, `"name"`) != 5000 {
+		t.Errorf("the list: %d, %d bytes, %.80s", code, len(b), b)
+	}
+	if code, b := get("?file=groups/big.env"); code != 200 || strings.Count(b, `"key"`) != 200 || !strings.Contains(b, `"count":2500`) || len(b) > 200<<10 || strings.Contains(b, strings.Repeat("v", 600)) {
+		t.Errorf("a page of a file: %d, %d bytes, %d keys", code, len(b), strings.Count(b, `"key"`))
+	}
+	if code, b := get("?file=groups/big.env&offset=2400&limit=5000"); code != 200 || strings.Count(b, `"key"`) != 100 {
+		t.Errorf("the end of a file: %d, %d keys", code, strings.Count(b, `"key"`))
+	}
+	if code, b := get("?file=groups/big.env&offset=1000&limit=999999"); code != 200 || strings.Count(b, `"key"`) != 1000 {
+		t.Errorf("the most a page may ask for: %d, %d keys", code, strings.Count(b, `"key"`))
+	}
+	if code, _ := get("?file=nope"); code != http.StatusNotFound {
+		t.Errorf("an unknown file: %d", code)
+	}
+	if code, b := get("?q=server"); code != 200 || strings.Count(b, `"file"`) != 500 || !strings.Contains(b, `"more":true`) {
+		t.Errorf("a search: %d, %d hits", code, strings.Count(b, `"file"`))
+	}
+	if code, b := get("?q=NOPE_NOT_THERE"); code != 200 || strings.Contains(b, `"file"`) || !strings.Contains(b, `"more":false`) {
+		t.Errorf("a search without a hit: %s", b)
 	}
 }

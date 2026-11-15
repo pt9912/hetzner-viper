@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -82,6 +83,9 @@ func bareWord(s string) (v, rest string, ok bool) {
 	return v, rest, !strings.ContainsAny(v, ";&|<>()\"'")
 }
 
+// maxSettingsFile is the largest file whose settings are listed (the page that edits one takes 256 KiB).
+const maxSettingsFile = 1 << 20
+
 // readSettings is the names in a file, in the order they are in, and the value of those that may be shown.
 func readSettings(path string) ([]web.Setting, error) {
 	f, err := os.Open(path)
@@ -89,7 +93,10 @@ func readSettings(path string) ([]web.Setting, error) {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }() // read only
-	out := []web.Setting{}           // an empty file lists no setting (an empty list in JSON, not null)
+	if st, err := f.Stat(); err == nil && st.Size() > maxSettingsFile {
+		return nil, fmt.Errorf("larger than %d MiB: not listed (a settings file has a few lines)", maxSettingsFile>>20)
+	}
+	out := []web.Setting{} // an empty file lists no setting (an empty list in JSON, not null)
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
 	var open byte // the quote that a value over several lines has open: its lines are no settings

@@ -336,3 +336,33 @@ func TestAnEmptyFileListsNoSettingsAsAnEmptyListNotNull(t *testing.T) {
 	}
 	t.Error("the empty file is not listed")
 }
+
+func TestAFileLargerThanAMiBIsNotListedAndSaysSo(t *testing.T) {
+	env, _ := nativeEnv(t)
+	dir := t.TempDir()
+	write(t, dir, ".env.local", "SERVER_PREFIX=ui\n")
+	write(t, dir, "machines/huge.env.local", strings.Repeat("A=1\n", 400<<10)) // 1.6 MiB
+	write(t, dir, "machines/ok.env.local", "A=1\n")
+	files, err := cli.UISettings(&cli.Opts{Host: testHost(), Dir: dir}, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := 0
+	for _, f := range files {
+		switch f.Name {
+		case "machines/huge.env.local":
+			seen++
+			if !strings.Contains(f.Error, "larger than 1 MiB") || len(f.Settings) != 0 {
+				t.Errorf("huge: %+v", f.Error)
+			}
+		case "machines/ok.env.local":
+			seen++
+			if f.Error != "" || len(f.Settings) != 1 {
+				t.Errorf("ok: %+v", f)
+			}
+		}
+	}
+	if seen != 2 {
+		t.Errorf("%d files seen", seen)
+	}
+}

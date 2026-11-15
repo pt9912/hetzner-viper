@@ -88,7 +88,8 @@ test('settings: names of every file, values only where it is safe, never a crede
   await expect(box).toContainText('groups/dev.env');
   await expect(box).toContainText('machines/a.env.local');
   const row = (name: string) => box.locator('tr', { has: page.locator('td', { hasText: new RegExp(`^${name}$`) }) });
-  await expect(row('PROVIDER')).toContainText('compose');
+  await expect(row('PROVIDER')).toContainText('compose'); // .env.local is open: the others open with a click
+  await page.locator('summary', { hasText: 'groups/dev.env' }).click();
   await expect(row('GROUP_MACHINES')).toContainText('a,b');
   await expect(row('VIPER_GH_TOKEN')).toContainText('set');
   await expect(row('VIPER_GH_TOKEN')).not.toContainText('ghp_');
