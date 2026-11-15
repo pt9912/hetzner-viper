@@ -1,4 +1,8 @@
 import { expect, test } from '@playwright/test';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { Browser, Builder, By, Key, until, WebDriver } from 'selenium-webdriver';
 import { startUI, UI } from '../fixture';
 
@@ -11,7 +15,8 @@ let ui: UI;
 let driver: WebDriver;
 
 test.beforeEach(async () => {
-  ui = await startUI([], 30, true); // the browser is "opened" by a fake open that keeps a copy of the start file
+  const withFile = test.info().title.startsWith('the start file'); // the first test needs the start file, the others the address with the key
+  ui = await startUI([], 30, withFile);
   driver = await new Builder().forBrowser(Browser.SAFARI).build();
 });
 test.afterEach(async () => {
@@ -20,10 +25,23 @@ test.afterEach(async () => {
 });
 
 async function rows(): Promise<number> { return (await driver.findElements(By.css('#machines tbody tr'))).length; }
+async function pageText(): Promise<string> { try { return (await driver.findElement(By.css('body')).getText()).slice(0, 300); } catch { return '(no body)'; } }
 
 test('the start file leads to the page in Safari (by itself, or by its link), and the page works', async () => {
-  await driver.get(ui.start); // file:///.../launch.html
-  // does Safari follow the refresh of a file:// page to http://127.0.0.1 by itself? (written in the log: this is what the question was)
+  // where the file is matters to a sandboxed Safari: try the temp folder (with its real path) and then a folder of the home
+  const launch = new URL(ui.start).pathname;
+  const candidates = [fs.realpathSync(launch), path.join(os.homedir(), 'viper-e2e-launch.html')];
+  fs.copyFileSync(launch, candidates[1]);
+  let opened = '';
+  for (const file of candidates) {
+    await driver.get(pathToFileURL(file).href);
+    await driver.sleep(1500);
+    const url = await driver.getCurrentUrl();
+    console.log(`SAFARI start file ${file}: url = ${url}; text = ${JSON.stringify(await pageText())}`);
+    if (!url.startsWith('safari-resource:') && !url.startsWith('about:')) { opened = file; break; }
+  }
+  expect(opened, 'Safari could not open any start file').not.toBe('');
+  // does Safari follow the refresh of a file:// page to http://127.0.0.1 by itself?
   let automatic = false;
   try { await driver.wait(async () => (await driver.getCurrentUrl()).startsWith(ui.base), 6000); automatic = true; } catch { /* not by itself */ }
   console.log(`SAFARI start file: automatic redirect = ${automatic}; url = ${await driver.getCurrentUrl()}`);
@@ -33,10 +51,12 @@ test('the start file leads to the page in Safari (by itself, or by its link), an
   }
   await driver.wait(async () => (await rows()) === 3, 10000);
   expect(await driver.getTitle()).toBe('viper');
-  const html = await driver.getPageSource();
-  expect(html).not.toContain('ghp_e2esecretvalue123');
+  expect(await driver.getPageSource()).not.toContain('ghp_e2esecretvalue123');
+  fs.rmSync(candidates[1], { force: true });
 });
 
+
+test.describe.configure({ mode: 'serial' });
 test('Safari: the language, a refused page, a run with its exit status', async () => {
   await driver.get(ui.start);
   await driver.wait(until.urlIs(ui.base + '/'), 15000).catch(async () => { await driver.findElement(By.linkText('viper ui')).click(); await driver.wait(until.urlIs(ui.base + '/'), 10000); });
