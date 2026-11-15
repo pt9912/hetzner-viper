@@ -86,16 +86,10 @@ func (s *Server) natsArgv(req runRequest, ov Overview) (argv []string, files *ru
 			return nil, nil, fmt.Errorf("%s is not a machine of the group", m)
 		}
 	}
-	argv = []string{"nats", req.Sub, g.Name}
 	if err := checkNATSFields(req); err != nil {
 		return nil, nil, err
 	}
-	if req.From != "" && req.Sub != "init" && req.Sub != "revoke" { // they speak to the server as the operator, whoever "speaks as"
-		argv = append(argv, "--from="+req.From)
-	}
-	if req.Timeout > 0 && (req.Sub == "peers" || req.Sub == "topics" || req.Sub == "request") {
-		argv = append(argv, "--timeout="+strconv.Itoa(req.Timeout))
-	}
+	argv = append([]string{"nats", req.Sub, g.Name}, commonNATSOptions(req)...)
 	files, err = s.natsOptions(req, &argv)
 	if err != nil {
 		return nil, nil, err
@@ -104,6 +98,19 @@ func (s *Server) natsArgv(req runRequest, ov Overview) (argv []string, files *ru
 		return argv, files, nil // they say what they did in a sentence, and take no option
 	}
 	return append(argv, "--json"), files, nil
+}
+
+// commonNATSOptions are --from and --timeout, for the subcommands that take them: init and revoke speak to the server as the
+// operator, whoever "speaks as".
+func commonNATSOptions(req runRequest) []string {
+	var out []string
+	if req.From != "" && req.Sub != "init" && req.Sub != "revoke" {
+		out = append(out, "--from="+req.From)
+	}
+	if req.Timeout > 0 && (req.Sub == "peers" || req.Sub == "topics" || req.Sub == "request") {
+		out = append(out, "--timeout="+strconv.Itoa(req.Timeout))
+	}
+	return out
 }
 
 // natsOptions adds the options and words of the subcommand, and makes the files of the run it needs.
