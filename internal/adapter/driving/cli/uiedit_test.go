@@ -264,3 +264,25 @@ func TestTheEditorChangesASettingAndListsTheBackupAndTheCatalog(t *testing.T) {
 		t.Error("a path was opened")
 	}
 }
+
+func TestTheLinesOfAValueOverSeveralLinesAreNoSettings(t *testing.T) {
+	env, _ := nativeEnv(t)
+	dir := t.TempDir()
+	write(t, dir, ".env.local", "SERVER_PREFIX=ui\nDNS_PROVIDER=none\n")
+	write(t, dir, "machines/web.env.local", "VIPER_POST_CLONE='echo '\\''hi'\\''\nPROVIDER=aws\nmake'\nVIPER_BREW_PACKAGES=\"a\\\"b\nSERVER_TYPE=inside\"\nPROVIDER=compose\nX='a'b'\nSERVER_LOCATION=default\n")
+	files, err := cli.UISettings(&cli.Opts{Host: testHost(), Dir: dir}, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	for _, f := range files {
+		if f.Name == "machines/web.env.local" {
+			for _, s := range f.Settings {
+				keys = append(keys, s.Key)
+			}
+		}
+	}
+	if strings.Join(keys, ",") != "VIPER_POST_CLONE,VIPER_BREW_PACKAGES,PROVIDER,X" {
+		t.Errorf("%v: the lines inside a value are no settings, and what follows the value is", keys)
+	}
+}

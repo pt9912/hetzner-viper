@@ -41,6 +41,7 @@ type credPlan struct {
 	lines         []string // what the change does, one line each (no values)
 	names         []string // the settings it touches
 	removed       []string // those that are taken out
+	saved         string   // the text of a backup that is restored
 }
 
 func etagOf(b []byte) string {
@@ -229,8 +230,9 @@ func userinfoURL(v string) bool {
 	return false
 }
 
-// emptied is the text for a backup: the value of every credential taken out (NAME=”), the value of any setting that holds a URL
-// with credentials, and a comment that names a credential with a value (# NAME=...). Anything else stays as it is.
+// emptied is the text for a backup: the value of every credential taken out, the credentials of URLs, and every other place a
+// credential is named with a value (# NAME=... in a comment, after a value, or in the text of a command over several lines).
+// Anything else stays as it is.
 func emptied(text string) (string, error) {
 	as, err := Assignments(text)
 	if err != nil {
@@ -238,37 +240,56 @@ func emptied(text string) (string, error) {
 	}
 	secrets := model.SecretNames()
 	for i := len(as) - 1; i >= 0; i-- {
-		if slices.Contains(secrets, as[i].Name) || userinfoURL(as[i].Value) {
+		if slices.Contains(secrets, as[i].Name) {
 			text = text[:as[i].Start] + as[i].Name + "=''" + text[as[i].End:]
 		}
 	}
-	as, err = Assignments(text)
-	if err != nil {
-		return "", err
-	}
-	var out strings.Builder
-	pos := 0
-	for _, line := range strings.SplitAfter(text, "\n") {
-		inside := false
-		for _, a := range as {
-			inside = inside || (pos > a.Start && pos < a.End)
-		}
-		if t := strings.TrimSpace(line); !inside && strings.HasPrefix(t, "#") && mentionsSecret(t, secrets) {
-			line = "# (a comment that named a credential was left out)\n"
-		}
-		out.WriteString(line)
-		pos += len(line)
-	}
-	return out.String(), nil
+	text = secretMention(secrets).ReplaceAllString(text, "${1}=''")
+	return stripUserinfo(text), nil
 }
 
-func mentionsSecret(comment string, secrets []string) bool {
-	for _, n := range secrets {
-		if strings.Contains(comment, n+"=") {
+// secretMention finds NAME=value of a credential anywhere in a text: a plain word or a quoted string.
+func secretMention(secrets []string) *regexp.Regexp {
+	quoted := make([]string, len(secrets))
+	for i, n := range secrets {
+		quoted[i] = regexp.QuoteMeta(n)
+	}
+	return regexp.MustCompile(`\b(` + strings.Join(quoted, "|") + `)=("[^"\n]*"|'[^'\n]*'|[^\s'";]+)`)
+}
+
+// urlUserinfo is scheme://user:password@ of a URL (https://user:token@host) in any text.
+var urlUserinfo = regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*)://([^/@\s'":]+)(:[^/@\s'"]*)?@`)
+
+// stripUserinfo takes the credentials out of the URLs of a text (ssh://git@host names the user of the login: it stays).
+func stripUserinfo(text string) string {
+	return urlUserinfo.ReplaceAllStringFunc(text, func(m string) string {
+		p := urlUserinfo.FindStringSubmatch(m)
+		if strings.EqualFold(p[1], "ssh") && p[3] == "" {
+			return m
+		}
+		return p[1] + "://"
+	})
+}
+
+// namesSecretValue says whether a text has a credential named with a value outside the statements of the credentials (a comment, a
+// command): what a restore from a backup cannot keep.
+func namesSecretValue(text string) bool {
+	as, err := Assignments(text)
+	if err != nil {
+		return false
+	}
+	secrets := model.SecretNames()
+	for i := len(as) - 1; i >= 0; i-- {
+		if slices.Contains(secrets, as[i].Name) {
+			text = text[:as[i].Start] + text[as[i].End:]
+		}
+	}
+	for _, m := range secretMention(secrets).FindAllStringSubmatch(text, -1) {
+		if v := strings.Trim(strings.TrimPrefix(m[0], m[1]+"="), `'"`); v != "" {
 			return true
 		}
 	}
-	return false
+	return stripUserinfo(text) != text
 }
 
 // checkCredentials are the reasons a change of credentials is refused before any file is read.

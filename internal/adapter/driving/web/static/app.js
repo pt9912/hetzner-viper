@@ -1083,6 +1083,7 @@
       if (c && c.type === 'int') { ctl.min = String(c.min); ctl.max = String(c.max); } else { ctl.size = 30; ctl.spellcheck = false; }
     }
     ctl.id = 'ch-value';
+    ctl.setAttribute('aria-describedby', 'ch-help ch-limits');
     box.appendChild(ctl);
     if (typed) { ctl.value = typed; } // a change of the language keeps what was typed
     $('ch-help').textContent = (c && c.help && (c.help[window.viperI18n.lang()] || c.help.en)) || ''; // from the server, in the language of the page
@@ -1134,14 +1135,16 @@
   }
 
   // the form for a setting of the file: its value if the page may show it; the commands (text over several lines) are read apart
+  let editSeq = 0;
   async function editRow(s) {
+    const mine = ++editSeq;
     $('ch-name').value = s.key;
     valueControl(false);
     const f = fileOf($('ch-file').value);
     if (catalogOf(s.key).type === 'lines' && f) {
       try {
         const r = await api('/api/setting?target=' + encodeURIComponent(f.target) + '&name=' + encodeURIComponent(f.name) + '&setting=' + encodeURIComponent(s.key));
-        $('ch-value').value = r.value;
+        if (mine === editSeq) { $('ch-value').value = r.value; }
       } catch (e) { $('ch-status').textContent = e.message; }
     } else if (s.shown) {
       $('ch-value').value = s.value;
@@ -1151,6 +1154,8 @@
 
   function changeResult(res) {
     restoring = null;
+    changePreview = ''; // what is shown now is the preview of this answer only: an older one cannot be applied
+    $('ch-apply').disabled = true;
     $('ch-restore-go').hidden = true; // a preview that is not of a restore has no button for it
     const ul = $('ch-problems');
     ul.textContent = '';
@@ -1223,7 +1228,8 @@
       if (!changeOk(pre)) { $('ch-status').textContent = t('create.refused'); return; }
       if (pre.confirmWord) { // asks for the word: the button under the preview takes it out when the word is typed
         restoring = { req, etag: pre.etag };
-        $('ch-restore-go').textContent = t('change.remove.go');
+        goKey = 'change.remove.go';
+        $('ch-restore-go').textContent = t(goKey);
         $('ch-restore-go').hidden = false;
         $('ch-status').textContent = t('change.confirm', pre.confirmWord);
         $('ch-confirm').focus();
@@ -1239,6 +1245,7 @@
   $('ch-file').addEventListener('change', loadRows);
 
   // restoring: the preview says what the copy would change; the button under it does it (the credentials that are there stay)
+  let goKey = 'backups.restore.go'; // the text of the button under the preview (it changes with the language)
   let restoring = null; // { req, etag } of a preview that has no problem and waits for the button under it (a restore, or taking out a dangerous setting)
 
   async function restorePreview(b) {
@@ -1249,7 +1256,8 @@
       changeResult(res);
       const ok = changeOk(res);
       restoring = ok ? { req, etag: res.etag } : null;
-      $('ch-restore-go').textContent = t('backups.restore.go');
+      goKey = 'backups.restore.go';
+      $('ch-restore-go').textContent = t(goKey);
       $('ch-restore-go').hidden = !ok;
       $('ch-status').textContent = ok ? t('backups.restoring', b.files.join(', ')) : t('create.refused');
       $('ch-result').scrollIntoView({ block: 'nearest' });
@@ -1276,9 +1284,9 @@
         const a = document.createElement('a');
         a.href = '/api/backups/' + encodeURIComponent(b.name);
         a.textContent = t('backups.download');
-        a.setAttribute('aria-label', t('backups.aria', b.files.join(', ')));
+        a.setAttribute('aria-label', t('backups.aria', b.files.join(', ') + ' ' + b.time.replace('T', ' ').slice(0, 19)));
         a.setAttribute('download', b.name);
-        const back = button(t('backups.restore'), t('backups.restore.aria', b.files.join(', ')), () => restorePreview(b), false, 'quiet');
+        const back = button(t('backups.restore'), t('backups.restore.aria', b.files.join(', ') + ' ' + b.time.replace('T', ' ').slice(0, 19)), () => restorePreview(b), false, 'quiet');
         li.append(document.createTextNode(b.time.replace('T', ' ').slice(0, 19) + '  ' + b.files.join(', ') + '  '), a, document.createTextNode(' '), back);
         ul.appendChild(li);
       }
@@ -1289,6 +1297,8 @@
     window.viperI18n.apply();
     $('lang').value = window.viperI18n.lang();
     renderAll();
+    $('ch-restore-go').textContent = t(goKey); // the language of the page set it back to its first text
+    if (changeWord) { $('ch-confirm-label').textContent = t('change.confirm', changeWord); }
     renderCreate();
     renderSecrets();
     valueControl(true);

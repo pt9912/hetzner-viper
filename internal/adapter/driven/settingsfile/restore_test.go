@@ -2,6 +2,7 @@ package settingsfile_test
 
 import (
 	"archive/zip"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,8 +105,11 @@ func TestOnlyABackupThatLooksLikeOursIsRead(t *testing.T) {
 		if !strings.Contains(strings.Join(p.Problems, "|"), c.want) {
 			t.Errorf("%s: %q", name, p.Problems)
 		}
-		if _, err := (settingsfile.Files{}).Create(dir, settings.Change{Kind: "restore", Name: zname, Etag: p.Etag}, env); err == nil {
+		if _, err := (settingsfile.Files{}).Create(dir, settings.Change{Kind: "restore", Name: zname, Etag: "any"}, env); err == nil {
 			t.Errorf("%s: restored", name)
+		}
+		if b, _ := os.ReadFile(filepath.Join(dir, "machines", "web.env.local")); string(b) != "PROVIDER=hetzner\n" {
+			t.Errorf("%s: the file changed: %q", name, b)
 		}
 	}
 	for _, bad := range []string{"../x.zip", "x.zip", "nope", ""} {
@@ -123,8 +127,8 @@ func TestARestoreIsCheckedLikeAnyChange(t *testing.T) {
 	zname := "20260102T000000-setting.zip"
 	writeZip(t, env, zname, map[string]string{"machines/web.env.local": "PROVIDER=compose\nSERVER_LOCATION=default\nCOMPOSE_IMAGE=x:1\nDNS_PROVIDER=cloudflare\n"}, nil)
 	p, _ := settingsfile.Files{}.Preview(dir, restoreOf(zname), env)
-	if len(p.Problems)+len(p.Broken) == 0 {
-		t.Errorf("a file that does not load was accepted: %+v", p)
+	if !strings.Contains(strings.Join(p.Problems, "|")+strings.Join(p.Broken, "|"), "DNS_PROVIDER=none is needed") {
+		t.Errorf("a file that does not load was accepted, or refused for another reason: %+v", p)
 	}
 	// a command that runs on the server asks for the word
 	zname = "20260103T000000-setting.zip"
@@ -166,6 +170,105 @@ func TestARestoreDoesNotMoveAMachineThatHasAServer(t *testing.T) {
 	writeZip(t, env, zname, map[string]string{"machines/web.env.local": strings.Replace(compose, "SERVER_LOCATION=default", "SERVER_LOCATION=other", 1)}, nil)
 	p, _ := settingsfile.Files{}.Preview(dir, restoreOf(zname), env)
 	if !strings.Contains(strings.Join(p.Problems, "|"), "viper down first") {
+		t.Errorf("%+v", p)
+	}
+}
+
+func TestTheBackupHoldsNoCredentialWhereverItIsNamedWithAValue(t *testing.T) {
+	env, _ := credEnv(t)
+	text := "A=1 # VIPER_GH_TOKEN=ghp_trailing123\nREPO_URL=ssh://git@github.com/o/r.git\nB=https://u:pw12345@h.example/x\n" +
+		"VIPER_POST_CLONE='export VIPER_GH_TOKEN=ghp_inside1234\n# HCLOUD_TOKEN=ghp_incomment1\ngit clone https://u:tok123456@h.example/x.git\nmake'\n# HCLOUD_TOKEN=ghp_lineofcomment\n"
+	dir := setupDir(t, text, "")
+	p, err := setCred(t, dir, env, settings.Change{Kind: "setting", Target: "base", Fields: map[string]string{"SERVER_TYPE": "x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := readBackupText(t, env, p.Backup)
+	for _, leak := range []string{"ghp_trailing123", "ghp_inside1234", "ghp_incomment1", "tok123456", "pw12345", "ghp_lineofcomment"} {
+		if strings.Contains(saved, leak) {
+			t.Errorf("the backup holds %q:\n%s", leak, saved)
+		}
+	}
+	for _, keep := range []string{"ssh://git@github.com/o/r.git", "VIPER_POST_CLONE='export VIPER_GH_TOKEN=''", "make'"} {
+		if !strings.Contains(saved, keep) {
+			t.Errorf("the backup lost %q:\n%s", keep, saved)
+		}
+	}
+}
+
+func readBackupText(t *testing.T, env settings.Env, name string) string {
+	t.Helper()
+	rc, err := settingsfile.Files{}.OpenBackup(env, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(rc)
+	_ = rc.Close()
+	zr, err := zip.NewReader(strings.NewReader(string(b)), int64(len(b)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var all strings.Builder
+	for _, f := range zr.File {
+		r, _ := f.Open()
+		x, _ := io.ReadAll(r)
+		_ = r.Close()
+		all.Write(x)
+	}
+	return all.String()
+}
+
+func TestARestoreAsksForTheWordForNamesThatAreNoSettingOfThePageAndSaysWhatItLoses(t *testing.T) {
+	env, _ := credEnv(t)
+	dir := setupDir(t, "SERVER_PREFIX=claude\nDNS_PROVIDER=none\n", compose+"# HCLOUD_TOKEN=ghp_oldoldold123\n")
+	zname := "20260106T000000-setting.zip"
+	writeZip(t, env, zname, map[string]string{"machines/web.env.local": compose + "BASH_ENV=/tmp/x\n"}, nil)
+	p, _ := settingsfile.Files{}.Preview(dir, restoreOf(zname), env)
+	if p.ConfirmWord != "restore" || !strings.Contains(strings.Join(p.Confirm, "|"), "BASH_ENV") {
+		t.Fatalf("%+v", p)
+	}
+	if !strings.Contains(strings.Join(p.Notes, "|"), "a credential in a comment") {
+		t.Errorf("a token in a comment is lost by the restore, and the preview says so: %q", p.Notes)
+	}
+}
+
+func TestOneFileThatIsAsInTheBackupDoesNotStopTheOthers(t *testing.T) {
+	env, _ := credEnv(t)
+	dir := setupDir(t, "SERVER_PREFIX=claude\nDNS_PROVIDER=none\n", compose)
+	writeIn(t, dir, "machines/db.env.local", "PROVIDER=compose\nSERVER_LOCATION=default\nCOMPOSE_IMAGE=x:1\n")
+	zname := "20260107T000000-setting.zip"
+	writeZip(t, env, zname, map[string]string{
+		"machines/web.env.local": strings.Replace(compose, "2x4", "8x16", 1),
+		"machines/db.env.local":  "PROVIDER=compose\nSERVER_LOCATION=default\nCOMPOSE_IMAGE=x:1\n",
+	}, nil)
+	p, _ := settingsfile.Files{}.Preview(dir, restoreOf(zname), env)
+	if len(p.Problems) != 0 || len(p.Files) != 1 || p.Files[0].Path != "machines/web.env.local" {
+		t.Fatalf("%+v", p)
+	}
+}
+
+func TestAReplacedBackupIsNotTheOneThatWasPreviewed(t *testing.T) {
+	env, _ := credEnv(t)
+	dir := setupDir(t, "SERVER_PREFIX=claude\nDNS_PROVIDER=none\n", compose)
+	zname := "20260108T000000-setting.zip"
+	writeZip(t, env, zname, map[string]string{"machines/web.env.local": strings.Replace(compose, "2x4", "8x16", 1)}, nil)
+	p, _ := settingsfile.Files{}.Preview(dir, restoreOf(zname), env)
+	writeZip(t, env, zname, map[string]string{"machines/web.env.local": strings.Replace(compose, "2x4", "99x99", 1)}, nil)
+	if _, err := (settingsfile.Files{}).Create(dir, settings.Change{Kind: "restore", Name: zname, Etag: p.Etag}, env); err == nil {
+		t.Fatal("the backup was replaced between the preview and the apply")
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "machines", "web.env.local")); string(b) != compose {
+		t.Errorf("%q", b)
+	}
+}
+
+func TestACurrentFileThatCannotBeReadIsNotRestoredOverBlind(t *testing.T) {
+	env, _ := credEnv(t)
+	dir := setupDir(t, "SERVER_PREFIX=claude\nDNS_PROVIDER=none\n", compose+"X=$(oops)\n")
+	zname := "20260109T000000-setting.zip"
+	writeZip(t, env, zname, map[string]string{"machines/web.env.local": compose}, nil)
+	p, _ := settingsfile.Files{}.Preview(dir, restoreOf(zname), env)
+	if !strings.Contains(strings.Join(p.Problems, "|"), "change it at the terminal") {
 		t.Errorf("%+v", p)
 	}
 }

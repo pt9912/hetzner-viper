@@ -350,3 +350,39 @@ func TestWhatTheShellExpandsIsFoundOutsideSingleQuotes(t *testing.T) {
 		t.Errorf("%q", p.Files[0].Text)
 	}
 }
+
+func TestAnExpansionIsFoundByTheQuotesTheShellReads(t *testing.T) {
+	dir, env := settingDir(t)
+	for raw, expands := range map[string]bool{
+		`SERVER_IMAGE='$HOME'`:       false,
+		`SERVER_IMAGE="it's $HOME"`:  true,
+		`SERVER_IMAGE="it's"`:        false,
+		`SERVER_IMAGE='say "$HOME"'`: false,
+		`SERVER_IMAGE=\$HOME`:        false,
+		`SERVER_IMAGE="a \$HOME"`:    false,
+		`SERVER_IMAGE=~/x`:           true,
+		`SERVER_IMAGE=a~b`:           false,
+	} {
+		writeIn(t, dir, "machines/web.env.local", compose+raw+"\n")
+		p, _ := settingsfile.Files{}.Preview(dir, setting(map[string]string{"SERVER_IMAGE": "x"}), env)
+		if len(p.Files) == 0 {
+			t.Errorf("%s: %v", raw, p.Problems)
+			continue
+		}
+		got := strings.Contains(p.Files[0].Text, "SERVER_IMAGE: (set) ->")
+		if got != expands { // a value that expands is said as "(set)"; one that does not is said as it is
+			t.Errorf("%s: shown as %q (an expansion is hidden, a plain value is not)", raw, p.Files[0].Text)
+		}
+	}
+}
+
+func TestACommandWithACredentialInAUrlIsRefused(t *testing.T) {
+	dir, env := settingDir(t)
+	got := problemsOf(t, dir, env, setting(map[string]string{"VIPER_POST_CLONE": "git clone https://u:tok123456@h.example/x.git\nmake"}))
+	if !strings.Contains(got, "a URL with credentials") {
+		t.Errorf("%q", got)
+	}
+	if got := problemsOf(t, dir, env, setting(map[string]string{"VIPER_POST_CLONE": "git clone ssh://git@github.com/o/r.git\nmake"})); got != "" {
+		t.Errorf("ssh with a user: %q", got)
+	}
+}

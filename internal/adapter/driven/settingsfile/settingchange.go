@@ -177,6 +177,8 @@ func checkLines(v string) error {
 		return fmt.Errorf("longer than %d characters", maxLinesText)
 	case !validUTF8(v) || strings.ContainsFunc(v, func(r rune) bool { return (r < ' ' && r != '\n' && r != '\t') || (r >= 0x7f && r <= 0x9f) }):
 		return errors.New("text with line breaks, no other control character")
+	case stripUserinfo(v) != v:
+		return errors.New("a URL with credentials in the text (use VIPER_GH_TOKEN or GIT_DEPLOY_KEY_FILE)")
 	}
 	return nil
 }
@@ -227,15 +229,25 @@ func (pl credPlan) oldValue(name string) string {
 // expands says whether the shell would expand something in a statement (a $, a backtick or a ~ outside single quotes): then the
 // value the page knows is not the one that is meant.
 func expands(raw string) bool {
-	single := false
+	var quote byte // 0 outside quotes, ' or "
 	for i := 0; i < len(raw); i++ {
-		switch c := raw[i]; {
-		case c == '\'':
-			single = !single
-		case single:
+		c := raw[i]
+		if quote == '\'' { // nothing is special in single quotes but the end
+			if c == '\'' {
+				quote = 0
+			}
+			continue
+		}
+		switch {
 		case c == '\\':
-			i++
-		case c == '$' || c == '`' || (c == '~' && (i == 0 || raw[i-1] == '=' || raw[i-1] == ':')):
+			i++ // the next character is taken as it is
+		case c == '"':
+			quote = '"' - quote // opens or closes: '"' - '"' is 0
+		case c == '\'' && quote == 0:
+			quote = '\''
+		case c == '$' || c == '`':
+			return true
+		case c == '~' && quote == 0 && (i == 0 || raw[i-1] == '=' || raw[i-1] == ':'):
 			return true
 		}
 	}

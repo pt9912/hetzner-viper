@@ -112,7 +112,7 @@ func mergeCurrent(saved, current string) (string, error) {
 	}
 	ca, err := Assignments(current)
 	if err != nil {
-		return "", fmt.Errorf("the file is unreadable: %w", err)
+		return "", fmt.Errorf("the file that is there is unreadable (%v): a restore would not know its credentials; change it at the terminal", err)
 	}
 	text, err := putCurrentSecrets(saved, current, ca, secrets)
 	if err != nil {
@@ -268,11 +268,15 @@ func planRestore(dir string, ch settings.Change, env settings.Env) ([]credPlan, 
 	var problems []string
 	for _, rel := range rels {
 		pl, problem := planFile(dir, rel, saved[rel])
-		if problem != "" {
+		switch {
+		case problem != "":
 			problems = append(problems, problem)
-			continue
+		case pl.after != pl.before: // a file that is as in the backup is left alone
+			plans = append(plans, pl)
 		}
-		plans = append(plans, pl)
+	}
+	if len(problems) == 0 && len(plans) == 0 {
+		problems = append(problems, "every file is the same as in the backup")
 	}
 	return plans, problems
 }
@@ -287,12 +291,12 @@ func planFile(dir, rel, saved string) (credPlan, string) {
 	if err != nil {
 		return pl, err.Error()
 	}
-	pl.before, pl.etag = string(b), etagOf(b)
+	pl.before, pl.etag, pl.saved = string(b), etagOf(b), saved
 	if pl.after, err = mergeCurrent(saved, pl.before); err != nil {
 		return pl, rel + ": " + err.Error()
 	}
 	if pl.after == pl.before {
-		return pl, rel + " is the same as in the backup"
+		return pl, ""
 	}
 	pl.lines = diffLines(pl.before, pl.after)
 	for _, l := range pl.lines {
@@ -306,7 +310,7 @@ func planFile(dir, rel, saved string) (credPlan, string) {
 func etagOfPlans(plans []credPlan) string {
 	var b strings.Builder
 	for _, pl := range plans {
-		b.WriteString(pl.rel + "=" + pl.etag + "\n")
+		b.WriteString(pl.rel + "=" + pl.etag + "+" + etagOf([]byte(pl.saved)) + "\n") // the file that is there, and the text of the backup
 	}
 	return etagOf([]byte(b.String()))
 }
@@ -351,6 +355,14 @@ func previewRestore(dir string, ch settings.Change, env settings.Env) (settings.
 		sub := changeOf(pl)
 		if len(sub.Fields)+len(sub.Remove) > 0 {
 			checkSettingChange(dir, sub, env, &p)
+		}
+		for _, n := range pl.names {
+			if _, ok := specOf(n); !ok && !slices.Contains(model.SecretNames(), n) {
+				p.Confirm = append(p.Confirm, n+": not a setting this page changes (the files are sourced by the shell: a name can do more than name a setting)")
+			}
+		}
+		if namesSecretValue(pl.before) && !namesSecretValue(pl.after) {
+			p.Notes = append(p.Notes, pl.rel+": a credential in a comment or in a command of this file is not in the backup and is lost by the restore")
 		}
 	}
 	p.Notes = append(p.Notes, "the credentials of the files that are there now stay: a backup holds none")

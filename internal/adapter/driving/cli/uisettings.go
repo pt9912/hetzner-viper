@@ -92,21 +92,17 @@ func readSettings(path string) ([]web.Setting, error) {
 	var out []web.Setting
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
-	open := byte(0) // the quote of a value over several lines: its lines are no settings
+	var open byte // the quote that a value over several lines has open: its lines are no settings
 	for sc.Scan() {
 		if open != 0 {
-			if strings.IndexByte(sc.Text(), open) >= 0 {
-				open = 0
-			}
+			open = quoteState(sc.Text(), open)
 			continue
 		}
 		m := assignRe.FindStringSubmatch(sc.Text())
 		if m == nil || strings.HasPrefix(strings.TrimSpace(sc.Text()), "#") {
 			continue
 		}
-		if q := strings.TrimLeft(m[2], " \t"); q != "" && (q[0] == '"' || q[0] == '\'') && strings.IndexByte(q[1:], q[0]) < 0 {
-			open = q[0]
-		}
+		open = quoteState(m[2], 0)
 		st := web.Setting{Key: m[1], Set: hasValue(m[2])}
 		if v, ok := plainValue(m[2]); ok && valueShown(m[1]) && v != "" && !hasUserinfo(v) {
 			st.Value, st.Shown = v, true
@@ -191,4 +187,32 @@ func hasUserinfo(v string) bool {
 func hasValue(raw string) bool {
 	v, ok := plainValue(raw)
 	return !ok || v != ""
+}
+
+// quoteState is the quote that is open at the end of a text, going on from the state at its start (0: none, ' or "), as the shell
+// reads it: no escapes in single quotes, \ in double quotes and outside, # at the start of a word outside quotes is a comment.
+func quoteState(text string, state byte) byte {
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		switch {
+		case state == '\'':
+			if c == '\'' {
+				state = 0
+			}
+		case state == '"':
+			switch c {
+			case '\\':
+				i++
+			case '"':
+				state = 0
+			}
+		case c == '\\':
+			i++
+		case c == '\'' || c == '"':
+			state = c
+		case c == '#' && (i == 0 || text[i-1] == ' ' || text[i-1] == '\t'):
+			return state
+		}
+	}
+	return state
 }
