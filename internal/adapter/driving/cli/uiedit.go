@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -138,4 +139,45 @@ func traceCredentials(req web.EditRequest, paths []string, backup string) string
 		text += "; removed " + strings.Join(req.Remove, ", ")
 	}
 	return text + " in " + strings.Join(paths, ", ") + " (backup " + backup + ")"
+}
+
+// copyFields are the settings of a file that a form takes over (the ones the forms of docs/plan/ui-bearbeiten.md know).
+func copyFields(kind string) []string {
+	if kind == "group" {
+		return []string{"NATS_ENABLED"}
+	}
+	return []string{"PROVIDER", "DNS_PROVIDER", "SERVER_TYPE", "SERVER_LOCATION", "COMPOSE_IMAGE", "K8S_IMAGE"}
+}
+
+// Duplicate reads the file of a machine or group that exists and gives what a copy starts from: the settings the form knows (only
+// those that are on the list of values that are shown, so never a credential), a free name, and the names of the rest.
+func (e *uiEditor) Duplicate(ctx context.Context, kind, name string) (web.Copy, error) {
+	dir, suffix := "machines", ".env.local"
+	if kind == "group" {
+		dir, suffix = "groups", ".env"
+	} else if kind != "machine" {
+		return web.Copy{}, errors.New("a machine or a group")
+	}
+	names := listNames(filepath.Join(e.b.dir(), dir), suffix)
+	if !slices.Contains(names, name) { // the name is one of the files, never a path
+		return web.Copy{}, fmt.Errorf("there is no %s %s", kind, name)
+	}
+	settings, err := readSettings(filepath.Join(e.b.dir(), dir, name+suffix))
+	if err != nil {
+		return web.Copy{}, err
+	}
+	c := web.Copy{Kind: kind, Fields: map[string]string{}, Skipped: []string{}}
+	for _, s := range settings {
+		switch {
+		case slices.Contains(copyFields(kind), s.Key) && s.Shown:
+			c.Fields[s.Key] = s.Value
+		case !slices.Contains(c.Skipped, s.Key):
+			c.Skipped = append(c.Skipped, s.Key)
+		}
+	}
+	c.Name = name + "-2"
+	for i := 3; slices.Contains(names, c.Name); i++ {
+		c.Name = fmt.Sprintf("%s-%d", name, i)
+	}
+	return c, ctx.Err()
 }

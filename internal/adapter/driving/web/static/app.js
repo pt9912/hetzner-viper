@@ -173,6 +173,7 @@
     for (const a of ACTIONS) {
       act.appendChild(button(t('btn.group.' + a), t('aria.group.' + a, g.name), () => startRun({ action: a, group: g.name, scope: 'group' }), members.length === 0 || overview.readonly, kinds[a]));
     }
+    if (overview.edit) { act.appendChild(button(t('btn.dup'), t('aria.group.dup', g.name), () => duplicate('group', g.name), false, 'quiet')); }
     return tr;
   }
 
@@ -192,6 +193,7 @@
       act.appendChild(button(t('btn.' + a), t('aria.' + a, m.name), () => startRun({ action: a, machine: m.name, group: m.group || '' }), !!m.error || overview.readonly, kinds[a]));
     }
     act.appendChild(button(t('btn.log'), t('aria.log', m.name), () => { $('log-machine').value = m.name; show('logs'); }, false, 'quiet'));
+    if (overview.edit) { act.appendChild(button(t('btn.dup'), t('aria.dup', m.name), () => duplicate('machine', m.name), !!m.error, 'quiet')); }
     return tr;
   }
 
@@ -812,6 +814,34 @@
     } catch (e) {
       $('c-status').textContent = e.message;
     }
+  }
+
+  // a copy: the form is filled with what the file has that the form knows (never a credential), and the person names it
+  async function duplicate(kind, name) {
+    show('create');
+    try {
+      const c = await api('/api/duplicate?kind=' + encodeURIComponent(kind) + '&name=' + encodeURIComponent(name));
+      await loadTemplates();
+      const f = c.fields;
+      $('c-kind').value = kind;
+      if (kind === 'machine') {
+        if (f.PROVIDER) { $('c-provider').value = f.PROVIDER; }
+        $('c-type').value = f.SERVER_TYPE || '';
+        $('c-location').value = f.SERVER_LOCATION || '';
+        $('c-dns').value = f.DNS_PROVIDER || '';
+        $('c-image').value = ($('c-provider').value === 'kubernetes' ? f.K8S_IMAGE : f.COMPOSE_IMAGE) || '';
+      } else {
+        for (const x of $('c-members').querySelectorAll('input')) { x.checked = false; } // a machine in two groups breaks
+        $('c-nats').checked = f.NATS_ENABLED === 'true';
+      }
+      createLayout();
+      createInvalidate();
+      $('c-result').hidden = true;
+      $('c-name').value = c.name;
+      $('c-status').textContent = c.skipped.length ? t('create.copied', name, c.skipped.join(', ')) : t('create.copied0', name);
+      $('c-name').focus();
+      $('c-name').select();
+    } catch (e) { $('c-status').textContent = t('create.dupfail', e.message); }
   }
 
   function showResult(res) {

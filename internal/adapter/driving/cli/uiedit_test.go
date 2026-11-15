@@ -108,3 +108,32 @@ func TestTheEditorSetsACredentialAndNeverSaysItsValue(t *testing.T) {
 		t.Error("a second apply of the same preview")
 	}
 }
+
+func TestADuplicateTakesOverWhatTheFormKnowsAndNeverACredential(t *testing.T) {
+	env, _ := nativeEnv(t)
+	dir := t.TempDir()
+	write(t, dir, ".env.local", "SERVER_PREFIX=ui\nDNS_PROVIDER=none\n")
+	write(t, dir, "machines/web.env.local", "PROVIDER=compose\nSERVER_TYPE=2x4\nSERVER_LOCATION=default\nHCLOUD_TOKEN=tok-0123456789\nREPO_URL=https://github.com/x/y.git\nCOMPOSE_IMAGE=$IMG\nVIPER_POST_CLONE='a\nb'\n")
+	write(t, dir, "machines/web-2.env.local", "")
+	write(t, dir, "groups/dev.env", "GROUP_MACHINES=web\nNATS_ENABLED=true\nNATS_MCP=true\n")
+	ed, _ := cli.UIEditor(&cli.Opts{Host: testHost(), Dir: dir}, env)
+	c, err := ed.Duplicate(context.Background(), "machine", "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Name != "web-3" || c.Fields["PROVIDER"] != "compose" || c.Fields["SERVER_TYPE"] != "2x4" || len(c.Fields) != 3 {
+		t.Errorf("%+v", c)
+	}
+	if strings.Join(c.Skipped, ",") != "HCLOUD_TOKEN,REPO_URL,COMPOSE_IMAGE,VIPER_POST_CLONE" {
+		t.Errorf("skipped %v", c.Skipped)
+	}
+	g, err := ed.Duplicate(context.Background(), "group", "dev")
+	if err != nil || g.Name != "dev-2" || g.Fields["NATS_ENABLED"] != "true" || strings.Join(g.Skipped, ",") != "GROUP_MACHINES,NATS_MCP" {
+		t.Errorf("%+v %v", g, err)
+	}
+	for _, bad := range [][2]string{{"machine", "../x"}, {"machine", "nope"}, {"file", "web"}, {"machine", ""}, {"machine", "example"}} {
+		if _, err := ed.Duplicate(context.Background(), bad[0], bad[1]); err == nil {
+			t.Errorf("%v accepted", bad)
+		}
+	}
+}

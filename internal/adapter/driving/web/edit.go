@@ -65,8 +65,19 @@ type Templates struct {
 	Files       []CredentialFile `json:"files"`
 }
 
+// Copy is what a form takes over from a machine or group that exists (names and values of the settings that the form knows,
+// never a credential), with a free name for the copy and the names of the settings that are not taken over.
+type Copy struct {
+	Kind    string            `json:"kind"`
+	Name    string            `json:"name"`
+	Fields  map[string]string `json:"fields"`
+	Skipped []string          `json:"skipped"`
+}
+
 // Editor is what makes the new files. The cli package gives it.
 type Editor interface {
+	// Duplicate reads what a copy of the machine or group (kind "machine" or "group") starts from.
+	Duplicate(ctx context.Context, kind, name string) (Copy, error)
 	Templates(ctx context.Context) (Templates, error)
 	Preview(ctx context.Context, req EditRequest) (EditResult, error)
 	Create(ctx context.Context, req EditRequest) (EditResult, error)
@@ -80,6 +91,21 @@ func (s *Server) editing(w http.ResponseWriter) bool {
 		return false
 	}
 	return true
+}
+
+func (s *Server) duplicate(w http.ResponseWriter, r *http.Request) {
+	if !s.editing(w) {
+		return
+	}
+	c, err := s.cfg.Editor.Duplicate(r.Context(), r.URL.Query().Get("kind"), r.URL.Query().Get("name"))
+	if err != nil {
+		fail(w, http.StatusNotFound, s.show(err.Error()))
+		return
+	}
+	for k, v := range c.Fields {
+		c.Fields[k] = s.show(v)
+	}
+	reply(w, c)
 }
 
 func (s *Server) templates(w http.ResponseWriter, r *http.Request) {

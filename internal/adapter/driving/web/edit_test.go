@@ -22,6 +22,13 @@ func (e *fakeEditor) Templates(context.Context) (web.Templates, error) {
 	return web.Templates{Providers: []web.Template{{Name: "hetzner", Type: "cpx32", Location: "fsn1"}}, Machines: []string{"web"}, Base: true}, nil
 }
 
+func (e *fakeEditor) Duplicate(_ context.Context, kind, name string) (web.Copy, error) {
+	if name != "web" {
+		return web.Copy{}, errors.New("no such machine")
+	}
+	return web.Copy{Kind: kind, Name: "web-2", Fields: map[string]string{"SERVER_TYPE": "cpx22 s3cr3t-value-123"}, Skipped: []string{"REPO_URL"}}, nil
+}
+
 func (e *fakeEditor) Preview(_ context.Context, r web.EditRequest) (web.EditResult, error) {
 	res := web.EditResult{Files: []web.EditFile{{Path: "machines/" + r.Name + ".env.local", Text: "A='s3cr3t-value-123'\n"}}}
 	if r.Name == "bad" {
@@ -192,5 +199,20 @@ func TestNoRunStartsWhileACredentialIsWritten(t *testing.T) {
 	}
 	if _, code := st.start(t, `{"action":"preflight","machine":"web"}`); code != 200 {
 		t.Errorf("after the change: %d", code)
+	}
+}
+
+func TestADuplicateIsOnlyOfferedWithEdit(t *testing.T) {
+	s, h, c := editServer(t, &fakeEditor{}, false)
+	w := do(h, "GET", s.Host(), "/api/duplicate?kind=machine&name=web", c, "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"web-2"`) || strings.Contains(w.Body.String(), "s3cr3t-value-123") {
+		t.Errorf("%d %s", w.Code, w.Body)
+	}
+	if w := do(h, "GET", s.Host(), "/api/duplicate?kind=machine&name=nope", c, ""); w.Code != http.StatusNotFound {
+		t.Errorf("%d", w.Code)
+	}
+	s2, h2, c2 := editServer(t, nil, false)
+	if w := do(h2, "GET", s2.Host(), "/api/duplicate?kind=machine&name=web", c2, ""); w.Code != http.StatusForbidden {
+		t.Errorf("without edit: %d", w.Code)
 	}
 }
