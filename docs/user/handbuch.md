@@ -1,7 +1,7 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.178  
-Software-Version: v0.27.0  
+Version: 1.179  
+Software-Version: v0.27.1  
 Stand: 15.11.2026  
 
 ## 1. Einleitung
@@ -90,9 +90,9 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.20.1_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.20.1_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
 2. Prüfen Sie die Datei und machen Sie sie ausführbar:
    ```bash
-   grep viper_v0.27.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
-   chmod +x viper_v0.27.0_linux_amd64
-   mv viper_v0.27.0_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
+   grep viper_v0.27.1_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
+   chmod +x viper_v0.27.1_linux_amd64
+   mv viper_v0.27.1_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
    ```
 3. Prüfen Sie die Installation: `viper version`.
 
@@ -210,7 +210,7 @@ Sie können `viper` auch ohne Cloud-Konto ausprobieren und nutzen: Der Rechner i
 #### Vorgehen
 
 1. **Image beschaffen.** Diesen Schritt können Sie überspringen: Ohne `COMPOSE_IMAGE` bzw. `K8S_IMAGE` nimmt `viper` das veröffentlichte Image seiner Version, `ghcr.io/pt9912/viper-machine:<Version>`; Compose und ein k3d-Cluster laden es selbst. Für ein eigenes Image oder eine andere Version gehen Sie auf einem von zwei Wegen:
-   * **Laden** (schnell): `docker pull ghcr.io/pt9912/viper-machine:v0.27.0`, mit der Version, die `viper version` meldet. Bei Docker Compose können Sie das Laden `viper up` überlassen: Der Name in `COMPOSE_IMAGE` genügt. Das Image ist öffentlich und mehrere GB groß; das Image gibt es für **amd64 und arm64**, Docker wählt die passende Architektur. Der Name ist `ghcr.io/pt9912/viper-machine:v0.20.1`. Bei k3d (vorher `k3d cluster create viper`) lädt der Cluster das öffentliche Image beim ersten Start selbst, das dauert etwa eine halbe Minute; Sie müssen es nicht einspielen. **Jeder Knoten lädt es für sich**, auf dem ein Rechner läuft: Hat der Cluster mehrere Knoten, laden Sie es mehrmals aus dem Internet. Dann spielen Sie das geladene Image mit `k3d image import ghcr.io/pt9912/viper-machine:v0.20.1 -c viper` ein (kopiert es auf alle Knoten, ohne Download) oder nutzen eine gemeinsame Registry (unten).
+   * **Laden** (schnell): `docker pull ghcr.io/pt9912/viper-machine:v0.27.1`, mit der Version, die `viper version` meldet. Bei Docker Compose können Sie das Laden `viper up` überlassen: Der Name in `COMPOSE_IMAGE` genügt. Das Image ist öffentlich und mehrere GB groß; das Image gibt es für **amd64 und arm64**, Docker wählt die passende Architektur. Der Name ist `ghcr.io/pt9912/viper-machine:v0.20.1`. Bei k3d (vorher `k3d cluster create viper`) lädt der Cluster das öffentliche Image beim ersten Start selbst, das dauert etwa eine halbe Minute; Sie müssen es nicht einspielen. **Jeder Knoten lädt es für sich**, auf dem ein Rechner läuft: Hat der Cluster mehrere Knoten, laden Sie es mehrmals aus dem Internet. Dann spielen Sie das geladene Image mit `k3d image import ghcr.io/pt9912/viper-machine:v0.20.1 -c viper` ein (kopiert es auf alle Knoten, ohne Download) oder nutzen eine gemeinsame Registry (unten).
    * **Bauen:** `viper image build` (für k3d: erst `k3d cluster create viper`, dann `viper image build --k3d viper`). Das dauert beim ersten Mal einige Minuten. Die Ausgabe nennt den Namen des Images.
 2. **Einstellungen** in `machines/lokal.env.local` (die Zeile mit dem Image brauchen Sie nur für ein selbst gebautes oder anderes Image):
 
@@ -248,7 +248,7 @@ Löschen Sie Cluster oft oder haben Sie Cluster mit mehreren Knoten, lädt sonst
 PROVIDER=kubernetes
 DNS_PROVIDER=none
 SERVER_LOCATION=k3d-viper
-K8S_IMAGE=ghcr.io/pt9912/viper-machine:v0.27.0
+K8S_IMAGE=ghcr.io/pt9912/viper-machine:v0.27.1
 K3D_REGISTRY=viper-registry
 K3D_CLUSTER_CREATE=1
 K3D_AGENTS=2
@@ -1788,3 +1788,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.176 | nach v0.27.0 | `viper up` mit Docker Compose: Das Laden des Images (mehrere GB, Minuten) wirkte wie ein Stillstand, weil nichts mehr ausgegeben wurde. Jetzt meldet es alle 20 Sekunden, dass es weitergeht („still pulling the image … (1m20s)“); die übrigen Rechner einer Gruppe, die auf das Laden warten, sagen es auch („waiting for the pull of the image …“) und melden „The image is there now.“, wenn es da ist. |
 | 1.177 | nach v0.27.0 | Fehlerkorrektur `viper ui`: die Übersicht aktualisierte sich nicht mehr, solange ein Knopf der Tabelle (zum Beispiel eine Spaltenüberschrift oder „Prüfen“) den Fokus hatte; beim Hoch- und Runterfahren blieb der Zustand dann stehen. Jetzt baut sie sich neu auf und der Fokus bleibt auf dem Knopf; solange etwas läuft, fragt die Seite alle zwei Sekunden. |
 | 1.178 | nach v0.27.0 | `viper ui` nach einer Prüfung: der Fokus bleibt in der Zeile, in der er war, auch wenn ein Rechner in mehreren Gruppen steht, und geht bei einem ausgeschalteten Knopf auf den Namen des Rechners; ein laufendes „Prüfen“ lässt sich nicht ein zweites Mal starten, auch wenn die Tabelle neu gebaut wird; das Laden des Images meldet zuerst „is not on the Docker host“ und dann „Pulling it …“. |
+| 1.179 | v0.27.1 | Release v0.27.1: die Änderungen 1.173 bis 1.178 (Fehlerkorrekturen `viper ui`: die Übersicht aktualisierte sich nicht, solange ein Knopf der Tabelle den Fokus hatte; die Tabelle wird rechts nicht mehr abgeschnitten; ein Rechner in mehreren Gruppen zeigt das Hochfahren nur in der Gruppe des Laufs; neue Wörter des Zustands „gestartet“ und „angelegt“; `viper up` mit Docker Compose meldet beim Laden des Images, dass es weitergeht). |
