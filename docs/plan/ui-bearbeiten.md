@@ -21,7 +21,7 @@
 5. **Erhalten, was der Benutzer geschrieben hat.** Kommentare, Leerzeilen, die Reihenfolge und die Schreibweise der anderen Zeilen bleiben; geändert wird nur die Zeile der Einstellung (zeilenweise, kein Neuschreiben aus einer Tabelle).
 6. **Atomar und mit Sicherung.** Schreiben in eine Datei im selben Verzeichnis (`0600`), `fsync`, Umbenennen; die alte Datei bleibt als `<datei>.bak` (eine, die jüngste; `0600`). Eine neue Datei wird mit `O_EXCL` angelegt und überschreibt nie eine vorhandene.
 7. **Nichts unter einem Lauf ändern.** Hält ein Lauf den Rechner (oder bei einer Gruppe ein Mitglied), wird seine Datei nicht geschrieben (dieselbe Tabelle wie die der Läufe, `ui.md` §3).
-8. **Ausdrücklich einschalten.** Die Oberfläche schreibt Einstellungen nur mit `--edit`; ohne die Option (und mit `--readonly`) gibt es die Formulare nicht. *(Empfehlung, offen in §9: Zugriff mit dem geringsten Recht als Standard.)*
+8. **Ausdrücklich einschalten (entschieden).** Die Oberfläche schreibt Einstellungen nur mit `--edit`; ohne die Option (und mit `--readonly`, das stärker ist) gibt es die Formulare nicht, und die Schreib-Endpunkte antworten 403. Die Kopfzeile zeigt bei `--edit` „Bearbeiten an“.
 9. **Spur ohne Werte.** Jede Änderung steht im `events.log` („ui: machines/web.env.local: SERVER_TYPE geändert“, „… VIPER_GH_TOKEN gesetzt“), nie mit einem Wert.
 
 ## 3 Sicherheit (zusätzlich zu `ui.md` §3)
@@ -91,7 +91,7 @@ Siehe `ui-gestaltung.md` §7 (Formulare, Vorschau, Zugangsdatenfeld, Bestätigun
 
 ## 9 Offene Fragen und Risiken
 
-* **`--edit` oder Standard?** Empfehlung: aus, bis man es einschaltet (die Oberfläche kann dann Dateien mit Zugangsdaten schreiben). Ein Hinweis in der Kopfzeile der Seite („Bearbeiten ist an“) zeigt, dass es an ist.
+* **`--edit` (entschieden: ja):** Bearbeiten ist aus, bis man `--edit` angibt; ein Hinweis in der Kopfzeile zeigt, dass es an ist. Offen bleibt, ob `--edit` zusätzlich eine Bestätigung beim ersten Schreiben einer Sitzung braucht (Vorschlag: nein, die Vorschau ist die Bestätigung).
 * **Kommentare erhalten, mehrzeilige Werte, `export`:** Ein Wert über mehrere Zeilen (Anführungszeichen über Zeilenenden, etwa `VIPER_POST_CLONE`) wird in Stufe B **nicht** bearbeitet (nur angezeigt als „mehrzeilig, am Terminal ändern“), bis Meilenstein 0 sagt, dass es sicher geht.
 * **Umgebung schlägt Datei nicht, Datei schlägt Umgebung:** Wer eine Einstellung zugleich in der Umgebung hat, merkt es erst an dem Hinweis; die Oberfläche sieht nur die Umgebung ihres eigenen Prozesses.
 * **Datei in einem Git-Repository:** Liegt das Einstellungsverzeichnis in einem Repository (Standard dieses Projekts: `.env.local` steht in `.gitignore`), schreibt die Oberfläche trotzdem; sie prüft nicht, ob eine Datei eingecheckt würde. Die Warnung gegen Zugangsdaten in Git steht im Handbuch.
