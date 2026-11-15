@@ -28,3 +28,14 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go test ./...
+
+  # The same tests on macOS: the Unix tests run there too (signals, process groups, file modes) with the tools of BSD.
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go test ./...

@@ -14,6 +14,7 @@ function sse(parts: Array<[string, unknown]>): string {
 
 test('the NATS page shows the group, its machines and how viper nats will speak', async ({ page }) => {
   await page.goto(ui.start);
+  await expect(page.locator('#machines tbody tr')).toHaveCount(3); // the exchange page has moved on: routes are set on the page that stays
   await page.click('#tab-nats');
   await expect(page.locator('#nats-group')).toHaveValue('dev');
   await expect(page.locator('#nats-to option')).toHaveText(['a', 'b']);
@@ -23,6 +24,7 @@ test('the NATS page shows the group, its machines and how viper nats will speak'
 
 test('peers is a real run of viper nats; it ends with the exit status (no machine is up)', async ({ page }) => {
   await page.goto(ui.start);
+  await expect(page.locator('#machines tbody tr')).toHaveCount(3); // the exchange page has moved on: routes are set on the page that stays
   await page.click('#tab-nats');
   await page.fill('#nats-timeout', '3');
   await page.click('#nats-peers');
@@ -33,6 +35,7 @@ test('peers is a real run of viper nats; it ends with the exit status (no machin
 
 test('a message is sent by text and file: the file is handed over first, the text goes in the request', async ({ page, browserName }) => {
   await page.goto(ui.start);
+  await expect(page.locator('#machines tbody tr')).toHaveCount(3); // the exchange page has moved on: routes are set on the page that stays
   await page.click('#tab-nats');
   const seen: { run?: Record<string, unknown>; uploadUrl?: string; uploadBody?: string } = {};
   await page.route('**/api/upload?**', async (route) => {
@@ -65,6 +68,7 @@ test('a message is sent by text and file: the file is handed over first, the tex
 
 test('what listen shows is text; a file in a message offers Fetch, and a fetched file is a download', async ({ page }) => {
   await page.goto(ui.start);
+  await expect(page.locator('#machines tbody tr')).toHaveCount(3); // the exchange page has moved on: routes are set on the page that stays
   await page.click('#tab-nats');
   const bodies: Array<Record<string, unknown>> = [];
   let n = 0;
@@ -106,6 +110,7 @@ test('a group without an object store takes no file', async ({ page }) => {
   await ui.stop();
   ui = await startUI([], 30, false, { objects: false });
   await page.goto(ui.start);
+  await expect(page.locator('#machines tbody tr')).toHaveCount(3); // the exchange page has moved on: routes are set on the page that stays
   await page.click('#tab-nats');
   await expect(page.locator('#nats-file')).toBeDisabled();
   await expect(page.locator('#nats-nofile')).toBeVisible();
@@ -113,6 +118,7 @@ test('a group without an object store takes no file', async ({ page }) => {
 
 test('a request waits 30 seconds for its answer, and what was sent is not sent again by the next click', async ({ page }) => {
   await page.goto(ui.start);
+  await expect(page.locator('#machines tbody tr')).toHaveCount(3); // the exchange page has moved on: routes are set on the page that stays
   await page.click('#tab-nats');
   const bodies: Array<Record<string, unknown>> = [];
   await page.route('**/api/run', (route) => {
@@ -134,6 +140,7 @@ test('a request waits 30 seconds for its answer, and what was sent is not sent a
 
 test('a stream that the server refuses says that the session is gone', async ({ page }) => {
   await page.goto(ui.start);
+  await expect(page.locator('#machines tbody tr')).toHaveCount(3); // the exchange page has moved on: routes are set on the page that stays
   await page.route('**/api/run', (r) => r.fulfill({ contentType: 'application/json', body: '{"id":"gone"}' }));
   await page.route('**/api/runs', (r) => r.fulfill({ status: 403, contentType: 'text/plain', body: 'forbidden' }));
   await page.route('**/api/events?id=gone', (r) => r.fulfill({ status: 403, contentType: 'text/plain', body: 'forbidden' }));

@@ -102,7 +102,7 @@ cd e2e && npm install && npx playwright install chromium   # einmal
 npx playwright test                                         # baut viper selbst (oder VIPER_BIN=…)
 ```
 
-Auf einer Maschine, die `viper` für dieses Repository anlegt, richtet `.viper.sh` Node, Playwright und Chromium mit `VIPER_E2E=1` ein (sonst nicht; der Schritt braucht `sudo` für die Systembibliotheken).
+Auf einer Maschine, die `viper` für dieses Repository anlegt, richtet `.viper.sh` mit `VIPER_E2E=1` Node, Playwright und alle drei Browser ein, dazu Mesa (Software-GL, die ein Server ohne GPU für WebKit braucht); sonst nicht, und der Schritt braucht `sudo` für die Systembibliotheken. Playwright 1.65 kennt Ubuntu 26.04, das Standard-Image von `viper`; die ältere Version 1.55 verweigerte dort `--with-deps`.
 
 In einem Container ohne die Systembibliotheken von Chromium (`npx playwright install-deps`, braucht root) hilft `E2E_CONTAINER=1` (`--no-sandbox`, kein `/dev/shm`); ohne installierte Schriften stürzt Chromium beim ersten Text ab. Die Tests prüfen, was nur ein Browser zeigt: Cookie und Weiterleitung (der Start über die `file://`-Startdatei), CSP ohne Verstöße, `localhost` abgelehnt, eine Seite eines fremden Ursprungs, die nichts starten kann, Ausgaben als Text (kein Markup), Rückfrage mit Eingabefeld, Abbrechen und `--readonly`, Zugänglichkeit (axe-core: WCAG 2.1 AA in Hell und Dunkel, Englisch und Deutsch), Tastaturbedienung, Sprachwahl und die Seite „Settings“.
 

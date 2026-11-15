@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { startUI, UI } from '../fixture';
+import { canFakeOpener, startUI, UI } from '../fixture';
 
 let ui: UI;
 // the key works once: every test has a server of its own
@@ -93,7 +93,8 @@ test('a preflight runs as viper itself and ends with its exit status', async ({ 
 test('the start file that opens the browser leads to the page, and the key is not in the command line', async ({ page, browserName }) => {
   // Playwright's WebKit build does not follow any navigation from a file:// page to http:// (meta refresh, script or a click on a
   // link), also for a plain test page; not seen in a real Safari, and Jupyter uses the same start file. Not verified there.
-  test.skip(browserName === 'webkit', 'the WebKit build of Playwright does not leave a file:// page');
+  test.skip(browserName === 'webkit' && process.platform === 'linux', 'the WebKit build of Playwright for Linux does not leave a file:// page');
+  test.skip(!canFakeOpener, 'rundll32 (the opener on Windows) cannot be faked');
   await ui.stop();
   ui = await startUI([], 30, true);
   await page.goto(ui.start); // file://...start.html: a refresh to http://127.0.0.1:port/?t=key, then the redirect

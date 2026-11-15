@@ -28,10 +28,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium, firefox, webkit]
-    name: ${{ matrix.browser }}
-    runs-on: ubuntu-24.04 # a system that this Playwright supports (ubuntu-latest is newer)
-    timeout-minutes: 15
+        include:
+          # Linux: all three engines. macOS and Windows are there for what only they can show: the Interrupt of a run
+          # (SIGINT, CTRL_BREAK), paths and the program names of the system, and the real WebKit of Safari on macOS.
+          - { os: ubuntu-24.04, browser: chromium }
+          - { os: ubuntu-24.04, browser: firefox }
+          - { os: ubuntu-24.04, browser: webkit }
+          - { os: macos-latest, browser: chromium }
+          - { os: macos-latest, browser: webkit }
+          - { os: windows-latest, browser: chromium }
+    name: ${{ matrix.os }} ${{ matrix.browser }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: e2e
@@ -53,6 +61,6 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: playwright-traces-${{ matrix.browser }}
+          name: playwright-traces-${{ matrix.os }}-${{ matrix.browser }}
           path: e2e/test-results
           retention-days: 7
