@@ -173,3 +173,6 @@ button.namebtn:hover { text-decoration-style: solid; }
 .ledger li > button:first-child { flex: 1; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .ledger li > button.quiet { width: auto; flex: none; font: 500 .8rem var(--sans); }
 .runlist > p { margin: 0 0 .5rem; }
+
+/* the area for listening on the page of NATS */
+pre.listen { min-height: 8rem; max-height: 24rem; overflow: auto; background: var(--term-bg); color: var(--term-fg); border: 1px solid var(--term-line); border-radius: 8px; padding: .6rem .8rem; font: .88rem var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }

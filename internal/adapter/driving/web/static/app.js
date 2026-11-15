@@ -423,6 +423,7 @@
     $('nats-file-clear').disabled = noFile;
     $('nats-nofile').hidden = !g || off || g.file_max > 0;
     if (!off) { natsKindChanged(); }
+    listenState(!!listenId);
   }
 
   function natsGroupChanged() {
@@ -620,12 +621,12 @@
     return { text, fetch: e.att_id ? { id: e.att_id, sha: e.att_sha256 || '' } : null };
   }
 
-  let natsCarry = '';
+  const runView = { carry: '' }; // the unfinished line of what the terminal of the runs shows
 
-  function showNatsOutput(out, text, last) {
-    natsCarry += text;
-    const lines = natsCarry.split('\n');
-    natsCarry = last ? '' : lines.pop(); // at the end of the run the last line is shown too
+  function showNatsOutput(out, text, last, view = runView) {
+    view.carry += text;
+    const lines = view.carry.split('\n');
+    view.carry = last ? '' : lines.pop(); // at the end of the run the last line is shown too
     for (const line of lines) {
       if (line === '') { continue; }
       if (!line.startsWith('{')) { out.appendChild(document.createTextNode(line + '\n')); continue; }
@@ -636,6 +637,81 @@
         out.appendChild(document.createTextNode('\n'));
       }
     }
+  }
+
+  // ---- listen: its own area on the page of NATS; the run is one of the server like any other (it is in the list of the runs as well) ----
+  const listenView = { carry: '' };
+  let listenSource = null;
+  let listenId = '';
+  let listenGroup = '';
+
+  function listenState(on) {
+    $('nats-listen').disabled = on || !!overview.readonly || !natsGroup();
+    $('nats-listen-stop').disabled = !on;
+  }
+
+  function listenEnd(text) {
+    if (listenSource) { listenSource.close(); listenSource = null; }
+    listenId = '';
+    listenState(false);
+    $('nats-listen-status').textContent = text;
+  }
+
+  // follow a listen run: what it prints goes into the area, a line at a time
+  function listenAttach(id, group) {
+    if (listenSource) { listenSource.close(); }
+    listenId = id;
+    listenGroup = group;
+    listenView.carry = '';
+    listenState(true);
+    $('nats-listen-status').textContent = t('listen.on', group);
+    const out = $('nats-listen-out');
+    listenSource = new EventSource('/api/events?id=' + encodeURIComponent(id));
+    listenSource.onerror = () => { if (listenSource && listenSource.readyState === EventSource.CLOSED) { api('/api/runs').catch(() => {}); } };
+    listenSource.addEventListener('out', (ev) => {
+      const e = JSON.parse(ev.data);
+      const atEnd = out.scrollTop + out.clientHeight >= out.scrollHeight - 24; // a person who reads back is not pulled down
+      showNatsOutput(out, e.text, false, listenView);
+      while (out.childNodes.length > 2000) { out.removeChild(out.firstChild); }
+      if (atEnd) { out.scrollTop = out.scrollHeight; }
+    });
+    listenSource.addEventListener('state', (ev) => {
+      const st = JSON.parse(ev.data);
+      if (st.state !== 'done') { return; }
+      showNatsOutput(out, '', true, listenView);
+      listenEnd(st.code === 0 || st.code === 130 ? t('listen.ended') : t('listen.failed', st.code));
+      loadRuns();
+    });
+  }
+
+  async function listenStart() {
+    const g = natsGroup();
+    if (!g || listenId) { return; }
+    const req = { action: 'nats', nats: g.name, sub: 'listen', topic: $('nats-listen-topic').value.trim(), all: $('nats-listen-all').checked };
+    if ($('nats-from').value) { req.from = $('nats-from').value; }
+    $('nats-listen-status').textContent = '';
+    try {
+      const r = await api('/api/run', req);
+      listenAttach(r.id, g.name);
+      loadRuns();
+    } catch (e) {
+      $('nats-listen-status').textContent = t('run.notstarted', e.message);
+    }
+  }
+
+  async function listenStop() {
+    if (!listenId) { return; }
+    $('nats-listen-stop').disabled = true;
+    $('nats-listen-status').textContent = t('listen.ending');
+    try { await api('/api/cancel', { id: listenId }); } catch (e) { $('nats-listen-status').textContent = e.message; }
+  }
+
+  // a page that was opened or loaded again finds a listen run that is still going and follows it
+  function listenFind() {
+    if (listenId) { return; }
+    const g = natsGroup();
+    const run = runs.find((r) => r.action === 'nats' && r.sub === 'listen' && r.state !== 'done' && (!g || r.nats === g.name));
+    if (run) { listenAttach(run.id, run.nats); }
   }
 
   // ---- runs: viper itself, started by the server; the page attaches to its output ----
@@ -672,6 +748,7 @@
     let r;
     try { r = await api('/api/runs'); } catch (e) { return; }
     runs = r.runs;
+    listenFind();
     // a run in progress: the tab says so (the one thing on the page that moves)
     $('tab-runs').dataset.busy = String(runs.some((x) => x.state === 'running' || x.state === 'waiting' || x.state === 'cancelling'));
     const ul = $('run-list');
@@ -714,7 +791,7 @@
     source = new EventSource('/api/events?id=' + encodeURIComponent(id));
     // a stream that the server refuses (the session is gone) closes for good: ask once more, as the page does everywhere, so that the banner says why
     source.onerror = () => { if (source && source.readyState === EventSource.CLOSED) { api('/api/runs').catch(() => {}); } };
-    natsCarry = '';
+    runView.carry = '';
     $('run-download').hidden = true;
     const info = runs.find((r) => r.id === id) || {};
     const action = info.action;
@@ -774,7 +851,7 @@
       $('tab-' + p).tabIndex = on ? 0 : -1;
     }
     if (name === 'logs') { loadLog(); }
-    if (name === 'runs') { loadRuns(); }
+    if (name === 'runs' || name === 'nats') { loadRuns(); } // the page of NATS follows a listen run that is going
     if (name === 'settings') { loadSettings(); }
     if (name === 'create' || name === 'secrets' || name === 'change') { loadTemplates(); }
     if (name === 'change') { loadBackups(); }
@@ -1459,7 +1536,9 @@
   $('nats-kind').addEventListener('change', natsKindChanged);
   $('nats-peers').addEventListener('click', () => natsRun({ sub: 'peers', timeout: Number($('nats-timeout').value) || 5 }));
   $('nats-topics').addEventListener('click', () => natsRun({ sub: 'topics', timeout: Number($('nats-timeout').value) || 5 }));
-  $('nats-listen').addEventListener('click', () => natsRun({ sub: 'listen', topic: $('nats-listen-topic').value.trim(), all: $('nats-listen-all').checked }));
+  $('nats-listen').addEventListener('click', listenStart);
+  $('nats-listen-stop').addEventListener('click', listenStop);
+  $('nats-listen-clear').addEventListener('click', () => { $('nats-listen-out').textContent = ''; listenView.carry = ''; $('nats-listen-out').focus(); });
   $('nats-init').addEventListener('click', natsInit);
   $('nats-revoke').addEventListener('click', natsRevoke);
   $('nats-revoke').addEventListener('blur', disarmRevoke);

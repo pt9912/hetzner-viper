@@ -119,13 +119,17 @@
         <button type="button" id="nats-peers" data-i18n="nats.peers">Peers</button>
         <button type="button" id="nats-topics" data-i18n="nats.topics">Topics</button>
       </div>
-      <h3 data-i18n="h.listen">Listen</h3>
+      <h3 id="h-listen" data-i18n="h.listen">Listen</h3>
       <div class="row">
         <label for="nats-listen-topic" data-i18n="listen.topics">Topics (optional, with commas)</label>
         <input type="text" id="nats-listen-topic" autocomplete="off" size="24">
         <label><input type="checkbox" id="nats-listen-all"> <span data-i18n="listen.all">everything of the group</span></label>
         <button type="button" id="nats-listen" data-i18n="nats.listen">Listen</button>
+        <button type="button" id="nats-listen-stop" class="danger" disabled data-i18n="listen.stop">Stop</button>
+        <button type="button" id="nats-listen-clear" class="quiet" data-i18n="listen.clear">Clear</button>
       </div>
+      <p id="nats-listen-status" role="status" class="muted"></p>
+      <pre id="nats-listen-out" class="listen" role="region" tabindex="0" aria-labelledby="h-listen" aria-live="off"></pre>
       <h3 data-i18n="h.send">Send</h3>
       <form id="nats-send" class="column drop">
         <p id="nats-drop-hint" class="muted" data-i18n="nats.drop">Drop a file here or paste with Ctrl+V.</p>

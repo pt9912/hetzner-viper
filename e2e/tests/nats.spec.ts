@@ -84,17 +84,53 @@ test('what listen shows is text; a file in a message offers Fetch, and a fetched
   await page.route('**/api/events?id=fet', (r) => r.fulfill({ contentType: 'text/event-stream', body: sse([['out', { seq: 0, text: '{"event":"fetched","text":"/tmp/x/p.pdf"}\n' }], ['state', { state: 'done', code: 0 }]]) }));
   await page.fill('#nats-listen-topic', 'build');
   await page.click('#nats-listen');
-  await expect(page.locator('#run-output')).toContainText('a -> b: <img src=x onerror=window.pwned=1> [file p.pdf, pdf, 5 bytes]');
-  await expect(page.locator('#run-output img')).toHaveCount(0);
+  // the messages are in the area of the page of NATS, which stays the page
+  await expect(page.locator('#page-nats')).toBeVisible();
+  await expect(page.locator('#nats-listen-out')).toContainText('a -> b: <img src=x onerror=window.pwned=1> [file p.pdf, pdf, 5 bytes]');
+  await expect(page.locator('#nats-listen-out img')).toHaveCount(0);
+  await expect(page.locator('#nats-listen-status')).toContainText('Listening to the group dev');
+  await expect(page.locator('#nats-listen-stop')).toBeEnabled();
+  await expect(page.locator('#nats-listen')).toBeDisabled();
   expect(await page.evaluate(() => (window as unknown as { pwned?: number }).pwned)).toBeUndefined();
   expect(bodies[0]).toMatchObject({ sub: 'listen', topic: 'build', nats: 'dev' });
-  await page.click('#run-output button');
+  await page.click('#nats-listen-out button');
   await expect(page.locator('#nats-id')).toHaveValue('obj_9');
   await expect(page.locator('#nats-sha')).toHaveValue(sha);
   await page.click('#nats-fetch button[type=submit]');
   expect(bodies[1]).toMatchObject({ sub: 'fetch', id: 'obj_9', sha256: sha });
   await expect(page.locator('#run-download')).toBeVisible();
   await expect(page.locator('#run-download-link')).toHaveAttribute('href', '/api/download?id=fet');
+});
+
+test('listening has an area of its own: start, stop, clear, and a page that is opened again follows the run that goes on', async ({ page }) => {
+  await page.goto(ui.start);
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3);
+  let cancelled = false;
+  const cancels: Array<Record<string, unknown>> = [];
+  const msg = (text: string) => JSON.stringify({ event: 'message', via: 'out', from: 'a', to: 'b', text }) + '\n';
+  await page.route('**/api/runs', (r) => r.fulfill({ contentType: 'application/json', body: '{"runs":[{"id":"lis","action":"nats","sub":"listen","nats":"dev","state":"' + (cancelled ? 'done' : 'running') + '","code":0}]}' }));
+  await page.route('**/api/events?id=lis', (r) => r.fulfill({
+    contentType: 'text/event-stream',
+    body: cancelled ? sse([['out', { seq: 1, text: msg('after') }], ['state', { state: 'done', code: 130 }]]) : sse([['out', { seq: 0, text: msg('first') }], ['state', { state: 'running', code: 0 }]]),
+  }));
+  await page.route('**/api/cancel', (r) => { cancels.push(r.request().postDataJSON()); cancelled = true; r.fulfill({ contentType: 'application/json', body: '{"ok":true}' }); });
+  // a listen run that is going when the page of NATS is opened: the area follows it, without the person pressing anything
+  await page.click('#tab-nats');
+  await expect(page.locator('#nats-listen-out')).toContainText('a -> b: first');
+  await expect(page.locator('#nats-listen-status')).toContainText('Listening to the group dev');
+  await expect(page.locator('#nats-listen')).toBeDisabled();
+  await expect(page.locator('#nats-listen-stop')).toBeEnabled();
+  // clear
+  await page.click('#nats-listen-clear');
+  await expect(page.locator('#nats-listen-out')).toHaveText('');
+  // stop: viper nats is ended like Ctrl-C, and the area says so
+  await page.click('#nats-listen-stop');
+  await expect.poll(() => cancels.length).toBe(1);
+  expect(cancels[0]).toEqual({ id: 'lis' });
+  await expect(page.locator('#nats-listen-status')).toContainText('Stopped listening');
+  await expect(page.locator('#nats-listen')).toBeEnabled();
+  await expect(page.locator('#nats-listen-stop')).toBeDisabled();
+  await expect(page.locator('#page-nats')).toBeVisible();
 });
 
 test('read only: the page cannot hand over a file', async () => {
