@@ -2,7 +2,7 @@
 
 Version: 1.160  
 Software-Version: v0.25.0  
-Stand: 14.11.2026  
+Stand: 15.11.2026  
 
 ## 1. Einleitung
 
