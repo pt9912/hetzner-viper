@@ -89,7 +89,7 @@ func helpsMachines() map[string]commandDoc {
 			about:   "Creates the machine, sets up the DNS name and the work directory, installs the tools, logs in GitHub and Claude Code, clones the repository and opens VS Code. A machine that exists is used again. With --group all machines of a group are set up at the same time (the server of a NATS group first).",
 			options: []optionDoc{
 				{"repo", "URL", "the repository to clone (default: REPO_URL of the settings)"},
-				{"no-code", "", "do not open VS Code"},
+				{"no-code", "", "do not open VS Code (a group opens none: for --group this is the default)"},
 				optGroup(), optInGroup(), optParallel(),
 			},
 			examples: []string{"viper up web", "viper up web --repo git@github.com:me/app.git --no-code", "viper up --group dev"},

@@ -80,7 +80,7 @@ func commands() map[string]command {
 	return map[string]command{
 		"setup":        {usage: "", machine: noMachine, run: nativeSetup},
 		"preflight":    {usage: "<machine> [--in-group G] [--repo URL] | --group G [--repo URL] [--parallel N]", machine: needMachine, flags: []string{"repo", "group", "in-group", "parallel"}, run: nativePreflight},
-		"up":           {usage: "<machine> [--in-group G] [--repo URL] [--no-code] | --group G [--repo URL] [--parallel N]", machine: needMachine, flags: []string{"repo", "no-code", "group", "in-group", "parallel"}, run: nativeUp},
+		"up":           {usage: "<machine> [--in-group G] [--repo URL] [--no-code] | --group G [--repo URL] [--no-code] [--parallel N]", machine: needMachine, flags: []string{"repo", "no-code", "group", "in-group", "parallel"}, run: nativeUp},
 		"check":        {usage: "<machine> [--in-group G] | --group G [--parallel N]", machine: needMachine, flags: []string{"group", "in-group", "parallel"}, run: nativeCheck},
 		"ssh":          {usage: "<machine> [--in-group G] [--cmd COMMAND | --tmux] | --group G --cmd COMMAND [--parallel N]", machine: needMachine, flags: []string{"cmd", "tmux", "group", "in-group", "parallel"}, run: nativeSSH},
 		"down":         {usage: "<machine> [--in-group G] [--force] [--delete-registry|--keep-registry] | --group G [--force] [--delete-registry|--keep-registry] [--parallel N]", machine: needMachine, flags: []string{"force", "group", "in-group", "parallel", "delete-registry", "keep-registry"}, run: nativeDown},

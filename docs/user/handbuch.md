@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.164  
+Version: 1.165  
 Software-Version: v0.26.0  
 Stand: 15.11.2026  
 
@@ -412,7 +412,7 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
 3. **Aktionen:** **Vorprüfung**, **Up** und **Down** je Rechner und je Gruppe starten `viper preflight`, `viper up` und `viper down` als eigenen Prozess. Das Feld „Repository-URL“ gilt für Up und Vorprüfung (`--repo`; eine URL mit Zugangsdaten lehnt die Oberfläche ab). Die Seite **Läufe** zeigt die Ausgabe, solange der Lauf geht. Ein neuer Tab findet laufende Läufe wieder, und das Schließen eines Tabs beendet nichts.
 4. **Rückfragen:** Fragt `viper` etwas (zum Beispiel „Type DELETE to continue“), erscheint unter der Ausgabe ein Eingabefeld. Sie tippen das Wort selbst; es gibt keinen Knopf, der für Sie bestätigt.
 5. **Abbrechen:** Der Knopf wirkt wie Strg-C am Terminal: `viper` bricht ab und räumt auf, was es kann. Es macht nichts rückgängig; ein halb angelegter Server kann bleiben. Das Beenden kann einige Sekunden dauern („Wird beendet …“); nach 20 Sekunden beendet die Oberfläche den Prozess hart.
-   **Läufe entfernen:** Die Liste der Läufe zeigt die laufenden und bis zu 20 beendete. Mit **Entfernen** an einer beendeten Zeile oder **Beendete Läufe entfernen** nehmen Sie sie aus der Liste (mit ihrer Ausgabe; die Protokolle und `events.log` bleiben); ein laufender Lauf bleibt und wird erst nach dem Abbrechen entfernt. Entfernen ist auch mit `--readonly` möglich.
+   **Läufe entfernen:** Die Liste der Läufe zeigt die laufenden und bis zu 20 beendete. Mit **Entfernen** an einer beendeten Zeile oder **Beendete Läufe entfernen** (alle beendeten, auch die, die eine zweite offene Seite zeigt) nehmen Sie sie aus der Liste (mit ihrer Ausgabe; die Protokolle und `events.log` bleiben); ein laufender Lauf bleibt und wird erst nach dem Abbrechen entfernt. Entfernen ist auch mit `--readonly` möglich.
 6. **NATS:** Die Seite zeigt die Gruppen aus `groups/*.env`, deren Rechner `NATS_ENABLED=true` haben. Die Zeile darunter sagt, wie `viper nats` spricht: **als Betreiber**, wenn dieser Computer den Schlüssel der Gruppe hat (`viper nats init <gruppe>`), sonst **als Rechner der Gruppe** über ssh („Sprechen als“ wählt den Rechner). Jede Schaltfläche startet `viper nats …` als Lauf:
     * **Als Betreiber anmelden** (`viper nats init <gruppe>`; nur sichtbar, solange dieser Computer keinen Schlüssel hat): legt den Schlüssel des Betreibers auf diesem Computer an und meldet den Betreiber am NATS-Server der Gruppe an (über einen SSH-Tunnel; der Server der Gruppe muss laufen). Danach sendet `viper nats` als Betreiber. Der Betreiber kann alles in der Gruppe lesen, und die Agenten sehen ihn als Absender. **Betreiber abmelden** (`viper nats revoke <gruppe>`; sichtbar, solange der Schlüssel da ist) entfernt ihn am Server und löscht den Schlüssel; der Knopf fragt vorher ein zweites Mal.
     * **Peers** und **Themen**: wer da ist und welche Themen die Rechner abonniert haben. „Warten (Sekunden)“ ist die Zeit, die `viper nats` auf Antworten wartet.
@@ -1774,3 +1774,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.162 | nach v0.26.0 | `viper ui`: der Name eines Rechners oder einer Gruppe in der Übersicht führt zu seinen Einstellungen (Seite „Einstellungen“, mit `--edit` die Seite „Ändern“); die Seite „Einstellungen“ bricht bei einer leeren Datei nicht mehr ab (sie zeigte danach keine weitere Datei); die Seiten dürfen zusammen 175 KB groß sein. |
 | 1.163 | nach v0.26.0 | Fehlerkorrektur: **Up für eine Gruppe in der Oberfläche** schlug immer fehl (die Oberfläche hängte `--no-code` an, `viper up --group` lehnte es ab); `viper up --group … --no-code` ist jetzt erlaubt (für eine Gruppe ist es ohnehin der Standard), und die Oberfläche hängt es für Gruppen nicht mehr an. |
 | 1.164 | nach v0.26.0 | `viper ui`: beendete Läufe lassen sich auf der Seite „Läufe“ entfernen, einzeln (Knopf „Entfernen“ an der Zeile) oder alle auf einmal („Beendete Läufe entfernen“); ein laufender Lauf bleibt. |
+| 1.165 | nach v0.26.0 | `viper up --group … --no-code` steht in der Hilfe; die Notiz „keine eigene Datei“ und die Auswahl einer Datei bleiben nicht für spätere Besuche stehen; das Entfernen eines Laufs, den eine andere Seite schon entfernt hat, lädt die Liste neu. |

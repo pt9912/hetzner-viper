@@ -690,7 +690,7 @@
 
   // finished runs leave the list (one, or all): what is shown of one of them goes with it
   async function removeRuns(id) {
-    try { await api('/api/runs/remove', { id }); } catch (e) { $('run-status').textContent = e.message; return; }
+    try { await api('/api/runs/remove', { id }); } catch (e) { $('run-status').textContent = e.message; await loadRuns(); return; } // the list is as the server has it, also when another page was quicker
     await loadRuns();
     if (current && !runs.some((r) => r.id === current)) {
       if (source) { source.close(); source = null; }
@@ -765,6 +765,8 @@
   // ---- pages and tabs: a tablist with arrow keys, as the pattern says ----
   function show(name) {
     page = name;
+    $('settings-note').textContent = ''; // a note of an earlier click on a name is of that click
+    if (name !== 'settings' && name !== 'change') { pendingFile = ''; }
     for (const p of PAGES) {
       const on = p === name;
       $('page-' + p).hidden = !on;
@@ -1176,7 +1178,8 @@
     $('ch-preview').disabled = templates.files.length === 0;
     if (templates.files.length === 0) { $('ch-status').textContent = t('change.nofile'); }
     loadRows();
-    if (asked) { pendingFile = ''; sel.focus(); }
+    if (page === 'change') { pendingFile = ''; } // asked for or not there: it is not kept for a later visit
+    if (asked) { sel.focus(); }
   }
 
   let rowsSeq = 0;
