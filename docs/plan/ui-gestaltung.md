@@ -48,11 +48,11 @@ Keine Webschriften: Die Content-Security-Policy erlaubt nur eigene Dateien, und 
 ```
 ┌ ▮ viper                       v0.25.0                    Sprache ▾ ┐
 ├───────────────┬────────────────────────────────────────────────────┤
-│ ▌Übersicht    │  Rechner                                            │
-│  Läufe  ●     │  ┃●  web       hetzner  cpx22  fsn1  eingerichtet  [Prüfen] Vorprüfung Up  Down │
-│  NATS         │  ┃○  a  dev    compose  …            nicht gestartet [Up] … │
-│  Einstellungen│  Gruppen …                                           │
-│  Protokolle   │  Prüfung  (Ausgabe)                                  │
+│ ▌Übersicht    │  Gruppe dev      [Vorprüfung] [Up] [Down]    ← die Aktionen der Gruppe │
+│  Läufe  ●     │  ┃●  a   dev   compose  …  eingerichtet  [Prüfen] Vorprüfung Up  Down  │
+│  NATS         │  ┃○  b   dev   compose  …  nicht gestartet [Up] …                   │
+│  Einstellungen│  Ohne Gruppe                                         │
+│  Protokolle   │  ┃●  web       hetzner  cpx22  fsn1  eingerichtet  [Prüfen] …        │
 └───────────────┴────────────────────────────────────────────────────┘
 
  Läufe:  ┌ Liste der Läufe ┐ ┌ Terminal ───────────────────────────────┐
@@ -63,6 +63,7 @@ Keine Webschriften: Die Content-Security-Policy erlaubt nur eigene Dateien, und 
                              └──────────────────────────────────────────┘
 ```
 
+* **Die Übersicht ist nach Gruppen gegliedert, Gruppen zuerst.** Eine Gruppe ist ein Rack: eine Kopfzeile mit dem Namen und den Aktionen der Gruppe, darunter ihre Rechner als Einheiten. Rechner ohne Gruppe stehen zuletzt unter „Ohne Gruppe“. Das spart die zweite Tabelle (die Spalte „Gruppe“ entfällt) und zeigt, was die Gruppenaktion trifft; ein Rechner in mehreren Gruppen steht unter jeder, wie bisher je Zeile. Fehlerhafte Gruppen (unlesbare Einstellungen) stehen oben mit ihrer Meldung. Die Tabellen behalten ihre Kopfzeilen für Screenreader; die Namen der Knöpfe („Up web“, „Up group dev“) bleiben.
 * **Linke Leiste** statt Reiter oben: fünf Seiten, linksbündig, die gewählte mit Rand und Fläche. Ein **Lauf in Arbeit** zeigt einen atmenden Punkt hinter „Läufe“: die einzige Bewegung der Seite, die ohne Zutun des Nutzers läuft.
 * **Unter 52 rem Breite:** die Leiste wird zur Leiste oben (waagerecht, scrollbar), die Läufe stehen untereinander.
 * **Knöpfe nach Gewicht:** Die wahrscheinlich nächste Aktion ist gefüllt (nicht gestartet: **Up**; eingerichtet: **Prüfen**), die übrigen sind ruhig, **Down** und **Abbrechen** sind backsteinfarben. Die Namen für Screenreader bleiben („Up web“).
@@ -88,7 +89,7 @@ Der erste Entwurf wurde gegen die Muster geprüft, die jede erzeugte Oberfläche
 ## 6 Schritte
 
 1. **Rahmen:** linke Leiste, Kopfzeile, neue Farben und Schrift (`style.css`, `index.html`). *(begonnen)*
-2. **Übersicht:** Rack-Zeilen mit Streifen, Lampe und Wort; Knöpfe nach Gewicht (`app.js`: Klassen je Zustand).
+2. **Übersicht:** nach Gruppen gegliedert (Gruppen zuerst, dann „Ohne Gruppe“); Rack-Zeilen mit Streifen, Lampe und Wort; Knöpfe nach Gewicht (`app.js`: Klassen je Zustand).
 3. **Läufe:** Liste und Terminal nebeneinander, Rückfrage als Zeile des Terminals, Zähler/Punkt für laufende Läufe.
 4. **NATS, Einstellungen, Protokolle:** Formulare und Tabellen in der neuen Gestalt; Ablegefläche für Dateien.
 5. **Prüfen:** axe hell und dunkel, Englisch und Deutsch; Tastatur; schmale Breite; Bildschirmfotos ansehen und eine Sache streichen, die nicht dient.
