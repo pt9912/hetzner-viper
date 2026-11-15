@@ -1293,6 +1293,38 @@
     } catch (e) { ul.textContent = ''; }
   }
 
+  // ---- keeping up with the files: while the page is seen it asks for a short stamp every few seconds (and when it is seen again),
+  // and when the stamp differs it loads what it shows anew; a preview that waits for "apply" is out of date then ----
+  let stamp = '';
+  const pollEvery = 5000;
+
+  function staleStatus() {
+    if (changePreview || restoring) { changePreview = ''; restoring = null; $('ch-apply').disabled = true; $('ch-restore-go').hidden = true; $('ch-status').textContent = t('stale'); }
+    if (previewed) { previewed = ''; $('c-apply').disabled = true; $('c-status').textContent = t('stale'); }
+    if (secretPreview) { secretPreview = ''; secretEtag = ''; $('s-apply').disabled = true; $('s-status').textContent = t('stale'); }
+  }
+
+  async function refreshPages() {
+    await load();
+    if (['create', 'secrets', 'change'].includes(page)) { await loadTemplates(); }
+    if (page === 'change') { loadBackups(); }
+    if (page === 'settings') { loadSettings(); }
+  }
+
+  async function poll() {
+    if (document.hidden) { return; }
+    try {
+      const r = await api('/api/stamp');
+      const changed = stamp !== '' && r.stamp !== stamp;
+      stamp = r.stamp;
+      if (changed) { staleStatus(); await refreshPages(); }
+    } catch (e) { /* a lost session is said by the banner of api(); a poll that fails says nothing */ }
+  }
+
+  document.addEventListener('visibilitychange', poll);
+  window.addEventListener('focus', poll);
+  setInterval(poll, pollEvery);
+
   function translate() {
     window.viperI18n.apply();
     $('lang').value = window.viperI18n.lang();
@@ -1337,5 +1369,5 @@
   dropSetup();
   window.viperI18n.apply();
   $('lang').value = window.viperI18n.lang();
-  load();
+  load().then(poll); // the first stamp is the state the page starts from
 })();

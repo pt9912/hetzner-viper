@@ -286,3 +286,33 @@ func TestTheLinesOfAValueOverSeveralLinesAreNoSettings(t *testing.T) {
 		t.Errorf("%v: the lines inside a value are no settings, and what follows the value is", keys)
 	}
 }
+
+func TestTheStampOfTheDirectoryChangesWithTheFiles(t *testing.T) {
+	env, _ := nativeEnv(t)
+	dir := t.TempDir()
+	write(t, dir, ".env.local", "SERVER_PREFIX=ui\n")
+	b, _ := cli.UIBackend(&cli.Opts{Host: testHost(), Dir: dir}, env)
+	st := func() string {
+		s, err := b.Stamp(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	a := st()
+	if a != st() {
+		t.Error("an unchanged directory has another stamp")
+	}
+	write(t, dir, "machines/new.env.local", "")
+	c := st()
+	if c == a {
+		t.Error("a new file does not change the stamp")
+	}
+	write(t, dir, "machines/new.env.local", "PROVIDER=compose\n")
+	if st() == c {
+		t.Error("a changed file does not change the stamp")
+	}
+	if strings.Contains(a, dir) {
+		t.Error("the stamp names the directory")
+	}
+}

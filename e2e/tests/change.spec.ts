@@ -135,6 +135,30 @@ test('commands over several lines are written, read back into the form, and take
   await expect.poll(() => fs.readFileSync(web(), 'utf8')).toBe('');
 });
 
+test('a file changed at the terminal shows up by itself, and a preview that waits is out of date', async ({ page }) => {
+  test.setTimeout(90_000);
+  ui = await startUI(['--edit'], 0);
+  await open(page);
+  // the overview learns of a new machine without a reload
+  await page.click('#tab-overview');
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3);
+  fs.writeFileSync(path.join(ui.work, 'machines', 'late.env.local'), 'PROVIDER=compose\nSERVER_LOCATION=default\nCOMPOSE_IMAGE=x:1\n');
+  await expect(page.locator('#machines tr.unit')).toHaveCount(4, { timeout: 20_000 });
+  // a preview waits for "apply"; the file changes under it
+  await page.click('#tab-change');
+  await page.selectOption('#ch-file', 'machines/web.env.local');
+  await page.selectOption('#ch-name', 'SERVER_TYPE');
+  await page.fill('#ch-value', '2x4');
+  await page.click('#ch-preview');
+  await expect(page.locator('#ch-apply')).toBeEnabled();
+  fs.appendFileSync(web(), '# changed at the terminal\n');
+  await expect(page.locator('#ch-status')).toContainText('The files changed since the preview', { timeout: 20_000 });
+  await expect(page.locator('#ch-apply')).toBeDisabled();
+  // and the page offers the new file where the files are listed
+  await expect(page.locator('#ch-file option', { hasText: 'machines/late.env.local' })).toHaveCount(1);
+  expect(fs.readFileSync(web(), 'utf8')).not.toContain('SERVER_TYPE');
+});
+
 test('the help of a setting is in the language of the page', async ({ browser }) => {
   ui = await startUI(['--edit'], 0);
   const ctx = await browser.newContext({ locale: 'de' });

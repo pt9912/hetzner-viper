@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -350,4 +352,23 @@ func uiConfig(o *options, b *uiBackend, secrets *secretValues) web.Config {
 		cfg.Editor = &uiEditor{b: b}
 	}
 	return cfg
+}
+
+// Stamp is a short text that changes when a settings file of the directory is made, changed or removed (its size and time), so that
+// the pages can load again. It reads no content.
+func (b *uiBackend) Stamp(context.Context) (string, error) {
+	h := sha256.New()
+	dir := b.dir()
+	files := []string{filepath.Join(dir, ".env.local")}
+	for _, d := range []struct{ dir, suffix string }{{"machines", ".env.local"}, {"groups", ".env"}} {
+		for _, n := range listNames(filepath.Join(dir, d.dir), d.suffix) {
+			files = append(files, filepath.Join(dir, d.dir, n+d.suffix))
+		}
+	}
+	for _, f := range files {
+		if st, err := os.Lstat(f); err == nil {
+			fmt.Fprintf(h, "%s %d %d\n", f, st.Size(), st.ModTime().UnixNano())
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16], nil
 }

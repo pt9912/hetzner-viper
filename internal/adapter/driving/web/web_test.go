@@ -474,3 +474,50 @@ func TestTheTwoLanguagesHaveTheSameKeysAndThePageAsksForNoOther(t *testing.T) {
 		}
 	}
 }
+
+type stamping struct {
+	*fake
+	stamp string
+}
+
+func (s *stamping) Stamp(context.Context) (string, error) { return s.stamp, nil }
+
+func TestTheStampChangesWhenTheOverviewOrTheBackendStampDoes(t *testing.T) {
+	f := &stamping{fake: newFake(), stamp: "a"}
+	s, h := started(t, f.fake, nil) // a backend without a stamp: the overview alone
+	c := login(t, s, h)
+	get := func(h http.Handler, s *web.Server, c map[string]string) string {
+		w := do(h, "GET", s.Host(), "/api/stamp", c, "")
+		if w.Code != 200 {
+			t.Fatalf("%d %s", w.Code, w.Body)
+		}
+		return w.Body.String()
+	}
+	first := get(h, s, c)
+	if first != get(h, s, c) {
+		t.Error("the stamp of an unchanged overview changed")
+	}
+	f.overview.Machines = append(f.overview.Machines, web.Machine{Name: "new"})
+	time.Sleep(1100 * time.Millisecond) // the overview is kept for a second
+	if get(h, s, c) == first {
+		t.Error("a new machine does not change the stamp")
+	}
+	// a backend with a stamp of its own
+	cfg := web.Config{Backend: f, Version: "vtest"}
+	s2 := web.New(cfg)
+	ln, err := s2.Listen(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	h2 := s2.Handler()
+	c2 := login(t, s2, h2)
+	a := get(h2, s2, c2)
+	f.stamp = "b"
+	if get(h2, s2, c2) == a {
+		t.Error("the stamp of the backend (the files) does not change the stamp")
+	}
+	if w := do(h2, "GET", s2.Host(), "/api/stamp", nil, ""); w.Code != http.StatusForbidden {
+		t.Errorf("without the cookie: %d", w.Code)
+	}
+}

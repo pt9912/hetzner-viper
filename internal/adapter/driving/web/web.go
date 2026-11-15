@@ -6,6 +6,7 @@ package web
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -288,6 +289,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /", site())
 	mux.HandleFunc("GET /api/overview", s.overview)
+	mux.HandleFunc("GET /api/stamp", s.stamp)
 	mux.HandleFunc("GET /api/log", s.log)
 	mux.HandleFunc("GET /api/settings", s.settings)
 	mux.HandleFunc("POST /api/check", s.check)
@@ -427,6 +429,33 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		ov.Groups[i].Error = s.show(ov.Groups[i].Error)
 	}
 	reply(w, ov)
+}
+
+// Stamper is what a backend may give besides the overview: a short text that changes when anything the pages show can have changed
+// (the settings files, the marks of the machines). A page asks for it every few seconds and loads again when it differs.
+type Stamper interface {
+	Stamp(ctx context.Context) (string, error)
+}
+
+// stamp is the state of what the pages show in one short text: the overview, and the stamp of the backend (the files).
+func (s *Server) stamp(w http.ResponseWriter, r *http.Request) {
+	ov, err := s.snapshot(r.Context())
+	if err != nil {
+		fail(w, http.StatusInternalServerError, s.show(err.Error()))
+		return
+	}
+	h := sha256.New()
+	enc := json.NewEncoder(h)
+	_ = enc.Encode(ov)
+	if st, ok := s.cfg.Backend.(Stamper); ok {
+		v, err := st.Stamp(r.Context())
+		if err != nil {
+			fail(w, http.StatusInternalServerError, s.show(err.Error()))
+			return
+		}
+		_, _ = io.WriteString(h, v)
+	}
+	reply(w, map[string]string{"stamp": hex.EncodeToString(h.Sum(nil))[:16]})
 }
 
 // show makes a text fit for the page: clean, with the secrets taken out.
