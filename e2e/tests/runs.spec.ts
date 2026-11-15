@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { startUI, UI } from '../fixture';
 
 // The questions and the cancel: the page against a server that is answered by the test (the routes), so that the
@@ -201,4 +203,24 @@ test('Check of a group is a run of viper check --group, also when the page is re
       if (extra.length) { await page.click('#tab-overview'); await expect(page.getByRole('button', { name: 'Up group dev', exact: true })).toBeDisabled(); }
     } finally { await g.stop(); }
   }
+});
+
+test('a machine that stands in two groups shows that it starts only in the group of the run', async ({ page }) => {
+  const g = await startUI([], 30);
+  try {
+    fs.writeFileSync(path.join(g.work, 'groups', 'other.env'), 'GROUP_MACHINES=web\n');
+    fs.writeFileSync(path.join(g.work, 'groups', 'also.env'), 'GROUP_MACHINES=web\n');
+    await page.goto(g.start);
+    await expect(page.locator('#machines tr.unit').first()).toBeVisible();
+    await page.getByRole('button', { name: 'Up group other', exact: true }).click();
+    await expect(page.locator('#run-status')).toContainText('Running');
+    await page.click('#tab-overview');
+    const head = (name: string) => page.locator('tr.grouphead.real', { hasText: name });
+    await expect(head('other').locator('.state.is-busy')).toContainText('starting up');
+    await expect(head('also').locator('.state.is-busy')).toHaveCount(0);
+    await expect(page.locator('tr.unit.is-none, tr.unit', { hasText: 'web' }).filter({ has: page.locator('.state.is-busy') })).toHaveCount(1);
+    await page.click('#tab-runs');
+    await page.click('#run-cancel');
+    await expect(page.locator('#run-status')).toContainText('exit 130', { timeout: 40_000 });
+  } finally { await g.stop(); }
 });

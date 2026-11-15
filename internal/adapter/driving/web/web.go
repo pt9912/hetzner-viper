@@ -730,7 +730,8 @@ func (s *Server) markBusy(ov *Overview) {
 			continue
 		}
 		for _, r := range t.runs {
-			if r.ID == id && r.current() != stateDone {
+			// the machine is one server, but the run is of one group: the rows of the machine in other groups are not busy
+			if r.ID == id && r.current() != stateDone && r.Group == ov.Machines[i].Group {
 				ov.Machines[i].Busy = r.Action
 			}
 		}

@@ -552,3 +552,49 @@ func TestTheCheckOfAGroupIsARunAndAllowedWhenThePageIsReadOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestOnlyTheGroupOfTheRunShowsItsMachinesBusy(t *testing.T) {
+	st := live(t, false)
+	st.fake.overview.Machines = append(st.fake.overview.Machines, web.Machine{Name: "shared", Group: "g1"}, web.Machine{Name: "shared", Group: "g2"}, web.Machine{Name: "own", Group: "g1"})
+	st.fake.overview.Groups = append(st.fake.overview.Groups, web.Group{Name: "g1", Machines: []string{"shared", "own"}}, web.Group{Name: "g2", Machines: []string{"shared"}})
+	rows := func() map[string]string {
+		resp, err := st.c.Get(st.base + "/api/overview")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		var ov struct {
+			Machines []struct{ Name, Group, Busy string }
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&ov)
+		out := map[string]string{}
+		for _, m := range ov.Machines {
+			if m.Busy != "" {
+				out[m.Name+"@"+m.Group] = m.Busy
+			}
+		}
+		return out
+	}
+	id, code := st.start(t, `{"action":"up","scope":"group","group":"g1"}`)
+	if code != 200 {
+		t.Fatalf("%d", code)
+	}
+	p := st.spawn.next(t)
+	got := rows()
+	if got["shared@g1"] != "up" || got["own@g1"] != "up" || got["shared@g2"] != "" || len(got) != 2 {
+		t.Errorf("only the rows of the group that is started are busy: %v", got)
+	}
+	// a machine run in a group (--in-group): the row of that group
+	id2, code := st.start(t, `{"action":"preflight","machine":"dev1","group":"dev"}`)
+	if code != 200 {
+		t.Fatalf("%d", code)
+	}
+	p2 := st.spawn.next(t)
+	if got := rows(); got["dev1@dev"] != "preflight" {
+		t.Errorf("%v", got)
+	}
+	p.end(0)
+	st.attach(t, id).until(t, state("done"))
+	p2.end(0)
+	st.attach(t, id2).until(t, state("done"))
+}
