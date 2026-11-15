@@ -92,23 +92,26 @@ test('Safari: the arrow keys switch the tabs', async () => {
   expect(await driver.findElement(By.id('tab-runs')).getAttribute('aria-selected')).toBe('true');
 });
 
-// What a person gets: viper ui opens the start file with the program of the system (open), in the Safari of the user. The tab is
-// looked at with AppleScript (it may need the permission of the system: then the log says so, and nothing else is claimed).
+// What a person gets: viper ui opens the start file with the program of the system (open), in the Safari of the user. How far Safari
+// goes is seen at the server (AppleScript would ask the system for a permission that nobody can give in CI): the key in the start
+// file works once, so if Safari followed the refresh by itself the key is used up, and asking for it again says 403.
 test.describe('opened with open', () => {
-  test('the start file, opened with `open -a Safari`: where does Safari end?', async () => {
+  test('the start file, opened with `open -a Safari`: does Safari follow it by itself?', async () => {
     const launch = new URL(ui.start).pathname;
+    const html = fs.readFileSync(launch, 'utf8');
+    const key = html.match(/url=(http:\/\/127\.0\.0\.1:\d+\/\?t=[0-9a-f]+)/)?.[1];
+    expect(key, 'the start file names the address with the key').toBeTruthy();
     const home = path.join(os.homedir(), 'viper-e2e-open.html');
     fs.copyFileSync(launch, home);
-    const sh = (cmd: string[]) => { try { return execFileSync(cmd[0], cmd.slice(1), { encoding: 'utf8', timeout: 20000 }).trim(); } catch (e) { return 'ERROR ' + String(e).slice(0, 300); } };
-    sh(['open', '-a', 'Safari', home]);
-    let url = '';
-    for (let i = 0; i < 12 && !url.startsWith(ui.base); i++) {
-      await new Promise((r) => setTimeout(r, 1000));
-      url = sh(['osascript', '-e', 'tell application "Safari" to get URL of front document']);
+    try {
+      execFileSync('open', ['-a', 'Safari', home], { timeout: 30000 });
+      await new Promise((r) => setTimeout(r, 15000));
+      const res = await fetch(key as string, { redirect: 'manual' });
+      const followed = res.status === 403; // the key is used up: someone exchanged it
+      console.log(`SAFARI open: the key was ${followed ? 'used by Safari (it followed the refresh by itself)' : 'NOT used (Safari stayed on the start file, or could not open it)'}; status when asked again = ${res.status}`);
+    } finally {
+      try { execFileSync('killall', ['Safari'], { timeout: 10000 }); } catch { /* it was not running */ }
+      fs.rmSync(home, { force: true });
     }
-    const title = sh(['osascript', '-e', 'tell application "Safari" to get name of front document']);
-    console.log(`SAFARI open: url = ${url}; title = ${title}; followed by itself = ${url.startsWith(ui.base)}`);
-    sh(['osascript', '-e', 'tell application "Safari" to quit']);
-    fs.rmSync(home, { force: true });
   });
 });
