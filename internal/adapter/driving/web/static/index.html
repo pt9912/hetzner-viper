@@ -25,6 +25,7 @@
     <button type="button" role="tab" id="tab-runs" class="tab" aria-selected="false" aria-controls="page-runs" tabindex="-1" data-i18n="tab.runs">Runs</button>
     <button type="button" role="tab" id="tab-nats" class="tab" aria-selected="false" aria-controls="page-nats" tabindex="-1" data-i18n="tab.nats">NATS</button>
     <button type="button" role="tab" id="tab-settings" class="tab" aria-selected="false" aria-controls="page-settings" tabindex="-1" data-i18n="tab.settings">Settings</button>
+    <button type="button" role="tab" id="tab-secrets" class="tab" aria-selected="false" aria-controls="page-secrets" tabindex="-1" hidden data-i18n="tab.secrets">Credentials</button>
     <button type="button" role="tab" id="tab-create" class="tab" aria-selected="false" aria-controls="page-create" tabindex="-1" hidden data-i18n="tab.create">Create</button>
     <button type="button" role="tab" id="tab-logs" class="tab" aria-selected="false" aria-controls="page-logs" tabindex="-1" data-i18n="tab.logs">Logs</button>
   </div>
@@ -165,6 +166,42 @@
     <h2 id="h-settings" data-i18n="h.settings">Settings</h2>
     <p class="muted" data-i18n="settings.intro">The names of the settings in each file.</p>
     <div id="settings-files"></div>
+  </section>
+
+  <section id="page-secrets" role="tabpanel" aria-labelledby="tab-secrets" hidden>
+    <h2 id="h-secrets" data-i18n="h.secrets">Credentials</h2>
+    <p class="muted lead" data-i18n="secrets.intro">Sets a token or a password in a settings file that exists. The value goes in and is never shown again. Before the change a copy of the file without credentials is kept.</p>
+    <div class="scroll">
+    <table id="s-table">
+      <caption class="sr" data-i18n="h.secrets">Credentials</caption>
+      <thead><tr><th scope="col" data-i18n="th.cred">Credential</th><th scope="col" data-i18n="th.setin">Set in</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    </div>
+    <form id="secret-form" class="column" autocomplete="off">
+      <div class="row">
+        <label for="s-name" data-i18n="secrets.name">Credential</label>
+        <select id="s-name"></select>
+        <label for="s-file" data-i18n="secrets.file">In the file</label>
+        <select id="s-file"></select>
+      </div>
+      <div class="row">
+        <label for="s-value" data-i18n="secrets.value">New value</label>
+        <input type="password" id="s-value" size="40" autocomplete="new-password" spellcheck="false" aria-describedby="s-value-hint">
+      </div>
+      <p id="s-value-hint" class="muted hint" data-i18n="secrets.valuehint">At least 8 characters, one line. The value is sent once and wiped from this field.</p>
+      <div class="row">
+        <button type="button" id="s-preview" data-i18n="secrets.preview">Preview</button>
+        <button type="submit" id="s-apply" class="primary" disabled data-i18n="secrets.set">Set the value</button>
+        <button type="button" id="s-remove" class="danger" data-i18n="secrets.remove">Remove from the file</button>
+      </div>
+    </form>
+    <p id="s-status" role="status" class="muted"></p>
+    <div id="s-result" role="region" aria-labelledby="h-s-result" hidden>
+      <h3 id="h-s-result" data-i18n="create.result">Preview</h3>
+      <ul id="s-problems" class="issues"></ul>
+      <pre id="s-text" tabindex="0"></pre>
+    </div>
   </section>
 
   <section id="page-create" role="tabpanel" aria-labelledby="tab-create" hidden>

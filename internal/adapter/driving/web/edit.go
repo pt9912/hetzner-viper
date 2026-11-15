@@ -15,6 +15,11 @@ type EditRequest struct {
 	Name    string            `json:"name"`
 	Fields  map[string]string `json:"fields"`
 	Members []string          `json:"members"`
+	// kind "credential": the file (target "base", "machine" or "group"; name), the credentials to take out, and the state of the
+	// file the preview saw. The values of the credentials are in Fields: they go in, and are never in an answer.
+	Target string   `json:"target"`
+	Remove []string `json:"remove"`
+	Etag   string   `json:"etag"`
 }
 
 // EditFile is a file a request makes, as text.
@@ -30,6 +35,8 @@ type EditResult struct {
 	Broken   []string   `json:"broken"`
 	Notes    []string   `json:"notes"`
 	Done     bool       `json:"done"`
+	Etag     string     `json:"etag"`
+	Backup   string     `json:"backup"`
 }
 
 // Template is a provider with the defaults the form offers.
@@ -40,11 +47,22 @@ type Template struct {
 	Container bool   `json:"container"`
 }
 
-// Templates is what the forms offer: the providers, the machines that exist (for a group), and whether .env.local exists.
+// CredentialFile is a settings file that exists, with the credentials that it sets (names only).
+type CredentialFile struct {
+	Target string   `json:"target"` // base, machine or group
+	Name   string   `json:"name"`
+	Path   string   `json:"path"`
+	Set    []string `json:"set"`
+}
+
+// Templates is what the forms offer: the providers, the machines that exist (for a group), whether .env.local exists, and the
+// credentials with the files that set them.
 type Templates struct {
-	Providers []Template `json:"providers"`
-	Machines  []string   `json:"machines"`
-	Base      bool       `json:"base"`
+	Providers   []Template       `json:"providers"`
+	Machines    []string         `json:"machines"`
+	Base        bool             `json:"base"`
+	Credentials []string         `json:"credentials"`
+	Files       []CredentialFile `json:"files"`
 }
 
 // Editor is what makes the new files. The cli package gives it.
@@ -92,7 +110,7 @@ func (s *Server) editBody(w http.ResponseWriter, r *http.Request) (EditRequest, 
 }
 
 func (s *Server) showResult(res EditResult) EditResult {
-	out := EditResult{Files: []EditFile{}, Problems: []string{}, Broken: []string{}, Notes: []string{}, Done: res.Done}
+	out := EditResult{Files: []EditFile{}, Problems: []string{}, Broken: []string{}, Notes: []string{}, Done: res.Done, Etag: res.Etag, Backup: s.show(res.Backup)}
 	for _, f := range res.Files {
 		out.Files = append(out.Files, EditFile{Path: s.show(f.Path), Text: s.cfg.Redact(f.Text)}) // the text is a file: its line ends stay
 	}
@@ -106,6 +124,20 @@ func (s *Server) showResult(res EditResult) EditResult {
 		out.Notes = append(out.Notes, s.show(p))
 	}
 	return out
+}
+
+// runActive says whether a run of an action is going: a credential is not changed under it (it read the files at its start, and
+// the next one should read the new ones).
+func (s *Server) runActive() bool {
+	t := &s.runs
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, o := range t.runs {
+		if o.Action != "nats" && o.current() != stateDone {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) editPreview(w http.ResponseWriter, r *http.Request) {
@@ -126,6 +158,10 @@ func (s *Server) editPreview(w http.ResponseWriter, r *http.Request) {
 func (s *Server) editApply(w http.ResponseWriter, r *http.Request) {
 	req, ok := s.editBody(w, r)
 	if !ok {
+		return
+	}
+	if req.Kind == "credential" && s.runActive() {
+		fail(w, http.StatusConflict, "a run is going: wait for it or cancel it, then change the credentials")
 		return
 	}
 	if !s.editMu.TryLock() {

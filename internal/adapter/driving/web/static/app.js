@@ -4,7 +4,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const { t } = window.viperI18n;
-  const PAGES = ['overview', 'runs', 'nats', 'settings', 'create', 'logs'];
+  const PAGES = ['overview', 'runs', 'nats', 'settings', 'secrets', 'create', 'logs'];
   let overview = { machines: [], groups: [], nats: [] };
   let logText = '';
   let page = 'overview';
@@ -245,7 +245,8 @@
   function renderAll() {
     renderVersion();
     $('tab-create').hidden = !overview.edit;
-    if (!overview.edit && page === 'create') { show('overview'); }
+    $('tab-secrets').hidden = !overview.edit;
+    if (!overview.edit && (page === 'create' || page === 'secrets')) { show('overview'); }
     renderMachines();
     renderLogChoices();
     renderNats();
@@ -704,10 +705,11 @@
     if (name === 'logs') { loadLog(); }
     if (name === 'runs') { loadRuns(); }
     if (name === 'settings') { loadSettings(); }
-    if (name === 'create') { loadTemplates(); }
+    if (name === 'create' || name === 'secrets') { loadTemplates(); }
+    if (name !== 'secrets') { wipeSecret(); }
   }
 
-  const shownPages = () => PAGES.filter((p) => p !== 'create' || overview.edit);
+  const shownPages = () => PAGES.filter((p) => (p !== 'create' && p !== 'secrets') || overview.edit);
 
   $('tabs').addEventListener('keydown', (ev) => {
     const pages = shownPages();
@@ -806,6 +808,7 @@
     try {
       templates = await api('/api/templates');
       renderCreate();
+      renderSecrets();
     } catch (e) {
       $('c-status').textContent = e.message;
     }
@@ -860,11 +863,151 @@
   $('c-kind').addEventListener('change', createLayout);
   $('c-provider').addEventListener('change', createLayout);
 
+  // ---- credentials (viper ui --edit): the value goes in once and is wiped from the field; the page never shows one ----
+  let secretPreview = ''; // the request of the preview whose answer allows "Set"
+  let secretEtag = '';
+  let removeArmed = false;
+
+  function wipeSecret() {
+    $('s-value').value = '';
+    secretPreview = '';
+    secretEtag = '';
+    $('s-apply').disabled = true;
+    disarmRemove();
+  }
+
+  function selectedFile() {
+    return templates && templates.files.find((f) => f.path === $('s-file').value);
+  }
+
+  function secretRequest(remove) {
+    const f = selectedFile() || { target: '', name: '' };
+    const name = $('s-name').value;
+    const req = { kind: 'credential', target: f.target, name: f.name, fields: {}, members: [], remove: [], etag: '' };
+    if (remove) { req.remove = [name]; } else { req.fields[name] = $('s-value').value; }
+    return req;
+  }
+
+  function renderSecrets() {
+    if (!templates) { return; }
+    const body = $('s-table').tBodies[0];
+    body.textContent = '';
+    for (const n of templates.credentials) {
+      const tr = document.createElement('tr');
+      cell(tr, n, 'mono');
+      const where = templates.files.filter((f) => f.set.includes(n)).map((f) => f.path);
+      cell(tr, where.length ? where.join(', ') : t('secrets.notset'), where.length ? '' : 'muted');
+      body.appendChild(tr);
+    }
+    const nameSel = $('s-name');
+    const keepName = nameSel.value;
+    nameSel.textContent = '';
+    for (const n of templates.credentials) { addOption(nameSel, n, n); }
+    if (keepName) { nameSel.value = keepName; }
+    const fileSel = $('s-file');
+    const keepFile = fileSel.value;
+    fileSel.textContent = '';
+    for (const f of templates.files) { addOption(fileSel, f.path, f.path); }
+    if (keepFile) { fileSel.value = keepFile; }
+    if (!keepFile) { pickFile(); }
+    $('s-remove').disabled = templates.files.length === 0;
+    $('s-preview').disabled = templates.files.length === 0;
+    if (templates.files.length === 0) { $('s-status').textContent = t('secrets.nofile'); }
+  }
+
+  // the file that sets the credential already, else the base file
+  function pickFile() {
+    const here = templates.files.find((f) => f.set.includes($('s-name').value));
+    const base = templates.files.find((f) => f.target === 'base');
+    const pick = here || base;
+    if (pick) { $('s-file').value = pick.path; }
+  }
+
+  function secretResult(res) {
+    const ul = $('s-problems');
+    ul.textContent = '';
+    const add = (text) => { const li = document.createElement('li'); li.textContent = text; ul.appendChild(li); };
+    for (const p of res.problems) { add(t('create.problem', p)); }
+    for (const p of res.broken) { add(t('create.broken', p)); }
+    for (const p of res.notes) { add(p); }
+    $('s-text').textContent = res.files.map((f) => '# ' + f.path + '\n' + f.text).join('\n');
+    $('s-result').hidden = false;
+  }
+
+  function secretOk(res) { return res.problems.length === 0 && res.broken.length === 0; }
+
+  function disarmRemove() {
+    removeArmed = false;
+    $('s-remove').textContent = t('secrets.remove');
+    $('s-remove').removeAttribute('aria-label');
+  }
+
+  $('s-preview').addEventListener('click', async () => {
+    if (!$('s-value').value) { $('s-status').textContent = t('secrets.needvalue'); return; }
+    const req = secretRequest(false);
+    $('s-status').textContent = '';
+    try {
+      const res = await api('/api/edit/preview', req);
+      secretResult(res);
+      const ok = secretOk(res);
+      $('s-status').textContent = ok ? t('secrets.ok') : t('create.refused');
+      secretPreview = ok ? JSON.stringify(req) : '';
+      secretEtag = ok ? res.etag : '';
+      $('s-apply').disabled = !ok;
+    } catch (e) { $('s-status').textContent = e.message; }
+  });
+
+  async function secretApply(req, etag) {
+    req.etag = etag;
+    const res = await api('/api/edit/apply', req);
+    secretResult(res);
+    if (!res.done) { $('s-status').textContent = t('create.refused'); return; }
+    wipeSecret();
+    $('s-status').textContent = t('secrets.done', req.remove.length ? req.remove[0] : Object.keys(req.fields)[0], res.backup);
+    await loadTemplates();
+    $('s-status').setAttribute('tabindex', '-1');
+    $('s-status').focus();
+  }
+
+  $('secret-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const req = secretRequest(false);
+    if (!secretPreview || secretPreview !== JSON.stringify(req)) { $('s-apply').disabled = true; $('s-status').textContent = t('secrets.changed'); return; }
+    $('s-apply').disabled = true;
+    try { await secretApply(req, secretEtag); } catch (e) { $('s-status').textContent = e.message; }
+  });
+
+  // removing asks twice, in the button itself: the name of the credential and of the file stand in the question
+  $('s-remove').addEventListener('click', async () => {
+    const f = selectedFile();
+    if (!f) { return; }
+    if (!removeArmed) {
+      removeArmed = true;
+      const text = t('secrets.remove.arm', $('s-name').value, f.path);
+      $('s-remove').textContent = text;
+      $('s-remove').setAttribute('aria-label', text);
+      return;
+    }
+    disarmRemove();
+    const req = secretRequest(true);
+    try {
+      const pre = await api('/api/edit/preview', req);
+      secretResult(pre);
+      if (!secretOk(pre)) { $('s-status').textContent = t('create.refused'); return; }
+      await secretApply(req, pre.etag);
+    } catch (e) { $('s-status').textContent = e.message; }
+  });
+  $('s-remove').addEventListener('blur', disarmRemove);
+  $('secret-form').addEventListener('input', () => { $('s-apply').disabled = true; secretPreview = ''; });
+  $('s-name').addEventListener('change', () => { if (templates) { pickFile(); } });
+
   function translate() {
     window.viperI18n.apply();
     $('lang').value = window.viperI18n.lang();
     renderAll();
     renderCreate();
+    renderSecrets();
+    disarmRemove();
     if (page === 'settings') { loadSettings(); }
     if (page === 'runs') { loadRuns(); }
   }

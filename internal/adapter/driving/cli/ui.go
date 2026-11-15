@@ -274,17 +274,8 @@ type secretValues struct {
 	vals map[string]bool
 }
 
-// secretNames are the settings whose values are credentials: those of the providers and the ones viper puts on the
-// machine (editor/vscode.go keeps the first kind from VS Code the same way).
-func secretNames() []string {
-	names := []string{"CLOUDFLARE_API_TOKEN", "VIPER_GH_TOKEN", "GH_TOKEN", "VIPER_CLAUDE_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "VIPER_ANTHROPIC_AUTH_TOKEN", "VIPER_CODE_SERVER_PASSWORD"}
-	for _, p := range model.ProviderNames() {
-		if info, ok := model.LookupProvider(p); ok {
-			names = append(names, info.Secrets...)
-		}
-	}
-	return names
-}
+// secretNames are the settings whose values are credentials (model.SecretNames).
+func secretNames() []string { return model.SecretNames() }
 
 // minSecret is the shortest value that is taken out of an output: a shorter one would cut up ordinary words.
 const minSecret = 8

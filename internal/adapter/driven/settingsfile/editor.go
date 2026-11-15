@@ -295,8 +295,37 @@ func missingMembers(dir string, ch settings.Change) (out []string) {
 	return out
 }
 
+// diffStatus loads every machine and group with the file path as text says (in memory) and compares it with what loads now: a
+// message about the thing the file is (key) is a problem, one about anything else that loaded before or fails differently is
+// something the change breaks.
+// withFile is env with one settings file as the text says (in memory).
+func withFile(dir string, env settings.Env, path, text string) settings.Env {
+	env.Files = overlay{files: map[string][]byte{filepath.Clean(filepath.Join(dir, path)): []byte(text)}, base: env.Files}
+	return env
+}
+
+func diffStatus(dir string, env settings.Env, path, text, key string) (problems, broken []string) {
+	before := status(dir, env)
+	for k, msg := range status(dir, withFile(dir, env, path, text)) {
+		if msg == "" {
+			continue
+		}
+		prev, existed := before[k]
+		switch {
+		case k == key:
+			problems = append(problems, msg)
+		case !existed || prev != msg: // a machine that failed before and fails differently now is broken by this change
+			broken = append(broken, k+": "+msg)
+		}
+	}
+	return problems, broken
+}
+
 // Preview says what the change would do, and writes nothing.
 func (Files) Preview(dir string, ch settings.Change, env settings.Env) (settings.Preview, error) {
+	if ch.Kind == "credential" {
+		return previewCredential(dir, ch, env)
+	}
 	var p settings.Preview
 	path, text, problems := render(ch)
 	p.Problems = problems
@@ -311,26 +340,13 @@ func (Files) Preview(dir string, ch settings.Change, env settings.Env) (settings
 	if len(p.Problems) > 0 {
 		return p, nil
 	}
-	before := status(dir, env)
-	after := env
-	after.Files = overlay{files: map[string][]byte{filepath.Clean(filepath.Join(dir, path)): []byte(text)}, base: env.Files}
-	now := status(dir, after)
 	key := ch.Kind + " " + ch.Name
-	for k, msg := range now {
-		if msg == "" {
-			continue
-		}
-		prev, existed := before[k]
-		switch {
-		case k == key:
-			p.Problems = append(p.Problems, msg)
-		case !existed || prev != msg: // a machine that failed before and fails differently now is broken by this change
-			p.Broken = append(p.Broken, k+": "+msg)
-		}
-	}
+	problems2, broken := diffStatus(dir, env, path, text, key)
+	p.Problems = append(p.Problems, problems2...)
+	p.Broken = append(p.Broken, broken...)
 	sort.Strings(p.Broken)
 	if ch.Kind == "machine" && len(p.Problems) == 0 {
-		if _, err := load(dir, ch.Name, after, true); err != nil {
+		if _, err := load(dir, ch.Name, withFile(dir, env, path, text), true); err != nil {
 			p.Notes = append(p.Notes, err.Error())
 		}
 	}
@@ -339,6 +355,9 @@ func (Files) Preview(dir string, ch settings.Change, env settings.Env) (settings
 
 // Create makes the file of a change that Preview accepts.
 func (f Files) Create(dir string, ch settings.Change, env settings.Env) (settings.Preview, error) {
+	if ch.Kind == "credential" {
+		return createCredential(dir, ch, env)
+	}
 	p, err := f.Preview(dir, ch, env)
 	if err != nil {
 		return p, err

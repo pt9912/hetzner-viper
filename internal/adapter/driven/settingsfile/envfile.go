@@ -24,6 +24,8 @@ func Source(vars map[string]string, src string, lookup func(string) (string, boo
 }
 
 type parser struct {
+	rec    *[]Assignment // the assignments are noted here (nil: not)
+	nameAt int           // where the name of the statement being read begins
 	s      string
 	i      int
 	line   int
@@ -81,6 +83,7 @@ func (p *parser) name() string {
 
 // target reads the variable name of a statement, after an optional "export ".
 func (p *parser) target() (name string, exported bool, err error) {
+	p.nameAt = p.i
 	name = p.name()
 	if name == "" {
 		return "", false, p.errf("not an assignment")
@@ -89,6 +92,7 @@ func (p *parser) target() (name string, exported bool, err error) {
 		for !p.eof() && isSpace(p.s[p.i]) {
 			p.i++
 		}
+		p.nameAt = p.i
 		if name = p.name(); name == "" {
 			return "", false, p.errf("not an assignment")
 		}
@@ -115,6 +119,9 @@ func (p *parser) statement() error {
 		return err
 	}
 	p.vars[name] = val
+	if p.rec != nil {
+		*p.rec = append(*p.rec, Assignment{Name: name, Start: p.nameAt, End: p.i, Value: val})
+	}
 	return nil
 }
 
@@ -310,4 +317,27 @@ func (p *parser) dollar(b *strings.Builder, inQuotes bool) error {
 		b.WriteByte('$') // a lone $ is literal
 	}
 	return nil
+}
+
+// Assignment is one NAME=value of a settings file: the name, the value, and the span of the statement in the text (from the
+// name, after an "export ", to the end of its value), so that an editor can replace that and nothing else.
+type Assignment struct {
+	Name       string
+	Value      string
+	Start, End int
+}
+
+// Assignments lists the assignments of a settings file in the order they are in, with their spans. It reads what Source reads
+// (and refuses what Source refuses), but a variable that is not set is empty here: the spans do not depend on the values.
+func Assignments(src string) ([]Assignment, error) {
+	var out []Assignment
+	p := &parser{s: src, vars: map[string]string{}, lookup: func(string) (string, bool) { return "", true }, line: 1, rec: &out}
+	if i := strings.IndexByte(src, '\r'); i >= 0 {
+		p.line += strings.Count(src[:i], "\n")
+		return nil, p.errf("carriage return (Windows line ending): convert the file to Unix line ends")
+	}
+	if err := p.run(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

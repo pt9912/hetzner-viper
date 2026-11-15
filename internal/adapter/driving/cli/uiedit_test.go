@@ -31,7 +31,7 @@ func TestTheEditorMakesAMachineAndLeavesATraceWithoutValues(t *testing.T) {
 	env, home := nativeEnv(t)
 	dir := t.TempDir()
 	write(t, dir, ".env.local", "SERVER_PREFIX=ui\nDNS_PROVIDER=none\n")
-	ed := cli.UIEditor(&cli.Opts{Host: testHost(), Dir: dir}, env)
+	ed, _ := cli.UIEditor(&cli.Opts{Host: testHost(), Dir: dir}, env)
 	tpl, err := ed.Templates(context.Background())
 	if err != nil || !tpl.Base || len(tpl.Providers) != 6 {
 		t.Fatalf("%+v %v", tpl, err)
@@ -56,5 +56,55 @@ func TestTheEditorMakesAMachineAndLeavesATraceWithoutValues(t *testing.T) {
 	}
 	if _, err := ed.Create(context.Background(), req); err == nil {
 		t.Error("a second create replaced the file")
+	}
+}
+
+func TestTheEditorSetsACredentialAndNeverSaysItsValue(t *testing.T) {
+	env, home := nativeEnv(t)
+	dir := t.TempDir()
+	write(t, dir, ".env.local", "SERVER_PREFIX=ui\nDNS_PROVIDER=none\nPROVIDER=hetzner\n")
+	write(t, dir, "machines/web.env.local", "HCLOUD_TOKEN=old-token-0123456789\n")
+	ed, redact := cli.UIEditor(&cli.Opts{Host: testHost(), Dir: dir}, env)
+	const value = "brand-new-token-abcdef"
+	tpl, err := ed.Templates(context.Background())
+	if err != nil || len(tpl.Credentials) == 0 {
+		t.Fatalf("%+v %v", tpl, err)
+	}
+	var set []string
+	for _, f := range tpl.Files {
+		if f.Target == "machine" && f.Name == "web" {
+			set = f.Set
+		}
+		if f.Target == "base" && len(f.Set) != 0 {
+			t.Errorf("nothing is set in the base file: %v", f.Set)
+		}
+	}
+	if strings.Join(set, ",") != "HCLOUD_TOKEN" {
+		t.Errorf("set: %v", set)
+	}
+	req := web.EditRequest{Kind: "credential", Target: "machine", Name: "web", Fields: map[string]string{"HCLOUD_TOKEN": value}}
+	pv, err := ed.Preview(context.Background(), req)
+	if err != nil || len(pv.Problems) > 0 || pv.Etag == "" {
+		t.Fatalf("%+v %v", pv, err)
+	}
+	if redact("the token is "+value) != "the token is [hidden]" {
+		t.Error("the redaction does not know the new value from the preview on")
+	}
+	req.Etag = pv.Etag
+	res, err := ed.Create(context.Background(), req)
+	if err != nil || res.Backup == "" {
+		t.Fatalf("%+v %v", res, err)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, "machines", "web.env.local"))
+	if string(b) != "HCLOUD_TOKEN='"+value+"'\n" {
+		t.Errorf("file %q", b)
+	}
+	log, _ := os.ReadFile(filepath.Join(home, ".local", "state", "viper", "events.log"))
+	if !strings.Contains(string(log), "set HCLOUD_TOKEN in machines/web.env.local (backup "+res.Backup+")") || strings.Contains(string(log), value) {
+		t.Errorf("events.log: %q", log)
+	}
+	// a repeat with the old state of the file is refused
+	if _, err := ed.Create(context.Background(), req); err == nil {
+		t.Error("a second apply of the same preview")
 	}
 }

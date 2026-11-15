@@ -139,3 +139,37 @@ func TestOneChangeAtATime(t *testing.T) {
 		t.Errorf("first: %d", code)
 	}
 }
+
+func TestNoCredentialIsChangedUnderARun(t *testing.T) {
+	ed := &fakeEditor{}
+	st := liveWith(t, false, func(c *web.Config) { c.Editor = ed })
+	id, code := st.start(t, `{"action":"preflight","machine":"web"}`)
+	if code != 200 || id == "" {
+		t.Fatal(code)
+	}
+	p := st.spawn.next(t)
+	body := `{"kind":"credential","target":"base","name":"","fields":{"HCLOUD_TOKEN":"abcdefgh12345"},"remove":[],"etag":"x"}`
+	if code, b := st.post(t, "/api/edit/apply", body); code != http.StatusConflict || strings.Contains(b, "abcdefgh12345") {
+		t.Errorf("under a run: %d %s", code, b)
+	}
+	if len(ed.made) != 0 {
+		t.Error("changed under a run")
+	}
+	// a new file is not a credential: it may be made
+	if code, _ := st.post(t, "/api/edit/apply", `{"kind":"machine","name":"web2","fields":{},"members":[]}`); code != 200 {
+		t.Errorf("a new file under a run: %d", code)
+	}
+	p.end(0)
+	st.attach(t, id).until(t, state("done"))
+	if code, _ := st.post(t, "/api/edit/apply", body); code != 200 {
+		t.Errorf("after the run: %d", code)
+	}
+}
+
+func TestACredentialRequestIsRefusedAsAFormAndWithoutEdit(t *testing.T) {
+	st := live(t, false)
+	body := `{"kind":"credential","target":"base","fields":{"HCLOUD_TOKEN":"abcdefgh12345"}}`
+	if code, b := st.post(t, "/api/edit/preview", body); code != http.StatusForbidden || strings.Contains(b, "abcdefgh12345") {
+		t.Errorf("%d %s", code, b)
+	}
+}

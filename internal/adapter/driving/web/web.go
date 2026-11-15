@@ -61,6 +61,7 @@ type Setting struct {
 	Key   string `json:"key"`
 	Value string `json:"value,omitempty"`
 	Shown bool   `json:"shown"`
+	Set   bool   `json:"set"` // the file gives it a value (which is not said)
 }
 
 // SettingsFile is one file of settings, or the environment ("environment").

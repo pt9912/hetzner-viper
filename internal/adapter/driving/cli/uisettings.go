@@ -66,7 +66,7 @@ func readSettings(path string) ([]web.Setting, error) {
 		if m == nil || strings.HasPrefix(strings.TrimSpace(sc.Text()), "#") {
 			continue
 		}
-		st := web.Setting{Key: m[1]}
+		st := web.Setting{Key: m[1], Set: hasValue(m[2])}
 		if v, ok := plainValue(m[2]); ok && valueShown(m[1]) && v != "" && !hasUserinfo(v) {
 			st.Value, st.Shown = v, true
 		}
@@ -143,4 +143,13 @@ func hasUserinfo(v string) bool {
 		}
 	}
 	return false
+}
+
+// hasValue says whether the right side of an assignment is not empty (X=, X=” and X="" give nothing).
+func hasValue(raw string) bool {
+	v := strings.TrimSpace(raw)
+	if i := strings.Index(v, " #"); i >= 0 {
+		v = strings.TrimSpace(v[:i])
+	}
+	return v != "" && v != "''" && v != `""`
 }

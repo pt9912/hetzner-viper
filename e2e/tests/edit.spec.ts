@@ -92,7 +92,7 @@ test('the tab list reaches the page to create with the arrow keys', async ({ pag
   await page.goto(ui.start);
   await expect(page.locator('#machines tr.unit')).toHaveCount(3);
   await page.focus('#tab-overview');
-  for (let i = 0; i < 4; i++) { await page.keyboard.press('ArrowDown'); } // runs, NATS, settings, create
+  for (let i = 0; i < 5; i++) { await page.keyboard.press('ArrowDown'); } // runs, NATS, settings, credentials, create
   await expect(page.locator('#tab-create')).toBeFocused();
   await expect(page.locator('#page-create')).toBeVisible();
 });
