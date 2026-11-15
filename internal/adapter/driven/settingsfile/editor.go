@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/pt9912/hetzner-viper/internal/filelock"
@@ -383,9 +384,9 @@ func (f Files) Create(dir string, ch settings.Change, env settings.Env) (setting
 	if err := os.MkdirAll(model.StateDir(env.Home), 0o700); err != nil {
 		return settings.Preview{}, err
 	}
-	unlock, err := filelock.Lock(filepath.Join(model.StateDir(env.Home), "settings-edit.lock"))
+	unlock, err := lockSettings(filepath.Join(model.StateDir(env.Home), "settings-edit.lock"), lockWait)
 	if err != nil {
-		return settings.Preview{}, fmt.Errorf("cannot take the lock of the settings: %w", err)
+		return settings.Preview{}, err
 	}
 	defer unlock()
 	return f.create(dir, ch, env)
@@ -453,4 +454,35 @@ func writeNew(path, text string) error {
 		_ = os.Remove(path) // a half written new file is worse than none
 	}
 	return werr
+}
+
+// lockWait is how long a change waits for the change of another viper ui.
+const lockWait = 30 * time.Second
+
+// lockSettings takes the lock of the settings, and gives up after lockWait: a program that holds it and does not go on (a file
+// system that does not answer) must not hold every other change for good. A lock that is taken after the giving up is let go at once.
+func lockSettings(path string, wait time.Duration) (func(), error) {
+	type result struct {
+		unlock func()
+		err    error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		u, err := filelock.Lock(path)
+		ch <- result{u, err}
+	}()
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			return nil, fmt.Errorf("cannot take the lock of the settings: %w", r.err)
+		}
+		return r.unlock, nil
+	case <-time.After(wait):
+		go func() {
+			if r := <-ch; r.err == nil {
+				r.unlock()
+			}
+		}()
+		return nil, errors.New("another viper ui is changing settings (waited 30 seconds): try again")
+	}
 }

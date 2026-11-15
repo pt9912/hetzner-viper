@@ -159,6 +159,31 @@ test('a file changed at the terminal shows up by itself, and a preview that wait
   expect(fs.readFileSync(web(), 'utf8')).not.toContain('SERVER_TYPE');
 });
 
+test('a preview is not wiped by the changes of the person themself or by the marks of a run, only by a settings file', async ({ page }) => {
+  test.setTimeout(90_000);
+  ui = await startUI(['--edit'], 0);
+  await open(page);
+  await page.selectOption('#ch-name', 'SERVER_TYPE');
+  await page.fill('#ch-value', '2x4');
+  await page.click('#ch-preview');
+  await page.click('#ch-apply');
+  await expect.poll(() => fs.readFileSync(web(), 'utf8')).toBe("SERVER_TYPE='2x4'\n");
+  // a new preview right after the own change; the poll that comes does not take the own change for a foreign one
+  await page.fill('#ch-value', '4x8');
+  await page.click('#ch-preview');
+  await expect(page.locator('#ch-apply')).toBeEnabled();
+  await page.waitForTimeout(8_000); // at least one poll
+  await expect(page.locator('#ch-apply')).toBeEnabled();
+  // a mark of a run (a server) is no change of a settings file
+  const marks = path.join(ui.home, '.local', 'state', 'viper', 'servers', 'e2e');
+  fs.mkdirSync(marks, { recursive: true });
+  fs.writeFileSync(path.join(marks, 'id-e2e-a'), '1\n');
+  await page.waitForTimeout(8_000);
+  await expect(page.locator('#ch-apply')).toBeEnabled();
+  await page.click('#ch-apply');
+  await expect.poll(() => fs.readFileSync(web(), 'utf8')).toBe("SERVER_TYPE='4x8'\n");
+});
+
 test('the help of a setting is in the language of the page', async ({ browser }) => {
   ui = await startUI(['--edit'], 0);
   const ctx = await browser.newContext({ locale: 'de' });

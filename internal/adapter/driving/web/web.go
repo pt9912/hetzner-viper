@@ -437,7 +437,8 @@ type Stamper interface {
 	Stamp(ctx context.Context) (string, error)
 }
 
-// stamp is the state of what the pages show in one short text: the overview, and the stamp of the backend (the files).
+// stamp is the state of what the pages show: "stamp" for everything (the overview, which has the marks of the machines, and the
+// files), "files" for the settings files alone (a preview that waits is out of date only when these change).
 func (s *Server) stamp(w http.ResponseWriter, r *http.Request) {
 	ov, err := s.snapshot(r.Context())
 	if err != nil {
@@ -445,17 +446,17 @@ func (s *Server) stamp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h := sha256.New()
-	enc := json.NewEncoder(h)
-	_ = enc.Encode(ov)
+	_ = json.NewEncoder(h).Encode(ov)
+	files := ""
 	if st, ok := s.cfg.Backend.(Stamper); ok {
-		v, err := st.Stamp(r.Context())
+		files, err = st.Stamp(r.Context())
 		if err != nil {
 			fail(w, http.StatusInternalServerError, s.show(err.Error()))
 			return
 		}
-		_, _ = io.WriteString(h, v)
+		_, _ = io.WriteString(h, files)
 	}
-	reply(w, map[string]string{"stamp": hex.EncodeToString(h.Sum(nil))[:16]})
+	reply(w, map[string]string{"stamp": hex.EncodeToString(h.Sum(nil))[:16], "files": files})
 }
 
 // show makes a text fit for the page: clean, with the secrets taken out.

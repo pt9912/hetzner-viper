@@ -22,7 +22,7 @@
     let data = {};
     try { data = await res.json(); } catch (e) { data = {}; }
     if (res.status === 403 && !data.error) { banner(t('banner.session')); } // the answer of the guard has no JSON; a refusal of an action has
-    if (!res.ok) { throw new Error(data.error || ('HTTP ' + res.status)); }
+    if (!res.ok) { const err = new Error(data.error || ('HTTP ' + res.status)); err.status = res.status; throw err; }
     return data;
   }
 
@@ -239,9 +239,10 @@
       overview = await api('/api/overview');
     } catch (e) {
       $('overview-note').textContent = t('note.load', e.message);
-      return;
+      return false;
     }
     renderAll();
+    return true;
   }
 
   function renderAll() {
@@ -891,6 +892,7 @@
         $('c-name').value = '';
         await load();
         await loadTemplates();
+        await syncStamp();
         $('c-status').setAttribute('tabindex', '-1');
         $('c-status').focus();
       } else {
@@ -1004,6 +1006,7 @@
     wipeSecret();
     $('s-status').textContent = t('secrets.done', req.remove.length ? req.remove[0] : Object.keys(req.fields)[0], res.backup);
     await loadTemplates();
+    await syncStamp();
     $('s-status').setAttribute('tabindex', '-1');
     $('s-status').focus();
   }
@@ -1184,6 +1187,7 @@
     $('ch-status').textContent = t('change.done', req.kind === 'restore' ? req.name : (req.remove[0] || Object.keys(req.fields)[0]), res.backup);
     await loadTemplates();
     loadBackups();
+    await syncStamp();
     $('ch-status').setAttribute('tabindex', '-1');
     $('ch-status').focus();
   }
@@ -1294,9 +1298,14 @@
   }
 
   // ---- keeping up with the files: while the page is seen it asks for a short stamp every few seconds (and when it is seen again),
-  // and when the stamp differs it loads what it shows anew; a preview that waits for "apply" is out of date then ----
+  // and when the stamp differs it loads what it shows anew. A preview that waits for "apply" is out of date only when the settings
+  // files changed (not when a run changed the marks), and nothing is rebuilt under the hands of the person: while a button of a
+  // table or a field of a form has the focus, or a second click is waited for, the refresh waits for the next poll. ----
   let stamp = '';
+  let filesStamp = '';
+  let polling = false;
   const pollEvery = 5000;
+  let pollTimer = 0;
 
   function staleStatus() {
     if (changePreview || restoring) { changePreview = ''; restoring = null; $('ch-apply').disabled = true; $('ch-restore-go').hidden = true; $('ch-status').textContent = t('stale'); }
@@ -1304,26 +1313,49 @@
     if (secretPreview) { secretPreview = ''; secretEtag = ''; $('s-apply').disabled = true; $('s-status').textContent = t('stale'); }
   }
 
+  // busy: the person is in the middle of something that a rebuild of the page would break
+  function busy() {
+    const el = document.activeElement;
+    const inside = (id) => !!el && !!$(id) && $(id).contains(el);
+    return removeAskedFor !== '' || removeArmed || inside('machines') || inside('ch-table') || inside('create-form') || inside('secret-form') || inside('change-form');
+  }
+
   async function refreshPages() {
-    await load();
+    const ok = await load();
     if (['create', 'secrets', 'change'].includes(page)) { await loadTemplates(); }
     if (page === 'change') { loadBackups(); }
     if (page === 'settings') { loadSettings(); }
+    return ok;
+  }
+
+  // syncStamp takes the state after a change of our own, so that the next poll does not take it for somebody else's
+  async function syncStamp() {
+    try {
+      const r = await api('/api/stamp');
+      stamp = r.stamp;
+      filesStamp = r.files;
+    } catch (e) { /* the next poll sets it */ }
   }
 
   async function poll() {
-    if (document.hidden) { return; }
+    if (document.hidden || polling) { return; }
+    polling = true;
     try {
       const r = await api('/api/stamp');
-      const changed = stamp !== '' && r.stamp !== stamp;
-      stamp = r.stamp;
-      if (changed) { staleStatus(); await refreshPages(); }
-    } catch (e) { /* a lost session is said by the banner of api(); a poll that fails says nothing */ }
+      if (stamp !== '' && r.files !== filesStamp) { staleStatus(); filesStamp = r.files; } // a preview made from now on is of this state
+      if (stamp === '' || r.stamp === stamp) { stamp = r.stamp; filesStamp = r.files; return; }
+      if (busy()) { return; } // the stamp stays the old one: the next poll tries again
+      if (await refreshPages()) { stamp = r.stamp; filesStamp = r.files; }
+    } catch (e) {
+      if (e.status === 403) { clearInterval(pollTimer); } // the session is gone: the banner says it, and asking again helps nobody
+    } finally {
+      polling = false;
+    }
   }
 
   document.addEventListener('visibilitychange', poll);
   window.addEventListener('focus', poll);
-  setInterval(poll, pollEvery);
+  pollTimer = setInterval(poll, pollEvery);
 
   function translate() {
     window.viperI18n.apply();

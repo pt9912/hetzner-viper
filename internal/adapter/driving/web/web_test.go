@@ -494,6 +494,9 @@ func TestTheStampChangesWhenTheOverviewOrTheBackendStampDoes(t *testing.T) {
 		return w.Body.String()
 	}
 	first := get(h, s, c)
+	if !strings.Contains(first, `"files":""`) {
+		t.Errorf("a backend without a stamp has no stamp of files: %s", first)
+	}
 	if first != get(h, s, c) {
 		t.Error("the stamp of an unchanged overview changed")
 	}
@@ -514,8 +517,9 @@ func TestTheStampChangesWhenTheOverviewOrTheBackendStampDoes(t *testing.T) {
 	c2 := login(t, s2, h2)
 	a := get(h2, s2, c2)
 	f.stamp = "b"
-	if get(h2, s2, c2) == a {
-		t.Error("the stamp of the backend (the files) does not change the stamp")
+	b := get(h2, s2, c2)
+	if b == a || !strings.Contains(b, `"files":"b"`) {
+		t.Errorf("the stamp of the backend (the files) does not change the stamp: %s %s", a, b)
 	}
 	if w := do(h2, "GET", s2.Host(), "/api/stamp", nil, ""); w.Code != http.StatusForbidden {
 		t.Errorf("without the cookie: %d", w.Code)

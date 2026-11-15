@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
@@ -359,4 +360,25 @@ func TestOnlyOneOfSeveralChangesFromTheSamePreviewIsMade(t *testing.T) {
 	if len(ents) != 1 {
 		t.Errorf("%d backups for one change", len(ents))
 	}
+}
+
+func TestAChangeGivesUpWaitingForAStuckLockAndTheLockIsFreeAfterwards(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings-edit.lock")
+	unlock, err := settingsfile.LockSettings(path, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	if _, err := settingsfile.LockSettings(path, 200*time.Millisecond); err == nil || !strings.Contains(err.Error(), "another viper ui") {
+		t.Fatalf("a second lock was given while the first is held: %v", err)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Error("the waiting did not end")
+	}
+	unlock()
+	again, err := settingsfile.LockSettings(path, 2*time.Second) // the one that gave up must not keep the lock
+	if err != nil {
+		t.Fatalf("the lock is not free after a giving up: %v", err)
+	}
+	again()
 }

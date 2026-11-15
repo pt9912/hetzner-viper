@@ -366,7 +366,11 @@ func (b *uiBackend) Stamp(context.Context) (string, error) {
 		}
 	}
 	for _, f := range files {
-		if st, err := os.Lstat(f); err == nil {
+		st, err := os.Stat(f) // a link to a dotfile: the file it points to
+		if err != nil {
+			st, err = os.Lstat(f)
+		}
+		if err == nil {
 			fmt.Fprintf(h, "%s %d %d\n", f, st.Size(), st.ModTime().UnixNano())
 		}
 	}
