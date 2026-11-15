@@ -23,7 +23,7 @@ func shownNames() map[string]bool {
 		"REPO_URL": true, "REPO_BRANCH": true, "SSH_ALLOWED_CIDRS": true, "AWS_TAGS_SHARED": true,
 		"NATS_ENABLED": true, "NATS_GROUP": true, "NATS_PORT": true, "NATS_MCP": true, "NATS_MCP_AUTOALLOW": true, "NATS_MCP_PUSH_FROM": true,
 		"NATS_MCP_TOPICS": true, "NATS_OBJECTS": true, "NATS_OBJECTS_MAX": true, "NATS_OBJECTS_FILE_MAX": true, "NATS_OBJECTS_TTL": true,
-		"NATS_OPERATOR_NAME": true, "VIPER_HOMEBREW": true, "VIPER_BREW_PACKAGES": true, "VIPER_CODE_SERVER": true, "VIPER_SWAP": true, "VIPER_CLAUDE_MODEL": true,
+		"NATS_OPERATOR_NAME": true, "VIPER_HOMEBREW": true, "VIPER_BREW_PACKAGES": true, "VIPER_BREW_TAPS": true, "VIPER_BREW_TRUST": true, "VIPER_BREWFILE": true, "VIPER_POST_CLONE": true, "VIPER_POST_CLONE_ON_ERROR": true, "VIPER_CODE_SERVER": true, "VIPER_SWAP": true, "VIPER_CLAUDE_MODEL": true,
 		"VIPER_CLAUDE_MAX_CONTEXT_TOKENS": true,
 	}
 }
@@ -40,6 +40,8 @@ func plainValue(raw string) (string, bool) {
 	v := strings.TrimSpace(raw)
 	if len(v) >= 2 && (v[0] == '"' && v[len(v)-1] == '"' || v[0] == '\'' && v[len(v)-1] == '\'') {
 		v = v[1 : len(v)-1]
+	} else if v != "" && (v[0] == '"' || v[0] == '\'') {
+		return "", false // a value over several lines (VIPER_POST_CLONE): this reads one line, and half of a command says nothing
 	} else if i := strings.Index(v, " #"); i >= 0 {
 		v = strings.TrimSpace(v[:i])
 	}
@@ -127,13 +129,18 @@ func (b *uiBackend) environmentSettings(files []web.SettingsFile) web.SettingsFi
 	return env
 }
 
-// hasUserinfo says whether a URL names credentials (https://user:token@host/...): preflight refuses such a REPO_URL, but a file
-// may hold one, and the page then shows only the name.
+// hasUserinfo says whether a value names a URL with credentials (https://user:token@host/...) in any of its words (a tap is
+// owner/repo=URL): preflight refuses such a REPO_URL, but a file may hold one, and the page then shows only the name.
 func hasUserinfo(v string) bool {
-	_, rest, ok := strings.Cut(v, "://")
-	if !ok {
-		return false
+	for _, w := range strings.Fields(v) {
+		_, rest, ok := strings.Cut(w, "://")
+		if !ok {
+			continue
+		}
+		host, _, _ := strings.Cut(rest, "/")
+		if strings.Contains(host, "@") {
+			return true
+		}
 	}
-	host, _, _ := strings.Cut(rest, "/")
-	return strings.Contains(host, "@")
+	return false
 }
