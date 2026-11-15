@@ -16,7 +16,7 @@ test('many files and a long file: the files are closed blocks, a file loads when
   await page.goto(ui.start);
   await page.click('#tab-settings');
   // .env.local is open, the others are closed: the page has the list, not the settings of 85 files
-  await expect(page.locator('details.file')).toHaveCount(await page.locator('details.file').count());
+  await expect(page.locator('details.file').nth(80)).toBeAttached(); // the list is built (more than 80 files)
   expect(await page.locator('details.file').count()).toBeGreaterThan(80);
   await expect(page.locator('details.file[open]')).toHaveCount(1);
   await expect(page.locator('details.file[open] summary')).toContainText('.env.local');
