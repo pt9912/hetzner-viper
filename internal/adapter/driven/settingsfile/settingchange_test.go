@@ -82,7 +82,7 @@ func TestOnlyTheSettingsOfTheListAndOnlyValuesOfTheirKind(t *testing.T) {
 		"post clone":      {setting(map[string]string{"VIPER_POST_CLONE": "rm -rf /"}), "not a setting this page changes"},
 		"unknown":         {setting(map[string]string{"NOPE": "x"}), "not a setting"},
 		"enum":            {setting(map[string]string{"NATS_ENABLED": "yes"}), "one of true, false"},
-		"number":          {setting(map[string]string{"NATS_PORT": "70000"}), "a number from 1 to 65535"},
+		"number":          {setting(map[string]string{"NATS_PORT": "70000"}), "a number from 1024 to 65535"},
 		"number text":     {setting(map[string]string{"NATS_PORT": "12x"}), "a number"},
 		"url credentials": {setting(map[string]string{"REPO_URL": "https://u:tok@h.example/r.git"}), "credentials"},
 		"dash":            {setting(map[string]string{"REPO_URL": "--upload-pack=x"}), "must not start"},
@@ -165,5 +165,23 @@ func TestAChangeThatBreaksAnotherMachineIsRefusedAndAServerBlocksTheSettingsVipe
 	pp, _ = settingsfile.Files{}.Preview(dir, settings.Change{Kind: "setting", Target: "base", Fields: map[string]string{"SERVER_PREFIX": "other"}}, env)
 	if !strings.Contains(strings.Join(pp.Problems, "|"), "web") {
 		t.Errorf("%+v", pp)
+	}
+}
+
+func TestEverySettingOfTheCatalogHasAHelpInBothLanguagesAndTheHelpNamesNothingElse(t *testing.T) {
+	names := map[string]bool{}
+	for _, s := range (settingsfile.Files{}).Catalog() {
+		names[s.Name] = true
+		if len(s.Help["en"]) < 20 || len(s.Help["de"]) < 20 || s.Help["en"] == s.Help["de"] {
+			t.Errorf("%s: help %q", s.Name, s.Help)
+		}
+		if strings.HasSuffix(s.Help["en"], " ") || strings.Contains(s.Help["en"]+s.Help["de"], "\n") {
+			t.Errorf("%s: the help is one line of text", s.Name)
+		}
+	}
+	for _, n := range settingsfile.HelpNames() {
+		if !names[n] {
+			t.Errorf("a help for %s, which the catalog does not offer", n)
+		}
 	}
 }

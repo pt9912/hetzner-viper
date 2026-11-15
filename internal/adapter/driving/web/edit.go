@@ -47,12 +47,13 @@ type EditResult struct {
 
 // SettingInfo is a setting that a form may change: its kind of value and the limits.
 type SettingInfo struct {
-	Name    string   `json:"name"`
-	Type    string   `json:"type"`
-	Options []string `json:"options"`
-	Min     int      `json:"min"`
-	Max     int      `json:"max"`
-	Danger  bool     `json:"danger"`
+	Name    string            `json:"name"`
+	Type    string            `json:"type"`
+	Options []string          `json:"options"`
+	Min     int               `json:"min"`
+	Max     int               `json:"max"`
+	Danger  bool              `json:"danger"`
+	Help    map[string]string `json:"help"`
 }
 
 // BackupInfo is a backup of a change.

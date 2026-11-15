@@ -1077,6 +1077,7 @@
     }
     ctl.id = 'ch-value';
     box.appendChild(ctl);
+    $('ch-help').textContent = (c && c.help && (c.help[window.viperI18n.lang()] || c.help.en)) || ''; // from the server, in the language of the page
     $('ch-limits').textContent = [c && c.type === 'int' ? t('change.limits.int', c.min, c.max) : '', c && c.danger ? t('change.limits.danger') : ''].filter(Boolean).join(' ');
   }
 

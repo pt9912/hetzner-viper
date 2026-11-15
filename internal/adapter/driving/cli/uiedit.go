@@ -33,7 +33,7 @@ func (e *uiEditor) Templates(ctx context.Context) (web.Templates, error) {
 	t.Credentials = model.SecretNames()
 	t.Catalog = []web.SettingInfo{}
 	for _, s := range e.b.o.host().Services.SettingsEditor.Catalog() {
-		t.Catalog = append(t.Catalog, web.SettingInfo{Name: s.Name, Type: s.Type, Options: s.Options, Min: s.Min, Max: s.Max, Danger: s.Danger})
+		t.Catalog = append(t.Catalog, web.SettingInfo{Name: s.Name, Type: s.Type, Options: s.Options, Min: s.Min, Max: s.Max, Danger: s.Danger, Help: s.Help})
 	}
 	t.Files = []web.CredentialFile{}
 	files, err := e.b.Settings(ctx)

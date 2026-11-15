@@ -43,7 +43,7 @@ func catalog() []spec {
 		text("COMPOSE_IMAGE", false, false), text("K8S_IMAGE", false, false), enum("K8S_DOCKER", true, false, "none", "dind", "remote"),
 		enum("COMPOSE_DOCKER", true, false, "none", "dind", "remote"), text("WORKSPACE_DIR", true, false), text("REPO_URL", false, false), text("REPO_BRANCH", false, false),
 		text("SSH_ALLOWED_CIDRS", true, false), text("GROUP_MACHINES", false, true),
-		flag("NATS_ENABLED"), text("NATS_GROUP", false, false), number("NATS_PORT", 1, 65535), flag("NATS_MCP"), enum("NATS_MCP_AUTOALLOW", true, false, "off", "read", "all"),
+		flag("NATS_ENABLED"), text("NATS_GROUP", false, false), number("NATS_PORT", 1024, 65535), flag("NATS_MCP"), enum("NATS_MCP_AUTOALLOW", true, false, "off", "read", "all"),
 		text("NATS_MCP_PUSH_FROM", false, false), text("NATS_MCP_TOPICS", false, false), flag("NATS_OBJECTS"), number("NATS_OBJECTS_MAX", 16, 102400),
 		number("NATS_OBJECTS_FILE_MAX", 1, 64), number("NATS_OBJECTS_TTL", 1, 365),
 		enum("VIPER_HOMEBREW", false, false, "0", "1"), enum("VIPER_BREWFILE", false, false, "0", "1"), text("VIPER_BREW_TAPS", false, false), text("VIPER_BREW_TRUST", false, false),
@@ -65,6 +65,7 @@ func specOf(name string) (spec, bool) {
 func (Files) Catalog() []settings.SettingInfo {
 	out := make([]settings.SettingInfo, 0, len(catalog()))
 	for _, s := range catalog() {
+		s.Help = map[string]string{"en": help[s.Name][0], "de": help[s.Name][1]}
 		out = append(out, s.SettingInfo)
 	}
 	return out

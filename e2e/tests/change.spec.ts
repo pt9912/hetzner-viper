@@ -27,6 +27,7 @@ test('a setting is added, changed and taken out; every change keeps a copy that 
   ui = await startUI(['--edit'], 0);
   await open(page);
   await page.selectOption('#ch-name', 'SERVER_TYPE');
+  await expect(page.locator('#ch-help')).toContainText('Size of the machine');
   await page.fill('#ch-value', '2x4');
   await expect(page.locator('#ch-apply')).toBeDisabled();
   await page.click('#ch-preview');
@@ -61,6 +62,17 @@ test('a setting is added, changed and taken out; every change keeps a copy that 
   expect(log).toMatch(/ui\s+edit\s+changed SERVER_TYPE in machines\/web\.env\.local \(backup /);
 });
 
+test('the help of a setting is in the language of the page', async ({ browser }) => {
+  ui = await startUI(['--edit'], 0);
+  const ctx = await browser.newContext({ locale: 'de' });
+  const page = await ctx.newPage();
+  await open(page);
+  await page.selectOption('#ch-name', 'NATS_OBJECTS_TTL');
+  await expect(page.locator('#ch-help')).toContainText('Wie lange eine Datei bleibt');
+  await expect(page.locator('#ch-limits')).toContainText('Eine Zahl von 1 bis 365');
+  await ctx.close();
+});
+
 test('what is refused says why; a dangerous setting asks for a word; a change that breaks others is not made', async ({ page }) => {
   ui = await startUI(['--edit'], 0);
   await open(page);
@@ -68,7 +80,7 @@ test('what is refused says why; a dangerous setting asks for a word; a change th
   await page.selectOption('#ch-name', 'NATS_PORT');
   await page.fill('#ch-value', '70000');
   await page.click('#ch-preview');
-  await expect(page.locator('#ch-problems')).toContainText('a number from 1 to 65535');
+  await expect(page.locator('#ch-problems')).toContainText('a number from 1024 to 65535');
   await expect(page.locator('#ch-apply')).toBeDisabled();
   // dangerous: the word to type
   await page.selectOption('#ch-name', 'COMPOSE_DOCKER');

@@ -39,6 +39,8 @@ type SettingInfo struct {
 	Min     int      `json:"min"`
 	Max     int      `json:"max"`
 	Danger  bool     `json:"danger"`
+	// Help is what the setting does, by language ("en", "de").
+	Help map[string]string `json:"help"`
 }
 
 // BackupInfo is a backup of a change: the file name, the time it was made, the files it holds.

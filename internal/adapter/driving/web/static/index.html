@@ -186,10 +186,11 @@
     <form id="change-form" class="column" autocomplete="off">
       <div class="row">
         <label for="ch-name" data-i18n="change.name">Setting</label>
-        <select id="ch-name"></select>
+        <select id="ch-name" aria-describedby="ch-help ch-limits"></select>
         <label for="ch-value" data-i18n="change.value">New value</label>
         <span id="ch-valuebox"></span>
       </div>
+      <p id="ch-help" class="muted hint"></p>
       <p id="ch-limits" class="muted hint"></p>
       <div class="row">
         <button type="button" id="ch-preview" data-i18n="change.preview">Preview</button>
