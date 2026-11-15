@@ -25,6 +25,7 @@
     <button type="button" role="tab" id="tab-runs" class="tab" aria-selected="false" aria-controls="page-runs" tabindex="-1" data-i18n="tab.runs">Runs</button>
     <button type="button" role="tab" id="tab-nats" class="tab" aria-selected="false" aria-controls="page-nats" tabindex="-1" data-i18n="tab.nats">NATS</button>
     <button type="button" role="tab" id="tab-settings" class="tab" aria-selected="false" aria-controls="page-settings" tabindex="-1" data-i18n="tab.settings">Settings</button>
+    <button type="button" role="tab" id="tab-create" class="tab" aria-selected="false" aria-controls="page-create" tabindex="-1" hidden data-i18n="tab.create">Create</button>
     <button type="button" role="tab" id="tab-logs" class="tab" aria-selected="false" aria-controls="page-logs" tabindex="-1" data-i18n="tab.logs">Logs</button>
   </div>
 </nav>
@@ -164,6 +165,74 @@
     <h2 id="h-settings" data-i18n="h.settings">Settings</h2>
     <p class="muted" data-i18n="settings.intro">The names of the settings in each file.</p>
     <div id="settings-files"></div>
+  </section>
+
+  <section id="page-create" role="tabpanel" aria-labelledby="tab-create" hidden>
+    <h2 id="h-create" data-i18n="h.create">Create settings</h2>
+    <p class="muted lead" data-i18n="create.intro">Makes a new file of settings. A file that exists is never changed. Tokens and passwords are not asked here.</p>
+    <form id="create-form" class="column" autocomplete="off">
+      <div class="row">
+        <label for="c-kind" data-i18n="create.kind">What</label>
+        <select id="c-kind">
+          <option value="machine" data-i18n="kind.machine">A machine (machines/NAME.env.local)</option>
+          <option value="group" data-i18n="kind.group">A group (groups/NAME.env)</option>
+          <option value="base" data-i18n="kind.base">The base file (.env.local)</option>
+        </select>
+        <label for="c-name" id="c-name-label" data-i18n="create.name">Name</label>
+        <input type="text" id="c-name" size="20" maxlength="63" spellcheck="false" aria-describedby="c-name-hint">
+      </div>
+      <p id="c-name-hint" class="muted hint" data-i18n="create.namehint">Lowercase letters, digits and hyphens.</p>
+      <div id="c-machine" class="column">
+        <div class="row">
+          <label for="c-provider" data-i18n="create.provider">Provider</label>
+          <select id="c-provider"></select>
+          <label for="c-type" data-i18n="create.type">Type</label>
+          <input type="text" id="c-type" size="16" spellcheck="false">
+          <label for="c-location" data-i18n="create.location">Location</label>
+          <input type="text" id="c-location" size="18" spellcheck="false">
+        </div>
+        <div class="row">
+          <label for="c-image" data-i18n="create.image">Image (a container needs one that viper image build made)</label>
+          <input type="text" id="c-image" size="30" spellcheck="false">
+          <label for="c-dns" data-i18n="create.dns">DNS name</label>
+          <select id="c-dns">
+            <option value="" data-i18n="create.default">default</option>
+            <option value="cloudflare">cloudflare</option>
+            <option value="none">none</option>
+          </select>
+        </div>
+      </div>
+      <div id="c-group" class="column" hidden>
+        <fieldset id="c-members">
+          <legend data-i18n="create.members">Machines of the group</legend>
+        </fieldset>
+        <label><input type="checkbox" id="c-nats"> <span data-i18n="create.nats">NATS for the group</span></label>
+      </div>
+      <div id="c-base" class="column" hidden>
+        <div class="row">
+          <label for="c-bprefix" data-i18n="create.prefix">Prefix of the server names</label>
+          <input type="text" id="c-bprefix" size="14" spellcheck="false" placeholder="claude">
+          <label for="c-bdns" data-i18n="create.dns">DNS name</label>
+          <select id="c-bdns">
+            <option value="" data-i18n="create.default">default</option>
+            <option value="cloudflare">cloudflare</option>
+            <option value="none">none</option>
+          </select>
+          <label for="c-domain" data-i18n="create.domain">Domain</label>
+          <input type="text" id="c-domain" size="22" spellcheck="false">
+        </div>
+      </div>
+      <div class="row">
+        <button type="button" id="c-preview" data-i18n="create.preview">Preview</button>
+        <button type="submit" id="c-apply" class="primary" disabled data-i18n="create.apply">Create the file</button>
+      </div>
+    </form>
+    <p id="c-status" role="status" class="muted"></p>
+    <div id="c-result" role="region" aria-labelledby="h-c-result" hidden>
+      <h3 id="h-c-result" data-i18n="create.result">Preview</h3>
+      <ul id="c-problems" class="issues"></ul>
+      <pre id="c-text" tabindex="0"></pre>
+    </div>
   </section>
 
   <section id="page-logs" role="tabpanel" aria-labelledby="tab-logs" hidden>

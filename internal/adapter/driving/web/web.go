@@ -76,6 +76,7 @@ type Overview struct {
 	Groups   []Group     `json:"groups"`
 	NATS     []NATSGroup `json:"nats"`
 	Readonly bool        `json:"readonly"`
+	Edit     bool        `json:"edit"`
 	Version  string      `json:"version"`
 }
 
@@ -95,7 +96,9 @@ type Backend interface {
 type Config struct {
 	Backend  Backend
 	Readonly bool
-	Version  string
+	// Editor makes new settings files (viper ui --edit); nil: the pages offer none.
+	Editor  Editor
+	Version string
 	// Clean makes an output fit to show (control characters, escape sequences), Redact takes the values of the settings
 	// that are secrets out of it. nil: the output is shown as it is (tests only).
 	Clean, Redact func(string) string
@@ -148,10 +151,11 @@ type Server struct {
 
 	cookieName string // viper_ui_<port>: two servers on this computer do not overwrite each other's cookie
 
-	ovMu sync.Mutex
-	ov   Overview
-	ovAt time.Time
-	ovOK bool
+	editMu sync.Mutex
+	ovMu   sync.Mutex
+	ov     Overview
+	ovAt   time.Time
+	ovOK   bool
 }
 
 // New makes a server. Listen gives it its address.
@@ -293,6 +297,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/cancel", s.cancelRun)
 	mux.HandleFunc("POST /api/upload", s.upload)
 	mux.HandleFunc("GET /api/download", s.download)
+	mux.HandleFunc("GET /api/templates", s.templates)
+	mux.HandleFunc("POST /api/edit/preview", s.editPreview)
+	mux.HandleFunc("POST /api/edit/apply", s.editApply)
 	return s.guard(mux)
 }
 
@@ -407,6 +414,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ov.Readonly, ov.Version = s.cfg.Readonly, s.cfg.Version
+	ov.Edit = s.cfg.Editor != nil && !s.cfg.Readonly
 	for i := range ov.Machines {
 		ov.Machines[i].Error = s.show(ov.Machines[i].Error)
 	}

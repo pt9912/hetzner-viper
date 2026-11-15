@@ -53,7 +53,7 @@ func LoadFile(dir string, env settings.Env) (map[string]string, error) {
 }
 
 func sourceFile(vars map[string]string, path string, env settings.Env) error {
-	b, err := os.ReadFile(path)
+	b, err := readFile(env, path)
 	if err != nil {
 		return err
 	}

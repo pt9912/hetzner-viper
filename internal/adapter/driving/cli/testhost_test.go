@@ -33,9 +33,10 @@ func testHost() *cli.Host {
 		Stdout:     io.Discard,
 		Stderr:     io.Discard,
 		Services: cli.Services{
-			Settings: settingsfile.Files{},
-			Groups:   groupops.Runner{},
-			NATS:     natscli.Service{},
+			Settings:       settingsfile.Files{},
+			SettingsEditor: settingsfile.Files{},
+			Groups:         groupops.Runner{},
+			NATS:           natscli.Service{},
 			OpenLog: func(m *model.Machine, action string, stdout, stderr io.Writer) (runlog.Run, error) {
 				l, err := runlogfile.Open(m.StateDir, m.ServerName, action, stdout, stderr)
 				if err != nil {

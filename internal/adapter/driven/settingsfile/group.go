@@ -37,8 +37,8 @@ func (e choiceError) Unwrap() error { return e.error }
 
 // groupFiles are the names of the groups that have a file in dir/groups, sorted. A missing directory
 // is no group at all.
-func groupFiles(dir string) []string {
-	ents, err := os.ReadDir(filepath.Join(dir, groupDir))
+func groupFiles(dir string, env settings.Env) []string {
+	ents, err := readDir(env, filepath.Join(dir, groupDir))
 	if err != nil {
 		return nil
 	}
@@ -111,10 +111,10 @@ func memberOf(dir, machine string, env settings.Env) (membership, error) {
 	}
 	var m membership
 	var files []string
-	for _, n := range groupFiles(dir) {
+	for _, n := range groupFiles(dir, env) {
 		g, err := LoadGroup(dir, n, env)
 		if err != nil {
-			if namesMachine(GroupFileOf(dir, n), machine) {
+			if namesMachine(GroupFileOf(dir, n), machine, env) {
 				return m, err
 			}
 			m.warnings = append(m.warnings, fmt.Sprintf("%s/%s.env is ignored: %v", groupDir, n, err))
@@ -148,7 +148,7 @@ func memberIn(dir, machine string, env settings.Env) (membership, error) {
 		return membership{}, choiceError{error: fmt.Errorf("The machine %s is not in the group %s (groups/%s.env names %s)", machine, env.Group, env.Group, strings.Join(grp.Machines, ", "))}
 	}
 	others := 0
-	for _, n := range groupFiles(dir) {
+	for _, n := range groupFiles(dir, env) {
 		if n != env.Group {
 			if g, err := LoadGroup(dir, n, env); err == nil && slices.Contains(g.Machines, machine) {
 				others++
@@ -161,8 +161,8 @@ func memberIn(dir, machine string, env settings.Env) (membership, error) {
 // namesMachine looks at the raw text of a group file for the machine, as a word anywhere in it (also in
 // a line that is not a plain GROUP_MACHINES=…, or after a syntax error): a file that cannot be read
 // must not take the group away from a machine silently, so it is better to stop once too often.
-func namesMachine(file, machine string) bool {
-	b, err := os.ReadFile(file)
+func namesMachine(file, machine string, env settings.Env) bool {
+	b, err := readFile(env, file)
 	if err != nil {
 		return false
 	}

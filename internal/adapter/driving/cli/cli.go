@@ -15,7 +15,7 @@ import (
 type options struct {
 	machine, repo, cmd, dir string
 	port                    int    // viper ui
-	noOpen, readonly        bool   // viper ui
+	noOpen, readonly, edit  bool   // viper ui
 	version                 string // the release of this program
 	tag, k3d                string // viper image build
 	group                   string // run for all machines of groups/<group>.env
@@ -93,7 +93,7 @@ func commands() map[string]command {
 		"k8s-proxy":    {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeK8sProxy},
 		"docker-proxy": {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeDockerProxy},
 		"mcp-binary":   {usage: "--arch amd64|arm64", machine: noMachine, flags: []string{"arch"}, run: nativeMCPBinary},
-		"ui":           {usage: "[--port N] [--no-open] [--readonly]", machine: noMachine, flags: []string{"port", "no-open", "readonly"}, run: nativeUI},
+		"ui":           {usage: "[--port N] [--no-open] [--readonly|--edit]", machine: noMachine, flags: []string{"port", "no-open", "readonly", "edit"}, run: nativeUI},
 		"version":      {usage: "", machine: noMachine},
 	}
 }
@@ -257,6 +257,8 @@ func setSwitch(o *options, name, n string) error {
 		o.noOpen = true
 	case "readonly":
 		o.readonly = true
+	case "edit":
+		o.edit = true
 	case "no-code":
 		o.noCode = true
 	case "tmux":

@@ -16,6 +16,8 @@ import (
 type Services struct {
 	// Settings reads the settings of the machines.
 	Settings settings.Store
+	// SettingsEditor makes new settings files (viper ui --edit).
+	SettingsEditor settings.Editor
 	// Groups runs a command for the machines of a group at the same time (--group).
 	Groups driving.GroupRunner
 	// NATS speaks to a NATS group as one of its machines (viper nats).

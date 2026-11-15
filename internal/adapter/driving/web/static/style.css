@@ -152,3 +152,10 @@ pre { background: var(--panel); border: 1px solid var(--line); border-radius: 8p
   #machines td.actions { white-space: normal; text-align: left; }
 }
 @media (prefers-reduced-motion: reduce) { .tab[data-busy="true"]::after { animation: none; } }
+
+/* create */
+#create-form fieldset { border: 1px solid var(--line); border-radius: 6px; padding: .4rem .8rem .6rem; }
+#create-form fieldset label { display: inline-block; margin-right: 1rem; }
+#c-result { margin-top: .8rem; max-width: 50rem; }
+#c-text { max-height: 24rem; overflow: auto; }
+.issues { margin: .4rem 0; padding-left: 1.2rem; }

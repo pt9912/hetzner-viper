@@ -15,6 +15,8 @@ type Env struct {
 	// Group is the group a machine is looked at in ("" if the settings find it). A machine may be named in several groups;
 	// then the group says whose settings apply (viper up web --group dev). It must name the machine.
 	Group string
+	// Files reads the settings files (nil: the disk).
+	Files FS
 }
 
 // Getenv is the value of an environment variable, "" if it is not set.

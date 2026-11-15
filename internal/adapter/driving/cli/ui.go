@@ -26,13 +26,13 @@ func nativeUI(o *options) error {
 	if err != nil {
 		return err
 	}
+	if o.edit && o.readonly {
+		return errors.New("viper ui: --edit and --readonly exclude each other (one writes settings files, the other offers no action)")
+	}
 	secrets := &secretValues{}
 	b := &uiBackend{o: o, env: env, secrets: secrets}
 	b.learnEnvironment()
-	cfg := web.Config{Backend: b, Readonly: o.readonly, Version: o.version, Clean: natsmcp.Clean, Redact: secrets.redact, LongestSecret: secrets.longest}
-	if !o.readonly {
-		cfg.Spawn = spawner(settingsDir(o))
-	}
+	cfg := uiConfig(o, b, secrets)
 	if o.noOpen {
 		cfg.TokenTTL = 10 * time.Minute // the address is copied by hand
 	}
@@ -52,9 +52,7 @@ func nativeUI(o *options) error {
 	done := make(chan error, 1)
 	go func() { done <- srv.Serve(ctx, ln) }()
 	fmt.Fprintf(h.Stdout, "viper ui: http://%s/ (Ctrl-C ends it)\n", srv.Host())
-	if o.readonly {
-		fmt.Fprintln(h.Stdout, "viper ui: read only (no preflight, up, down or NATS)")
-	}
+	announceMode(h.Stdout, o)
 	if o.noOpen {
 		fmt.Fprintf(h.Stdout, "viper ui: open this address in your browser within %d minutes (it works once): %s\n", int(cfg.TokenTTL.Minutes()), srv.URL())
 	} else {
@@ -339,4 +337,26 @@ func (s *secretValues) redact(text string) string {
 		text = strings.ReplaceAll(text, v, "[hidden]")
 	}
 	return text
+}
+
+// announceMode says at the start what the pages may do besides looking.
+func announceMode(out io.Writer, o *options) {
+	if o.readonly {
+		fmt.Fprintln(out, "viper ui: read only (no preflight, up, down or NATS)")
+	}
+	if o.edit {
+		fmt.Fprintln(out, "viper ui: edit: new settings files can be made (a file that exists is never changed)")
+	}
+}
+
+// uiConfig is what the pages may do: look, run viper (not with --readonly), make new settings files (--edit).
+func uiConfig(o *options, b *uiBackend, secrets *secretValues) web.Config {
+	cfg := web.Config{Backend: b, Readonly: o.readonly, Version: o.version, Clean: natsmcp.Clean, Redact: secrets.redact, LongestSecret: secrets.longest}
+	if !o.readonly {
+		cfg.Spawn = spawner(settingsDir(o))
+	}
+	if o.edit {
+		cfg.Editor = &uiEditor{b: b}
+	}
+	return cfg
 }

@@ -230,3 +230,9 @@ func UISettings(p *Opts, env settings.Env) ([]web.SettingsFile, error) {
 
 // StartProcess starts a program as viper ui starts viper.
 func StartProcess(exe string, args ...string) (*process, error) { return startProcess(exe, args) }
+
+// UIEditor is what viper ui --edit does, for the options (the directory) and the environment.
+func UIEditor(p *Opts, env settings.Env) *uiEditor {
+	secrets := &secretValues{}
+	return &uiEditor{b: &uiBackend{o: p.options(), env: env, secrets: secrets}}
+}

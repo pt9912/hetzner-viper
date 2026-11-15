@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.142  
+Version: 1.143  
 Software-Version: v0.25.0  
 Stand: 14.11.2026  
 
@@ -54,7 +54,7 @@ Sie haben kein Cloud-Konto oder wollen erst einmal ausprobieren? Dann beginnen S
 | `viper dns <rechner>` | Gibt den DNS-Namen des Rechners aus (`<SERVER_PREFIX>-<rechner>.<DNS_DOMAIN>`), ohne Zugriff auf den Anbieter oder Cloudflare. Mit `DNS_PROVIDER=none` gibt es keinen Namen; der Befehl nennt die zuletzt gespeicherte Adresse. |
 | `viper find` | Sucht bei allen Anbietern Server-Typen, die mindestens die gewünschten CPUs, den RAM und die Platte haben, und zeigt die günstigsten mit Preis. Liest nur und braucht keinen Rechner. |
 | `viper log [<rechner>]` | Zeigt die lokalen Protokolle: Ereignisse aller Rechner, eines Rechners oder mit `--full` dessen vollständige Ausgabe. |
-| `viper ui [--port N] [--no-open] [--readonly]` | Startet eine Weboberfläche auf `127.0.0.1` im Browser: Übersicht der Rechner, Prüfen, Vorprüfung/Up/Down, NATS, Einstellungen und Protokolle. Siehe „Die Oberfläche im Browser“. |
+| `viper ui [--port N] [--no-open] [--readonly\|--edit]` | Startet eine Weboberfläche auf `127.0.0.1` im Browser: Übersicht der Rechner, Prüfen, Vorprüfung/Up/Down, NATS, Einstellungen und Protokolle; mit `--edit` auch neue Rechner und Gruppen anlegen. Siehe „Die Oberfläche im Browser“. |
 | `viper up --group <gruppe>`, `viper down --group <gruppe>`, `viper check --group <gruppe>`, `viper preflight --group <gruppe>`, `viper ssh --group <gruppe> --cmd …` | Dieselben Befehle für alle Rechner einer Gruppe aus `groups/<gruppe>.env`, gleichzeitig (siehe „Eine Gruppe von Rechnern gemeinsam starten und beenden“). |
 | `viper mcp-binary --arch amd64\|arm64` | Schreibt den in `viper` eingebauten MCP-Server `viper-nats-mcp` für die Architektur nach stdout (`> datei`), zum Ansehen, Prüfen oder als `NATS_MCP_BINARY`. Zeigt nichts auf dem Terminal. |
 | `viper nats peers\|topics\|listen\|send\|broadcast\|request\|fetch\|init\|revoke <gruppe> …` | Sendet Nachrichten (und Bilder, PDFs und ZIP-Dateien) an die Rechner einer NATS-Gruppe (`--file DATEI` statt des Textes) und liest mit, als einer der Rechner der Gruppe (siehe „Nachrichten an eine NATS-Gruppe senden“); `fetch` holt eine Datei, `init` und `revoke` richten Ihren eigenen Schlüssel als Betreiber ein und entfernen ihn. |
@@ -419,13 +419,15 @@ Bei AWS, Azure und Google Cloud wird die Systemplatte getrennt vom Typ gewählt 
     * **Senden:** Nachricht an einen Rechner, Anfrage (wartet „Auf die Antwort warten“ Sekunden, Standard 30) oder Rundruf an ein Thema; der Text bis 16 KiB. Eine Datei (PDF, Bild oder ZIP) geht nur an eine Gruppe mit Objektspeicher (`NATS_OBJECTS=true`; ohne ihn ist das Feld aus) und darf nicht größer sein als `NATS_OBJECTS_FILE_MAX` der Gruppe, in der Oberfläche höchstens 64 MiB; höchstens acht Dateien warten zugleich auf das Senden. Die weiteren Prüfungen sind die von `viper nats`. Text und Datei lassen sich auch **einfügen und hineinziehen**: Eine Datei (PDF, Bild oder ZIP) ziehen Sie auf das Formular, oder Sie fügen sie mit `Strg+V` ein (auch ein Bildschirmfoto aus der Zwischenablage, das als `pasted.png` mitgeht). Eine Textdatei (`.txt`, `.md`, `.log`, `.json`, `.csv`) wird zum Text der Nachricht, ebenso ein Text, den Sie hineinziehen oder (außerhalb eines Feldes) einfügen. Zu einer Nachricht gehört eine Datei, weitere lässt die Seite weg und sagt es; eine zu große oder unbrauchbare Datei nimmt sie nicht. „Datei entfernen“ nimmt die gewählte Datei wieder heraus. Der Text steht nie in der Befehlszeile eines Programms. Nach dem Senden leert die Seite Text und Datei. Eine Datei, die niemand sendet (etwa weil die Nachricht abgelehnt wurde), löscht die Oberfläche selbst, spätestens nach 30 Minuten. Die Warnung, dass der Absender in `NATS_MCP_PUSH_FROM` eines Empfängers steht, erscheint als Fehler des Laufs; „trotzdem senden“ entspricht `--yes`.
     * **Datei holen** (`viper nats fetch`, nur mit dem Schlüssel des Betreibers): Nach dem Lauf erscheint **Datei herunterladen**. Die Datei stammt von einem anderen Agenten: nicht ausführen; die Seite lädt sie immer als Download, nie als Seite.
 7. **Einstellungen:** Die Seite zeigt die Namen der Einstellungen jeder Datei im Einstellungsverzeichnis (`.env.local`, `groups/*.env`, `machines/*.env.local`) und die Namen bekannter Einstellungen, die nur die Umgebung setzt. Den **Wert** zeigt sie nur für Einstellungen einer festen Liste, die keine Zugangsdaten sind und nichts Privates enthalten (zum Beispiel `PROVIDER`, `SERVER_TYPE`, `SERVER_LOCATION`, `GROUP_MACHINES`, die Einstellungen der NATS-Gruppe wie `NATS_ENABLED`, `NATS_GROUP`, `NATS_PORT`, `NATS_OBJECTS*` und `NATS_MCP_TOPICS`, dazu `K3D_*`); alles andere steht als „gesetzt“, auch eine Repo-URL, ein Token, ein Passwort und der Pfad eines Schlüssels. Werte, die ein Programm erst ausrechnen müsste (`$VAR`), zeigt sie nicht, aus der Umgebung nur die Namen. Ändern lässt sich hier nichts: Bearbeiten Sie die Dateien weiter selbst.
-8. **Protokolle:** die Ereignisse aller Rechner, eines Rechners oder dessen vollständige Ausgabe, mit Suchfeld; dasselbe wie `viper log`.
+8. **Anlegen** (nur mit `--edit`): Die Seite legt eine **neue** Datei mit Einstellungen an: einen Rechner (`machines/NAME.env.local`), eine Gruppe (`groups/NAME.env`) oder, solange es sie nicht gibt, die Grunddatei `.env.local`. Sie wählen, was, tippen den Namen (Kleinbuchstaben, Ziffern, Bindestriche) und füllen die Felder aus; leere Felder bekommen ihren Standard und stehen nicht in der Datei. **Vorschau** zeigt den Text der Datei, was `viper up` noch verlangt (zum Beispiel die Zugangsdaten des Anbieters, die diese Seite nicht abfragt: sie gehören in `.env.local` oder die Umgebung) und was nicht geht. **Datei anlegen** ist erst nach einer Vorschau ohne Beanstandung möglich und nur, solange sich das Formular nicht geändert hat. Beanstandet wird: ein Name, den `viper` nicht liest oder den Windows für ein Gerät hält (`con`, `nul`, `com1` …) oder der mit `example` beginnt; eine Datei, die es schon gibt (auch in anderer Schreibweise; sie wird nie ersetzt oder geändert); ein Verzeichnis `machines` oder `groups`, das ein Link ist; ein Wert mit Zeilenumbruch oder Steuerzeichen; eine Gruppe, die einen Rechner nennt, den es nicht gibt, oder die einen anderen Rechner **in zwei Gruppen** brächte oder sonst etwas zum Fehler machte, das bisher geladen wurde („Würde brechen: …“). Ein Container-Anbieter (`compose`, `kubernetes`) bekommt `DNS_PROVIDER='none'` von selbst. Die Datei entsteht mit den Rechten `0600`; das Anlegen steht als Zeile in `events.log` (nur die Dateinamen, nie Werte).
+9. **Protokolle:** die Ereignisse aller Rechner, eines Rechners oder dessen vollständige Ausgabe, mit Suchfeld; dasselbe wie `viper log`.
 
 **Sprache:** Oben rechts wählen Sie Deutsch oder Englisch; ohne Wahl entscheidet die Sprache des Browsers, die Wahl bleibt im Browser erhalten. Die Beschriftungen in diesem Abschnitt sind die deutschen. In der englischen Ansicht heißen sie:
 
 | Deutsch | Englisch |
 |---|---|
-| Übersicht, Läufe, NATS, Einstellungen, Protokolle | Overview, Runs, NATS, Settings, Logs |
+| Übersicht, Läufe, NATS, Einstellungen, Anlegen, Protokolle | Overview, Runs, NATS, Settings, Create, Logs |
+| Vorschau, Datei anlegen, Bearbeiten an | Preview, Create the file, edit on |
 | Zustand: eingerichtet, gestartet, nicht gestartet, teilweise | State: set up, started, not started, partly |
 | Ohne Gruppe | No group |
 | Filter, Alle Zustände, Filter löschen | Filter, All states, Clear the filter |
@@ -447,6 +449,7 @@ Die Ausgaben von `viper` selbst (Läufe, Prüfungen, Protokolle) und die Fehler 
 * `--port N`: auf diesem Port lauschen (Standard: ein freier).
 * `--no-open`: den Browser nicht öffnen; das Terminal zeigt die Adresse mit dem Schlüssel (gilt zehn Minuten, einmal).
 * `--readonly`: keine Aktion anbieten (kein Preflight, Up, Down und kein NATS, auch kein Hochladen); Ansehen, Prüfen, Protokolle und Einstellungen bleiben.
+* `--edit`: die Seite **Anlegen** anbieten (neue Dateien mit Einstellungen, ohne Zugangsdaten). Die Kopfzeile zeigt „Bearbeiten an“. Zusammen mit `--readonly` bricht `viper ui` beim Start mit einer Meldung ab. Ohne `--edit` schreibt die Oberfläche keine Datei, und der Server lehnt Anfragen dazu ab.
 
 #### Ergebnis
 
@@ -1744,3 +1747,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.140 | nach v0.25.0 | `viper ui`: Dateien und Text lassen sich auf das Sendeformular ziehen und mit Strg+V einfügen (Bild, PDF, ZIP, Textdatei, Text); „Datei entfernen“. |
 | 1.141 | nach v0.25.0 | `viper ui`: neue Gestalt der Übersicht (Seiten links, Gruppen zuerst mit dem Zustand der Gruppe, Lampe mit Wort und Streifen je Rechner, Knöpfe nach Gewicht, Terminal mit der Rückfrage als Zeile). |
 | 1.142 | nach v0.25.0 | `viper ui`: die Übersicht lässt sich filtern (Wörter, Zustand) und nach Spalten sortieren (je Gruppe). |
+| 1.143 | nach v0.25.0 | `viper ui --edit`: neue Seite „Anlegen“ für neue Rechner, Gruppen und die Grunddatei `.env.local` (Vorschau, Prüfung aller Rechner und Gruppen, nie eine vorhandene Datei ändern, keine Zugangsdaten). |

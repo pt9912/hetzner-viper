@@ -1,0 +1,141 @@
+package web_test
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/pt9912/hetzner-viper/internal/adapter/driving/web"
+)
+
+type fakeEditor struct {
+	mu      sync.Mutex
+	made    []web.EditRequest
+	enter   chan struct{}
+	release chan struct{}
+}
+
+func (e *fakeEditor) Templates(context.Context) (web.Templates, error) {
+	return web.Templates{Providers: []web.Template{{Name: "hetzner", Type: "cpx32", Location: "fsn1"}}, Machines: []string{"web"}, Base: true}, nil
+}
+
+func (e *fakeEditor) Preview(_ context.Context, r web.EditRequest) (web.EditResult, error) {
+	res := web.EditResult{Files: []web.EditFile{{Path: "machines/" + r.Name + ".env.local", Text: "A='s3cr3t-value-123'\n"}}}
+	if r.Name == "bad" {
+		res.Problems = []string{"name: no"}
+	}
+	return res, nil
+}
+
+func (e *fakeEditor) Create(ctx context.Context, r web.EditRequest) (web.EditResult, error) {
+	if e.enter != nil {
+		e.enter <- struct{}{}
+		<-e.release
+	}
+	res, _ := e.Preview(ctx, r)
+	if len(res.Problems) > 0 {
+		return res, errors.New("the change is refused")
+	}
+	e.mu.Lock()
+	e.made = append(e.made, r)
+	e.mu.Unlock()
+	return res, nil
+}
+
+func editServer(t *testing.T, ed web.Editor, readonly bool) (*web.Server, http.Handler, map[string]string) {
+	t.Helper()
+	s := web.New(web.Config{Backend: newFake(), Editor: ed, Readonly: readonly, Version: "vtest", Redact: redact})
+	ln, err := s.Listen(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	h := s.Handler()
+	return s, h, login(t, s, h)
+}
+
+func edit(s *web.Server, h http.Handler, c map[string]string, path, body string) (int, string) {
+	w := do(h, "POST", s.Host(), path, map[string]string{"Cookie": c["Cookie"], "Content-Type": "application/json", "X-Viper-UI": "1", "Origin": "http://" + s.Host()}, body)
+	return w.Code, w.Body.String()
+}
+
+func TestWithoutEditNothingIsWrittenAndThePageSaysSo(t *testing.T) {
+	for _, readonly := range []bool{false, true} {
+		var ed web.Editor
+		if readonly {
+			ed = &fakeEditor{}
+		}
+		s, h, c := editServer(t, ed, readonly)
+		for _, p := range []string{"/api/edit/preview", "/api/edit/apply"} {
+			if code, _ := edit(s, h, c, p, `{"kind":"machine","name":"x"}`); code != http.StatusForbidden {
+				t.Errorf("%s (readonly %v): %d", p, readonly, code)
+			}
+		}
+		if w := do(h, "GET", s.Host(), "/api/templates", c, ""); w.Code != http.StatusForbidden {
+			t.Errorf("templates: %d", w.Code)
+		}
+		if w := do(h, "GET", s.Host(), "/api/overview", c, ""); strings.Contains(w.Body.String(), `"edit":true`) || !strings.Contains(w.Body.String(), `"edit":false`) {
+			t.Errorf("overview: %s", w.Body)
+		}
+	}
+}
+
+func TestPreviewAndApplyWithEdit(t *testing.T) {
+	ed := &fakeEditor{}
+	s, h, c := editServer(t, ed, false)
+	if w := do(h, "GET", s.Host(), "/api/overview", c, ""); !strings.Contains(w.Body.String(), `"edit":true`) {
+		t.Errorf("overview: %s", w.Body)
+	}
+	if w := do(h, "GET", s.Host(), "/api/templates", c, ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"cpx32"`) {
+		t.Errorf("templates: %d %s", w.Code, w.Body)
+	}
+	code, body := edit(s, h, c, "/api/edit/preview", `{"kind":"machine","name":"web2","fields":{"PROVIDER":"hetzner"},"members":null}`)
+	if code != 200 || !strings.Contains(body, "machines/web2.env.local") || strings.Contains(body, "s3cr3t-value-123") {
+		t.Errorf("preview: %d %s (the text goes through the redaction)", code, body)
+	}
+	if len(ed.made) != 0 {
+		t.Error("the preview made a file")
+	}
+	code, body = edit(s, h, c, "/api/edit/apply", `{"kind":"machine","name":"web2","fields":{},"members":[]}`)
+	if code != 200 || !strings.Contains(body, `"done":true`) || len(ed.made) != 1 {
+		t.Errorf("apply: %d %s", code, body)
+	}
+	code, body = edit(s, h, c, "/api/edit/apply", `{"kind":"machine","name":"bad","fields":{},"members":[]}`)
+	if code != 200 || !strings.Contains(body, "name: no") || strings.Contains(body, `"done":true`) || !strings.Contains(body, `"done":false`) {
+		t.Errorf("refused: %d %s", code, body)
+	}
+}
+
+func TestABadEditRequestAndTheGuard(t *testing.T) {
+	s, h, c := editServer(t, &fakeEditor{}, false)
+	for _, body := range []string{`{`, `{"kind":"machine","path":"../x"}`, `{"kind":"machine","members":["` + strings.Repeat(`a","`, 300) + `a"]}`} {
+		if code, _ := edit(s, h, c, "/api/edit/preview", body); code != http.StatusBadRequest {
+			t.Errorf("%.30s: %d", body, code)
+		}
+	}
+	hdr := map[string]string{"Cookie": c["Cookie"], "Content-Type": "text/plain", "X-Viper-UI": "1", "Origin": "http://" + s.Host()}
+	if w := do(h, "POST", s.Host(), "/api/edit/apply", hdr, `{"kind":"machine","name":"x"}`); w.Code != http.StatusForbidden {
+		t.Errorf("a form post: %d", w.Code)
+	}
+	if w := do(h, "POST", s.Host(), "/api/edit/apply", map[string]string{"Content-Type": "application/json", "X-Viper-UI": "1", "Origin": "http://" + s.Host()}, `{}`); w.Code != http.StatusForbidden {
+		t.Errorf("without the cookie: %d", w.Code)
+	}
+}
+
+func TestOneChangeAtATime(t *testing.T) {
+	ed := &fakeEditor{enter: make(chan struct{}), release: make(chan struct{})}
+	s, h, c := editServer(t, ed, false)
+	first := make(chan int, 1)
+	go func() { code, _ := edit(s, h, c, "/api/edit/apply", `{"kind":"machine","name":"a"}`); first <- code }()
+	<-ed.enter
+	if code, _ := edit(s, h, c, "/api/edit/apply", `{"kind":"machine","name":"b"}`); code != http.StatusConflict {
+		t.Errorf("second: %d", code)
+	}
+	close(ed.release)
+	if code := <-first; code != 200 {
+		t.Errorf("first: %d", code)
+	}
+}

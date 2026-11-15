@@ -4,7 +4,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const { t } = window.viperI18n;
-  const PAGES = ['overview', 'runs', 'nats', 'settings', 'logs'];
+  const PAGES = ['overview', 'runs', 'nats', 'settings', 'create', 'logs'];
   let overview = { machines: [], groups: [], nats: [] };
   let logText = '';
   let page = 'overview';
@@ -229,7 +229,7 @@
   }
 
   function renderVersion() {
-    $('version').textContent = (overview.version || '') + (overview.readonly ? ' (' + t('readonly') + ')' : '');
+    $('version').textContent = (overview.version || '') + (overview.readonly ? ' (' + t('readonly') + ')' : '') + (overview.edit ? ' (' + t('editing') + ')' : '');
   }
 
   async function load() {
@@ -244,6 +244,8 @@
 
   function renderAll() {
     renderVersion();
+    $('tab-create').hidden = !overview.edit;
+    if (!overview.edit && page === 'create') { show('overview'); }
     renderMachines();
     renderLogChoices();
     renderNats();
@@ -702,23 +704,167 @@
     if (name === 'logs') { loadLog(); }
     if (name === 'runs') { loadRuns(); }
     if (name === 'settings') { loadSettings(); }
+    if (name === 'create') { loadTemplates(); }
   }
 
+  const shownPages = () => PAGES.filter((p) => p !== 'create' || overview.edit);
+
   $('tabs').addEventListener('keydown', (ev) => {
-    const i = PAGES.indexOf(page);
+    const pages = shownPages();
+    const i = pages.indexOf(page);
     // the list of pages stands beside the page: Up and Down, and Left and Right as well
-    const next = { ArrowDown: (i + 1) % PAGES.length, ArrowUp: (i + PAGES.length - 1) % PAGES.length, ArrowRight: (i + 1) % PAGES.length, ArrowLeft: (i + PAGES.length - 1) % PAGES.length, Home: 0, End: PAGES.length - 1 }[ev.key];
+    const n = pages.length;
+    const next = { ArrowDown: (i + 1) % n, ArrowUp: (i + n - 1) % n, ArrowRight: (i + 1) % n, ArrowLeft: (i + n - 1) % n, Home: 0, End: n - 1 }[ev.key];
     if (next === undefined) { return; }
     ev.preventDefault();
-    show(PAGES[next]);
-    $('tab-' + PAGES[next]).focus();
+    show(pages[next]);
+    $('tab-' + pages[next]).focus();
   });
   for (const p of PAGES) { $('tab-' + p).addEventListener('click', () => show(p)); }
+
+  // ---- create: new settings files (viper ui --edit); the server checks and writes, the page only asks ----
+  let templates = null;
+  let previewed = '';
+
+  function createRequest() {
+    const kind = $('c-kind').value;
+    const req = { kind, name: kind === 'base' ? '' : $('c-name').value.trim(), fields: {}, members: [] };
+    const put = (k, v) => { if (v.trim()) { req.fields[k] = v.trim(); } };
+    if (kind === 'machine') {
+      const p = $('c-provider').value;
+      put('PROVIDER', p);
+      put('SERVER_TYPE', $('c-type').value);
+      put('SERVER_LOCATION', $('c-location').value);
+      put('DNS_PROVIDER', $('c-dns').value);
+      if (p === 'compose') { put('COMPOSE_IMAGE', $('c-image').value); }
+      if (p === 'kubernetes') { put('K8S_IMAGE', $('c-image').value); }
+    } else if (kind === 'group') {
+      req.members = Array.from($('c-members').querySelectorAll('input:checked')).map((x) => x.value);
+      if ($('c-nats').checked) { req.fields.NATS_ENABLED = 'true'; }
+    } else {
+      put('SERVER_PREFIX', $('c-bprefix').value);
+      put('DNS_PROVIDER', $('c-bdns').value);
+      put('DNS_DOMAIN', $('c-domain').value);
+    }
+    return req;
+  }
+
+  function createInvalidate() {
+    if (previewed && previewed !== JSON.stringify(createRequest())) { $('c-status').textContent = t('create.changed'); }
+    $('c-apply').disabled = true;
+    previewed = '';
+  }
+
+  function createLayout() {
+    const kind = $('c-kind').value;
+    $('c-machine').hidden = kind !== 'machine';
+    $('c-group').hidden = kind !== 'group';
+    $('c-base').hidden = kind !== 'base';
+    for (const id of ['c-name', 'c-name-label', 'c-name-hint']) { $(id).hidden = kind === 'base'; }
+    const p = templates && templates.providers.find((x) => x.name === $('c-provider').value);
+    if (p) {
+      $('c-type').placeholder = p.type;
+      $('c-location').placeholder = p.location;
+    }
+    const container = $('c-provider').value === 'compose' || $('c-provider').value === 'kubernetes';
+    $('c-image').disabled = !container;
+  }
+
+  function renderCreate() {
+    if (!templates) { return; }
+    const sel = $('c-provider');
+    const keep = sel.value || 'hetzner';
+    sel.textContent = '';
+    for (const p of templates.providers) { addOption(sel, p.name, p.name); }
+    sel.value = keep;
+    const box = $('c-members');
+    const checked = new Set(Array.from(box.querySelectorAll('input:checked')).map((x) => x.value));
+    for (const old of Array.from(box.querySelectorAll('label, p'))) { old.remove(); }
+    if (templates.machines.length === 0) {
+      const p = document.createElement('p');
+      p.className = 'muted';
+      p.textContent = t('create.nomembers');
+      box.appendChild(p);
+    }
+    for (const m of templates.machines) {
+      const l = document.createElement('label');
+      const c = document.createElement('input');
+      c.type = 'checkbox';
+      c.value = m;
+      c.checked = checked.has(m);
+      l.appendChild(c);
+      l.appendChild(document.createTextNode(' ' + m));
+      box.appendChild(l);
+    }
+    const base = Array.from($('c-kind').options).find((o) => o.value === 'base');
+    base.disabled = templates.base;
+    if (templates.base && $('c-kind').value === 'base') { $('c-kind').value = 'machine'; }
+    createLayout();
+  }
+
+  async function loadTemplates() {
+    try {
+      templates = await api('/api/templates');
+      renderCreate();
+    } catch (e) {
+      $('c-status').textContent = e.message;
+    }
+  }
+
+  function showResult(res) {
+    const ul = $('c-problems');
+    ul.textContent = '';
+    const add = (text) => { const li = document.createElement('li'); li.textContent = text; ul.appendChild(li); };
+    for (const p of res.problems) { add(t('create.problem', p)); }
+    for (const p of res.broken) { add(t('create.broken', p)); }
+    for (const p of res.notes) { add(t('create.note', p)); }
+    $('c-text').textContent = res.files.map((f) => '# ' + f.path + '\n' + f.text).join('\n');
+    $('c-result').hidden = false;
+  }
+
+  $('c-preview').addEventListener('click', async () => {
+    const req = createRequest();
+    $('c-status').textContent = '';
+    try {
+      const res = await api('/api/edit/preview', req);
+      showResult(res);
+      const ok = res.problems.length === 0 && res.broken.length === 0;
+      $('c-status').textContent = ok ? t('create.ok') : t('create.refused');
+      previewed = ok ? JSON.stringify(req) : '';
+      $('c-apply').disabled = !ok;
+    } catch (e) { $('c-status').textContent = e.message; }
+  });
+
+  $('create-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const req = createRequest();
+    if (!previewed || previewed !== JSON.stringify(req)) { createInvalidate(); return; }
+    $('c-apply').disabled = true;
+    try {
+      const res = await api('/api/edit/apply', req);
+      showResult(res);
+      if (res.done) {
+        $('c-status').textContent = t('create.done', res.files.map((f) => f.path).join(', '));
+        previewed = '';
+        $('c-name').value = '';
+        await load();
+        await loadTemplates();
+        $('c-status').setAttribute('tabindex', '-1');
+        $('c-status').focus();
+      } else {
+        $('c-status').textContent = t('create.refused');
+      }
+    } catch (e) { $('c-status').textContent = e.message; }
+  });
+  $('create-form').addEventListener('input', createInvalidate);
+  $('c-kind').addEventListener('change', createLayout);
+  $('c-provider').addEventListener('change', createLayout);
 
   function translate() {
     window.viperI18n.apply();
     $('lang').value = window.viperI18n.lang();
     renderAll();
+    renderCreate();
     if (page === 'settings') { loadSettings(); }
     if (page === 'runs') { loadRuns(); }
   }
