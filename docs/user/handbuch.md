@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.175  
+Version: 1.176  
 Software-Version: v0.27.0  
 Stand: 15.11.2026  
 
@@ -561,7 +561,7 @@ Mit `PROVIDER=compose` ist ein „Rechner“ ein **Container** auf dem Docker-Ho
 
 #### Vorgehen
 
-1. **Image beschaffen:** Der Schritt entfällt: Ohne `COMPOSE_IMAGE` nimmt `viper` das veröffentlichte Image seiner Version (`ghcr.io/pt9912/viper-machine:<Version>`) und lädt es bei Bedarf selbst. Sonst bauen: `viper image build`. Das Image liegt danach im Docker-Host und braucht kein Register; die Ausgabe nennt den Namen (`--tag NAME:TAG` wählt einen eigenen). Oder das veröffentlichte Image nehmen: `ghcr.io/pt9912/viper-machine:<Version>` mit der Version, die `viper version` meldet (öffentlich, mehrere GB, amd64 und arm64). Der Name kommt in Schritt 2 als `COMPOSE_IMAGE` hinein; fehlt das Image auf dem Docker-Host, lädt `viper up` es selbst mit `docker pull` (ein Name ohne Registry, wie ihn `viper image build` vergibt, wird nicht geladen).
+1. **Image beschaffen:** Der Schritt entfällt: Ohne `COMPOSE_IMAGE` nimmt `viper` das veröffentlichte Image seiner Version (`ghcr.io/pt9912/viper-machine:<Version>`) und lädt es bei Bedarf selbst. Sonst bauen: `viper image build`. Das Image liegt danach im Docker-Host und braucht kein Register; die Ausgabe nennt den Namen (`--tag NAME:TAG` wählt einen eigenen). Oder das veröffentlichte Image nehmen: `ghcr.io/pt9912/viper-machine:<Version>` mit der Version, die `viper version` meldet (öffentlich, mehrere GB, amd64 und arm64). Der Name kommt in Schritt 2 als `COMPOSE_IMAGE` hinein; fehlt das Image auf dem Docker-Host, lädt `viper up` es selbst mit `docker pull` (ein Name ohne Registry, wie ihn `viper image build` vergibt, wird nicht geladen). Das Laden dauert bei mehreren GB einige Minuten; währenddessen meldet `viper up` alle 20 Sekunden „still pulling the image … (1m20s)“. Bei einer Gruppe lädt **ein** Rechner das Image, die anderen melden „waiting for the pull of the image …“ und gehen danach gleich weiter (die Ausgabe zeigt kein Fortschrittsbalken von `docker`).
 2. **Einstellungen** in `machines/<rechner>.env.local` oder in der Gruppendatei (nicht in der allgemeinen `.env.local`):
 
    ```
@@ -1785,3 +1785,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.173 | nach v0.27.0 | `viper ui`: die Wörter des Zustands: „gestartet“ heißt jetzt, dass `viper up` durchgelaufen ist (vorher „eingerichtet“), „angelegt“ heißt, dass der Server da ist, aber `viper up` nicht fertig oder abgebrochen ist (vorher „gestartet“). Eine Gruppe, deren Rechner laufen, steht nun als „gestartet“ da. |
 | 1.174 | nach v0.27.0 | `viper ui`: ein Rechner, der in mehreren Gruppen steht, zeigt „fährt hoch …“ (und die anderen Läufe) nur in der Gruppe, deren Lauf ihn hält; in den anderen Gruppen bleibt die Zeile unverändert (der Server ist derselbe, ein zweiter Lauf wird vom Server mit Grund abgelehnt). |
 | 1.175 | nach v0.27.0 | `viper ui`: die Tabelle der Übersicht wird rechts nicht mehr abgeschnitten: die Knöpfe einer Zeile brechen in eine zweite Zeile um, wenn das Fenster schmal ist (vorher fehlten die letzten Knöpfe, etwa „Duplizieren“, außerhalb des sichtbaren Bereichs). |
+| 1.176 | nach v0.27.0 | `viper up` mit Docker Compose: Das Laden des Images (mehrere GB, Minuten) wirkte wie ein Stillstand, weil nichts mehr ausgegeben wurde. Jetzt meldet es alle 20 Sekunden, dass es weitergeht („still pulling the image … (1m20s)“); die übrigen Rechner einer Gruppe, die auf das Laden warten, sagen es auch („waiting for the pull of the image …“) und melden „The image is there now.“, wenn es da ist. |

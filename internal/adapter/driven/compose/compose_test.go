@@ -34,6 +34,7 @@ type host struct {
 	noCompose  bool
 	noContext  bool // docker cannot find the context
 	noImage    bool
+	pullWait   chan struct{} // a pull waits for it (nil: it does not wait)
 	networks   int
 	nets       map[string]map[string]string // docker networks by name, with their labels
 	projects   []string                     // the project of each compose call
@@ -90,6 +91,11 @@ func (h *host) run(_ context.Context, _, name string, args ...string) (string, s
 	case args[0] == "compose":
 		return h.compose(args)
 	case args[0] == "pull":
+		if h.pullWait != nil {
+			h.mu.Unlock() // the pull takes its time; the other calls go on
+			<-h.pullWait
+			h.mu.Lock()
+		}
 		h.noImage = false
 		return "", "", nil
 	case args[0] == "image":
@@ -1114,5 +1120,62 @@ func TestAnImageBuiltHereIsNotPulledAndTheErrorSaysHowToMakeIt(t *testing.T) {
 	err := c.PrepareImage(context.Background(), &strings.Builder{})
 	if err == nil || !strings.Contains(err.Error(), "viper image build") || h.called("pull") != 0 {
 		t.Fatalf("%v %v", err, h.calls)
+	}
+}
+
+// a pull of several GB takes minutes: the output says that it goes on, for the one that pulls and for the ones that wait for it
+type syncBuf struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *syncBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+func TestALongPullSaysThatItGoesOnAndTheMachinesThatWaitSayWhy(t *testing.T) {
+	h := newHost()
+	h.noImage = true
+	h.pullWait = make(chan struct{})
+	c, _ := newClient(t, h, func(o *compose.Options) {
+		o.Image = "ghcr.io/pt9912/viper-machine:v1"
+		o.Heartbeat = 20 * time.Millisecond
+	})
+	var first, second syncBuf
+	done := make(chan error, 2)
+	go func() { done <- c.PrepareImage(context.Background(), &first) }()
+	for { // the first one is in the pull
+		h.mu.Lock()
+		n := h.called("pull")
+		h.mu.Unlock()
+		if n > 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	go func() { done <- c.PrepareImage(context.Background(), &second) }()
+	time.Sleep(150 * time.Millisecond)
+	close(h.pullWait)
+	for i := 0; i < 2; i++ {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !strings.Contains(first.String(), "still pulling the image ...") {
+		t.Errorf("the one that pulls says nothing while it pulls:\n%s", first.String())
+	}
+	if !strings.Contains(second.String(), "waiting for the pull of the image") || !strings.Contains(second.String(), "The image is there now.") {
+		t.Errorf("the one that waits does not say why:\n%s", second.String())
+	}
+	if h.called("pull") != 1 {
+		t.Errorf("pulled %d times", h.called("pull"))
 	}
 }

@@ -63,6 +63,9 @@ type Options struct {
 	// Timeout is how long docker compose up waits for the machine to be healthy (default 10 minutes: the first start
 	// puts Homebrew on its volume).
 	Timeout time.Duration
+	// Heartbeat is how often a long wait (the pull of the image, the wait for the pull of another viper) says that it goes on
+	// (default 20 seconds).
+	Heartbeat time.Duration
 }
 
 func (o Options) docker() string {
@@ -77,6 +80,13 @@ func (o Options) dockerImage() string {
 		return o.DockerImage
 	}
 	return "docker:dind"
+}
+
+func (o Options) heartbeat() time.Duration {
+	if o.Heartbeat > 0 {
+		return o.Heartbeat
+	}
+	return 20 * time.Second
 }
 
 func (o Options) timeout() time.Duration {

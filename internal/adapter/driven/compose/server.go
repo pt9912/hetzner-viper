@@ -243,22 +243,57 @@ func (c *Client) PrepareImage(ctx context.Context, out io.Writer) error {
 	if c.opts.Image == "" {
 		return fmt.Errorf("COMPOSE_IMAGE is not set: the image of the machine")
 	}
-	unlock, err := c.lockImage()
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	if _, err := c.docker(ctx, "image", "inspect", "--format", "{{.Id}}", "--", c.opts.Image); err == nil {
+	if c.hasImage(ctx) {
 		return nil
 	}
 	if !strings.Contains(c.opts.Image, "/") {
 		return fmt.Errorf("the image %s is not on the Docker host and has no registry in its name to pull it from: viper image build builds it", c.opts.Image)
 	}
 	fmt.Fprintf(out, "The image %s is not on the Docker host: pulling it (several GB) ...\n", c.opts.Image)
+	// one viper pulls, the others wait for it: they say so, so that a person does not take the silence for a hang
+	stopWait := c.heartbeat(out, "waiting for the pull of the image (another machine of the group pulls it)")
+	unlock, err := c.lockImage()
+	stopWait()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if c.hasImage(ctx) { // the one that had the lock has pulled it
+		fmt.Fprintln(out, "The image is there now.")
+		return nil
+	}
+	stopPull := c.heartbeat(out, "still pulling the image")
+	defer stopPull()
 	if _, err := c.docker(ctx, "pull", "--", c.opts.Image); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (c *Client) hasImage(ctx context.Context) bool {
+	_, err := c.docker(ctx, "image", "inspect", "--format", "{{.Id}}", "--", c.opts.Image)
+	return err == nil
+}
+
+// heartbeat says "what ... (1m20s)" every few seconds until the function it returns is called: a wait of minutes that prints
+// nothing looks like a hang.
+func (c *Client) heartbeat(out io.Writer, what string) (stop func()) {
+	done := make(chan struct{})
+	started := time.Now()
+	go func() {
+		t := time.NewTicker(c.opts.heartbeat())
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				fmt.Fprintf(out, "%s ... (%s)\n", what, time.Since(started).Round(time.Second))
+			}
+		}
+	}()
+	var once sync.Once
+	return func() { once.Do(func() { close(done) }) }
 }
 
 func (c *Client) lockImage() (func(), error) {
