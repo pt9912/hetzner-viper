@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.174  
+Version: 1.175  
 Software-Version: v0.27.0  
 Stand: 15.11.2026  
 
@@ -1784,3 +1784,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.172 | v0.27.0 | Release v0.27.0: die Änderungen 1.167 bis 1.171 (`viper ui`: eigener Bereich für das Mitlesen in NATS; die Übersicht zeigt, was ein Lauf mit einem Rechner oder einer Gruppe tut; „Gruppe prüfen“; die Seite „Einstellungen“ mit aufklappbaren Dateien, Suche und Grenzen für große Mengen). |
 | 1.173 | nach v0.27.0 | `viper ui`: die Wörter des Zustands: „gestartet“ heißt jetzt, dass `viper up` durchgelaufen ist (vorher „eingerichtet“), „angelegt“ heißt, dass der Server da ist, aber `viper up` nicht fertig oder abgebrochen ist (vorher „gestartet“). Eine Gruppe, deren Rechner laufen, steht nun als „gestartet“ da. |
 | 1.174 | nach v0.27.0 | `viper ui`: ein Rechner, der in mehreren Gruppen steht, zeigt „fährt hoch …“ (und die anderen Läufe) nur in der Gruppe, deren Lauf ihn hält; in den anderen Gruppen bleibt die Zeile unverändert (der Server ist derselbe, ein zweiter Lauf wird vom Server mit Grund abgelehnt). |
+| 1.175 | nach v0.27.0 | `viper ui`: die Tabelle der Übersicht wird rechts nicht mehr abgeschnitten: die Knöpfe einer Zeile brechen in eine zweite Zeile um, wenn das Fenster schmal ist (vorher fehlten die letzten Knöpfe, etwa „Duplizieren“, außerhalb des sichtbaren Bereichs). |

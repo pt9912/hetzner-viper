@@ -84,3 +84,26 @@ test('filter and sort stay when the page is drawn again (a run ends)', async ({ 
   await expect(page.locator('#f-text')).toHaveValue('compose');
   await expect(page.locator('#machines thead th').first()).toHaveAttribute('aria-sort', 'ascending');
 });
+
+test('nothing of the table is cut off at the right: the buttons wrap when the window is narrow', async ({ browser }) => {
+  for (const width of [1280, 1024, 800]) {
+    const g = await startUI(['--edit'], 30);
+    const ctx = await browser.newContext({ viewport: { width, height: 800 } });
+    const page = await ctx.newPage();
+    try {
+      await page.goto(g.start);
+      await expect(page.locator('#machines tr.unit')).toHaveCount(3);
+      await page.getByRole('button', { name: 'Up group dev', exact: true }).click(); // the longest words of the state
+      await page.click('#tab-overview');
+      await expect(page.locator('.state.is-busy').first()).toBeVisible();
+      const fit = await page.evaluate(() => {
+        const t = document.getElementById('machines')!;
+        const box = t.parentElement!.getBoundingClientRect();
+        const cut = Array.from(t.querySelectorAll('td.actions button')).filter((b) => b.getBoundingClientRect().right > box.right + 1 || b.getBoundingClientRect().left < box.left - 1).length;
+        return { scroll: t.scrollWidth - t.parentElement!.clientWidth, cut };
+      });
+      expect(fit.scroll, `table wider than its box at ${width}px`).toBeLessThanOrEqual(1);
+      expect(fit.cut, `buttons outside the box at ${width}px`).toBe(0);
+    } finally { await ctx.close(); await g.stop(); }
+  }
+});

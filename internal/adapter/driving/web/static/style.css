@@ -53,7 +53,7 @@ main .row { margin-bottom: .6rem; }
 .scroll { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; }
 th { text-align: left; font: 600 .82rem var(--sans); color: var(--muted); padding: .35rem .7rem; border-bottom: 2px solid var(--line); white-space: nowrap; }
-td { padding: .5rem .7rem; border-bottom: 1px solid var(--hair); vertical-align: middle; }
+td { padding: .5rem .55rem; border-bottom: 1px solid var(--hair); vertical-align: middle; }
 #machines tr.unit { background: var(--panel); }
 #machines tbody.rack tr.unit:nth-child(odd) { background: color-mix(in srgb, var(--panel) 70%, var(--bg)); }
 #machines tr.unit td:first-child { font: 600 1rem var(--mono); box-shadow: inset 4px 0 0 var(--slot, var(--line)); padding-left: 1.6rem; }
@@ -65,13 +65,14 @@ td { padding: .5rem .7rem; border-bottom: 1px solid var(--hair); vertical-align:
 tr.is-ready { --slot: var(--ok); }
 tr.is-started { --slot: var(--warn); }
 tr.is-error { --slot: var(--bad); }
-.state { display: inline-flex; align-items: center; gap: .5rem; font-weight: 600; white-space: nowrap; }
+.state { display: inline-flex; align-items: center; gap: .5rem; font-weight: 600; }
 .led { width: .7rem; height: .7rem; border-radius: 50%; border: 2px solid var(--muted); background: transparent; flex: none; }
 .state-ready .led { background: var(--ok); border-color: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
 .state-started .led { background: var(--warn); border-color: var(--warn); }
 .state-none { color: var(--muted); font-weight: 500; }
-td.actions { white-space: nowrap; text-align: right; }
-td.actions button + button { margin-left: .25rem; }
+/* the buttons of a row wrap into a second line when the window is narrow: nothing is cut off at the right */
+td.actions { text-align: right; max-width: 30rem; }
+td.actions button { margin: .12rem 0 .12rem .25rem; }
 #settings-files table td:first-child { font-family: var(--mono); font-size: .92rem; }
 
 /* the filter, and the headers that sort */
