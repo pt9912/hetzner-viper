@@ -37,6 +37,9 @@ type Machine struct {
 	FileMax int64  `json:"file_max,omitempty"`
 	State   string `json:"state,omitempty"` // ready, started or none: what the marks of this computer say
 	Error   string `json:"error,omitempty"` // the settings that cannot be read
+	// Busy is the action that a run of this server is doing with the machine now (preflight, up or down): the state of the marks
+	// changes only when the machine is made, and a person wants to see that something goes on.
+	Busy string `json:"busy,omitempty"`
 }
 
 // Group is a group of groups/<name>.env.
@@ -268,6 +271,7 @@ func (s *Server) snapshot(ctx context.Context) (Overview, error) {
 	ov.Machines = slices.Clone(ov.Machines)
 	ov.Groups = slices.Clone(ov.Groups)
 	ov.NATS = slices.Clone(ov.NATS)
+	s.markBusy(&ov)
 	return ov, nil
 }
 
@@ -626,4 +630,22 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	reply(w, map[string]any{"files": files})
+}
+
+// markBusy tells of each machine the action that a run of this server does with it now (the machines a run holds).
+func (s *Server) markBusy(ov *Overview) {
+	t := &s.runs
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for i := range ov.Machines {
+		id, ok := t.held[ov.Machines[i].Name]
+		if !ok {
+			continue
+		}
+		for _, r := range t.runs {
+			if r.ID == id && r.current() != stateDone {
+				ov.Machines[i].Busy = r.Action
+			}
+		}
+	}
 }

@@ -68,15 +68,22 @@ test('cancel is Ctrl-C: the page says it ends and shows the exit status', async 
   await expect(page2.locator('#run-list li')).toHaveCount(1);
 });
 
-test('a second run of the same machine is refused with the reason', async ({ page }) => {
+test('a second run of the same machine is not offered, and the server refuses it with the reason', async ({ page }) => {
   await page.goto(ui.start);
   await expect(page.locator('#machines tr.unit')).toHaveCount(3); // the exchange page has moved on: routes are set on the page that stays
   await page.getByRole('button', { name: 'Up a', exact: true }).first().click();
   await expect(page.locator('#run-status')).toContainText('Running');
   await page.click('#tab-overview');
-  await page.getByRole('button', { name: 'Down a', exact: true }).first().click();
-  await expect(page.locator('#run-status')).toContainText('Not started');
-  await expect(page.locator('#run-status')).toContainText('a run holds the machine a');
+  // the page does not offer it: the machine is busy
+  await expect(page.getByRole('button', { name: 'Down a', exact: true }).first()).toBeDisabled();
+  // and a request that does not look at the page is refused
+  const answer = await page.evaluate(async () => {
+    const r = await fetch('/api/run', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Viper-UI': '1' }, body: '{"action":"down","machine":"a","group":"dev"}' });
+    return { code: r.status, text: await r.text() };
+  });
+  expect(answer.code).toBe(409);
+  expect(answer.text).toContain('a run holds the machine a');
+  await page.click('#tab-runs');
   await page.click('#run-cancel');
   await expect(page.locator('#run-status')).toContainText('exit 130', { timeout: 40_000 });
 });
@@ -156,5 +163,26 @@ test('a running run is not removed by "remove finished runs"', async ({ page }) 
     await page.click('#run-cancel');
     await expect(page.locator('#run-status')).toContainText('exit 130', { timeout: 40_000 });
     await expect(page.locator('#run-clear')).toBeEnabled();
+  } finally { await g.stop(); }
+});
+
+test('the overview shows that a machine or a group is being started, and that it is over when the run ends', async ({ page }) => {
+  const g = await startUI([], 30);
+  try {
+    await page.goto(g.start);
+    await expect(page.locator('#machines tr.unit')).toHaveCount(3);
+    await page.getByRole('button', { name: 'Up group dev', exact: true }).click();
+    await expect(page.locator('#run-status')).toContainText('Running');
+    await page.click('#tab-overview');
+    // the group and its machines say that something goes on, the buttons of a busy machine are off
+    await expect(page.locator('tr.grouphead.real .state.is-busy')).toContainText('starting up ... 2/2');
+    await expect(page.locator('#machines tr.unit .state.is-busy')).toHaveCount(2);
+    await expect(page.getByRole('button', { name: 'Down a', exact: true }).first()).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Up web', exact: true })).toBeEnabled(); // a machine that no run holds
+    await page.click('#tab-runs');
+    await page.click('#run-cancel');
+    await expect(page.locator('#run-status')).toContainText('exit 130', { timeout: 40_000 });
+    await page.click('#tab-overview');
+    await expect(page.locator('.state.is-busy')).toHaveCount(0);
   } finally { await g.stop(); }
 });

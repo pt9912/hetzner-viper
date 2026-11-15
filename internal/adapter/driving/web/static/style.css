@@ -176,3 +176,7 @@ button.namebtn:hover { text-decoration-style: solid; }
 
 /* the area for listening on the page of NATS */
 pre.listen { min-height: 8rem; max-height: 24rem; overflow: auto; background: var(--term-bg); color: var(--term-fg); border: 1px solid var(--term-line); border-radius: 8px; padding: .6rem .8rem; font: .88rem var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* a machine that a run is busy with: the lamp beats (the one movement of the page that goes on without the person) */
+.state.is-busy .led { animation: beat 1.4s ease-in-out infinite; background: var(--warn); border-color: var(--warn); }
+@media (prefers-reduced-motion: reduce) { .state.is-busy .led { animation: none; } }

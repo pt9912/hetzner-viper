@@ -165,18 +165,21 @@
     const detail = ['ready', 'started', 'none'].filter((s) => count(s) > 0).map((s) => count(s) + ' ' + t('state.' + s)).join(', ');
     const td = document.createElement('td');
     const box = document.createElement('span');
-    box.className = 'state state-' + (kind === 'partial' ? 'started' : kind);
+    // machines that a run is busy with: the lamp of the group beats, and the word says what is done and with how many
+    const busy = members.filter((m) => m.busy);
+    box.className = 'state state-' + (kind === 'partial' ? 'started' : kind) + (busy.length ? ' is-busy' : '');
     const led = document.createElement('span');
     led.className = 'led';
     const word = document.createElement('span');
-    word.textContent = members.length === 0 ? t('group.empty') : t(kind === 'partial' ? 'state.partial' : 'state.' + kind) + (kind === 'partial' ? ' (' + detail + ')' : '');
+    const plain = members.length === 0 ? t('group.empty') : t(kind === 'partial' ? 'state.partial' : 'state.' + kind) + (kind === 'partial' ? ' (' + detail + ')' : '');
+    word.textContent = busy.length ? t('busy.' + busy[0].busy) + ' ' + busy.length + '/' + members.length + ' (' + plain + ')' : plain;
     box.append(led, word);
     td.appendChild(box);
     tr.appendChild(td);
     const act = cell(tr, '', 'actions');
     const kinds = { preflight: 'quiet', up: '', down: 'danger' };
     for (const a of ACTIONS) {
-      act.appendChild(button(t('btn.group.' + a), t('aria.group.' + a, g.name), () => startRun({ action: a, group: g.name, scope: 'group' }), members.length === 0 || overview.readonly, kinds[a]));
+      act.appendChild(button(t('btn.group.' + a), t('aria.group.' + a, g.name), () => startRun({ action: a, group: g.name, scope: 'group' }), members.length === 0 || overview.readonly || busy.length > 0, kinds[a]));
     }
     if (overview.edit) { act.appendChild(button(t('btn.dup'), t('aria.group.dup', g.name), () => duplicate('group', g.name), !!g.error, 'quiet')); }
     return tr;
@@ -203,7 +206,7 @@
     act.appendChild(check);
     const kinds = { preflight: 'quiet', up: there ? '' : 'primary', down: 'danger' };
     for (const a of ACTIONS) {
-      act.appendChild(button(t('btn.' + a), t('aria.' + a, m.name), () => startRun({ action: a, machine: m.name, group: m.group || '' }), !!m.error || overview.readonly, kinds[a]));
+      act.appendChild(button(t('btn.' + a), t('aria.' + a, m.name), () => startRun({ action: a, machine: m.name, group: m.group || '' }), !!m.error || overview.readonly || !!m.busy, kinds[a]));
     }
     act.appendChild(button(t('btn.log'), t('aria.log', m.name), () => { $('log-machine').value = m.name; show('logs'); }, false, 'quiet'));
     if (overview.edit) { act.appendChild(button(t('btn.dup'), t('aria.dup', m.name), () => duplicate('machine', m.name), !!m.error, 'quiet')); }
@@ -220,11 +223,12 @@
       box.className = 'bad';
       box.textContent = t('error.prefix', m.error);
     } else {
-      box.className = 'state state-' + (m.state || 'none');
+      box.className = 'state state-' + (m.state || 'none') + (m.busy ? ' is-busy' : '');
       const led = document.createElement('span');
       led.className = 'led';
       const word = document.createElement('span');
-      word.textContent = stateText(m.state);
+      // a run that goes on with the machine: the lamp beats, and the word says what is done (the state follows with the marks)
+      word.textContent = m.busy ? t('busy.' + m.busy) + ' (' + stateText(m.state) + ')' : stateText(m.state);
       box.append(led, word);
     }
     td.appendChild(box);
@@ -730,6 +734,7 @@
       show('runs');
       await loadRuns();
       attach(r.id);
+      load(); // the machines the run holds are busy now
       return true;
     } catch (e) {
       show('runs');

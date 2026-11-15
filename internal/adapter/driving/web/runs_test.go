@@ -486,3 +486,43 @@ func TestFinishedRunsCanBeRemovedOneByOneOrAllAndARunningOneStays(t *testing.T) 
 		t.Errorf("the run that ended: %d %s", code, body)
 	}
 }
+
+func TestTheOverviewSaysWhatARunIsDoingWithAMachine(t *testing.T) {
+	st := live(t, false)
+	busy := func() map[string]string {
+		resp, err := st.c.Get(st.base + "/api/overview")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		var ov struct{ Machines []struct{ Name, Busy string } }
+		_ = json.NewDecoder(resp.Body).Decode(&ov)
+		out := map[string]string{}
+		for _, m := range ov.Machines {
+			if m.Busy != "" {
+				out[m.Name] = m.Busy
+			}
+		}
+		return out
+	}
+	if len(busy()) != 0 {
+		t.Fatalf("nothing goes on: %v", busy())
+	}
+	id, _ := st.start(t, `{"action":"up","machine":"web"}`)
+	p := st.spawn.next(t)
+	if got := busy(); len(got) != 1 || got["web"] != "up" {
+		t.Errorf("a machine that goes up: %v", got)
+	}
+	gid, _ := st.start(t, `{"action":"down","scope":"group","group":"dev"}`)
+	pg := st.spawn.next(t)
+	if got := busy(); got["web"] != "up" || got["dev1"] != "down" || got["dev2"] != "down" {
+		t.Errorf("a group that is taken down holds its machines: %v", got)
+	}
+	p.end(0)
+	st.attach(t, id).until(t, state("done"))
+	pg.end(0)
+	st.attach(t, gid).until(t, state("done"))
+	if got := busy(); len(got) != 0 {
+		t.Errorf("the runs have ended: %v", got)
+	}
+}
