@@ -27,7 +27,9 @@ for (const scheme of ['light', 'dark'] as const) {
   }
 }
 
-test('the page can be used with the keyboard: skip link, tabs with the arrow keys, buttons', async ({ page }) => {
+test('the page can be used with the keyboard: skip link, tabs with the arrow keys, buttons', async ({ page, browserName }) => {
+  // Safari does not put links and buttons in the order of the Tab key unless the person asks for it (Option+Tab)
+  test.skip(browserName === 'webkit' && process.platform === 'darwin', 'Tab does not reach links and buttons in Safari by default');
   await page.goto(ui.start);
   await expect(page.locator('#machines tbody tr')).toHaveCount(3);
   await page.keyboard.press('Tab');

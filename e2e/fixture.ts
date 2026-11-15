@@ -67,7 +67,9 @@ export async function startUI(extra: string[] = [], dockerSleep = 30, openBrowse
         child.kill(win ? undefined : 'SIGINT'); // Windows has no signal to give: the process is ended
         await new Promise((r) => { child.on('exit', r); setTimeout(() => { child.kill('SIGKILL'); r(null); }, 30000); });
       }
-      fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }); // (on Windows a fake docker may still hold its folder)
+      try {
+        fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+      } catch { /* on Windows a fake docker may still hold its folder: the system's temp directory cleans up later */ }
     },
   };
 }

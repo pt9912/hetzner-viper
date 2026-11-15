@@ -38,11 +38,14 @@ test('another browser without the cookie gets nothing', async ({ browser }) => {
   await ctx.close();
 });
 
-test('localhost is not the address: the host check refuses it', async ({ page }) => {
-  await page.goto(ui.start);
-  const port = new URL(ui.base).port;
-  const res = await page.goto(`http://localhost:${port}/`).catch(() => null);
+test('localhost is not the address: the host check refuses it', async ({ browser }) => {
+  // (a page of its own, in a context of its own: a move from the page of 127.0.0.1 to another origin makes the browser change
+  // the browsing context group because of the COOP header, which Playwright's WebKit answers with an internal assertion)
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  const res = await page.goto(`http://localhost:${new URL(ui.base).port}/`).catch(() => null);
   expect(res === null || res.status() === 403).toBeTruthy();
+  await ctx.close();
 });
 
 test('a page of another origin cannot start anything', async ({ page, context }) => {
@@ -98,6 +101,11 @@ test('the start file that opens the browser leads to the page, and the key is no
   await ui.stop();
   ui = await startUI([], 30, true);
   await page.goto(ui.start); // file://...start.html: a refresh to http://127.0.0.1:port/?t=key, then the redirect
+  if (browserName === 'webkit') {
+    // Safari's engine may not follow a refresh from a file:// page (a navigation without a person): the link in the file is for that
+    await page.waitForTimeout(3000);
+    if (page.url().startsWith('file:')) { await page.getByRole('link', { name: 'viper ui' }).click(); }
+  }
   await expect(page).toHaveURL(ui.base + '/');
   await expect(page.locator('#machines tbody tr')).toHaveCount(3);
   expect(ui.output()).not.toMatch(/\?t=/); // the terminal does not show the key either
