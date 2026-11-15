@@ -220,7 +220,9 @@ type runRequest struct {
 	SHA256  string `json:"sha256"`
 }
 
-func isAction(a string) bool { return a == "preflight" || a == "up" || a == "down" || a == "nats" }
+func isAction(a string) bool {
+	return a == "preflight" || a == "up" || a == "down" || a == "nats" || a == "check"
+}
 
 // argv is the command line of the request, or the reason there is none. Names come from the files (the overview), so none
 // starts with a dash; the repository goes in the form --repo=URL for the same reason.
@@ -230,6 +232,9 @@ func runArgv(req runRequest, ov Overview) (argv, names []string, err error) {
 	}
 	if !repoUsable(req) {
 		return nil, nil, fmt.Errorf("the repository is not usable here")
+	}
+	if req.Action == "check" && req.Scope != "group" {
+		return nil, nil, fmt.Errorf("check as a run is for a group (a machine has its own check)")
 	}
 	argv = []string{req.Action}
 	if req.Scope == "group" {
@@ -298,7 +303,7 @@ func findMachine(ov Overview, name, group string) (Machine, bool) {
 }
 
 func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
-	if s.cfg.Readonly || s.cfg.Spawn == nil {
+	if s.cfg.Spawn == nil {
 		fail(w, http.StatusForbidden, "this page is read only")
 		return
 	}
@@ -307,6 +312,10 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
 		fail(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	if s.cfg.Readonly && req.Action != "check" { // looking is allowed when the page is read only: the check of a group
+		fail(w, http.StatusForbidden, "this page is read only")
 		return
 	}
 	ov, err := s.fresh(r.Context())

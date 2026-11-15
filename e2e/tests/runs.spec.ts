@@ -186,3 +186,19 @@ test('the overview shows that a machine or a group is being started, and that it
     await expect(page.locator('.state.is-busy')).toHaveCount(0);
   } finally { await g.stop(); }
 });
+
+test('Check of a group is a run of viper check --group, also when the page is read only', async ({ page }) => {
+  for (const extra of [[], ['--readonly']]) {
+    const g = await startUI(extra, 0);
+    try {
+      await page.goto(g.start);
+      await expect(page.locator('#machines tr.unit')).toHaveCount(3);
+      await page.getByRole('button', { name: 'Check group dev', exact: true }).click();
+      await expect(page.locator('#run-status')).toContainText(/Ended|exit/, { timeout: 60_000 });
+      const out = await page.locator('#run-output').innerText();
+      expect(out).toContain('$ viper check --group dev');
+      expect(out).not.toMatch(/unknown|not an option|usage:/i); // viper took the command line
+      if (extra.length) { await page.click('#tab-overview'); await expect(page.getByRole('button', { name: 'Up group dev', exact: true })).toBeDisabled(); }
+    } finally { await g.stop(); }
+  }
+});

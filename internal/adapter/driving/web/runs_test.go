@@ -526,3 +526,29 @@ func TestTheOverviewSaysWhatARunIsDoingWithAMachine(t *testing.T) {
 		t.Errorf("the runs have ended: %v", got)
 	}
 }
+
+func TestTheCheckOfAGroupIsARunAndAllowedWhenThePageIsReadOnly(t *testing.T) {
+	st := live(t, false)
+	id, code := st.start(t, `{"action":"check","scope":"group","group":"dev"}`)
+	if code != 200 || id == "" {
+		t.Fatalf("group check: %d", code)
+	}
+	p := st.spawn.next(t)
+	if strings.Join(p.argv, " ") != "check --group dev" {
+		t.Errorf("argv %v", p.argv)
+	}
+	if _, code := st.start(t, `{"action":"check","machine":"web"}`); code != http.StatusBadRequest {
+		t.Errorf("check of a machine as a run: %d (it has its own check)", code)
+	}
+	p.end(0)
+	st.attach(t, id).until(t, state("done"))
+	ro := live(t, true)
+	if _, code := ro.start(t, `{"action":"check","scope":"group","group":"dev"}`); code != 200 {
+		t.Errorf("read only: the check of a group: %d", code)
+	}
+	for _, body := range []string{`{"action":"up","scope":"group","group":"dev"}`, `{"action":"down","machine":"web"}`, `{"action":"nats","nats":"dev","sub":"peers"}`, `{"action":"preflight","machine":"web"}`} {
+		if _, code := ro.start(t, body); code != http.StatusForbidden {
+			t.Errorf("read only: %s: %d", body, code)
+		}
+	}
+}

@@ -178,6 +178,8 @@
     tr.appendChild(td);
     const act = cell(tr, '', 'actions');
     const kinds = { preflight: 'quiet', up: '', down: 'danger' };
+    // the check of the whole group: viper check --group, as a run (its output has a table with a line for each machine)
+    act.appendChild(button(t('btn.group.check'), t('aria.group.check', g.name), () => startRun({ action: 'check', group: g.name, scope: 'group' }), members.length === 0 || busy.length > 0, 'quiet'));
     for (const a of ACTIONS) {
       act.appendChild(button(t('btn.group.' + a), t('aria.group.' + a, g.name), () => startRun({ action: a, group: g.name, scope: 'group' }), members.length === 0 || overview.readonly || busy.length > 0, kinds[a]));
     }
