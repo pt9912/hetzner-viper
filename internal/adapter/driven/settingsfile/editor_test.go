@@ -185,3 +185,33 @@ func TestWhatIsWrittenIsWhatBashReads(t *testing.T) {
 		}
 	}
 }
+
+func TestANewFailureOfAMachineThatFailedBeforeIsBroken(t *testing.T) {
+	dir := setupDir(t, "SERVER_PREFIX=c\n", "PROVIDER=hetzner\n") // no DNS_DOMAIN: web fails already
+	if _, err := (settingsfile.Files{}).Create(dir, settings.Change{Kind: "group", Name: "g1", Members: []string{"web"}}, editEnv()); err != nil {
+		t.Fatal(err)
+	}
+	p, err := settingsfile.Files{}.Create(dir, settings.Change{Kind: "group", Name: "g2", Members: []string{"web"}}, editEnv())
+	if err == nil || len(p.Broken) == 0 {
+		t.Fatalf("%v %+v", err, p)
+	}
+}
+
+func TestAGroupMayNameALinkedMachineAndOnlyRealNames(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("links need rights there")
+	}
+	dir := setupDir(t, "SERVER_PREFIX=claude\nDNS_PROVIDER=none\n", "")
+	target := filepath.Join(t.TempDir(), "real")
+	_ = os.WriteFile(target, []byte("PROVIDER=hetzner\n"), 0o600)
+	_ = os.MkdirAll(filepath.Join(dir, "machines"), 0o700)
+	if err := os.Symlink(target, filepath.Join(dir, "machines", "web.env.local")); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := settingsfile.Files{}.Preview(dir, settings.Change{Kind: "group", Name: "dev", Members: []string{"web"}}, editEnv())
+	if len(p.Problems) > 0 {
+		t.Errorf("%v", p.Problems)
+	}
+	p, _ = settingsfile.Files{}.Preview(dir, settings.Change{Kind: "group", Name: "dev", Members: []string{"../x"}}, editEnv())
+	mustProblem(t, p, "not a machine name")
+}

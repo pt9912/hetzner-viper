@@ -61,7 +61,7 @@ func checkText(v string) error {
 	if !utf8.ValidString(v) {
 		return errors.New("not text")
 	}
-	if strings.ContainsFunc(v, func(r rune) bool { return r < ' ' || r == 0x7f }) {
+	if strings.ContainsFunc(v, func(r rune) bool { return r < ' ' || (r >= 0x7f && r <= 0x9f) }) {
 		return errors.New("no line break or control character")
 	}
 	return nil
@@ -284,7 +284,11 @@ func missingMembers(dir string, ch settings.Change) (out []string) {
 		return nil
 	}
 	for _, m := range ch.Members {
-		if st, err := os.Lstat(filepath.Join(dir, "machines", m+".env.local")); err != nil || !st.Mode().IsRegular() {
+		if !nameRe.MatchString(m) {
+			out = append(out, "GROUP_MACHINES: "+m+" is not a machine name")
+			continue
+		}
+		if st, err := os.Stat(filepath.Join(dir, "machines", m+".env.local")); err != nil || !st.Mode().IsRegular() { // a link to a file is a machine, as for load
 			out = append(out, "GROUP_MACHINES: there is no machine "+m)
 		}
 	}
@@ -320,7 +324,7 @@ func (Files) Preview(dir string, ch settings.Change, env settings.Env) (settings
 		switch {
 		case k == key:
 			p.Problems = append(p.Problems, msg)
-		case !existed || prev == "":
+		case !existed || prev != msg: // a machine that failed before and fails differently now is broken by this change
 			p.Broken = append(p.Broken, k+": "+msg)
 		}
 	}

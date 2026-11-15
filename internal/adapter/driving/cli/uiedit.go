@@ -50,7 +50,7 @@ func (e *uiEditor) Preview(ctx context.Context, req web.EditRequest) (web.EditRe
 }
 
 // Create makes the files and leaves a line in events.log (what, never a value).
-func (e *uiEditor) Create(ctx context.Context, req web.EditRequest) (web.EditResult, error) {
+func (e *uiEditor) Create(_ context.Context, req web.EditRequest) (web.EditResult, error) {
 	p, err := e.b.o.host().Services.SettingsEditor.Create(e.b.dir(), change(req), e.b.env)
 	r := result(p)
 	if err == nil {
@@ -60,10 +60,7 @@ func (e *uiEditor) Create(ctx context.Context, req web.EditRequest) (web.EditRes
 		}
 		e.trace("made " + strings.Join(paths, ", "))
 	}
-	if ctx.Err() != nil {
-		return r, ctx.Err()
-	}
-	return r, err
+	return r, err // a request that was cancelled after the write still says what was made
 }
 
 // trace is one line of events.log, in the form the runs write: the time, the server ("ui"), the action and the text.
