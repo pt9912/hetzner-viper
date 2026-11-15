@@ -1,6 +1,6 @@
 # Plan: Einstellungen in der Oberfläche anlegen und bearbeiten (`viper ui`)
 
-**Stand:** Entwurf (15.11.2026), einmal unabhängig gegen den Code geprüft (§10), noch nichts gebaut. Ergänzt [`ui.md`](ui.md) (dort ist das Bearbeiten in §8 ausdrücklich „nicht Teil“) und gehört zu [`ui-gestaltung.md`](ui-gestaltung.md) (§7: wie die Formulare aussehen). *[V]* heißt: im Code gelesen; *[?]* ist eine Vermutung, die in Meilenstein 0 zu prüfen ist. **Entschieden** (vom Benutzer): Bearbeiten nur mit `--edit`; Sicherungen als ZIP je Änderung mit geleerten Zugangsdaten (§2.6). **Vorschläge** (noch zu entscheiden) stehen in §9.
+**Stand:** Entwurf (15.11.2026), einmal unabhängig gegen den Code geprüft (§10), Meilenstein 0 (Prüfen) ist gemacht (§8), noch nichts gebaut. Ergänzt [`ui.md`](ui.md) (dort ist das Bearbeiten in §8 ausdrücklich „nicht Teil“) und gehört zu [`ui-gestaltung.md`](ui-gestaltung.md) (§7: wie die Formulare aussehen). *[V]* heißt: im Code gelesen; *[?]* ist eine Vermutung, die in Meilenstein 0 zu prüfen ist. **Entschieden** (vom Benutzer): Bearbeiten nur mit `--edit`; Sicherungen als ZIP je Änderung mit geleerten Zugangsdaten (§2.6). Die acht offenen Fragen sind entschieden (§9).
 
 **Ziel:** In der Oberfläche **neue Rechner und Gruppen anlegen** und **Einstellungen ändern**, ohne eine Datei von Hand zu öffnen, mit denselben Prüfungen wie am Terminal und ohne dass die Oberfläche Zugangsdaten zurückgibt. Das Bearbeiten von Dateien ist der gefährlichste Teil der Oberfläche (sie schreibt Dateien, die Zugangsdaten enthalten und deren Inhalt auf einem Server Befehle ausführen kann); deshalb in Stufen, jede einzeln nutzbar und prüfbar.
 
@@ -85,7 +85,7 @@
 * **Prüfen ohne Platte:** eine kleine Leseschicht (`ReadFile`, `ReadDir`) in `settingsfile`, die `Load`/`LoadGroup` statt `os` benutzt; die Vorschau liest eine **Überlagerung** (die neue Fassung im Speicher, der Rest von der Platte) und ruft eine `load`-Variante **ohne `moveOldState`**. Damit entsteht keine Kopie des Verzeichnisses mit Zugangsdaten in einem Wegwerf-Ordner.
 * **Web:** `POST /api/edit/preview` und `POST /api/edit/apply` (JSON: Art der Änderung, Ziel, Felder, `etag`), `GET /api/templates` (Vorlagen, Voreinstellungen der Anbieter, Hilfetexte; ohne Werte), `GET /api/backups` (die Liste: Zeit, Aktion, Dateien; ohne Inhalt) und `GET /api/backups/<name>` (das ZIP, `octet-stream`, `attachment`). Alle hinter der Torwache, alle Schreibenden mit `--edit`, sonst 403. Der Zwischenspeicher der Übersicht wird nach `apply` verworfen (`forgetOverview`).
 * **Sperre:** ein Mutex im Prozess und die Prüfung des Hashes **unter** dem Mutex genügen (der Terminal-`viper` nimmt keine Sperre; eine Sperrdatei zwischen Prozessen bräuchte unter Windows `LockFileEx` und hielte das Terminal doch nicht ab). Zusätzlich die Marken und die `held`-Einträge (§2.7).
-* **Der Grundsatz von `ui.md` §4** („was ändert, läuft als Unterprozess `viper <befehl>`“) gilt hier **nicht**, weil es keinen Befehl gibt, der Einstellungen schreibt. Das ist eine bewusste Abweichung und eine Entscheidung (§9, Frage 1): ein neuer Befehl `viper settings set|new` (Zugangsdaten über die Standardeingabe), den die Oberfläche startet, gäbe Gleichheit mit dem Terminal, dieselbe Prüfung und einen Weg; der Preis ist ein zweiter Befehl mit Hilfe, Handbuch und Tests.
+* **Der Grundsatz von `ui.md` §4** („was ändert, läuft als Unterprozess `viper <befehl>`“) gilt hier **nicht**, weil es keinen Befehl gibt, der Einstellungen schreibt. Das ist eine bewusste Abweichung und eine Entscheidung (§9, Frage 1: entschieden, im Prozess). Die Alternative, ein neuer Befehl `viper settings set|new` (Zugangsdaten über die Standardeingabe), den die Oberfläche startet, gäbe Gleichheit mit dem Terminal, dieselbe Prüfung und einen Weg; der Preis ist ein zweiter Befehl mit Hilfe, Handbuch und Tests.
 
 ## 6 Gestaltung
 
@@ -102,22 +102,30 @@ Siehe `ui-gestaltung.md` §7 (Formulare, Vorschau, Zugangsdatenfeld, Bestätigun
 
 ## 8 Meilensteine
 
-0. **Prüfen (nichts bauen):** (a) der Parser mit Spannen: reicht eine Erweiterung von `envfile.go`, und was lehnt er ab; (b) die Leseschicht und die `load`-Variante ohne `moveOldState`: Umfang der Änderung in `settingsfile`; (c) der Rundlauf-Test für `'\''`, Tabulator, UTF-8; (d) die eine Liste der Zugangsdaten und der privaten Namen in `model` (Umzug von `secretNames()` und der Positivliste); (e) Windows: Umbenennen, Rechte, Zeilenenden; (f) `Frage 1` aus §9 entscheiden (in-process oder Befehl).
+0. **Prüfen (nichts bauen), Ergebnis:**
+   * **(a) Parser mit Spannen:** Eine Erweiterung von `envfile.go` genügt. `statement()` kennt Anfang und Ende jeder Zuweisung (`p.i`); ein optionaler Rückruf, der Name, Wert und Spanne meldet, braucht keinen zweiten Parser. Er lehnt ab, was `Source` ablehnt (Zeilenende `\r`, `$(…)`, Backtick, `${NAME:-x}`, Pipes, nicht gesetzte Variablen); Spannen über mehrere Zeilen und mehrere Zuweisungen je Zeile sind möglich, werden aber für das Schreiben abgelehnt (§7). Er braucht dieselbe `lookup`-Funktion, weil `$NAME` im Wert aufgelöst wird.
+   * **(b) Leseschicht:** Es gibt nur **sechs** Stellen mit `os.` in `config.go` und `group.go`: `sourceFile` (`ReadFile`), `groupFiles` (`ReadDir`), `namesMachine` (`ReadFile`), `readTrim` (`ReadFile`, Zustandsdateien) und `moveOldState` (`MkdirAll`, `Stat`, `Rename`). Eine **`load`-Variante ohne `moveOldState` gibt es schon:** `load` ruft es nicht auf, nur `Load`. Es genügt also, `ReadFile` und `ReadDir` über ein kleines Feld (`fs`) zu führen und `Stat` der Zustandsdateien wegzulassen; der Umfang ist klein (etwa 40 Zeilen).
+   * **(c) Rundlauf:** geprüft mit einem Wegwerf-Test (nicht eingecheckt): `'…'` mit `'\''` für `'`, Tabulator, UTF-8, ungültigem UTF-8 (`\xff`), `$`, Backtick, `\`, `"`, `#`, leer, `'`, `''` und `\` am Ende ergibt in `Source` und in `bash -c 'source …; printf %s "$A"'` denselben Wert. Die Schreibweise ist tragfähig; der Dauertest (§7) bleibt Teil von Stufe A.
+   * **(d) Liste der Zugangsdaten:** `secretNames()` (`cli/ui.go`) und `shownNames()` (`cli/uisettings.go`) liegen im `cli`-Adapter und hängen nur an `model.ProviderNames`/`LookupProvider`. Der Umzug nach `model` (eine Datei, eine Funktion je Liste) ist ohne Folgen für die Aufrufer; der Regex `assignRe` in `uisettings.go` entfällt mit dem Parser aus (a).
+   * **(e) Windows:** `sshconfig.writeAtomic` hat schon `renameWithRetry` (50 × 20 ms) für das Umbenennen über eine vorhandene Datei; es zieht in einen gemeinsamen Ort um. Rechte (`0600`) bedeuten dort nichts (Hinweis in der Meldung); `Source` lehnt `\r` ab, der Schreiber schreibt nur `\n`, und eine Datei mit `\r` wird nicht bearbeitet, sondern mit dem Hinweis abgelehnt, sie umzuwandeln.
+   * **(f) Frage 1:** entschieden, im Prozess (§9).
 1. **Stufe A** (anlegen: Rechner, Gruppe, `.env.local`) mit Sicherung als ZIP, Vorschau, `--edit`, Tests, Handbuch („Einen Rechner in der Oberfläche anlegen“), `help.go`, Fixtures.
 2. **Stufe C:** Zugangsdaten setzen; die eine Liste, die Schwärzung (`secrets.add`), die Prüfungen.
 3. **Stufe B:** ändern; die Liste der gefährlichen Einstellungen (§2.9), die Prüfung aller, die Sicherungsseite.
 4. *(Stufe D, Import, wenn gewünscht.)* Nach jeder Stufe: Code-Review durch einen unabhängigen Prüfer und Prüfung der Dokumentation, dann Release.
 
-## 9 Offen (zu entscheiden)
+## 9 Entschieden
 
-1. **Wo steht das Schreiben:** im Prozess der Oberfläche über den Port `settings.Editor` (Vorschlag für Stufe A, weil kein Befehl nötig ist), oder als Befehl `viper settings set|new`, den die Oberfläche startet (Gleichheit mit dem Terminal, ein Weg, aber ein Befehl mehr)?
-2. **Sicherung ohne Zugangsdaten (entschieden)** und Aufbewahrung (Vorschlag: fünf Stände, 30 Tage): bestätigen, ob die Zahlen so bleiben.
-3. **Die Liste der gefährlichen Einstellungen** (§2.9): ausreichend, oder werden einige in Stufe B ganz ausgenommen (Vorschlag: `VIPER_POST_CLONE` bleibt am Terminal, bis Meilenstein 0 sagt, dass das Schreiben mehrzeiliger Werte sicher ist)?
-4. **Symlinks:** ablehnen mit Meldung (Vorschlag) oder dem Link folgen (wie `sshconfig.writeAtomic` für Dotfiles)?
-5. **Prüfen aller Rechner und Gruppen nach jeder Änderung** (Vorschlag: ja, in der Vorschau).
-6. **Reihenfolge der Stufen** A, C, B (Vorschlag) oder A, B, C.
-7. **Größe der Seiten:** Hilfetexte vom Server (Vorschlag) oder die Grenze von 120 KB anheben.
-8. **`--edit` mit Bestätigung beim ersten Schreiben** einer Sitzung (Vorschlag: nein, die Vorschau ist die Bestätigung).
+Alle acht Fragen sind mit den Vorschlägen entschieden (Meilenstein 0):
+
+1. **Das Schreiben liegt im Prozess der Oberfläche** über den Port `settings.Editor` (kein neuer Befehl in Stufe A; `viper settings set|new` bleibt eine spätere Möglichkeit).
+2. **Sicherung ohne Zugangsdaten, fünf Stände je Datei, 30 Tage.**
+3. **Gefährliche Einstellungen** wie §2.9; `VIPER_POST_CLONE` bleibt am Terminal, bis mehrzeilige Werte als sicher geschrieben belegt sind.
+4. **Symlinks werden abgelehnt**, mit Meldung.
+5. **Alle Rechner und Gruppen werden nach jeder Änderung geprüft** (in der Vorschau).
+6. **Reihenfolge der Stufen:** A, C, B.
+7. **Hilfetexte kommen vom Server**; die Grenze von 120 KB bleibt.
+8. **`--edit` ohne Bestätigung beim ersten Schreiben:** die Vorschau ist die Bestätigung.
 
 Risiken, die bleiben: Die Oberfläche sieht nur die Umgebung ihres eigenen Prozesses; Dateien im Git-Repository (`.env.local` steht in der `.gitignore`, die Oberfläche prüft das nicht); mehrere Benutzer des Rechners (unverändert: die Oberfläche gehört dem, der sie startet).
 
