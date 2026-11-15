@@ -103,7 +103,7 @@ Gemacht mit einem Wegwerf-Paket (`internal/adapter/driving/webprobe`, wieder ent
 ## 8 Nicht Teil dieses Plans
 
 * Zugriff von anderen Rechnern, Benutzer und Rechte, TLS, ein Dienst im Hintergrund.
-* Ein Terminal im Browser (`viper ssh`); die Einstellungsdateien bearbeiten; neue Rechner oder Gruppen anlegen (Dateien schreiben).
+* Ein Terminal im Browser (`viper ssh`). Die Einstellungsdateien bearbeiten und neue Rechner oder Gruppen anlegen (Dateien schreiben) ist **kein Teil dieses Plans**, aber geplant: [`ui-bearbeiten.md`](ui-bearbeiten.md) (in Stufen, mit `--edit`, mit Prüfung vor dem Schreiben, ohne Zugangsdaten zurückzugeben).
 * Eine Oberfläche für `viper find` (später, lesend und ungefährlich).
 
 ## 9 Entscheidungen und offene Fragen

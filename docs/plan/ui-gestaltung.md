@@ -94,3 +94,15 @@ Der erste Entwurf wurde gegen die Muster geprüft, die jede erzeugte Oberfläche
 4. **NATS, Einstellungen, Protokolle:** Formulare und Tabellen in der neuen Gestalt; Ablegefläche für Dateien.
 5. **Prüfen:** axe hell und dunkel, Englisch und Deutsch; Tastatur; schmale Breite; Bildschirmfotos ansehen und eine Sache streichen, die nicht dient.
 6. **Handbuch:** Beschreibung der Seiten anpassen, wo sich Namen oder Orte ändern (die Leiste liegt links).
+
+## 7 Bearbeiten (zu [`ui-bearbeiten.md`](ui-bearbeiten.md))
+
+Formulare für Einstellungen sind der sensibelste Teil der Oberfläche: Sie müssen **ruhig und vorhersehbar** wirken und das Gefährliche deutlich absetzen.
+
+* **Nur mit `--edit`.** Ohne die Option gibt es keine Formulare; mit ihr zeigt die Kopfzeile ein Wort „Bearbeiten an“ in Bernstein, damit man es nicht vergisst.
+* **Ein Feld je Einstellung**, nicht eine Textfläche. Name in Festbreite links, Eingabe rechts, darunter eine Zeile Hilfe (was es tut, was der Standard ist). Die Art der Eingabe folgt dem Inhalt (Auswahl, Zahl mit Grenzen, Text mit Muster); eine Einstellung, die auch in der Umgebung steht, trägt den Hinweis „überschrieben durch die Umgebung“ in Bernstein.
+* **Vorschau vor dem Anwenden:** zwei Spalten „bisher“ und „neu“ in Festbreite, nur die Zeile, die sich ändert, mit Zustandsfarbe (neu: grün, geändert: bernstein, entfernt: backstein); Zugangsdaten als „gesetzt → ersetzt“ ohne Wert. Der Knopf „Anwenden“ ist der gefüllte, „Verwerfen“ ruhig. Ändert sich eine Einstellung in `.env.local`, steht über der Vorschau, **wie viele Rechner** das trifft.
+* **Zugangsdatenfeld:** Eingabeart Passwort, daneben „gesetzt“ oder „nicht gesetzt“ als Lampe mit Wort; „ersetzen“ öffnet das Feld, „entfernen“ ist backsteinfarben mit zweiter Nachfrage. Nach dem Senden ist das Feld leer; der Wert steht nirgends auf der Seite.
+* **Anlegen** als Dialogseite statt Fenster: links das Formular, rechts die **Vorschau der Datei** (Festbreite), die sich beim Tippen füllt; unten „Anlegen“ (gefüllt). Ein Rechner, der es schon gibt, zeigt „gibt es schon“ mit einem Link.
+* **Konflikt:** „Die Datei hat sich geändert“ als Hinweiszeile in Bernstein mit „Neu laden“; nichts wird still überschrieben.
+* **Tastatur und Screenreader** wie überall: jedes Feld mit Beschriftung, die Vorschau als Bereich mit Namen, Änderungen im Statusbereich angesagt („Gespeichert: machines/web.env.local“).
