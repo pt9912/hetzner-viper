@@ -87,9 +87,9 @@ test('a group names machines that exist, and one that would break another is ref
   await expect(page.locator('#c-kind option[value="base"]')).toBeDisabled();
 });
 
-test('a machine and a group are duplicated: the form is filled, a credential is not taken over', async ({ page }) => {
+test('a machine and a group are duplicated: the form is filled, and neither a credential line nor text after a semicolon is taken over', async ({ page }) => {
   ui = await startUI(['--edit'], 0);
-  fs.writeFileSync(path.join(ui.work, 'machines', 'src.env.local'), "PROVIDER=compose\nSERVER_TYPE=2x4\nSERVER_LOCATION=default\nHCLOUD_TOKEN=tok-e2e-0123456789\nREPO_URL=https://github.com/x/y.git\n");
+  fs.writeFileSync(path.join(ui.work, 'machines', 'src.env.local'), "PROVIDER=compose\nSERVER_TYPE=2x4\nSERVER_LOCATION=default\nHCLOUD_TOKEN=tok-e2e-0123456789\nDNS_PROVIDER=none; VIPER_GH_TOKEN=tok-e2e-semicolon-01\nREPO_URL=https://github.com/x/y.git\n");
   await page.goto(ui.start);
   await expect(page.locator('#machines tr.unit')).toHaveCount(4);
   await page.getByRole('button', { name: 'Duplicate src', exact: true }).click();
@@ -98,14 +98,17 @@ test('a machine and a group are duplicated: the form is filled, a credential is 
   await expect(page.locator('#c-name')).toHaveValue('src-2');
   await expect(page.locator('#c-type')).toHaveValue('2x4');
   await expect(page.locator('#c-provider')).toHaveValue('compose');
-  await expect(page.locator('#c-status')).toContainText('Copied from src. Not copied: HCLOUD_TOKEN, REPO_URL.');
+  await expect(page.locator('#c-status')).toContainText('Copied from src. Not copied: HCLOUD_TOKEN, DNS_PROVIDER, REPO_URL.');
   expect(await page.locator('body').innerText()).not.toContain('tok-e2e-0123456789');
+  expect(await page.locator('body').innerText()).not.toContain('tok-e2e-semicolon');
+  expect(await page.locator('#c-dns').inputValue()).toBe(''); // not what stood after the ';'
   await page.click('#c-preview');
   await page.click('#c-apply');
   await expect(page.locator('#c-status')).toContainText('Created machines/src-2.env.local');
   const copy = fs.readFileSync(path.join(ui.work, 'machines', 'src-2.env.local'), 'utf8');
   expect(copy).toContain("SERVER_TYPE='2x4'");
   expect(copy).not.toContain('tok-e2e');
+  expect(copy).not.toContain('VIPER_GH_TOKEN');
   // a group: its machines are not taken over (a machine in two groups breaks), so the person chooses
   await page.click('#tab-overview');
   await page.getByRole('button', { name: 'Duplicate group dev', exact: true }).click();

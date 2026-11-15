@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -135,5 +136,85 @@ func TestADuplicateTakesOverWhatTheFormKnowsAndNeverACredential(t *testing.T) {
 		if _, err := ed.Duplicate(context.Background(), bad[0], bad[1]); err == nil {
 			t.Errorf("%v accepted", bad)
 		}
+	}
+}
+
+func TestWhatIsShownIsOneValueAndNeverTheTextOfAnotherSetting(t *testing.T) {
+	env, _ := nativeEnv(t)
+	dir := t.TempDir()
+	write(t, dir, ".env.local", "SERVER_PREFIX=ui\nDNS_PROVIDER=none\n")
+	body := "SERVER_TYPE=cx11; HCLOUD_TOKEN=abc123456\n" + // a second assignment
+		"SERVER_LOCATION=fsn1 # a note\n" +
+		"DNS_PROVIDER=none\tHCLOUD_TOKEN=abc123456\n" +
+		"COMPOSE_IMAGE= # HCLOUD_TOKEN=abc123456\n" +
+		"K8S_IMAGE=\"a\" b \"c\"\n" +
+		"PROVIDER='compose'    # tok\n" +
+		"VIPER_POST_CLONE='\nSERVER_TYPE=inside\nPROVIDER=x\n'\n" +
+		"REPO_URL=a&&b\n"
+	write(t, dir, "machines/web.env.local", body)
+	files, err := cli.UISettings(&cli.Opts{Host: testHost(), Dir: dir}, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		if f.Name != "machines/web.env.local" {
+			continue
+		}
+		got := map[string]bool{}
+		set := map[string]bool{}
+		for _, s := range f.Settings {
+			if strings.Contains(s.Value, "HCLOUD") || strings.Contains(s.Value, "abc123456") {
+				t.Errorf("%s shows %q", s.Key, s.Value)
+			}
+			got[s.Key+"="+s.Value] = true
+			set[s.Key] = s.Set
+		}
+		for _, want := range []string{"SERVER_LOCATION=fsn1", "PROVIDER=compose"} {
+			if !got[want] {
+				t.Errorf("%s is not shown: %v", want, got)
+			}
+		}
+		if set["COMPOSE_IMAGE"] {
+			t.Error("X= # note gives no value")
+		}
+		if got["SERVER_TYPE=inside"] || got["PROVIDER=x"] {
+			t.Errorf("a line of a value over several lines is no setting: %v", got)
+		}
+	}
+	ed, _ := cli.UIEditor(&cli.Opts{Host: testHost(), Dir: dir}, env)
+	c, err := ed.Duplicate(context.Background(), "machine", "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, v := range c.Fields {
+		if strings.Contains(v, "HCLOUD") || strings.Contains(v, "abc123456") {
+			t.Errorf("the copy takes %s=%q", k, v)
+		}
+	}
+	if c.Fields["PROVIDER"] != "compose" {
+		t.Errorf("%v", c.Fields)
+	}
+}
+
+func TestADuplicateDoesNotFollowALinkAndSuggestsAFreeNameInAnyCase(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("links need rights there")
+	}
+	env, _ := nativeEnv(t)
+	dir := t.TempDir()
+	write(t, dir, ".env.local", "")
+	outside := filepath.Join(t.TempDir(), "x")
+	_ = os.WriteFile(outside, []byte("PROVIDER=compose\n"), 0o600)
+	_ = os.MkdirAll(filepath.Join(dir, "machines"), 0o700)
+	_ = os.Symlink(outside, filepath.Join(dir, "machines", "ln.env.local"))
+	write(t, dir, "machines/web.env.local", "")
+	write(t, dir, "machines/WEB-2.env.local", "")
+	ed, _ := cli.UIEditor(&cli.Opts{Host: testHost(), Dir: dir}, env)
+	if _, err := ed.Duplicate(context.Background(), "machine", "ln"); err == nil {
+		t.Error("a link was followed")
+	}
+	c, err := ed.Duplicate(context.Background(), "machine", "web")
+	if err != nil || c.Name != "web-3" {
+		t.Errorf("%+v %v", c, err)
 	}
 }

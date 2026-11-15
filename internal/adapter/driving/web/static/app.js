@@ -173,7 +173,7 @@
     for (const a of ACTIONS) {
       act.appendChild(button(t('btn.group.' + a), t('aria.group.' + a, g.name), () => startRun({ action: a, group: g.name, scope: 'group' }), members.length === 0 || overview.readonly, kinds[a]));
     }
-    if (overview.edit) { act.appendChild(button(t('btn.dup'), t('aria.group.dup', g.name), () => duplicate('group', g.name), false, 'quiet')); }
+    if (overview.edit) { act.appendChild(button(t('btn.dup'), t('aria.group.dup', g.name), () => duplicate('group', g.name), !!g.error, 'quiet')); }
     return tr;
   }
 
@@ -817,15 +817,19 @@
   }
 
   // a copy: the form is filled with what the file has that the form knows (never a credential), and the person names it
+  let dupSeq = 0;
   async function duplicate(kind, name) {
+    const mine = ++dupSeq; // two quick clicks: the last one fills the form
     show('create');
     try {
       const c = await api('/api/duplicate?kind=' + encodeURIComponent(kind) + '&name=' + encodeURIComponent(name));
       await loadTemplates();
+      if (mine !== dupSeq) { return; }
       const f = c.fields;
       $('c-kind').value = kind;
       if (kind === 'machine') {
-        if (f.PROVIDER) { $('c-provider').value = f.PROVIDER; }
+        const known = (p) => Array.from($('c-provider').options).some((o) => o.value === p);
+        $('c-provider').value = f.PROVIDER && known(f.PROVIDER) ? f.PROVIDER : ($('c-provider').options[0] || {}).value; // the copy starts from this one's, never from the last form's
         $('c-type').value = f.SERVER_TYPE || '';
         $('c-location').value = f.SERVER_LOCATION || '';
         $('c-dns').value = f.DNS_PROVIDER || '';
@@ -838,7 +842,9 @@
       createInvalidate();
       $('c-result').hidden = true;
       $('c-name').value = c.name;
-      $('c-status').textContent = c.skipped.length ? t('create.copied', name, c.skipped.join(', ')) : t('create.copied0', name);
+      let msg = c.skipped.length ? t('create.copied', name, c.skipped.join(', ')) : t('create.copied0', name);
+      if (kind === 'machine' && !f.PROVIDER) { msg += ' ' + t('create.noprovider'); }
+      $('c-status').textContent = msg;
       $('c-name').focus();
       $('c-name').select();
     } catch (e) { $('c-status').textContent = t('create.dupfail', e.message); }

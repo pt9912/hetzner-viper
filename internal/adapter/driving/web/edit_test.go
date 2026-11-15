@@ -211,6 +211,10 @@ func TestADuplicateIsOnlyOfferedWithEdit(t *testing.T) {
 	if w := do(h, "GET", s.Host(), "/api/duplicate?kind=machine&name=nope", c, ""); w.Code != http.StatusNotFound {
 		t.Errorf("%d", w.Code)
 	}
+	sr, hr, cr := editServer(t, &fakeEditor{}, true) // --readonly with an editor: refused as well
+	if w := do(hr, "GET", sr.Host(), "/api/duplicate?kind=machine&name=web", cr, ""); w.Code != http.StatusForbidden {
+		t.Errorf("readonly: %d", w.Code)
+	}
 	s2, h2, c2 := editServer(t, nil, false)
 	if w := do(h2, "GET", s2.Host(), "/api/duplicate?kind=machine&name=web", c2, ""); w.Code != http.StatusForbidden {
 		t.Errorf("without edit: %d", w.Code)

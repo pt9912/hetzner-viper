@@ -35,20 +35,51 @@ func valueShown(key string) bool {
 
 var assignRe = regexp.MustCompile(`^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$`)
 
-// plainValue is the value of a line of a settings file, if it is a plain word: no expansion ($, `, \) a shell would make.
+// plainValue is the value of a line of a settings file, if the line is one word, or one quoted string, and nothing but a comment
+// after it, and no expansion ($, `, \) a shell would make. Anything else (a second assignment after a ';' or a space, text after
+// a quote) is not a value that can be shown: it could be the text of another setting.
 func plainValue(raw string) (string, bool) {
-	v := strings.TrimSpace(raw)
-	if len(v) >= 2 && (v[0] == '"' && v[len(v)-1] == '"' || v[0] == '\'' && v[len(v)-1] == '\'') {
-		v = v[1 : len(v)-1]
-	} else if v != "" && (v[0] == '"' || v[0] == '\'') {
-		return "", false // a value over several lines (VIPER_POST_CLONE): this reads one line, and half of a command says nothing
-	} else if i := strings.Index(v, " #"); i >= 0 {
-		v = strings.TrimSpace(v[:i])
+	s := strings.TrimLeft(raw, " \t")
+	if s == "" || s[0] == '#' && len(raw) > len(s) { // X= and X= # note: nothing
+		return "", true
 	}
-	if strings.ContainsAny(v, "$`\\") {
+	var v, rest string
+	var ok bool
+	if s[0] == '"' || s[0] == '\'' {
+		v, rest, ok = quotedWord(s)
+	} else {
+		v, rest, ok = bareWord(s)
+	}
+	if !ok {
+		return "", false
+	}
+	if rest = strings.TrimSpace(rest); rest != "" && rest[0] != '#' {
+		return "", false // more words: other assignments, or a command
+	}
+	if strings.ContainsAny(v, "$`\\") || strings.ContainsFunc(v, func(r rune) bool { return r < ' ' || r == 0x7f }) {
 		return "", false
 	}
 	return v, true
+}
+
+// quotedWord is a "..." or '...' at the start of s and what follows it.
+func quotedWord(s string) (v, rest string, ok bool) {
+	end := strings.IndexByte(s[1:], s[0])
+	if end < 0 {
+		return "", "", false // a value over several lines (VIPER_POST_CLONE): this reads one line, and half of a command says nothing
+	}
+	v, rest = s[1:1+end], s[end+2:]
+	return v, rest, rest == "" || rest[0] == ' ' || rest[0] == '\t' // "a"b is one word
+}
+
+// bareWord is the word at the start of s up to a space, and what follows it.
+func bareWord(s string) (v, rest string, ok bool) {
+	i := strings.IndexAny(s, " \t")
+	if i < 0 {
+		i = len(s)
+	}
+	v, rest = s[:i], s[i:]
+	return v, rest, !strings.ContainsAny(v, ";&|<>()\"'")
 }
 
 // readSettings is the names in a file, in the order they are in, and the value of those that may be shown.
@@ -61,10 +92,20 @@ func readSettings(path string) ([]web.Setting, error) {
 	var out []web.Setting
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
+	open := byte(0) // the quote of a value over several lines: its lines are no settings
 	for sc.Scan() {
+		if open != 0 {
+			if strings.IndexByte(sc.Text(), open) >= 0 {
+				open = 0
+			}
+			continue
+		}
 		m := assignRe.FindStringSubmatch(sc.Text())
 		if m == nil || strings.HasPrefix(strings.TrimSpace(sc.Text()), "#") {
 			continue
+		}
+		if q := strings.TrimLeft(m[2], " \t"); q != "" && (q[0] == '"' || q[0] == '\'') && strings.IndexByte(q[1:], q[0]) < 0 {
+			open = q[0]
 		}
 		st := web.Setting{Key: m[1], Set: hasValue(m[2])}
 		if v, ok := plainValue(m[2]); ok && valueShown(m[1]) && v != "" && !hasUserinfo(v) {
@@ -145,11 +186,9 @@ func hasUserinfo(v string) bool {
 	return false
 }
 
-// hasValue says whether the right side of an assignment is not empty (X=, X=” and X="" give nothing).
+// hasValue says whether the right side of an assignment gives a value: X=, X=” and X= # note give nothing. What cannot be told
+// (X=$EMPTY) counts as set.
 func hasValue(raw string) bool {
-	v := strings.TrimSpace(raw)
-	if i := strings.Index(v, " #"); i >= 0 {
-		v = strings.TrimSpace(v[:i])
-	}
-	return v != "" && v != "''" && v != `""`
+	v, ok := plainValue(raw)
+	return !ok || v != ""
 }

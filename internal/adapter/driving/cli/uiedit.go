@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -141,6 +142,8 @@ func traceCredentials(req web.EditRequest, paths []string, backup string) string
 	return text + " in " + strings.Join(paths, ", ") + " (backup " + backup + ")"
 }
 
+var validName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+
 // copyFields are the settings of a file that a form takes over (the ones the forms of docs/plan/ui-bearbeiten.md know).
 func copyFields(kind string) []string {
 	if kind == "group" {
@@ -159,10 +162,14 @@ func (e *uiEditor) Duplicate(ctx context.Context, kind, name string) (web.Copy, 
 		return web.Copy{}, errors.New("a machine or a group")
 	}
 	names := listNames(filepath.Join(e.b.dir(), dir), suffix)
-	if !slices.Contains(names, name) { // the name is one of the files, never a path
+	if !slices.Contains(names, name) || !validName.MatchString(name) { // the name is one of the files, never a path
 		return web.Copy{}, fmt.Errorf("there is no %s %s", kind, name)
 	}
-	settings, err := readSettings(filepath.Join(e.b.dir(), dir, name+suffix))
+	file := filepath.Join(e.b.dir(), dir, name+suffix)
+	if st, err := os.Lstat(file); err != nil || !st.Mode().IsRegular() { // a link is not followed
+		return web.Copy{}, fmt.Errorf("%s %s is not a plain file", kind, name)
+	}
+	settings, err := readSettings(file)
 	if err != nil {
 		return web.Copy{}, err
 	}
@@ -176,7 +183,7 @@ func (e *uiEditor) Duplicate(ctx context.Context, kind, name string) (web.Copy, 
 		}
 	}
 	c.Name = name + "-2"
-	for i := 3; slices.Contains(names, c.Name); i++ {
+	for i := 3; slices.ContainsFunc(names, func(n string) bool { return strings.EqualFold(n, c.Name) }); i++ { // a computer that ignores the case takes them for one
 		c.Name = fmt.Sprintf("%s-%d", name, i)
 	}
 	return c, ctx.Err()

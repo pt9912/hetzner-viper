@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.149  
+Version: 1.150  
 Software-Version: v0.25.0  
 Stand: 14.11.2026  
 
@@ -1756,3 +1756,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.147 | nach v0.25.0 | `viper ui`: die Seite „Einstellungen“ zeigt auch `VIPER_BREW_TAPS` (nicht mit Zugangsdaten in einer URL), `VIPER_BREW_TRUST` und `VIPER_BREWFILE`. |
 | 1.148 | nach v0.25.0 | `viper ui --edit`: neue Seite „Zugangsdaten“ (Token und Passwörter in einer vorhandenen Datei setzen, ersetzen, entfernen; Wert nie zu sehen; Sicherung als ZIP ohne Zugangsdaten). |
 | 1.149 | nach v0.25.0 | `viper ui --edit`: Rechner und Gruppen lassen sich in der Übersicht duplizieren (das Formular „Anlegen“ wird gefüllt, Zugangsdaten werden nie kopiert); die Sicherung lässt auch URLs mit Zugangsdaten und Kommentare, die ein Zugangsdatum nennen, weg. |
+| 1.150 | nach v0.25.0 | `viper ui`: die Seite „Einstellungen“ zeigt einen Wert nur, wenn die Zeile aus genau einem Wort oder einem Text in Anführungszeichen (und höchstens einem Kommentar) besteht; Text nach einem `;` oder Leerzeichen (eine zweite Zuweisung) und Zeilen innerhalb eines mehrzeiligen Werts zeigt sie nicht. Beim Duplizieren gilt dasselbe. |
