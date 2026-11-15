@@ -182,7 +182,7 @@ func TestTheSettingsShowNamesAndOnlyTheValuesOfThePositiveList(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, ".env.local", "# a comment SERVER_TYPE=hidden\nexport PROVIDER=hetzner\nHCLOUD_TOKEN=tok-0123456789\nSERVER_TYPE=cpx22   # note\nNATS_MCP_TOPICS=\"build news\"\nDNS_DOMAIN=$DOMAIN\nK3D_CLUSTER_NAME='kc'\nAWS_ROOT_GB=40\nVIPER_GH_TOKEN=\nREPO_URL=https://user:pw@example.org/r.git\n")
 	write(t, dir, "groups/dev.env", "GROUP_MACHINES=a,b\n")
-	write(t, dir, "machines/a.env.local", "SERVER_LOCATION=nbg1\n")
+	write(t, dir, "machines/a.env.local", "SERVER_LOCATION=nbg1\nREPO_URL=https://github.com/pt9912/x.git\n")
 	write(t, dir, "machines/example.env.local.example", "SERVER_TYPE=x\n")
 	env.Lookup = func(k string) (string, bool) {
 		v, ok := map[string]string{"VIPER_CLAUDE_TOKEN": "claude-0123456789", "SERVER_IMAGE": "ubuntu"}[k]
@@ -205,12 +205,12 @@ func TestTheSettingsShowNamesAndOnlyTheValuesOfThePositiveList(t *testing.T) {
 	if strings.Join(names, ",") != ".env.local,groups/dev.env,machines/a.env.local,environment" {
 		t.Errorf("files %v", names)
 	}
-	for k, want := range map[string]string{".env.local PROVIDER": "hetzner", ".env.local SERVER_TYPE": "cpx22", ".env.local NATS_MCP_TOPICS": "build news", ".env.local K3D_CLUSTER_NAME": "kc", ".env.local AWS_ROOT_GB": "40", "groups/dev.env GROUP_MACHINES": "a,b", "machines/a.env.local SERVER_LOCATION": "nbg1"} {
+	for k, want := range map[string]string{".env.local PROVIDER": "hetzner", ".env.local SERVER_TYPE": "cpx22", ".env.local NATS_MCP_TOPICS": "build news", ".env.local K3D_CLUSTER_NAME": "kc", ".env.local AWS_ROOT_GB": "40", "groups/dev.env GROUP_MACHINES": "a,b", "machines/a.env.local SERVER_LOCATION": "nbg1", "machines/a.env.local REPO_URL": "https://github.com/pt9912/x.git"} {
 		if got[k] != want || !shown[k] {
 			t.Errorf("%s = %q (shown %v), want %q", k, got[k], shown[k], want)
 		}
 	}
-	for _, k := range []string{".env.local HCLOUD_TOKEN", ".env.local DNS_DOMAIN", ".env.local VIPER_GH_TOKEN", ".env.local REPO_URL"} {
+	for _, k := range []string{".env.local HCLOUD_TOKEN", ".env.local DNS_DOMAIN", ".env.local VIPER_GH_TOKEN", ".env.local REPO_URL"} { // the one with user:pw@ is a name only
 		if _, ok := got[k]; !ok || got[k] != "" || shown[k] {
 			t.Errorf("%s must be a name only: %q %v", k, got[k], shown[k])
 		}

@@ -20,7 +20,7 @@ func shownNames() map[string]bool {
 	return map[string]bool{
 		"PROVIDER": true, "DNS_PROVIDER": true, "DNS_DOMAIN": true, "SERVER_TYPE": true, "SERVER_LOCATION": true, "SERVER_IMAGE": true,
 		"SERVER_PREFIX": true, "COMPOSE_IMAGE": true, "K8S_IMAGE": true, "K8S_DOCKER": true, "GROUP_MACHINES": true, "WORKSPACE_DIR": true,
-		"REPO_BRANCH": true, "SSH_ALLOWED_CIDRS": true, "AWS_TAGS_SHARED": true,
+		"REPO_URL": true, "REPO_BRANCH": true, "SSH_ALLOWED_CIDRS": true, "AWS_TAGS_SHARED": true,
 		"NATS_ENABLED": true, "NATS_GROUP": true, "NATS_PORT": true, "NATS_MCP": true, "NATS_MCP_AUTOALLOW": true, "NATS_MCP_PUSH_FROM": true,
 		"NATS_MCP_TOPICS": true, "NATS_OBJECTS": true, "NATS_OBJECTS_MAX": true, "NATS_OBJECTS_FILE_MAX": true, "NATS_OBJECTS_TTL": true,
 		"NATS_OPERATOR_NAME": true, "VIPER_HOMEBREW": true, "VIPER_CODE_SERVER": true, "VIPER_SWAP": true, "VIPER_CLAUDE_MODEL": true,
@@ -65,7 +65,7 @@ func readSettings(path string) ([]web.Setting, error) {
 			continue
 		}
 		st := web.Setting{Key: m[1]}
-		if v, ok := plainValue(m[2]); ok && valueShown(m[1]) && v != "" {
+		if v, ok := plainValue(m[2]); ok && valueShown(m[1]) && v != "" && !hasUserinfo(v) {
 			st.Value, st.Shown = v, true
 		}
 		out = append(out, st)
@@ -125,4 +125,15 @@ func (b *uiBackend) environmentSettings(files []web.SettingsFile) web.SettingsFi
 		seen[n] = true
 	}
 	return env
+}
+
+// hasUserinfo says whether a URL names credentials (https://user:token@host/...): preflight refuses such a REPO_URL, but a file
+// may hold one, and the page then shows only the name.
+func hasUserinfo(v string) bool {
+	_, rest, ok := strings.Cut(v, "://")
+	if !ok {
+		return false
+	}
+	host, _, _ := strings.Cut(rest, "/")
+	return strings.Contains(host, "@")
 }
