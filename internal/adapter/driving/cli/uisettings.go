@@ -89,7 +89,7 @@ func readSettings(path string) ([]web.Setting, error) {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }() // read only
-	var out []web.Setting
+	out := []web.Setting{} // an empty file lists no setting (an empty list in JSON, not null)
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
 	var open byte // the quote that a value over several lines has open: its lines are no settings

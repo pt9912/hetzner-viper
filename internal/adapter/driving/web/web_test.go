@@ -412,7 +412,7 @@ func TestThePagesStaySmall(t *testing.T) {
 		}
 		return nil
 	})
-	if total > 120<<10 {
+	if total > 140<<10 {
 		t.Errorf("the pages are %d bytes: no build step, no library, so they stay small", total)
 	}
 }

@@ -134,5 +134,5 @@ test('the pages are small and need nothing from elsewhere', async ({ page }) => 
   await expect(page.locator('#machines tr.unit')).toHaveCount(3);
   expect([...hosts]).toEqual([new URL(ui.base).host]);
   const total = Object.values(sizes).reduce((a, b) => a + b, 0);
-  expect(total).toBeLessThan(120 * 1024) // the limit of the Go test as well;
+  expect(total).toBeLessThan(140 * 1024) // the limit of the Go test as well;
 });

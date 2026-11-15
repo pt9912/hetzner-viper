@@ -144,9 +144,14 @@
     const th = document.createElement('th');
     th.scope = 'rowgroup';
     th.colSpan = 5;
-    const name = document.createElement('span');
-    name.className = 'gname';
-    name.textContent = g ? g.name : t('group.none');
+    let name;
+    if (g) {
+      name = button(g.name, t('aria.settings.group', g.name), () => goSettings('group', g.name, ''), false, 'namebtn gname');
+    } else {
+      name = document.createElement('span');
+      name.className = 'gname';
+      name.textContent = t('group.none');
+    }
     th.appendChild(name);
     tr.appendChild(th);
     if (!g) { const td = document.createElement('td'); td.colSpan = 2; tr.appendChild(td); return tr; }
@@ -177,11 +182,19 @@
     return tr;
   }
 
+  // the name of a machine is a button to its settings
+  function nameCell(tr, m) {
+    const td = document.createElement('td');
+    td.appendChild(button(m.name, t('aria.settings', m.name), () => goSettings('machine', m.name, m.group || ''), false, 'namebtn'));
+    tr.appendChild(td);
+  }
+
   // a machine: one unit of the rack
   function unit(m) {
     const tr = document.createElement('tr');
     tr.className = 'unit ' + (m.error ? 'is-error' : 'is-' + (m.state || 'none')); // the stripe at the edge has the colour of the state
-    cell(tr, m.name); cell(tr, m.provider); cell(tr, m.type); cell(tr, m.location); cell(tr, m.nats);
+    nameCell(tr, m);
+    cell(tr, m.provider); cell(tr, m.type); cell(tr, m.location); cell(tr, m.nats);
     stateCell(tr, m);
     const act = cell(tr, '', 'actions');
     // the likely next step is filled: a machine that is not there is made, one that is there is looked at
@@ -318,6 +331,8 @@
     for (const f of r.files) {
       const h = document.createElement('h3');
       h.className = 'file-title';
+      h.dataset.file = f.name;
+      h.tabIndex = -1; // a button of the overview brings the person here
       h.textContent = f.name === 'environment' ? t('settings.env') : f.name;
       box.appendChild(h);
       if (f.name === 'environment') {
@@ -327,7 +342,7 @@
         box.appendChild(p);
       }
       if (f.error) { const p = document.createElement('p'); p.className = 'bad'; p.textContent = t('error.prefix', f.error); box.appendChild(p); continue; }
-      if (!f.settings.length) { const p = document.createElement('p'); p.className = 'muted'; p.textContent = t('settings.noentries'); box.appendChild(p); continue; }
+      if (!(f.settings || []).length) { const p = document.createElement('p'); p.className = 'muted'; p.textContent = t('settings.noentries'); box.appendChild(p); continue; }
       const table = document.createElement('table');
       const cap = document.createElement('caption');
       cap.className = 'sr';
@@ -336,13 +351,44 @@
       const head = table.createTHead().insertRow();
       for (const k of ['th.key', 'th.value']) { const th = document.createElement('th'); th.scope = 'col'; th.textContent = t(k); head.appendChild(th); }
       const body = table.createTBody();
-      for (const s of f.settings) {
+      for (const s of (f.settings || [])) {
         const tr = body.insertRow();
         cell(tr, s.key);
         cell(tr, s.shown ? s.value : t('settings.set'), s.shown ? '' : 'muted');
       }
       box.appendChild(table);
     }
+    showPendingFile();
+  }
+
+  // ---- from the overview to the settings of a machine or group ----
+  let pendingFile = ''; // the file the person asked for from the overview
+
+  // settingsFileOf is the file whose settings a machine or group has: its own, else (a machine only a group names) the file of the
+  // group, else .env.local
+  async function settingsFileOf(kind, name, group) {
+    let names = [];
+    try { names = ((await api('/api/settings')).files || []).map((f) => f.name); } catch (e) { names = []; }
+    if (kind === 'group') { return { path: 'groups/' + name + '.env', note: '' }; }
+    const own = 'machines/' + name + '.env.local';
+    if (names.includes(own)) { return { path: own, note: '' }; }
+    if (group && names.includes('groups/' + group + '.env')) { return { path: 'groups/' + group + '.env', note: t('settings.viagroup', name, 'groups/' + group + '.env') }; }
+    return { path: '.env.local', note: t('settings.viabase', name) };
+  }
+
+  async function goSettings(kind, name, group) {
+    const r = await settingsFileOf(kind, name, group);
+    pendingFile = r.path;
+    show(overview.edit ? 'change' : 'settings');
+    $(overview.edit ? 'ch-status' : 'settings-note').textContent = r.note;
+  }
+
+  // the file block of the settings page that was asked for gets the focus
+  function showPendingFile() {
+    if (!pendingFile || page !== 'settings') { return; }
+    const h = Array.from(document.querySelectorAll('#settings-files h3.file-title')).find((x) => x.dataset.file === pendingFile);
+    pendingFile = '';
+    if (h) { h.scrollIntoView({ block: 'start' }); h.focus(); }
   }
 
   // ---- NATS: viper nats as runs; the page only builds the request ----
@@ -1100,6 +1146,8 @@
     sel.textContent = '';
     for (const f of templates.files) { addOption(sel, f.path, f.path); }
     if (keep) { sel.value = keep; }
+    const asked = pendingFile && page === 'change' && templates.files.some((f) => f.path === pendingFile);
+    if (asked) { sel.value = pendingFile; }
     const nameSel = $('ch-name');
     const keepName = nameSel.value;
     nameSel.textContent = '';
@@ -1109,6 +1157,7 @@
     $('ch-preview').disabled = templates.files.length === 0;
     if (templates.files.length === 0) { $('ch-status').textContent = t('change.nofile'); }
     loadRows();
+    if (asked) { pendingFile = ''; sel.focus(); }
   }
 
   let rowsSeq = 0;
@@ -1119,7 +1168,7 @@
       const files = await api('/api/settings');
       if (mine !== rowsSeq) { return; }
       const f = files.files.find((x) => x.name === $('ch-file').value);
-      changeRows = f ? f.settings : [];
+      changeRows = (f && f.settings) || [];
     } catch (e) { $('ch-status').textContent = e.message; }
     const body = $('ch-table').tBodies[0];
     body.textContent = '';

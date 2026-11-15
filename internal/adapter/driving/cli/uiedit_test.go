@@ -316,3 +316,23 @@ func TestTheStampOfTheDirectoryChangesWithTheFiles(t *testing.T) {
 		t.Error("the stamp names the directory")
 	}
 }
+
+func TestAnEmptyFileListsNoSettingsAsAnEmptyListNotNull(t *testing.T) {
+	env, _ := nativeEnv(t)
+	dir := t.TempDir()
+	write(t, dir, ".env.local", "SERVER_PREFIX=ui\n")
+	write(t, dir, "machines/empty.env.local", "")
+	files, err := cli.UISettings(&cli.Opts{Host: testHost(), Dir: dir}, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		if f.Name == "machines/empty.env.local" {
+			if f.Settings == nil {
+				t.Error("an empty file has a null list of settings: the page of the settings stops at it")
+			}
+			return
+		}
+	}
+	t.Error("the empty file is not listed")
+}

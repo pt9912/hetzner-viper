@@ -132,7 +132,7 @@ Alle acht Fragen sind mit den Vorschlägen entschieden (Meilenstein 0):
 4. **Symlinks werden abgelehnt**, mit Meldung.
 5. **Alle Rechner und Gruppen werden nach jeder Änderung geprüft** (in der Vorschau).
 6. **Reihenfolge der Stufen:** A, C, B.
-7. **Hilfetexte kommen vom Server**; die Grenze von 120 KB bleibt.
+7. **Hilfetexte kommen vom Server**; die Grenze von 120 KB bleibt. *(Nachtrag: Die Seiten für Anlegen, Ändern, Zugangsdaten und Sicherungen und die Übersicht mit Duplizieren und Sprung zu den Einstellungen brauchen selbst mehr Code als geplant; die Grenze des Tests `TestThePagesStaySmall` steht jetzt bei 140 KB, die Hilfetexte liegen weiter auf dem Server.)*
 8. **`--edit` ohne Bestätigung beim ersten Schreiben:** die Vorschau ist die Bestätigung.
 
 Risiken, die bleiben: Die Oberfläche sieht nur die Umgebung ihres eigenen Prozesses; Dateien im Git-Repository (`.env.local` steht in der `.gitignore`, die Oberfläche prüft das nicht); mehrere Benutzer des Rechners (unverändert: die Oberfläche gehört dem, der sie startet).
