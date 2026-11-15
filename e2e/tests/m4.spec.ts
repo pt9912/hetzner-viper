@@ -14,7 +14,7 @@ for (const scheme of ['light', 'dark'] as const) {
       const ctx = await browser.newContext({ colorScheme: scheme, locale: lang });
       const page = await ctx.newPage();
       await page.goto(ui.start);
-      await expect(page.locator('#machines tbody tr')).toHaveCount(3);
+      await expect(page.locator('#machines tr.unit')).toHaveCount(3);
       for (const p of PAGES) {
         await page.click('#tab-' + p);
         await expect(page.locator('#page-' + p)).toBeVisible();
@@ -31,7 +31,7 @@ test('the page can be used with the keyboard: skip link, tabs with the arrow key
   // Safari does not put links and buttons in the order of the Tab key unless the person asks for it (Option+Tab)
   test.skip(browserName === 'webkit' && process.platform === 'darwin', 'Tab does not reach links and buttons in Safari by default');
   await page.goto(ui.start);
-  await expect(page.locator('#machines tbody tr')).toHaveCount(3);
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3);
   await page.keyboard.press('Tab');
   await expect(page.locator('.skip')).toBeFocused();
   await page.keyboard.press('Enter');
@@ -63,7 +63,7 @@ test('German: the page speaks German, keeps the choice, and the names for screen
   await expect(page.locator('#tab-settings')).toHaveText('Einstellungen');
   await expect(page.locator('#h-overview')).toHaveText('Rechner');
   await expect(page.getByRole('button', { name: 'web prüfen', exact: true })).toBeVisible();
-  await expect(page.locator('#machines tbody tr', { hasText: 'web' })).toContainText('nicht gestartet');
+  await expect(page.locator('#machines tr.unit', { hasText: 'web' })).toContainText('nicht gestartet');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('lang', 'de');
   await expect(page.locator('#tab-logs')).toHaveText('Protokolle');
@@ -107,7 +107,7 @@ test('a refused page and a missing page tell the person what to do', async ({ br
   await expect(bare.locator('body')).toContainText('Adresse, die viper');
   await ctx.close();
   await page.goto(ui.start);
-  await expect(page.locator('#machines tbody tr')).toHaveCount(3); // the exchange page has moved on
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3); // the exchange page has moved on
   const missing = await page.goto(ui.base + '/nothing-here', { waitUntil: 'commit' });
   expect(missing?.status()).toBe(404);
   await expect(page.locator('h1')).toContainText('Not found');
@@ -115,7 +115,7 @@ test('a refused page and a missing page tell the person what to do', async ({ br
 
 test('when the session is gone the page says so', async ({ page }) => {
   await page.goto(ui.start);
-  await expect(page.locator('#machines tbody tr')).toHaveCount(3);
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3);
   await page.route('**/api/overview', (r) => r.fulfill({ status: 403, contentType: 'text/plain', body: 'forbidden' }));
   await page.click('#tab-logs');
   await page.click('#log-reload');
@@ -131,7 +131,7 @@ test('the pages are small and need nothing from elsewhere', async ({ page }) => 
   const hosts = new Set<string>();
   page.on('response', async (r) => { hosts.add(new URL(r.url()).host); sizes[new URL(r.url()).pathname] = (await r.body().catch(() => Buffer.alloc(0))).length; });
   await page.goto(ui.start);
-  await expect(page.locator('#machines tbody tr')).toHaveCount(3);
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3);
   expect([...hosts]).toEqual([new URL(ui.base).host]);
   const total = Object.values(sizes).reduce((a, b) => a + b, 0);
   expect(total).toBeLessThan(80 * 1024);

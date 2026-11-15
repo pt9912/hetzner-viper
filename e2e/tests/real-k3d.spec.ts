@@ -19,8 +19,8 @@ test('a machine in a k3d cluster that viper makes: up, check and down with both 
     expect(clusters()).toBeFalsy();
     expect(registries()).toBe('');
     await page.goto(ui.start);
-    await expect(page.locator('#machines tbody tr')).toHaveCount(1);
-    await expect(page.locator('#machines tbody tr', { hasText: 'web' })).toContainText('kubernetes');
+    await expect(page.locator('#machines tr.unit')).toHaveCount(1);
+    await expect(page.locator('#machines tr.unit', { hasText: 'web' })).toContainText('kubernetes');
 
     await page.getByRole('button', { name: 'Preflight web', exact: true }).click();
     await expect(page.locator('#run-output')).toContainText('$ viper preflight web');
@@ -36,7 +36,7 @@ test('a machine in a k3d cluster that viper makes: up, check and down with both 
     expect(registries()).toContain(k3dRegistry);
 
     await page.click('#tab-overview');
-    await expect(page.locator('#machines tbody tr', { hasText: 'web' })).toContainText('set up');
+    await expect(page.locator('#machines tr.unit', { hasText: 'web' })).toContainText('set up');
     await page.getByRole('button', { name: 'Check web', exact: true }).click();
     await expect(page.locator('#check-status')).toContainText('web: OK', { timeout: 5 * 60_000 });
 

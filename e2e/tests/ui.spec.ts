@@ -13,9 +13,15 @@ test('the one-time key becomes a session and the overview shows the machines', a
   page.on('response', (r) => { if (r.status() >= 400) { problems.push(r.status() + ' ' + r.url()); } });
   await page.goto(ui.start);
   await expect(page).toHaveURL(ui.base + '/');
-  await expect(page.locator('#machines tbody tr')).toHaveCount(3); // web, a and b in the group dev
-  await expect(page.locator('#groups tbody tr')).toHaveCount(1);
-  await expect(page.locator('#machines tbody tr', { hasText: 'web' })).toContainText('compose');
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3); // web, a and b in the group dev
+  await expect(page.locator('#machines tr.grouphead.real')).toHaveCount(1);
+  // the groups first (each with its machines), the machines without a group last, and the group has a state of its own
+  const heads = page.locator('#machines tr.grouphead');
+  await expect(heads.nth(0)).toContainText('dev');
+  await expect(heads.nth(0)).toContainText('not started');
+  await expect(heads.nth(1)).toContainText('No group');
+  await expect(page.locator('#machines tbody.rack').first().locator('tr.unit')).toHaveCount(2);
+  await expect(page.locator('#machines tr.unit', { hasText: 'web' })).toContainText('compose');
   expect(problems).toEqual([]); // no CSP violation, no failed request
 });
 
@@ -102,6 +108,6 @@ test('the start file that opens the browser leads to the page, and the key is no
   ui = await startUI([], 30, true);
   await page.goto(ui.start); // file://...start.html: a refresh to http://127.0.0.1:port/?t=key, then the redirect
   await expect(page).toHaveURL(ui.base + '/');
-  await expect(page.locator('#machines tbody tr')).toHaveCount(3);
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3);
   expect(ui.output()).not.toMatch(/\?t=/); // the terminal does not show the key either
 });

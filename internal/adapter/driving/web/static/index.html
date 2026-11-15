@@ -9,17 +9,8 @@
 </head>
 <body>
 <a class="skip" href="#main" data-i18n="skip">Skip to the content</a>
-<header>
-  <h1>viper</h1>
-  <nav aria-label="Pages" data-i18n-label="nav.label">
-    <div role="tablist" id="tabs">
-      <button type="button" role="tab" id="tab-overview" class="tab" aria-selected="true" aria-controls="page-overview" data-i18n="tab.overview">Overview</button>
-      <button type="button" role="tab" id="tab-runs" class="tab" aria-selected="false" aria-controls="page-runs" tabindex="-1" data-i18n="tab.runs">Runs</button>
-      <button type="button" role="tab" id="tab-nats" class="tab" aria-selected="false" aria-controls="page-nats" tabindex="-1" data-i18n="tab.nats">NATS</button>
-      <button type="button" role="tab" id="tab-settings" class="tab" aria-selected="false" aria-controls="page-settings" tabindex="-1" data-i18n="tab.settings">Settings</button>
-      <button type="button" role="tab" id="tab-logs" class="tab" aria-selected="false" aria-controls="page-logs" tabindex="-1" data-i18n="tab.logs">Logs</button>
-    </div>
-  </nav>
+<header class="top">
+  <h1><span class="mark" aria-hidden="true"></span>viper</h1>
   <span id="version" class="muted"></span>
   <span class="lang">
     <label for="lang" data-i18n="lang.label">Language</label>
@@ -27,29 +18,34 @@
   </span>
 </header>
 <div id="banner" role="alert" class="banner" hidden></div>
+<div class="shell">
+<nav class="rail" aria-label="Pages" data-i18n-label="nav.label">
+  <div role="tablist" id="tabs" aria-orientation="vertical">
+    <button type="button" role="tab" id="tab-overview" class="tab" aria-selected="true" aria-controls="page-overview" data-i18n="tab.overview">Overview</button>
+    <button type="button" role="tab" id="tab-runs" class="tab" aria-selected="false" aria-controls="page-runs" tabindex="-1" data-i18n="tab.runs">Runs</button>
+    <button type="button" role="tab" id="tab-nats" class="tab" aria-selected="false" aria-controls="page-nats" tabindex="-1" data-i18n="tab.nats">NATS</button>
+    <button type="button" role="tab" id="tab-settings" class="tab" aria-selected="false" aria-controls="page-settings" tabindex="-1" data-i18n="tab.settings">Settings</button>
+    <button type="button" role="tab" id="tab-logs" class="tab" aria-selected="false" aria-controls="page-logs" tabindex="-1" data-i18n="tab.logs">Logs</button>
+  </div>
+</nav>
 <main id="main" tabindex="-1">
   <section id="page-overview" role="tabpanel" aria-labelledby="tab-overview">
     <h2 id="h-overview" data-i18n="h.machines">Machines</h2>
     <p id="overview-note" class="muted" role="status"></p>
+    <div class="scroll">
     <table id="machines">
       <caption class="sr" data-i18n="h.machines">Machines</caption>
       <thead><tr>
-        <th scope="col" data-i18n="th.machine">Machine</th><th scope="col" data-i18n="th.group">Group</th><th scope="col" data-i18n="th.provider">Provider</th>
+        <th scope="col" data-i18n="th.machine">Machine</th><th scope="col" data-i18n="th.provider">Provider</th>
         <th scope="col" data-i18n="th.type">Type</th><th scope="col" data-i18n="th.location">Location</th><th scope="col" data-i18n="th.nats">NATS</th>
         <th scope="col" data-i18n="th.state">State</th><th scope="col" data-i18n="th.actions">Actions</th>
       </tr></thead>
-      <tbody></tbody>
     </table>
+    </div>
     <div class="row">
       <label for="repo" data-i18n="repo.label">Repository URL for up and preflight (optional)</label>
       <input type="text" id="repo" autocomplete="off" spellcheck="false" size="40">
     </div>
-    <h2 data-i18n="h.groups">Groups</h2>
-    <table id="groups">
-      <caption class="sr" data-i18n="h.groups">Groups</caption>
-      <thead><tr><th scope="col" data-i18n="th.group">Group</th><th scope="col" data-i18n="th.machines">Machines</th><th scope="col" data-i18n="th.actions">Actions</th></tr></thead>
-      <tbody></tbody>
-    </table>
     <h2 id="h-check" data-i18n="h.check">Check</h2>
     <p id="check-status" role="status" class="muted"></p>
     <pre id="check-output" role="region" tabindex="0" aria-labelledby="h-check"></pre>
@@ -57,20 +53,24 @@
 
   <section id="page-runs" role="tabpanel" aria-labelledby="tab-runs" hidden>
     <h2 id="h-runs" data-i18n="h.runs">Runs</h2>
-    <p class="muted" data-i18n="runs.intro">A run is viper itself, as at the terminal.</p>
-    <ul id="run-list" aria-labelledby="h-runs"></ul>
-    <p id="run-status" role="status"></p>
-    <pre id="run-output" role="region" tabindex="0" aria-labelledby="h-runs" aria-live="off"></pre>
-    <p id="run-download" hidden><a id="run-download-link" data-i18n="run.download">Download the file</a></p>
-    <form id="run-form" class="row" hidden>
-      <label for="run-answer" data-i18n="run.answer">Answer</label>
-      <input type="text" id="run-answer" autocomplete="off" spellcheck="false" size="30">
-      <button type="submit" data-i18n="run.send">Send</button>
-    </form>
-    <div class="row">
-      <button type="button" id="run-cancel" disabled data-i18n="run.cancel">Cancel (like Ctrl-C)</button>
-      <span class="muted" data-i18n="run.cancel.hint">Cancel does not undo: a server that was half made can remain.</span>
+    <p class="muted lead" data-i18n="runs.intro">A run is viper itself, as at the terminal.</p>
+    <div class="runs">
+      <ul id="run-list" class="ledger" aria-labelledby="h-runs"></ul>
+      <div class="terminal">
+        <div class="termbar">
+          <p id="run-status" role="status"></p>
+          <button type="button" id="run-cancel" class="danger" disabled data-i18n="run.cancel">Cancel (like Ctrl-C)</button>
+        </div>
+        <pre id="run-output" role="region" tabindex="0" aria-labelledby="h-runs" aria-live="off"></pre>
+        <form id="run-form" class="prompt" hidden>
+          <label for="run-answer" data-i18n="run.answer">Answer</label>
+          <input type="text" id="run-answer" autocomplete="off" spellcheck="false" size="30">
+          <button type="submit" data-i18n="run.send">Send</button>
+        </form>
+        <p id="run-download" hidden><a id="run-download-link" data-i18n="run.download">Download the file</a></p>
+      </div>
     </div>
+    <p class="muted hint" data-i18n="run.cancel.hint">Cancel does not undo: a server that was half made can remain.</p>
   </section>
 
   <section id="page-nats" role="tabpanel" aria-labelledby="tab-nats" hidden>
@@ -163,6 +163,7 @@
     <pre id="log-output" role="region" tabindex="0" aria-labelledby="h-logs"></pre>
   </section>
 </main>
+</div>
 <script src="/i18n.js"></script>
 <script src="/app.js"></script>
 </body>

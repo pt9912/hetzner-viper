@@ -15,7 +15,7 @@ test('a machine on real Docker: preflight, up, check, down with the question typ
   try {
     expect(mine()).toBe('');
     await page.goto(ui.start);
-    await expect(page.locator('#machines tbody tr')).toHaveCount(1);
+    await expect(page.locator('#machines tr.unit')).toHaveCount(1);
 
     await page.getByRole('button', { name: 'Preflight web', exact: true }).click();
     await expect(page.locator('#run-status')).toContainText('Done: exit 0', { timeout: 120_000 });
@@ -28,7 +28,7 @@ test('a machine on real Docker: preflight, up, check, down with the question typ
     expect(mine()).toContain('m5t-web');
 
     await page.click('#tab-overview');
-    await expect(page.locator('#machines tbody tr', { hasText: 'web' })).toContainText('set up');
+    await expect(page.locator('#machines tr.unit', { hasText: 'web' })).toContainText('set up');
     await page.getByRole('button', { name: 'Check web', exact: true }).click();
     await expect(page.locator('#check-status')).toContainText('web: OK', { timeout: 5 * 60_000 });
 
@@ -41,7 +41,7 @@ test('a machine on real Docker: preflight, up, check, down with the question typ
     await expect(page.locator('#run-status')).toContainText('Done: exit 0', { timeout: 5 * 60_000 });
     expect(mine()).toBe('');
     await page.click('#tab-overview');
-    await expect(page.locator('#machines tbody tr', { hasText: 'web' })).toContainText('not started');
+    await expect(page.locator('#machines tr.unit', { hasText: 'web' })).toContainText('not started');
   } finally {
     await ui.stop();
   }

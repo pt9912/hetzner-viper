@@ -34,9 +34,11 @@
     return td;
   }
 
-  function button(text, label, onclick, disabled) {
+  // kind: primary (the likely next step), quiet (there, but not asking for attention), danger (what deletes or stops)
+  function button(text, label, onclick, disabled, kind) {
     const b = document.createElement('button');
     b.type = 'button';
+    if (kind) { b.className = kind; }
     b.textContent = text;
     if (label) { b.setAttribute('aria-label', label); }
     b.disabled = !!disabled;
@@ -53,40 +55,106 @@
 
   const ACTIONS = ['preflight', 'up', 'down'];
 
+  // The overview is the groups first, each a rack with its machines as units; the machines without a group come last. A machine
+  // that is in several groups stands under each of them.
   function renderMachines() {
-    const body = $('machines').tBodies[0];
-    body.replaceChildren();
+    const table = $('machines');
+    for (const old of Array.from(table.tBodies)) { old.remove(); }
+    const loose = [];
+    const byGroup = new Map();
     for (const m of overview.machines) {
-      const tr = document.createElement('tr');
-      cell(tr, m.name); cell(tr, m.group); cell(tr, m.provider); cell(tr, m.type); cell(tr, m.location); cell(tr, m.nats);
-      cell(tr, m.error ? t('error.prefix', m.error) : stateText(m.state), m.error ? 'bad' : 'state-' + m.state);
-      const act = cell(tr, '');
-      const check = button(t('btn.check'), t('aria.check', m.name), () => runCheck(m, check), !!m.error);
-      act.appendChild(check);
-      for (const a of ACTIONS) {
-        act.appendChild(button(t('btn.' + a), t('aria.' + a, m.name), () => startRun({ action: a, machine: m.name, group: m.group || '' }), !!m.error || overview.readonly));
-      }
-      act.appendChild(button(t('btn.log'), t('aria.log', m.name), () => { $('log-machine').value = m.name; show('logs'); }));
-      body.appendChild(tr);
+      if (m.group) { if (!byGroup.has(m.group)) { byGroup.set(m.group, []); } byGroup.get(m.group).push(m); } else { loose.push(m); }
     }
-    $('overview-note').textContent = overview.machines.length === 0 ? t('note.none') : t('note.state');
+    for (const g of overview.groups) { table.appendChild(rack(g, byGroup.get(g.name) || [])); byGroup.delete(g.name); }
+    for (const rest of byGroup.values()) { loose.push(...rest); } // of a group that the overview does not list
+    if (loose.length > 0) { table.appendChild(rack(null, loose)); }
+    $('overview-note').textContent = overview.machines.length === 0 && overview.groups.length === 0 ? t('note.none') : t('note.state');
+  }
+
+  // one group (or the machines without one) as a body of the table: the head, then the units
+  function rack(g, members) {
+    const body = document.createElement('tbody');
+    body.className = 'rack';
+    if (g || overview.groups.length > 0) { body.appendChild(groupHead(g, members)); }
+    if (!g || !g.error) { for (const m of members) { body.appendChild(unit(m)); } }
+    return body;
+  }
+
+  function groupHead(g, members) {
+    const tr = document.createElement('tr');
+    tr.className = g ? 'grouphead real' : 'grouphead';
+    const th = document.createElement('th');
+    th.scope = 'rowgroup';
+    th.colSpan = 5;
+    const name = document.createElement('span');
+    name.className = 'gname';
+    name.textContent = g ? g.name : t('group.none');
+    th.appendChild(name);
+    tr.appendChild(th);
+    if (!g) { const td = document.createElement('td'); td.colSpan = 2; tr.appendChild(td); return tr; }
+    if (g.error) { const td = cell(tr, t('error.prefix', g.error), 'bad'); td.colSpan = 2; return tr; }
+    // the state of the group: what its machines say, as a lamp and a word, with how many of them are set up
+    const count = (s) => members.filter((m) => (m.state || 'none') === s).length;
+    const ready = count('ready');
+    const kind = members.length === 0 || count('none') === members.length ? 'none' : ready === members.length ? 'ready' : 'partial';
+    // a group that is only partly there says how many machines are in which state
+    const detail = ['ready', 'started', 'none'].filter((s) => count(s) > 0).map((s) => count(s) + ' ' + t('state.' + s)).join(', ');
+    const td = document.createElement('td');
+    const box = document.createElement('span');
+    box.className = 'state state-' + (kind === 'partial' ? 'started' : kind);
+    const led = document.createElement('span');
+    led.className = 'led';
+    const word = document.createElement('span');
+    word.textContent = members.length === 0 ? t('group.empty') : t(kind === 'partial' ? 'state.partial' : 'state.' + kind) + (kind === 'partial' ? ' (' + detail + ')' : '');
+    box.append(led, word);
+    td.appendChild(box);
+    tr.appendChild(td);
+    const act = cell(tr, '', 'actions');
+    const kinds = { preflight: 'quiet', up: '', down: 'danger' };
+    for (const a of ACTIONS) {
+      act.appendChild(button(t('btn.group.' + a), t('aria.group.' + a, g.name), () => startRun({ action: a, group: g.name, scope: 'group' }), members.length === 0 || overview.readonly, kinds[a]));
+    }
+    return tr;
+  }
+
+  // a machine: one unit of the rack
+  function unit(m) {
+    const tr = document.createElement('tr');
+    tr.className = 'unit ' + (m.error ? 'is-error' : 'is-' + (m.state || 'none')); // the stripe at the edge has the colour of the state
+    cell(tr, m.name); cell(tr, m.provider); cell(tr, m.type); cell(tr, m.location); cell(tr, m.nats);
+    stateCell(tr, m);
+    const act = cell(tr, '', 'actions');
+    // the likely next step is filled: a machine that is not there is made, one that is there is looked at
+    const there = m.state === 'ready' || m.state === 'started';
+    const check = button(t('btn.check'), t('aria.check', m.name), () => runCheck(m, check), !!m.error, there ? 'primary' : '');
+    act.appendChild(check);
+    const kinds = { preflight: 'quiet', up: there ? '' : 'primary', down: 'danger' };
+    for (const a of ACTIONS) {
+      act.appendChild(button(t('btn.' + a), t('aria.' + a, m.name), () => startRun({ action: a, machine: m.name, group: m.group || '' }), !!m.error || overview.readonly, kinds[a]));
+    }
+    act.appendChild(button(t('btn.log'), t('aria.log', m.name), () => { $('log-machine').value = m.name; show('logs'); }, false, 'quiet'));
+    return tr;
   }
 
   function stateText(s) { return s ? t('state.' + s) : ''; }
 
-  function renderGroups() {
-    const body = $('groups').tBodies[0];
-    body.replaceChildren();
-    for (const g of overview.groups) {
-      const tr = document.createElement('tr');
-      cell(tr, g.name);
-      cell(tr, g.error ? t('error.prefix', g.error) : (g.machines || []).join(', '), g.error ? 'bad' : '');
-      const act = cell(tr, '');
-      for (const a of ACTIONS) {
-        act.appendChild(button(t('btn.group.' + a), t('aria.group.' + a, g.name), () => startRun({ action: a, group: g.name, scope: 'group' }), !!g.error || overview.readonly));
-      }
-      body.appendChild(tr);
+  // the state is a lamp and a word (never a colour alone)
+  function stateCell(tr, m) {
+    const td = document.createElement('td');
+    const box = document.createElement('span');
+    if (m.error) {
+      box.className = 'bad';
+      box.textContent = t('error.prefix', m.error);
+    } else {
+      box.className = 'state state-' + (m.state || 'none');
+      const led = document.createElement('span');
+      led.className = 'led';
+      const word = document.createElement('span');
+      word.textContent = stateText(m.state);
+      box.append(led, word);
     }
+    td.appendChild(box);
+    tr.appendChild(td);
   }
 
   function renderLogChoices() {
@@ -118,7 +186,6 @@
   function renderAll() {
     renderVersion();
     renderMachines();
-    renderGroups();
     renderLogChoices();
     renderNats();
     if (!checked) { $('check-status').textContent = t('check.hint'); }
@@ -493,6 +560,8 @@
     let r;
     try { r = await api('/api/runs'); } catch (e) { return; }
     runs = r.runs;
+    // a run in progress: the tab says so (the one thing on the page that moves)
+    $('tab-runs').dataset.busy = String(runs.some((x) => x.state === 'running' || x.state === 'waiting' || x.state === 'cancelling'));
     const ul = $('run-list');
     ul.replaceChildren();
     if (runs.length === 0) { const li = document.createElement('li'); li.className = 'muted'; li.textContent = t('runs.none'); ul.appendChild(li); }
@@ -578,7 +647,8 @@
 
   $('tabs').addEventListener('keydown', (ev) => {
     const i = PAGES.indexOf(page);
-    const next = { ArrowRight: (i + 1) % PAGES.length, ArrowLeft: (i + PAGES.length - 1) % PAGES.length, Home: 0, End: PAGES.length - 1 }[ev.key];
+    // the list of pages stands beside the page: Up and Down, and Left and Right as well
+    const next = { ArrowDown: (i + 1) % PAGES.length, ArrowUp: (i + PAGES.length - 1) % PAGES.length, ArrowRight: (i + 1) % PAGES.length, ArrowLeft: (i + PAGES.length - 1) % PAGES.length, Home: 0, End: PAGES.length - 1 }[ev.key];
     if (next === undefined) { return; }
     ev.preventDefault();
     show(PAGES[next]);

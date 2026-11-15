@@ -14,7 +14,7 @@ function sse(parts: Array<[string, unknown]>): string {
 
 test('a question gets an input field and the answer is what the person types', async ({ page }) => {
   await page.goto(ui.start);
-  await expect(page.locator('#machines tbody tr')).toHaveCount(3); // the exchange page has moved on: routes are set on the page that stays
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3); // the exchange page has moved on: routes are set on the page that stays
   const answers: unknown[] = [];
   await page.route('**/api/run', (r) => r.fulfill({ contentType: 'application/json', body: '{"id":"abc"}' }));
   await page.route('**/api/runs', (r) => r.fulfill({ contentType: 'application/json', body: '{"runs":[{"id":"abc","action":"down","machine":"web","state":"waiting","code":0}]}' }));
@@ -37,7 +37,7 @@ test('a question gets an input field and the answer is what the person types', a
 
 test('output from a run is shown as text, never as markup', async ({ page }) => {
   await page.goto(ui.start);
-  await expect(page.locator('#machines tbody tr')).toHaveCount(3); // the exchange page has moved on: routes are set on the page that stays
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3); // the exchange page has moved on: routes are set on the page that stays
   await page.route('**/api/run', (r) => r.fulfill({ contentType: 'application/json', body: '{"id":"xss"}' }));
   await page.route('**/api/runs', (r) => r.fulfill({ contentType: 'application/json', body: '{"runs":[]}' }));
   await page.route('**/api/events?id=xss', (r) => r.fulfill({
@@ -53,7 +53,7 @@ test('output from a run is shown as text, never as markup', async ({ page }) => 
 
 test('cancel is Ctrl-C: the page says it ends and shows the exit status', async ({ page }) => {
   await page.goto(ui.start);
-  await expect(page.locator('#machines tbody tr')).toHaveCount(3); // the exchange page has moved on: routes are set on the page that stays
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3); // the exchange page has moved on: routes are set on the page that stays
   await page.getByRole('button', { name: 'Up web', exact: true }).click();
   await expect(page.locator('#run-status')).toContainText('Running');
   await expect(page.locator('#run-cancel')).toBeEnabled();
@@ -70,7 +70,7 @@ test('cancel is Ctrl-C: the page says it ends and shows the exit status', async 
 
 test('a second run of the same machine is refused with the reason', async ({ page }) => {
   await page.goto(ui.start);
-  await expect(page.locator('#machines tbody tr')).toHaveCount(3); // the exchange page has moved on: routes are set on the page that stays
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3); // the exchange page has moved on: routes are set on the page that stays
   await page.getByRole('button', { name: 'Up a', exact: true }).first().click();
   await expect(page.locator('#run-status')).toContainText('Running');
   await page.click('#tab-overview');
@@ -87,7 +87,7 @@ test.describe('read only', () => {
   test.afterAll(async () => { await ro.stop(); });
   test('offers no action', async ({ page }) => {
     await page.goto(ro.start);
-    await expect(page.locator('#machines tbody tr')).toHaveCount(3);
+    await expect(page.locator('#machines tr.unit')).toHaveCount(3);
     await expect(page.getByRole('button', { name: 'Up web', exact: true })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Down web', exact: true })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Check web', exact: true })).toBeEnabled();

@@ -25,7 +25,7 @@ test.afterEach(async () => {
   await ui.stop();
 });
 
-async function rows(): Promise<number> { return (await driver.findElements(By.css('#machines tbody tr'))).length; }
+async function rows(): Promise<number> { return (await driver.findElements(By.css('#machines tr.unit'))).length; }
 async function pageText(): Promise<string> { try { return (await driver.findElement(By.css('body')).getText()).slice(0, 900); } catch { return '(no body)'; } }
 
 test('the start file leads to the page in Safari (by itself, or by its link), and the page works', async () => {
