@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.162  
+Version: 1.163  
 Software-Version: v0.26.0  
 Stand: 15.11.2026  
 
@@ -1770,4 +1770,5 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.159 | nach v0.25.0 | `viper ui`: die Seiten halten sich auf dem Stand der Dateien: alle fünf Sekunden (und wenn das Fenster wieder sichtbar wird oder den Fokus bekommt) fragt die Seite nach einem kurzen Stand der Einstellungsdateien und Marken und lädt neu, wenn er sich geändert hat; eine wartende Vorschau wird dann ungültig. |
 | 1.160 | nach v0.25.0 | `viper ui` nach einer Prüfung: eine wartende Vorschau wird nur ungültig, wenn sich eine **Einstellungsdatei** geändert hat (nicht durch die eigene Änderung und nicht durch die Marken eines Laufs); die Seite baut nichts um, solange ein Knopf der Tabellen oder ein Feld eines Formulars den Fokus hat oder ein zweiter Klick erwartet wird; ein Neuladen, das scheitert, wird beim nächsten Mal wiederholt; nach verlorener Sitzung fragt die Seite nicht mehr; eine Änderung wartet höchstens 30 Sekunden auf die Sperre eines anderen `viper ui`. |
 | 1.161 | v0.26.0 | Release v0.26.0: die Änderungen 1.139 bis 1.160 (neu: `viper ui --edit` bearbeitet die Einstellungen im Browser: neue Rechner, Gruppen und `.env.local`, Duplizieren, Einstellungen ändern und entfernen mit Hilfetexten und Befehlen über mehrere Zeilen, Zugangsdaten setzen, Sicherungen ohne Zugangsdaten mit Download und Wiederherstellen; die Seiten halten sich auf dem Stand der Dateien; die Übersicht lässt sich filtern und sortieren; neue Gestalt der Oberfläche; die NATS-Seite meldet den Betreiber an und ab und nimmt Dateien und Text per Ziehen und Einfügen). |
-| 1.162 | nach v0.26.0 | `viper ui`: der Name eines Rechners oder einer Gruppe in der Übersicht führt zu seinen Einstellungen (Seite „Einstellungen“, mit `--edit` die Seite „Ändern“); die Seite „Einstellungen“ bricht bei einer leeren Datei nicht mehr ab (sie zeigte danach keine weitere Datei); die Seiten dürfen zusammen 140 KB groß sein. |
+| 1.162 | nach v0.26.0 | `viper ui`: der Name eines Rechners oder einer Gruppe in der Übersicht führt zu seinen Einstellungen (Seite „Einstellungen“, mit `--edit` die Seite „Ändern“); die Seite „Einstellungen“ bricht bei einer leeren Datei nicht mehr ab (sie zeigte danach keine weitere Datei); die Seiten dürfen zusammen 175 KB groß sein. |
+| 1.163 | nach v0.26.0 | Fehlerkorrektur: **Up für eine Gruppe in der Oberfläche** schlug immer fehl (die Oberfläche hängte `--no-code` an, `viper up --group` lehnte es ab); `viper up --group … --no-code` ist jetzt erlaubt (für eine Gruppe ist es ohnehin der Standard), und die Oberfläche hängt es für Gruppen nicht mehr an. |

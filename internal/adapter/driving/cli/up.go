@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"time"
 
@@ -67,9 +66,7 @@ func nativeUp(o *options) error {
 		return err
 	}
 	if o.group != "" {
-		if o.noCode {
-			return fmt.Errorf("viper up --group: --no-code is the default for a group, VS Code is not opened")
-		}
+		// VS Code is not opened for a group (N windows): --no-code is the default there, so it is accepted and means what it always means
 		return runGroupUp(context.Background(), o, env, o.host().Stdout, o.host().Stderr)
 	}
 	return runUp(context.Background(), o, env, o.host().Stdout, o.host().Stderr)

@@ -828,3 +828,20 @@ func TestAGroupRunLooksAtEveryMemberInThatGroupEvenIfAnotherGroupNamesItToo(t *t
 		t.Errorf("a machine in one group needs no choice: %v %v", seen, err)
 	}
 }
+
+// viper ui starts a group with the options a person may type: --no-code is accepted for a group (it is the default there), and
+// what the command says then is about the group, not about the option
+func TestUpForAGroupAcceptsNoCode(t *testing.T) {
+	for _, args := range [][]string{{"up", "--group", "nope", "--no-code"}, {"up", "--group", "nope"}} {
+		var errb strings.Builder
+		h := testHost()
+		h.Stderr = &errb
+		code := cli.Main("v9.9.9", append(args, "--dir", t.TempDir()), h)
+		if code == 0 {
+			t.Errorf("%v: a group that does not exist started", args)
+		}
+		if strings.Contains(errb.String(), "no-code") {
+			t.Errorf("%v: %s", args, errb.String())
+		}
+	}
+}

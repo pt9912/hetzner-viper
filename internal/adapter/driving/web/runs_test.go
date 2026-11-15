@@ -305,7 +305,7 @@ func TestOneRunPerMachineAndAGroupHoldsItsMembers(t *testing.T) {
 		t.Fatalf("group run: %d", code)
 	}
 	g := st.spawn.next(t)
-	if strings.Join(g.argv, " ") != "up --group dev --no-code" {
+	if strings.Join(g.argv, " ") != "up --group dev" {
 		t.Errorf("argv %v", g.argv)
 	}
 	if _, code := st.start(t, `{"action":"down","machine":"dev1","group":"dev"}`); code != http.StatusConflict {

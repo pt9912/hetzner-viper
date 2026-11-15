@@ -250,8 +250,8 @@ func runArgv(req runRequest, ov Overview) (argv, names []string, err error) {
 		}
 		names = []string{m.Name}
 	}
-	if req.Action == "up" {
-		argv = append(argv, "--no-code") // there is no desktop to open VS Code on
+	if req.Action == "up" && req.Scope != "group" {
+		argv = append(argv, "--no-code") // there is no desktop to open VS Code on (a group opens none: that is its default)
 	}
 	if req.Repo != "" {
 		argv = append(argv, "--repo="+req.Repo)

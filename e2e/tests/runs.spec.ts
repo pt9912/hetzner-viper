@@ -100,3 +100,18 @@ test.describe('read only', () => {
     await expect(page.locator('#banner')).toBeHidden();
   });
 });
+
+// what the page starts must be something viper accepts: the real program, a fake docker
+test('Up of a group is accepted by viper (the options the page adds are the ones viper takes)', async ({ page }) => {
+  const g = await startUI([], 0);
+  try {
+    await page.goto(g.start);
+    await expect(page.locator('#machines tr.unit')).toHaveCount(3);
+    await page.getByRole('button', { name: 'Up group dev', exact: true }).click();
+    await expect(page.locator('#run-status')).toContainText(/Ended|Not started|exit/, { timeout: 60_000 });
+    const out = await page.locator('#run-output').innerText();
+    expect(out).toContain('$ viper up --group dev');
+    expect(out).not.toContain('no-code');
+    expect(out).toMatch(/\[a\]|\[b\]/); // the machines of the group were looked at: the command ran as a group
+  } finally { await g.stop(); }
+});
