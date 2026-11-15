@@ -104,7 +104,8 @@
         <button type="button" id="nats-listen" data-i18n="nats.listen">Listen</button>
       </div>
       <h3 data-i18n="h.send">Send</h3>
-      <form id="nats-send" class="column">
+      <form id="nats-send" class="column drop">
+        <p id="nats-drop-hint" class="muted" data-i18n="nats.drop">Drop a file here or paste with Ctrl+V.</p>
         <div class="row">
           <label for="nats-kind" data-i18n="nats.kind">What</label>
           <select id="nats-kind">
@@ -124,6 +125,7 @@
         <div class="row">
           <label for="nats-file" data-i18n="nats.file">File (PDF, image or ZIP)</label>
           <input type="file" id="nats-file" accept=".pdf,.zip,image/*">
+          <button type="button" id="nats-file-clear" data-i18n="nats.clearfile">Remove the file</button>
           <span id="nats-nofile" class="muted" data-i18n="nats.nofile" hidden>No object store</span>
           <label><input type="checkbox" id="nats-yes"> <span data-i18n="nats.yes">send anyway (--yes)</span></label>
         </div>

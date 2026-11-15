@@ -241,6 +241,7 @@
     if (!g || !g.operator) { disarmRevoke(); }
     const noFile = off || !g.file_max;
     $('nats-file').disabled = noFile;
+    $('nats-file-clear').disabled = noFile;
     $('nats-nofile').hidden = !g || off || g.file_max > 0;
     if (!off) { natsKindChanged(); }
   }
@@ -288,6 +289,99 @@
     if (!revokeArmed) { revokeArmed = true; $('nats-revoke').textContent = t('nats.revoke.sure'); return; }
     disarmRevoke();
     await natsRun({ sub: 'revoke' });
+  }
+
+  // ---- a file or a text from the mouse or the clipboard: it goes where the file dialog and the keyboard put it ----
+  const MAX_TEXT = 16 << 10;
+
+  function sizeText(n) { return n >= 1 << 20 ? Math.round(n / (1 << 20)) + ' MiB' : Math.max(1, Math.ceil(n / 1024)) + ' KiB'; }
+
+  // what a file is for: a file that goes with the message (the kinds the command takes), a text for the message, or nothing
+  function fileUse(f) {
+    const n = (f.name || '').toLowerCase();
+    if (n.endsWith('.pdf') || f.type === 'application/pdf' || n.endsWith('.zip') || f.type === 'application/zip' || f.type === 'application/x-zip-compressed' || f.type.startsWith('image/')) { return 'file'; }
+    if (f.type.startsWith('text/') || /\.(txt|md|log|json|csv)$/.test(n)) { return 'text'; }
+    return 'none';
+  }
+
+  function nameOf(f) {
+    if (f.name) { return f; }
+    const ext = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' }[f.type] || 'bin';
+    return new File([f], 'pasted.' + ext, { type: f.type });
+  }
+
+  function addText(text) {
+    const box = $('nats-text');
+    let t = box.value ? box.value + '\n' + text : text;
+    let cut = false;
+    if (new TextEncoder().encode(t).length > MAX_TEXT) { t = t.slice(0, MAX_TEXT); cut = true; }
+    box.value = t;
+    return cut;
+  }
+
+  // acceptFiles takes what was dropped or pasted: the first file for the message, a text file as text; it says what it did
+  async function acceptFiles(files) {
+    const status = $('nats-send-status');
+    const g = natsGroup();
+    const notes = [];
+    let attached = false;
+    let more = false;
+    for (const f0 of files) {
+      const f = nameOf(f0);
+      const use = fileUse(f);
+      if (use === 'text' && f.size <= MAX_TEXT * 4) {
+        const cut = addText(await f.text());
+        notes.push(t('nats.texttaken', f.name) + (cut ? ' (' + t('nats.texttoolong') + ')' : ''));
+      } else if (use === 'file' && !g.file_max) {
+        notes.push(t('nats.nofile'));
+      } else if (use === 'file' && f.size > g.file_max) {
+        notes.push(t('nats.toolarge', f.name, sizeText(g.file_max)));
+      } else if (use === 'file' && !attached) {
+        const dt = new DataTransfer();
+        dt.items.add(f);
+        $('nats-file').files = dt.files;
+        attached = true;
+        notes.push(t('nats.taken', f.name));
+      } else if (use === 'file') {
+        more = true;
+      } else {
+        notes.push(t('nats.unsupported', f.name || f.type));
+      }
+    }
+    if (more) { notes.push(t('nats.more')); }
+    status.textContent = notes.join(' · ');
+  }
+
+  function natsFormUsable() {
+    return !$('page-nats').hidden && !overview.readonly && !!natsGroup() && !$('nats-text').disabled;
+  }
+
+  function hasFiles(ev) { return ev.dataTransfer && Array.from(ev.dataTransfer.types || []).includes('Files'); }
+
+  function dropSetup() {
+    const zone = $('nats-send');
+    // a file that is dropped beside the form must not make the browser leave the page
+    for (const type of ['dragover', 'drop']) { document.addEventListener(type, (ev) => { if (hasFiles(ev)) { ev.preventDefault(); } }); }
+    for (const type of ['dragenter', 'dragover']) {
+      zone.addEventListener(type, (ev) => { if (natsFormUsable() && (hasFiles(ev) || (ev.dataTransfer && ev.dataTransfer.types.includes('text/plain')))) { ev.preventDefault(); zone.classList.add('dragging'); } });
+    }
+    zone.addEventListener('dragleave', (ev) => { if (!zone.contains(ev.relatedTarget)) { zone.classList.remove('dragging'); } });
+    zone.addEventListener('drop', async (ev) => {
+      zone.classList.remove('dragging');
+      if (!natsFormUsable()) { return; }
+      const files = ev.dataTransfer ? ev.dataTransfer.files : [];
+      if (files.length > 0) { ev.preventDefault(); await acceptFiles(files); return; }
+      const text = ev.dataTransfer ? ev.dataTransfer.getData('text/plain') : '';
+      if (text && ev.target !== $('nats-text')) { ev.preventDefault(); if (addText(text)) { $('nats-send-status').textContent = t('nats.texttoolong'); } }
+    });
+    document.addEventListener('paste', async (ev) => {
+      if (!natsFormUsable() || !ev.clipboardData) { return; }
+      if (ev.clipboardData.files.length > 0) { ev.preventDefault(); await acceptFiles(ev.clipboardData.files); return; }
+      const inField = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement && document.activeElement.tagName);
+      const text = ev.clipboardData.getData('text/plain');
+      if (!inField && text) { ev.preventDefault(); if (addText(text)) { $('nats-send-status').textContent = t('nats.texttoolong'); } }
+    });
+    $('nats-file-clear').addEventListener('click', () => { $('nats-file').value = ''; $('nats-send-status').textContent = ''; });
   }
 
   async function natsSend(ev) {
@@ -515,6 +609,7 @@
   $('log-machine').addEventListener('change', loadLog);
   $('log-full').addEventListener('change', loadLog);
   $('log-filter').addEventListener('input', filterLog);
+  dropSetup();
   window.viperI18n.apply();
   $('lang').value = window.viperI18n.lang();
   load();

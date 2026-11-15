@@ -184,3 +184,97 @@ test('the operator is registered by one click, and removed after a second look',
   await expect.poll(() => bodies.length).toBe(2);
   expect(bodies[1]).toEqual({ action: 'nats', nats: 'dev', sub: 'revoke' });
 });
+
+// a file or a text that is dropped or pasted goes where the file dialog and the keyboard would put it
+async function dropOnSend(page: import('@playwright/test').Page, files: Array<{ name: string; type: string; content: string }>) {
+  const dt = await page.evaluateHandle((fs) => {
+    const d = new DataTransfer();
+    for (const f of fs) { d.items.add(new File([f.content], f.name, { type: f.type })); }
+    return d;
+  }, files);
+  await page.dispatchEvent('#nats-send', 'drop', { dataTransfer: dt });
+}
+
+test('a PDF dropped on the form is the file of the message, a text file is its text, anything else is said to be unusable', async ({ page }) => {
+  await page.goto(ui.start);
+  await expect(page.locator('#machines tbody tr')).toHaveCount(3);
+  await page.click('#tab-nats');
+  await dropOnSend(page, [{ name: 'plan.pdf', type: 'application/pdf', content: '%PDF-1.4 x' }]);
+  await expect(page.locator('#nats-file')).toHaveJSProperty('files.length', 1);
+  expect(await page.locator('#nats-file').evaluate((i: HTMLInputElement) => i.files?.[0].name)).toBe('plan.pdf');
+  await expect(page.locator('#nats-send-status')).toContainText('File taken: plan.pdf');
+  await dropOnSend(page, [{ name: 'notes.txt', type: 'text/plain', content: 'look at this' }]);
+  await expect(page.locator('#nats-text')).toHaveValue('look at this');
+  await expect(page.locator('#nats-send-status')).toContainText('Text taken from notes.txt');
+  await dropOnSend(page, [{ name: 'run.exe', type: 'application/x-msdownload', content: 'MZ' }]);
+  await expect(page.locator('#nats-send-status')).toContainText('Not usable: run.exe');
+  expect(await page.locator('#nats-file').evaluate((i: HTMLInputElement) => i.files?.[0].name)).toBe('plan.pdf'); // the file stays
+  await dropOnSend(page, [{ name: 'a.zip', type: 'application/zip', content: 'PK' }, { name: 'b.zip', type: 'application/zip', content: 'PK' }]);
+  await expect(page.locator('#nats-send-status')).toContainText('Only one file goes with a message');
+  expect(await page.locator('#nats-file').evaluate((i: HTMLInputElement) => i.files?.[0].name)).toBe('a.zip');
+  await page.click('#nats-file-clear');
+  await expect(page.locator('#nats-file')).toHaveJSProperty('files.length', 0);
+});
+
+test('a file that is larger than the group takes, or is for a group without an object store, is not taken', async ({ page }) => {
+  await page.goto(ui.start);
+  await expect(page.locator('#machines tbody tr')).toHaveCount(3);
+  await page.click('#tab-nats');
+  const big = 'x'.repeat(9 * 1024 * 1024); // the group takes 8 MiB by default
+  await dropOnSend(page, [{ name: 'big.zip', type: 'application/zip', content: big }]);
+  await expect(page.locator('#nats-send-status')).toContainText('is larger than the group takes (8 MiB)');
+  await expect(page.locator('#nats-file')).toHaveJSProperty('files.length', 0);
+});
+
+test('a dropped file goes out with the message', async ({ page }) => {
+  await page.goto(ui.start);
+  await expect(page.locator('#machines tbody tr')).toHaveCount(3);
+  await page.click('#tab-nats');
+  const seen: { uploadUrl?: string; run?: Record<string, unknown> } = {};
+  await page.route('**/api/upload?**', (route) => { seen.uploadUrl = route.request().url(); return route.continue(); });
+  await page.route('**/api/run', (route) => { seen.run = route.request().postDataJSON(); return route.fulfill({ contentType: 'application/json', body: '{"id":"dd"}' }); });
+  await page.route('**/api/runs', (r) => r.fulfill({ contentType: 'application/json', body: '{"runs":[]}' }));
+  await page.route('**/api/events?id=dd', (r) => r.fulfill({ contentType: 'text/event-stream', body: sse([['state', { state: 'done', code: 0 }]]) }));
+  await dropOnSend(page, [{ name: 'shot.png', type: 'image/png', content: 'PNGDATA' }]);
+  await page.fill('#nats-text', 'see the picture');
+  await page.click('#nats-send button[type=submit]');
+  await expect.poll(() => seen.run).toBeTruthy();
+  expect(seen.uploadUrl).toContain('kind=image');
+  expect(seen.uploadUrl).toContain('name=shot.png');
+  expect(typeof seen.run?.upload).toBe('string');
+  await page.click('#tab-nats');
+  await expect(page.locator('#nats-file')).toHaveJSProperty('files.length', 0); // sent: not sent again
+});
+
+test('Ctrl+V: an image from the clipboard is a file, a text outside a field is the text', async ({ page, browserName }) => {
+  // (only Chromium lets a script make a paste event that carries data)
+  test.skip(browserName !== 'chromium', 'a paste event with data can only be made in Chromium');
+  await page.goto(ui.start);
+  await expect(page.locator('#machines tbody tr')).toHaveCount(3);
+  await page.click('#tab-nats');
+  await page.evaluate(() => {
+    const d = new DataTransfer();
+    d.items.add(new File(['PNGDATA'], '', { type: 'image/png' })); // a screenshot has no name
+    document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: d, bubbles: true, cancelable: true }));
+  });
+  await expect(page.locator('#nats-send-status')).toContainText('File taken: pasted.png');
+  await page.evaluate(() => {
+    const d = new DataTransfer();
+    d.setData('text/plain', 'from the clipboard');
+    (document.activeElement as HTMLElement | null)?.blur();
+    document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: d, bubbles: true, cancelable: true }));
+  });
+  await expect(page.locator('#nats-text')).toHaveValue('from the clipboard');
+});
+
+test('nothing is taken while the page is read only or on another page', async ({ page }) => {
+  await page.goto(ui.start);
+  await expect(page.locator('#machines tbody tr')).toHaveCount(3);
+  // the NATS page is not shown: a paste or a drop is not for the form
+  await page.evaluate(() => {
+    const d = new DataTransfer();
+    d.items.add(new File(['x'], 'x.pdf', { type: 'application/pdf' }));
+    document.getElementById('nats-send')!.dispatchEvent(new DragEvent('drop', { dataTransfer: d, bubbles: true, cancelable: true }));
+  });
+  await expect(page.locator('#nats-file')).toHaveJSProperty('files.length', 0);
+});
