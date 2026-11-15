@@ -249,7 +249,7 @@ func (c *Client) PrepareImage(ctx context.Context, out io.Writer) error {
 	if !strings.Contains(c.opts.Image, "/") {
 		return fmt.Errorf("the image %s is not on the Docker host and has no registry in its name to pull it from: viper image build builds it", c.opts.Image)
 	}
-	fmt.Fprintf(out, "The image %s is not on the Docker host: pulling it (several GB) ...\n", c.opts.Image)
+	fmt.Fprintf(out, "The image %s is not on the Docker host (several GB) ...\n", c.opts.Image)
 	// one viper pulls, the others wait for it: they say so, so that a person does not take the silence for a hang
 	stopWait := c.heartbeat(out, "waiting for the pull of the image (another machine of the group pulls it)")
 	unlock, err := c.lockImage()
@@ -262,6 +262,7 @@ func (c *Client) PrepareImage(ctx context.Context, out io.Writer) error {
 		fmt.Fprintln(out, "The image is there now.")
 		return nil
 	}
+	fmt.Fprintln(out, "Pulling it ...")
 	stopPull := c.heartbeat(out, "still pulling the image")
 	defer stopPull()
 	if _, err := c.docker(ctx, "pull", "--", c.opts.Image); err != nil {
@@ -278,9 +279,10 @@ func (c *Client) hasImage(ctx context.Context) bool {
 // heartbeat says "what ... (1m20s)" every few seconds until the function it returns is called: a wait of minutes that prints
 // nothing looks like a hang.
 func (c *Client) heartbeat(out io.Writer, what string) (stop func()) {
-	done := make(chan struct{})
+	done, finished := make(chan struct{}), make(chan struct{})
 	started := time.Now()
 	go func() {
+		defer close(finished)
 		t := time.NewTicker(c.opts.heartbeat())
 		defer t.Stop()
 		for {
@@ -293,7 +295,7 @@ func (c *Client) heartbeat(out io.Writer, what string) (stop func()) {
 		}
 	}()
 	var once sync.Once
-	return func() { once.Do(func() { close(done) }) }
+	return func() { once.Do(func() { close(done) }); <-finished } // no line after the call: the output may be gone by then
 }
 
 func (c *Client) lockImage() (func(), error) {

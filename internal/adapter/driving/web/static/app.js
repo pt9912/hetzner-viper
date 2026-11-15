@@ -104,14 +104,21 @@
   function focusKey() {
     const el = document.activeElement;
     if (!el || !$('machines').contains(el)) { return null; }
-    return el.dataset.sort ? { sort: el.dataset.sort } : { label: el.getAttribute('aria-label') || el.textContent };
+    if (el.dataset.sort) { return { sort: el.dataset.sort }; }
+    const tr = el.closest('tr');
+    return { label: el.getAttribute('aria-label') || el.textContent, row: tr ? tr.dataset.row || '' : '' };
   }
 
   function restoreFocus(key) {
     if (!key) { return; }
     const els = Array.from($('machines').querySelectorAll('button'));
-    const hit = els.find((b) => (key.sort ? b.dataset.sort === key.sort : (b.getAttribute('aria-label') || b.textContent) === key.label));
-    if (hit && !hit.disabled) { hit.focus(); }
+    const same = (b) => { const tr = b.closest('tr'); return (!tr ? '' : tr.dataset.row || '') === key.row; }; // the row of a machine, also when it stands in several groups
+    const hit = els.find((b) => (key.sort ? b.dataset.sort === key.sort : (b.getAttribute('aria-label') || b.textContent) === key.label && same(b)));
+    if (hit && !hit.disabled) { hit.focus(); return; }
+    // a button that is off now (a run holds the machine): the name of the machine in that row takes the focus
+    const row = key.sort ? null : Array.from($('machines').querySelectorAll('tr')).find((tr) => (tr.dataset.row || '') === key.row && key.row !== '');
+    const name = row && row.querySelector('button.namebtn');
+    if (name) { name.focus(); }
   }
 
   function renderMachines() {
@@ -218,6 +225,7 @@
   // a machine: one unit of the rack
   function unit(m) {
     const tr = document.createElement('tr');
+    tr.dataset.row = m.name + '/' + (m.group || '');
     tr.className = 'unit ' + (m.error ? 'is-error' : 'is-' + (m.state || 'none')); // the stripe at the edge has the colour of the state
     nameCell(tr, m);
     cell(tr, m.provider); cell(tr, m.type); cell(tr, m.location); cell(tr, m.nats);
@@ -225,7 +233,7 @@
     const act = cell(tr, '', 'actions');
     // the likely next step is filled: a machine that is not there is made, one that is there is looked at
     const there = m.state === 'ready' || m.state === 'started';
-    const check = button(t('btn.check'), t('aria.check', m.name), () => runCheck(m, check), !!m.error, there ? 'primary' : '');
+    const check = button(t('btn.check'), t('aria.check', m.name), () => runCheck(m, check), !!m.error || checking.has(m.name + '/' + (m.group || '')), there ? 'primary' : '');
     act.appendChild(check);
     const kinds = { preflight: 'quiet', up: there ? '' : 'primary', down: 'danger' };
     for (const a of ACTIONS) {
@@ -299,8 +307,11 @@
 
   let checked = false;
 
+  const checking = new Set(); // the machines whose check goes on (the table is built anew meanwhile: the set, not the button, knows)
   async function runCheck(m, btn) {
     checked = true;
+    const ck = m.name + '/' + (m.group || '');
+    checking.add(ck);
     btn.disabled = true;
     $('check-status').className = 'muted';
     $('check-status').textContent = t('check.running', m.name);
@@ -314,7 +325,9 @@
       $('check-status').textContent = t('check.error', m.name, e.message);
       $('check-status').className = 'bad';
     } finally {
+      checking.delete(ck);
       btn.disabled = false;
+      renderMachines(); // the button of this machine is on again
     }
   }
 
@@ -1583,7 +1596,6 @@
   let polling = false;
   const pollEvery = 5000;
   const pollWhileRunning = 2000; // while a run goes on the marks change: the table follows closer
-  let pollTimer = 0;
 
   function staleStatus() {
     if (changePreview || restoring) { changePreview = ''; restoring = null; $('ch-apply').disabled = true; $('ch-restore-go').hidden = true; $('ch-status').textContent = t('stale'); }
@@ -1636,7 +1648,7 @@
   window.addEventListener('focus', poll);
   function pollLater() {
     const going = (overview.machines || []).some((m) => m.busy) || (runs || []).some((r) => r.state === 'running' || r.state === 'waiting' || r.state === 'cancelling');
-    pollTimer = setTimeout(async () => { await poll(); pollLater(); }, going ? pollWhileRunning : pollEvery);
+    setTimeout(async () => { await poll(); pollLater(); }, going ? pollWhileRunning : pollEvery);
   }
   pollLater();
 

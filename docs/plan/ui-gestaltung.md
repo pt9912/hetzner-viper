@@ -1,6 +1,6 @@
 # Plan: Gestaltung der Oberfläche (`viper ui`)
 
-**Stand:** Schritte 1 bis 3 und das Filtern und Sortieren der Übersicht sind umgesetzt (Commits 64004e3, daa95c9); einmal unabhängig geprüft (§8). Gehört zu [`ui.md`](ui.md) (Funktion, Sicherheit, Aufbau) und [`ui-bearbeiten.md`](ui-bearbeiten.md) (Formulare, §7 hier); dieses Dokument sagt nur, **wie die Oberfläche aussieht und sich anfühlt**. Die Funktion ändert sich nicht: Die Seiten, ihre `id`s, die Rollen und Namen für Tastatur und Screenreader bleiben, damit die Browser-Tests (`e2e/`) und die Zugänglichkeitsprüfung (axe) weiter gelten.
+**Stand (Wörter des Zustands seit v0.27.1: gestartet = `viper up` durchgelaufen, angelegt = Server da, nicht fertig):** Schritte 1 bis 3 und das Filtern und Sortieren der Übersicht sind umgesetzt (Commits 64004e3, daa95c9); einmal unabhängig geprüft (§8). Gehört zu [`ui.md`](ui.md) (Funktion, Sicherheit, Aufbau) und [`ui-bearbeiten.md`](ui-bearbeiten.md) (Formulare, §7 hier); dieses Dokument sagt nur, **wie die Oberfläche aussieht und sich anfühlt**. Die Funktion ändert sich nicht: Die Seiten, ihre `id`s, die Rollen und Namen für Tastatur und Screenreader bleiben, damit die Browser-Tests (`e2e/`) und die Zugänglichkeitsprüfung (axe) weiter gelten.
 
 ## 1 Ausgangslage
 
@@ -14,7 +14,7 @@ Die Oberfläche war funktional, aber optisch das Standardraster: Tabelle, Reiter
 
 Leitbild ist der Maschinenraum: ruhig, dicht, ablesbar. **Eine** Sache ist das Auffällige, alles andere bleibt zurückhaltend:
 
-* **Das Rack.** Jeder Rechner ist eine Rack-Einheit: links ein Streifen in der Farbe seines Zustands, eine **Lampe mit Wort** („eingerichtet“, „gestartet“, „nicht gestartet“; nie nur Farbe), der Name als Kennung in Festbreitenschrift, rechts die Aktionen. Der Streifen und die Lampe sind Information, kein Schmuck: Sie zeigen den Zustand, den die Marken dieses Rechners belegen. Eine Gruppe ist ein Rack mit einer Kopfzeile, die den Zustand der **ganzen** Gruppe trägt.
+* **Das Rack.** Jeder Rechner ist eine Rack-Einheit: links ein Streifen in der Farbe seines Zustands, eine **Lampe mit Wort** („gestartet“, „angelegt“, „nicht gestartet“; nie nur Farbe), der Name als Kennung in Festbreitenschrift, rechts die Aktionen. Der Streifen und die Lampe sind Information, kein Schmuck: Sie zeigen den Zustand, den die Marken dieses Rechners belegen. Eine Gruppe ist ein Rack mit einer Kopfzeile, die den Zustand der **ganzen** Gruppe trägt.
 * **Die Rückfrage ist eine Zeile des Terminals.** Fragt `viper` etwas (`Type DELETE …`), steht die Eingabe als hervorgehobene Zeile am Fuß der Ausgabe, im Amber der Frage, und nicht als Formular irgendwo darunter.
 
 Was von dem „Logbuch“ **sichtbar** ist, ist nur das Rack und das Terminal; Einträge mit Zeiten und Reihenfolge kämen erst mit einer Seite „Verlauf“ (die Protokolle sind sie heute). Der Name ist Leitbild, kein Versprechen.
@@ -31,8 +31,8 @@ Eine Markenfarbe, die zugleich die Farbe von „bereit“ ist; die übrigen Farb
 | Tafel | `#f7f9f6` | `#131f1b` | Fläche der Zeilen und Felder |
 | Tinte | `#17231f` (13,9 / 15,3 : 1) | `#e2ebe6` (15,1 / 13,9) | Text |
 | Gedämpft | `#46574f` (6,6 / 7,3) | `#9db1a8` (8,1 / 7,5) | Erklärungen |
-| Viper-Grün | Text `#0e6b52` (5,5 / 6,1), Knopf `#0e6b52` mit Weiß (6,5) | Text `#52c79e` (8,8), Knopf `#1d7a5d` mit Weiß (5,3) | Marke, „eingerichtet“, Hauptaktion |
-| Bernstein | `#8a5300` (5,4 / 6,0) | `#e2a640` (8,6) | „gestartet“, „wartet auf Antwort“ |
+| Viper-Grün | Text `#0e6b52` (5,5 / 6,1), Knopf `#0e6b52` mit Weiß (6,5) | Text `#52c79e` (8,8), Knopf `#1d7a5d` mit Weiß (5,3) | Marke, „gestartet“, Hauptaktion |
+| Bernstein | `#8a5300` (5,4 / 6,0) | `#e2a640` (8,6) | „angelegt“, „wartet auf Antwort“ |
 | Backstein | `#b3261e` (5,6 / 6,2) | `#ff8a80` (8,1) | Fehler, was löscht (Down, Abbrechen) |
 | Rand von Feldern und Knöpfen | **`#7d8a83`** | **`#6c8279`** | der Umriss eines Eingabefeldes (mindestens 3 : 1) |
 | Haarlinie | `#c3cbc5` | `#2b3d36` | nur Trennlinien, **nie** der Umriss eines Bedienelements |
@@ -59,11 +59,11 @@ Keine Webschriften: Die Content-Security-Policy erlaubt nur eigene Dateien, und 
 ├───────────────┬────────────────────────────────────────────────────────┤
 │ ▌Übersicht    │ Filter [        ] Zustand [Alle ▾]            2 von 3 Rechnern │
 │  Läufe  ●     │ Rechner▲  Anbieter  Typ  Ort  NATS  Zustand        Aktionen    │
-│  NATS         │ dev  (Gruppe)                    ● teilweise (1 gestartet …) [Vorprüfung][Up][Down] │
+│  NATS         │ dev  (Gruppe)                    ● teilweise (1 gestartet, 1 angelegt) [Vorprüfung][Up][Down] │
 │  Einstellungen│ ┃● a     compose  …   dev   gestartet      [Prüfen] Vorprüfung Up Down Protokoll │
 │  Protokolle   │ ┃○ b     compose  …   dev   nicht gestartet Prüfen [Up] …       │
 │               │ Ohne Gruppe                                              │
-│               │ ┃● web   hetzner  cpx22 fsn1 eingerichtet   [Prüfen] …          │
+│               │ ┃● web   hetzner  cpx22 fsn1 gestartet      [Prüfen] …          │
 └───────────────┴────────────────────────────────────────────────────────┘
 
  Läufe:  ┌ Liste der Läufe ┐ ┌ Terminal ───────────────────────────────┐
@@ -77,7 +77,7 @@ Keine Webschriften: Die Content-Security-Policy erlaubt nur eigene Dateien, und 
 * **Die Übersicht ist nach Gruppen gegliedert, Gruppen zuerst.** Eine Gruppe ist ein Rack: eine Kopfzeile mit dem Namen, dem **Zustand der Gruppe** (Lampe und Wort; „teilweise“ nennt die Zahlen) und den Aktionen der Gruppe, darunter ihre Rechner als Einheiten. Rechner ohne Gruppe stehen zuletzt unter „Ohne Gruppe“ (die Kopfzeile erscheint nur, wenn es Gruppen gibt; **ohne Gruppen** gibt es nur die Einheiten, ohne Kopfzeile). Ein Rechner in mehreren Gruppen steht unter jeder. Fehlerhafte Gruppen (unlesbare Einstellungen) stehen mit ihrer Meldung in der Kopfzeile. Es bleibt **eine** Tabelle (`#machines`) mit **einem `tbody` je Gruppe**; die Einheiten haben die Klasse `unit`, die Kopfzeilen `grouphead`. Die Namen der Knöpfe („Up web“, „Up group dev“) bleiben.
 * **Filtern und Sortieren:** ein Feld „Filter“ (Wörter, alle müssen passen) und eine Auswahl „Zustand“ über der Tabelle; die Überschriften der Spalten sind Knöpfe mit `aria-sort` (ein Klick aufsteigend, zwei absteigend, drei aus; der Pfeil ist Zierde mit leerem Alternativtext). Sortiert wird **innerhalb jeder Gruppe**, die Gruppen bleiben nach Namen. Der Zustand einer Gruppe zählt immer alle ihre Rechner.
 * **Linke Leiste** statt Reiter oben: fünf Seiten, linksbündig, die gewählte mit Rand und Fläche. Die Leiste ist eine **senkrechte** Reiterleiste (`aria-orientation="vertical"`, Auf/Ab und weiterhin Links/Rechts); **unter 52 rem** wird sie waagerecht, und dann wird das Attribut per Skript auf `horizontal` gesetzt (`matchMedia`). Ein **Lauf in Arbeit** zeigt einen atmenden Punkt hinter „Läufe“; er hat einen **Textersatz** („läuft“, nur für Screenreader) und bleibt bei „weniger Bewegung“ ein ruhiger Punkt. Er ist die einzige Bewegung der Seite, die ohne Zutun des Nutzers läuft.
-* **Knöpfe nach Gewicht:** Die wahrscheinlich nächste Aktion ist gefüllt (nicht gestartet: **Up**; eingerichtet oder gestartet: **Prüfen**), die übrigen sind ruhig, **Down** und **Abbrechen** sind backsteinfarben. Die Namen für Screenreader bleiben („Up web“).
+* **Knöpfe nach Gewicht:** Die wahrscheinlich nächste Aktion ist gefüllt (nicht gestartet: **Up**; gestartet oder angelegt: **Prüfen**), die übrigen sind ruhig, **Down** und **Abbrechen** sind backsteinfarben. Die Namen für Screenreader bleiben („Up web“).
 * **Linksbündig**, kein Zentrieren; Tabellen und Formulare auf einer Spalte von höchstens 76 rem.
 
 ## 4 Gegen die Standards geprüft (ehrlich)

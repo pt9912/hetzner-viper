@@ -133,3 +133,18 @@ test('while a run goes on the table follows the marks within a few seconds', asy
   fs.writeFileSync(path.join(marks, 'id-e2e-web'), '1\n');
   await expect(page.locator('#machines tr.unit', { hasText: /^web/ }).locator('.state')).toContainText('(created)', { timeout: 6_000 });
 });
+
+test('the focus stays on the row it was in when a machine stands in two groups', async ({ page }) => {
+  ui = await startUI([], 0);
+  fs.writeFileSync(path.join(ui.work, 'groups', 'other.env'), 'GROUP_MACHINES=web\n');
+  fs.writeFileSync(path.join(ui.work, 'groups', 'also.env'), 'GROUP_MACHINES=web\n');
+  const marks = path.join(ui.home, '.local', 'state', 'viper', 'servers', 'e2e');
+  fs.mkdirSync(marks, { recursive: true });
+  await page.goto(ui.start);
+  await expect(page.locator('#machines tr.unit', { hasText: /^web/ })).toHaveCount(2);
+  const second = page.locator('#machines tr.unit', { hasText: /^web/ }).nth(1);
+  await second.getByRole('button', { name: 'Log of web', exact: true }).focus();
+  fs.writeFileSync(path.join(marks, 'id-e2e-web'), '1\n');
+  await expect(second.locator('.state')).toContainText('created', { timeout: 15_000 });
+  await expect(page.locator('#machines tr.unit', { hasText: /^web/ }).nth(1).getByRole('button', { name: 'Log of web', exact: true })).toBeFocused();
+});

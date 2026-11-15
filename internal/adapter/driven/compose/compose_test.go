@@ -1095,7 +1095,7 @@ func TestAnImageWithARegistryInItsNameIsPulledWhenTheHostLacksIt(t *testing.T) {
 	if err := c.PrepareImage(context.Background(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if h.called("pull -- ghcr.io/pt9912/viper-machine:v1") != 1 || !strings.Contains(out.String(), "pulling it") {
+	if h.called("pull -- ghcr.io/pt9912/viper-machine:v1") != 1 || !strings.Contains(out.String(), "Pulling it") {
 		t.Fatalf("%v\n%s", h.calls, out.String())
 	}
 	// it is there now: nothing more
