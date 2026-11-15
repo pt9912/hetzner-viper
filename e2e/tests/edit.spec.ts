@@ -123,6 +123,40 @@ test('a machine and a group are duplicated: the form is filled, and neither a cr
   await expect(page.locator('#c-status')).toContainText('Created groups/dev-2.env');
 });
 
+test('an empty directory: the base file and the first machine are made from the pages', async ({ page }) => {
+  ui = await startUI(['--edit'], 0);
+  for (const f of ['machines/web.env.local', 'machines/a.env.local', 'machines/b.env.local', 'groups/dev.env', '.env.local']) { fs.rmSync(path.join(ui.work, f)); }
+  await page.goto(ui.start);
+  await page.click('#tab-create');
+  // only the block of the kind that is chosen is shown
+  await expect(page.locator('#c-machine')).toBeVisible();
+  await expect(page.locator('#c-group')).toBeHidden();
+  await expect(page.locator('#c-base')).toBeHidden();
+  await page.selectOption('#c-kind', 'base');
+  await expect(page.locator('#c-base')).toBeVisible();
+  await expect(page.locator('#c-machine')).toBeHidden();
+  await expect(page.locator('#c-name')).toBeHidden();
+  await page.selectOption('#c-bdns', 'none');
+  await page.click('#c-preview');
+  await page.click('#c-apply');
+  await expect(page.locator('#c-status')).toContainText('Created .env.local');
+  expect(fs.readFileSync(path.join(ui.work, '.env.local'), 'utf8')).toContain("DNS_PROVIDER='none'");
+  await page.selectOption('#c-kind', 'machine');
+  await page.selectOption('#c-provider', 'compose');
+  await page.fill('#c-name', 'first');
+  await page.fill('#c-location', 'default');
+  await page.fill('#c-image', 'x:1');
+  await page.click('#c-preview');
+  await page.click('#c-apply');
+  await expect(page.locator('#c-status')).toContainText('Created machines/first.env.local');
+  // the other pages know the files that exist now
+  await page.click('#tab-secrets');
+  await expect(page.locator('#s-file option')).toHaveCount(2);
+  await page.click('#tab-change');
+  await expect(page.locator('#ch-file option')).toHaveCount(2);
+  await expect(page.locator('#ch-confirmrow')).toBeHidden();
+});
+
 test('without --edit the overview offers no duplicate', async ({ page }) => {
   ui = await startUI([], 0);
   await page.goto(ui.start);

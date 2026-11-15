@@ -786,13 +786,13 @@
     const box = $('c-members');
     const checked = new Set(Array.from(box.querySelectorAll('input:checked')).map((x) => x.value));
     for (const old of Array.from(box.querySelectorAll('label, p'))) { old.remove(); }
-    if (templates.machines.length === 0) {
+    if ((templates.machines || []).length === 0) {
       const p = document.createElement('p');
       p.className = 'muted';
       p.textContent = t('create.nomembers');
       box.appendChild(p);
     }
-    for (const m of templates.machines) {
+    for (const m of (templates.machines || [])) {
       const l = document.createElement('label');
       const c = document.createElement('input');
       c.type = 'checkbox';
@@ -1242,7 +1242,7 @@
   // typing the word of the confirmation does not make the preview out of date; changing the setting or the value does
   $('change-form').addEventListener('input', (ev) => { if (ev.target.id === 'ch-confirm') { return; } $('ch-apply').disabled = true; changePreview = ''; });
   $('ch-name').addEventListener('change', () => valueControl(false));
-  $('ch-file').addEventListener('change', loadRows);
+  $('ch-file').addEventListener('change', () => { restoring = null; $('ch-restore-go').hidden = true; loadRows(); }); // a preview that waits is of the file that was chosen then
 
   // restoring: the preview says what the copy would change; the button under it does it (the credentials that are there stay)
   let goKey = 'backups.restore.go'; // the text of the button under the preview (it changes with the language)
@@ -1259,7 +1259,7 @@
       goKey = 'backups.restore.go';
       $('ch-restore-go').textContent = t(goKey);
       $('ch-restore-go').hidden = !ok;
-      $('ch-status').textContent = ok ? t('backups.restoring', b.files.join(', ')) : t('create.refused');
+      $('ch-status').textContent = ok ? t('backups.restoring', (b.files || []).join(', ')) : t('create.refused');
       $('ch-result').scrollIntoView({ block: 'nearest' });
     } catch (e) { $('ch-status').textContent = e.message; }
   }
@@ -1284,10 +1284,10 @@
         const a = document.createElement('a');
         a.href = '/api/backups/' + encodeURIComponent(b.name);
         a.textContent = t('backups.download');
-        a.setAttribute('aria-label', t('backups.aria', b.files.join(', ') + ' ' + b.time.replace('T', ' ').slice(0, 19)));
+        a.setAttribute('aria-label', t('backups.aria', (b.files || []).join(', ') + ' ' + b.time.replace('T', ' ').slice(0, 19)));
         a.setAttribute('download', b.name);
-        const back = button(t('backups.restore'), t('backups.restore.aria', b.files.join(', ') + ' ' + b.time.replace('T', ' ').slice(0, 19)), () => restorePreview(b), false, 'quiet');
-        li.append(document.createTextNode(b.time.replace('T', ' ').slice(0, 19) + '  ' + b.files.join(', ') + '  '), a, document.createTextNode(' '), back);
+        const back = button(t('backups.restore'), t('backups.restore.aria', (b.files || []).join(', ') + ' ' + b.time.replace('T', ' ').slice(0, 19)), () => restorePreview(b), false, 'quiet');
+        li.append(document.createTextNode(b.time.replace('T', ' ').slice(0, 19) + '  ' + (b.files || []).join(', ') + '  '), a, document.createTextNode(' '), back);
         ul.appendChild(li);
       }
     } catch (e) { ul.textContent = ''; }

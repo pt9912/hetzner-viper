@@ -336,7 +336,7 @@ func announceMode(out io.Writer, o *options) {
 		fmt.Fprintln(out, "viper ui: read only (no preflight, up, down or NATS)")
 	}
 	if o.edit {
-		fmt.Fprintln(out, "viper ui: edit: new settings files can be made (a file that exists is never changed)")
+		fmt.Fprintln(out, "viper ui: edit: settings files can be made, and settings and credentials of files changed (every change keeps a copy without credentials in the state directory)")
 	}
 }
 

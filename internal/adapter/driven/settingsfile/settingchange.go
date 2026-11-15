@@ -145,8 +145,34 @@ func (s spec) checkByName(v string) error {
 		}
 	case "VIPER_SWAP":
 		return checkSwap(v)
+	case "VIPER_BREW_PACKAGES":
+		return eachWord(v, pkgRe, "a formula (name or owner/repo/name)")
+	case "VIPER_BREW_TRUST":
+		return eachWord(v, trustRe, "owner/repo or owner/repo/name, optionally with cask: or command:")
+	case "VIPER_BREW_TAPS":
+		return checkTaps(v)
 	}
 	return nil
+}
+
+// the lists of Homebrew, as preflight reads them
+var (
+	pkgRe   = regexp.MustCompile(`^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/)?[A-Za-z0-9][A-Za-z0-9@+_.-]*$`)
+	trustRe = regexp.MustCompile(`^((tap|formula|cask|command):)?[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[A-Za-z0-9][A-Za-z0-9@+_.-]*)?$`)
+	tapRe   = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(=(https://|ssh://|git@)\S+)?$`)
+)
+
+func eachWord(v string, re *regexp.Regexp, what string) error {
+	for _, w := range strings.Fields(v) {
+		if !re.MatchString(w) {
+			return fmt.Errorf("%q is not %s", w, what)
+		}
+	}
+	return nil
+}
+
+func checkTaps(v string) error {
+	return eachWord(v, tapRe, "a tap (owner/repo or owner/repo=URL)")
 }
 
 var (
@@ -189,7 +215,7 @@ func checkSettings(ch settings.Change) (problems []string) {
 	check := func(n string) (spec, bool) {
 		s, ok := specOf(n)
 		if !ok {
-			problems = append(problems, n+": not a setting this page changes (credentials: the page for credentials; VIPER_POST_CLONE: the terminal)")
+			problems = append(problems, n+": not a setting this page changes (credentials: the page for credentials)")
 		}
 		return s, ok
 	}
@@ -203,8 +229,11 @@ func checkSettings(ch settings.Change) (problems []string) {
 			problems = append(problems, n+": set and removed at once")
 		}
 	}
-	for _, n := range ch.Remove {
+	for i, n := range ch.Remove {
 		check(n)
+		if slices.Contains(ch.Remove[:i], n) {
+			problems = append(problems, n+": listed twice")
+		}
 	}
 	if len(ch.Fields)+len(ch.Remove) == 0 {
 		problems = append(problems, "nothing to change")
@@ -255,7 +284,7 @@ func expands(raw string) bool {
 }
 
 // indent puts a value over several lines under its name.
-func indent(v string) string { return strings.ReplaceAll(v, "\n", "\n      ") }
+func indent(v string) string { return strings.ReplaceAll(strings.TrimRight(v, "\n"), "\n", "\n      ") }
 
 // describe is the line of the preview for one setting: for a credential never a value, for a setting the old and the new one.
 func describe(kind, name, value, old string, existed bool) string {

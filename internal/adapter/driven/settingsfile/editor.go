@@ -251,8 +251,18 @@ func status(dir string, env settings.Env) map[string]string {
 		e := env
 		e.Group = n
 		out["group "+n] = ""
-		if _, err := LoadGroup(dir, n, e); err != nil {
+		g, err := LoadGroup(dir, n, e)
+		if err != nil {
 			out["group "+n] = err.Error()
+			continue
+		}
+		for _, m := range g.Machines { // a machine that only a group names is a machine of the overview as well
+			if _, seen := out["machine "+m]; !seen {
+				out["machine "+m] = ""
+				if _, err := load(dir, m, e, false); err != nil {
+					out["machine "+m] = err.Error()
+				}
+			}
 		}
 	}
 	return out

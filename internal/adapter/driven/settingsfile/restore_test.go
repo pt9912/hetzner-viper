@@ -272,3 +272,25 @@ func TestACurrentFileThatCannotBeReadIsNotRestoredOverBlind(t *testing.T) {
 		t.Errorf("%+v", p)
 	}
 }
+
+func TestACredentialInACommandIsLeftOutWhateverTheQuoting(t *testing.T) {
+	env, _ := credEnv(t)
+	for _, text := range []string{
+		"VIPER_POST_CLONE='export HCLOUD_TOKEN='\\''abc12345secretXX'\\''\nmake'\n",
+		"# HCLOUD_TOKEN=\"abc\\\"defghijk x\"\nA=1\n",
+		"# HCLOUD_TOKEN=abc\\ defghijk\nA=1\n",
+		"A=1 # HCLOUD_TOKEN='abc12345secretXX'\n",
+	} {
+		dir := setupDir(t, text, "")
+		p, err := setCred(t, dir, env, settings.Change{Kind: "setting", Target: "base", Fields: map[string]string{"SERVER_TYPE": "x"}})
+		if err != nil {
+			t.Fatalf("%q: %v", text, err)
+		}
+		saved := readBackupText(t, env, p.Backup)
+		for _, leak := range []string{"abc12345secretXX", "defghijk", "abc\\"} {
+			if strings.Contains(saved, leak) {
+				t.Errorf("%q: the backup holds %q:\n%s", text, leak, saved)
+			}
+		}
+	}
+}

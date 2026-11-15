@@ -23,7 +23,7 @@ type uiEditor struct{ b *uiBackend }
 
 // Templates are the providers with their defaults, the machines of the directory and whether .env.local is there.
 func (e *uiEditor) Templates(ctx context.Context) (web.Templates, error) {
-	t := web.Templates{Providers: []web.Template{}, Machines: listNames(filepath.Join(e.b.dir(), "machines"), ".env.local")}
+	t := web.Templates{Providers: []web.Template{}, Machines: append([]string{}, listNames(filepath.Join(e.b.dir(), "machines"), ".env.local")...)}
 	for _, name := range model.ProviderNames() {
 		if info, ok := model.LookupProvider(name); ok {
 			t.Providers = append(t.Providers, web.Template{Name: name, Type: info.Size, Location: info.Region, Container: info.Container})

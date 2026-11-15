@@ -1,6 +1,6 @@
 # Plan: Einstellungen in der Oberfläche anlegen und bearbeiten (`viper ui`)
 
-**Stand:** Entwurf (15.11.2026), einmal unabhängig gegen den Code geprüft (§10), Meilenstein 0 (Prüfen) ist gemacht (§8), noch nichts gebaut. Ergänzt [`ui.md`](ui.md) (dort ist das Bearbeiten in §8 ausdrücklich „nicht Teil“) und gehört zu [`ui-gestaltung.md`](ui-gestaltung.md) (§7: wie die Formulare aussehen). *[V]* heißt: im Code gelesen; *[?]* ist eine Vermutung, die in Meilenstein 0 zu prüfen ist. **Entschieden** (vom Benutzer): Bearbeiten nur mit `--edit`; Sicherungen als ZIP je Änderung mit geleerten Zugangsdaten (§2.6). Die acht offenen Fragen sind entschieden (§9).
+**Stand:** Entwurf (15.11.2026), einmal unabhängig gegen den Code geprüft (§10), Meilenstein 0 (Prüfen) ist gemacht (§8), Stufen A, C, B, Duplizieren, Wiederherstellen und mehrzeilige Werte sind gebaut (siehe §8). Ergänzt [`ui.md`](ui.md) (dort ist das Bearbeiten in §8 ausdrücklich „nicht Teil“) und gehört zu [`ui-gestaltung.md`](ui-gestaltung.md) (§7: wie die Formulare aussehen). *[V]* heißt: im Code gelesen; *[?]* ist eine Vermutung, die in Meilenstein 0 zu prüfen ist. **Entschieden** (vom Benutzer): Bearbeiten nur mit `--edit`; Sicherungen als ZIP je Änderung mit geleerten Zugangsdaten (§2.6). Die acht offenen Fragen sind entschieden (§9).
 
 **Ziel:** In der Oberfläche **neue Rechner und Gruppen anlegen** und **Einstellungen ändern**, ohne eine Datei von Hand zu öffnen, mit denselben Prüfungen wie am Terminal und ohne dass die Oberfläche Zugangsdaten zurückgibt. Das Bearbeiten von Dateien ist der gefährlichste Teil der Oberfläche (sie schreibt Dateien, die Zugangsdaten enthalten und deren Inhalt auf einem Server Befehle ausführen kann); deshalb in Stufen, jede einzeln nutzbar und prüfbar.
 
@@ -128,7 +128,7 @@ Alle acht Fragen sind mit den Vorschlägen entschieden (Meilenstein 0):
 
 1. **Das Schreiben liegt im Prozess der Oberfläche** über den Port `settings.Editor` (kein neuer Befehl in Stufe A; `viper settings set|new` bleibt eine spätere Möglichkeit).
 2. **Sicherung ohne Zugangsdaten, fünf Stände je Datei, 30 Tage.**
-3. **Gefährliche Einstellungen** wie §2.9; `VIPER_POST_CLONE` bleibt am Terminal, bis mehrzeilige Werte als sicher geschrieben belegt sind.
+3. **Gefährliche Einstellungen** wie §2.9; `VIPER_POST_CLONE` ist in der Oberfläche änderbar (mehrzeiliges Feld, Befehlstext in der Vorschau, Name zur Bestätigung), nachdem der Rundlauf gegen bash belegt war.
 4. **Symlinks werden abgelehnt**, mit Meldung.
 5. **Alle Rechner und Gruppen werden nach jeder Änderung geprüft** (in der Vorschau).
 6. **Reihenfolge der Stufen:** A, C, B.

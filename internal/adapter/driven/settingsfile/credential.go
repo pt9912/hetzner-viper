@@ -142,6 +142,9 @@ func setAssignment(text, name, value string) (out string, existed bool, err erro
 	if err := checkRead(out, name, value, false); err != nil {
 		return "", false, err
 	}
+	if err := sameOthers(text, out, name); err != nil {
+		return "", false, err
+	}
 	return out, found, nil
 }
 
@@ -161,6 +164,9 @@ func removeAssignment(text, name string) (string, error) {
 	start, end := statementRange(text, a)
 	out := text[:start] + text[end:]
 	if err := checkRead(out, name, "", true); err != nil {
+		return "", err
+	}
+	if err := sameOthers(text, out, name); err != nil {
 		return "", err
 	}
 	return out, nil
@@ -193,6 +199,29 @@ func statementRange(text string, a Assignment) (start, end int) {
 	return start, end
 }
 
+// sameOthers says an error if an edit changed any assignment but the one it meant: the same others, in the same order, with the same
+// values (a statement that follows a backslash at the end of a line is part of that line's value, and an edit would eat it).
+func sameOthers(before, after, name string) error {
+	ba, err1 := Assignments(before)
+	aa, err2 := Assignments(after)
+	if err1 != nil || err2 != nil {
+		return errors.New("the change would leave the file unreadable: change it at the terminal")
+	}
+	pick := func(as []Assignment) []string {
+		var out []string
+		for _, a := range as {
+			if a.Name != name {
+				out = append(out, a.Name+"\x00"+a.Value)
+			}
+		}
+		return out
+	}
+	if !slices.Equal(pick(ba), pick(aa)) {
+		return errors.New("the change would alter another setting of the file: change it at the terminal")
+	}
+	return nil
+}
+
 // checkRead reads an edited text again and says an error if it is not what was meant: it must be readable, and the name must
 // have the value (or, removed, no statement at all).
 func checkRead(text, name, value string, removed bool) error {
@@ -217,6 +246,9 @@ func userinfoURL(v string) bool {
 		scheme, rest, ok := strings.Cut(w, "://")
 		if !ok {
 			continue
+		}
+		if i := strings.LastIndexAny(scheme, "=,;"); i >= 0 {
+			scheme = scheme[i+1:] // a tap is owner/repo=URL
 		}
 		host := rest
 		if i := strings.IndexAny(rest, "/?#"); i >= 0 {
@@ -254,7 +286,8 @@ func secretMention(secrets []string) *regexp.Regexp {
 	for i, n := range secrets {
 		quoted[i] = regexp.QuoteMeta(n)
 	}
-	return regexp.MustCompile(`\b(` + strings.Join(quoted, "|") + `)=("[^"\n]*"|'[^'\n]*'|[^\s'";]+)`)
+	// a value as the shell reads one word: 'single', "double" (with \ escapes), \x, or plain characters, one after the other
+	return regexp.MustCompile(`\b(` + strings.Join(quoted, "|") + `)=((?:'[^']*'|"(?:[^"\\]|\\.)*"|\\.|[^\s'"\\;])*)`)
 }
 
 // urlUserinfo is scheme://user:password@ of a URL (https://user:token@host) in any text.
@@ -285,7 +318,7 @@ func namesSecretValue(text string) bool {
 		}
 	}
 	for _, m := range secretMention(secrets).FindAllStringSubmatch(text, -1) {
-		if v := strings.Trim(strings.TrimPrefix(m[0], m[1]+"="), `'"`); v != "" {
+		if v := strings.ReplaceAll(strings.ReplaceAll(m[2], "'", ""), `"`, ""); v != "" {
 			return true
 		}
 	}
@@ -539,14 +572,8 @@ func writeBackup(home, action string, plans []credPlan) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	name := now.Format("20060102T150405") + "-" + action + ".zip"
-	for i := 2; ; i++ { // two changes in a second
-		if _, err := os.Lstat(filepath.Join(dir, name)); errors.Is(err, fs.ErrNotExist) {
-			break
-		}
-		name = fmt.Sprintf("%s-%s-%d.zip", now.Format("20060102T150405"), action, i)
-	}
-	if err := os.Rename(tmp.Name(), filepath.Join(dir, name)); err != nil {
+	name, err := placeBackup(tmp.Name(), dir, now, action)
+	if err != nil {
 		return "", err
 	}
 	pruneBackups(dir, now)
@@ -554,6 +581,31 @@ func writeBackup(home, action string, plans []credPlan) (string, error) {
 }
 
 var backupName = regexp.MustCompile(`^(\d{8}T\d{6})-[a-z]+(?:-(\d+))?\.zip$`)
+
+// placeBackup gives the finished ZIP its name: the time and the action, with a number if that name is taken (two changes in a
+// second, or two viper ui at once). The name is taken by a link that fails if it exists, so that no backup is written over.
+func placeBackup(tmp, dir string, now time.Time, action string) (string, error) {
+	stamp := now.Format("20060102T150405")
+	for i := 1; i < 1000; i++ {
+		name := stamp + "-" + action + ".zip"
+		if i > 1 {
+			name = fmt.Sprintf("%s-%s-%d.zip", stamp, action, i)
+		}
+		err := os.Link(tmp, filepath.Join(dir, name))
+		switch {
+		case err == nil:
+			return name, nil
+		case errors.Is(err, fs.ErrExist):
+			continue
+		}
+		// no links (some file systems): look, and rename into a free name
+		if _, lerr := os.Lstat(filepath.Join(dir, name)); lerr == nil {
+			continue
+		}
+		return name, os.Rename(tmp, filepath.Join(dir, name))
+	}
+	return "", errors.New("no free name for the backup")
+}
 
 // newer says whether the backup a was made after b: by the time in the name, and two in one second by their number.
 func newer(a, b string) bool {
@@ -576,6 +628,7 @@ func pruneBackups(dir string, now time.Time) {
 	if err != nil {
 		return
 	}
+	removeStaleTemp(dir, ents, now)
 	type backup struct {
 		name string
 		at   string // the time in the name
@@ -610,13 +663,25 @@ func pruneBackups(dir string, now time.Time) {
 	}
 }
 
+// removeStaleTemp deletes the temporary files of a backup that a crash left (older than an hour).
+func removeStaleTemp(dir string, ents []fs.DirEntry, now time.Time) {
+	for _, e := range ents {
+		if !strings.HasPrefix(e.Name(), ".viper-backup-") {
+			continue
+		}
+		if st, err := os.Stat(filepath.Join(dir, e.Name())); err == nil && now.Sub(st.ModTime()) > time.Hour {
+			_ = os.Remove(filepath.Join(dir, e.Name()))
+		}
+	}
+}
+
 func filesOfBackup(path string) []string {
 	r, err := zip.OpenReader(path)
 	if err != nil {
-		return nil
+		return []string{}
 	}
 	defer func() { _ = r.Close() }() // read only
-	var out []string
+	out := []string{}
 	for _, f := range r.File {
 		if f.Name != "manifest.yaml" {
 			out = append(out, f.Name)

@@ -386,3 +386,63 @@ func TestACommandWithACredentialInAUrlIsRefused(t *testing.T) {
 		t.Errorf("ssh with a user: %q", got)
 	}
 }
+
+func TestAMachineThatOnlyAGroupNamesIsCheckedToo(t *testing.T) {
+	env, _ := credEnv(t)
+	dir := setupDir(t, "SERVER_PREFIX=claude\nDNS_PROVIDER=none\nPROVIDER=hetzner\n", "")
+	writeIn(t, dir, "groups/g.env", "GROUP_MACHINES=ghost\nNATS_ENABLED=true\nNATS_MCP=true\nNATS_OBJECTS=true\n")
+	p, err := settingsfile.Files{}.Preview(dir, settings.Change{Kind: "setting", Target: "base", Fields: map[string]string{"NATS_PORT": "2000"}}, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// ghost has no file: its settings come from the base file and its group; a change that breaks it is seen
+	p, _ = settingsfile.Files{}.Preview(dir, settings.Change{Kind: "setting", Target: "base", Fields: map[string]string{"PROVIDER": "kubernetes"}}, env)
+	if !strings.Contains(strings.Join(p.Broken, "|"), "machine ghost") {
+		t.Errorf("the machine that only the group names is not checked: %+v", p)
+	}
+}
+
+func TestTheListsOfHomebrewAreCheckedLikePreflight(t *testing.T) {
+	dir, env := settingDir(t)
+	for _, c := range []struct {
+		name, value string
+		ok          bool
+	}{
+		{"VIPER_BREW_PACKAGES", "ripgrep fd hashicorp/tap/terraform", true}, {"VIPER_BREW_PACKAGES", "a;b rm", false},
+		{"VIPER_BREW_TAPS", "o/r o/r=https://h.example/r.git o/r=ssh://git@h/r", true}, {"VIPER_BREW_TAPS", "x y=ftp://z", false},
+		{"VIPER_BREW_TRUST", "o/r o/r/name cask:o/r command:o/r", true}, {"VIPER_BREW_TRUST", "!!", false},
+	} {
+		got := problemsOf(t, dir, env, setting(map[string]string{c.name: c.value}))
+		if (got == "") != c.ok {
+			t.Errorf("%s=%q: ok %v, problems %q", c.name, c.value, c.ok, got)
+		}
+	}
+}
+
+func TestAnEditNeverTouchesAnotherSettingEvenAfterABackslash(t *testing.T) {
+	env, _ := credEnv(t)
+	for _, text := range []string{"A=v\\\nexport VIPER_GH_TOKEN='s e'\nB=1\n", "A=v\\;export VIPER_GH_TOKEN='s e' B='a;b'\n"} {
+		dir := setupDir(t, text, "")
+		before, err := settingsfile.Assignments(text)
+		if err != nil {
+			t.Fatalf("%q: %v", text, err)
+		}
+		ch := settings.Change{Kind: "credential", Target: "base", Remove: []string{"VIPER_GH_TOKEN"}}
+		p, _ := settingsfile.Files{}.Preview(dir, ch, env)
+		if len(p.Problems) > 0 {
+			if !strings.Contains(strings.Join(p.Problems, "|"), "terminal") {
+				t.Errorf("%q: %v", text, p.Problems)
+			}
+			continue
+		}
+		ch.Etag = p.Etag
+		if _, err := (settingsfile.Files{}).Create(dir, ch, env); err != nil {
+			t.Fatal(err)
+		}
+		b, _ := os.ReadFile(filepath.Join(dir, ".env.local"))
+		after, err := settingsfile.Assignments(string(b))
+		if err != nil || len(after) != len(before)-1 {
+			t.Errorf("%q -> %q: another setting went with it (%d of %d left): %v", text, b, len(after), len(before), err)
+		}
+	}
+}

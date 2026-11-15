@@ -194,7 +194,7 @@ func helpsImages() map[string]commandDoc {
 				{"port", "N", "listen on this port (default: a free one)"},
 				{"no-open", "", "do not open the browser; print the address with the key (valid for ten minutes)"},
 				{"readonly", "", "offer no action: only look (no preflight, up, down or NATS)"},
-				{"edit", "", "offer to make new settings files (a machine, a group, .env.local; a file that exists is never replaced) to change one setting of a file that exists and to set credentials in it (a copy without credentials is kept of every change); not with --readonly"},
+				{"edit", "", "offer to edit settings: make new files (a machine, a group, .env.local; duplicate one), change or remove a setting, set a credential, put an earlier version back (also commands over several lines); every change keeps a copy without credentials, which can be downloaded; not with --readonly"},
 			},
 			examples: []string{"viper ui", "viper ui --no-open --port 8787"},
 			manual:   "Die Oberfläche im Browser",
