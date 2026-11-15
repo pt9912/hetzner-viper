@@ -115,7 +115,7 @@ test('the overview follows the marks of this computer also while a button of the
   await page.goto(ui.start);
   await expect(page.locator('#machines tr.unit')).toHaveCount(3);
   const sort = page.getByRole('button', { name: /^Machine/ });
-  await sort.click(); // a header of the table keeps the focus
+  await sort.focus(); // a header of the table has the focus (Safari does not give a button the focus by a click: it is set here)
   await expect(sort).toBeFocused();
   fs.writeFileSync(path.join(marks, 'id-e2e-web'), '1\n'); fs.writeFileSync(path.join(marks, 'ready-e2e-web'), '1\n');
   await expect(page.locator('#machines tr.unit', { hasText: /^web/ }).locator('.state')).toContainText('started', { timeout: 15_000 });
