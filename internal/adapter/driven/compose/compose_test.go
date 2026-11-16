@@ -295,7 +295,7 @@ func parseCompose(args []string) composeCall {
 
 func (h *host) compose(args []string) (string, string, error) {
 	call := parseCompose(args)
-	data, err := os.ReadFile(call.file)
+	data, err := readWhileReplaced(call.file)
 	if err != nil {
 		return "", "", err
 	}
@@ -1178,4 +1178,21 @@ func TestALongPullSaysThatItGoesOnAndTheMachinesThatWaitSayWhy(t *testing.T) {
 	if h.called("pull") != 1 {
 		t.Errorf("pulled %d times", h.called("pull"))
 	}
+}
+
+// readWhileReplaced reads a file that another goroutine may replace by a rename at that moment: on Windows the open fails then
+// ("being used by another process"), which the real docker compose does not mind (it reads again). The fake tries again too.
+func readWhileReplaced(path string) ([]byte, error) {
+	var err error
+	for i := 0; i < 20; i++ {
+		var b []byte
+		if b, err = os.ReadFile(path); err == nil {
+			return b, nil
+		}
+		if os.IsNotExist(err) {
+			return nil, err
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	return nil, err
 }
