@@ -34,6 +34,7 @@ type options struct {
 	ask                       func(string) string // the answers of a group: one reader, one prompt at a time
 	parallel                  int                 // how many machines of a group at the same time (0: the default)
 	force, full, noCode, tmux bool
+	here                      bool   // viper terminal: run in this terminal, not in a window of its own
 	registry                  string // viper down: delete or keep a registry viper made ("" asks)
 	within                    string // the group a single machine is looked at in (viper up web --in-group dev)
 	// the need of viper find
@@ -84,6 +85,7 @@ func commands() map[string]command {
 		"check":        {usage: "<machine> [--in-group G] | --group G [--parallel N]", machine: needMachine, flags: []string{"group", "in-group", "parallel"}, run: nativeCheck},
 		"ssh":          {usage: "<machine> [--in-group G] [--cmd COMMAND | --tmux] | --group G --cmd COMMAND [--parallel N]", machine: needMachine, flags: []string{"cmd", "tmux", "group", "in-group", "parallel"}, run: nativeSSH},
 		"down":         {usage: "<machine> [--in-group G] [--force] [--delete-registry|--keep-registry] | --group G [--force] [--delete-registry|--keep-registry] [--parallel N]", machine: needMachine, flags: []string{"force", "group", "in-group", "parallel", "delete-registry", "keep-registry"}, run: nativeDown},
+		"terminal":     {usage: "<machine> [--in-group G] [--here]", machine: needMachine, flags: []string{"in-group", "here"}, run: nativeTerminal},
 		"vscode":       {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeVSCode},
 		"dns":          {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeDNS},
 		"find":         {usage: "[--cpu N] [--ram GB] [--disk GB] [--arch x86|arm] [--location L] [--provider P] [--vat PERCENT]", machine: noMachine, flags: []string{"cpu", "ram", "disk", "arch", "location", "provider", "vat"}, run: nativeFind},
@@ -263,6 +265,8 @@ func setSwitch(o *options, name, n string) error {
 		o.noCode = true
 	case "tmux":
 		o.tmux = true
+	case "here":
+		o.here = true
 	case "query":
 		o.query = true
 	case "all":

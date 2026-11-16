@@ -240,6 +240,7 @@
       act.appendChild(button(t('btn.' + a), t('aria.' + a, m.name), () => startRun({ action: a, machine: m.name, group: m.group || '' }), !!m.error || overview.readonly || !!m.busy, kinds[a]));
     }
     if (m.state === 'ready' && !overview.readonly) { act.appendChild(button(t('btn.vscode'), t('aria.vscode', m.name), () => startRun({ action: 'vscode', machine: m.name, group: m.group || '' }), !!m.error, 'quiet')); }
+    if (m.state === 'ready' && !overview.readonly) { act.appendChild(button(t('btn.terminal'), t('aria.terminal', m.name), () => startRun({ action: 'terminal', machine: m.name, group: m.group || '' }), !!m.error, 'quiet')); }
     act.appendChild(button(t('btn.log'), t('aria.log', m.name), () => { $('log-machine').value = m.name; show('logs'); }, false, 'quiet'));
     if (overview.edit) { act.appendChild(button(t('btn.dup'), t('aria.dup', m.name), () => duplicate('machine', m.name), !!m.error, 'quiet')); }
     return tr;

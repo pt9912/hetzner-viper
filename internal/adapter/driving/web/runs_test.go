@@ -736,7 +736,8 @@ func TestACommandOnAMachineAndTheStartOfVSCodeBecomeAnArgvAndTheCommandHasItsLim
 	ok(`{"action":"ssh","machine":"web","confirm":"run","cmd":"echo \"a b\"; $X ü --x"}`, `ssh web --cmd=echo "a b"; $X ü --x`)
 	ok(`{"action":"ssh","scope":"group","group":"dev","confirm":"run","cmd":"uptime","parallel":2}`, "ssh --group dev --parallel=2 --cmd=uptime")
 	ok(`{"action":"vscode","machine":"web"}`, "vscode web")
-	if len(traced) != 3 || !strings.HasPrefix(traced[0], "ssh web: command of ") || strings.Contains(strings.Join(traced, "|"), "uptime") || strings.Contains(strings.Join(traced, "|"), "echo") {
+	ok(`{"action":"terminal","machine":"web"}`, "terminal web")
+	if len(traced) != 4 || !strings.HasPrefix(traced[0], "ssh web: command of ") || strings.Contains(strings.Join(traced, "|"), "uptime") || strings.Contains(strings.Join(traced, "|"), "echo") {
 		t.Errorf("events.log: %q", traced)
 	}
 	for _, bad := range []string{
@@ -744,7 +745,7 @@ func TestACommandOnAMachineAndTheStartOfVSCodeBecomeAnArgvAndTheCommandHasItsLim
 		`{"action":"ssh","machine":"web","confirm":"run","cmd":"-oProxyCommand=id"}`, `{"action":"ssh","machine":"web","confirm":"run","cmd":"  -x"}`, `{"action":"ssh","machine":"web","confirm":"run","cmd":"--x"}`,
 		`{"action":"ssh","machine":"web","confirm":"run","cmd":"a\nb"}`, `{"action":"ssh","machine":"web","confirm":"run","cmd":"a\u0000b"}`, `{"action":"ssh","machine":"web","confirm":"run","cmd":"a\u001bb"}`,
 		`{"action":"ssh","machine":"nope","confirm":"run","cmd":"id"}`, `{"action":"ssh","machine":"web","confirm":"run","cmd":"id","repo":"x"}`,
-		`{"action":"up","machine":"web","cmd":"id"}`, `{"action":"find","cpu":2,"cmd":"id","confirm":"run"}`, `{"action":"vscode","scope":"group","group":"dev"}`, `{"action":"vscode","machine":"web","cmd":"id"}`,
+		`{"action":"up","machine":"web","cmd":"id"}`, `{"action":"find","cpu":2,"cmd":"id","confirm":"run"}`, `{"action":"vscode","scope":"group","group":"dev"}`, `{"action":"terminal","scope":"group","group":"dev"}`, `{"action":"terminal","machine":"web","cmd":"id"}`, `{"action":"terminal","machine":"nope"}`, `{"action":"vscode","machine":"web","cmd":"id"}`,
 	} {
 		if _, code := st.start(t, bad); code != http.StatusBadRequest {
 			t.Errorf("%s: %d", bad, code)
@@ -767,7 +768,7 @@ func TestACommandIsRefusedWithoutEditOrWhenReadOnlyTakesNoAnswerAndHoldsTheMachi
 		t.Errorf("without --edit: %d", code)
 	}
 	ro := live(t, true)
-	for _, body := range []string{`{"action":"ssh","machine":"web","confirm":"run","cmd":"id"}`, `{"action":"vscode","machine":"web"}`} {
+	for _, body := range []string{`{"action":"ssh","machine":"web","confirm":"run","cmd":"id"}`, `{"action":"vscode","machine":"web"}`, `{"action":"terminal","machine":"web"}`} {
 		if _, code := ro.start(t, body); code != http.StatusForbidden {
 			t.Errorf("read only %s: %d", body, code)
 		}

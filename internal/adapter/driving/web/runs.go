@@ -246,18 +246,20 @@ type runRequest struct {
 }
 
 func isAction(a string) bool {
-	return a == "preflight" || a == "up" || a == "down" || a == "nats" || a == "check" || a == "find" || a == "image" || a == "ssh" || a == "vscode"
+	return a == "preflight" || a == "up" || a == "down" || a == "nats" || a == "check" || a == "find" || a == "image" || a == "ssh" || a == "vscode" || a == "terminal"
 }
 
 // isSide says whether the action is no change of a machine and goes on when settings are changed: viper nats, viper find, viper
 // image build and viper vscode. They have their own budget of runs (VS Code holds its machine, as a command does, while it starts).
-func isSide(a string) bool { return a == "nats" || a == "find" || a == "image" || a == "vscode" }
+func isSide(a string) bool {
+	return a == "nats" || a == "find" || a == "image" || a == "vscode" || a == "terminal"
+}
 
 // budgetOf is the group of runs that share a limit: the actions on machines, the runs of NATS, and the search (one at a time: it
 // reads price lists of four providers and shares its cache files).
 func budgetOf(a string) string {
 	switch a {
-	case "nats", "find", "image", "vscode":
+	case "nats", "find", "image", "vscode", "terminal":
 		return a
 	}
 	return "action"
@@ -312,8 +314,8 @@ func runOptions(req runRequest) ([]string, error) {
 	if req.Action == "check" && req.Scope != "group" {
 		return nil, fmt.Errorf("check as a run is for a group (a machine has its own check)")
 	}
-	if req.Action == "vscode" && req.Scope == "group" {
-		return nil, fmt.Errorf("VS Code opens on one machine")
+	if (req.Action == "vscode" || req.Action == "terminal") && req.Scope == "group" {
+		return nil, fmt.Errorf("VS Code and the terminal open on one machine")
 	}
 	opts, err := machineOptions(req)
 	if err != nil {
@@ -509,6 +511,8 @@ func oneAtATime(budget string) (string, bool) {
 		return "the build of an image", true
 	case "vscode":
 		return "the start of VS Code", true
+	case "terminal":
+		return "the start of a terminal window", true
 	}
 	return "", false
 }
@@ -1079,7 +1083,7 @@ func commandOptions(req runRequest) (string, error) {
 // trace notes a command on a machine and the start of VS Code in events.log: the target and, for a command, its length (the
 // text can hold a secret; it is in the run, which stays in memory)
 func (s *Server) trace(req runRequest, names []string) {
-	if s.cfg.Trace == nil || (req.Action != "ssh" && req.Action != "vscode") {
+	if s.cfg.Trace == nil || (req.Action != "ssh" && req.Action != "vscode" && req.Action != "terminal") {
 		return
 	}
 	what := strings.Join(names, ",")

@@ -60,6 +60,21 @@ func helps() map[string]commandDoc {
 	return all
 }
 
+// terminalDoc is the help of viper terminal.
+func terminalDoc() commandDoc {
+	return commandDoc{
+		group:   helpMachines,
+		summary: "open a terminal window on this computer with the tmux session of the machine",
+		about:   "Opens a window of the desktop that runs viper ssh --tmux for the machine: the tmux session claude, the one the terminals of VS Code use. The window is a program of this computer (the Terminal of macOS, Windows Terminal, or the first of gnome-terminal, konsole, xfce4-terminal, kitty, alacritty, wezterm and xterm that is installed; VIPER_TERMINAL in the environment names one). With --here it runs in this terminal instead, and when ssh fails it shows the message and waits for Enter.",
+		options: []optionDoc{
+			{"here", "", "run in this terminal, not in a window of its own (ssh runs as a child; on an error it waits for Enter)"},
+			optInGroup(),
+		},
+		examples: []string{"viper terminal web", "viper terminal web --here"},
+		manual:   "Mit Claude Code arbeiten",
+	}
+}
+
 // helpsMachines are the helps of the commands of one group of the overview.
 func helpsMachines() map[string]commandDoc {
 	return map[string]commandDoc{
@@ -115,6 +130,7 @@ func helpsMachines() map[string]commandDoc {
 			examples: []string{"viper ssh web", "viper ssh web --cmd 'git status'", "viper ssh web --tmux", "viper ssh --group dev --cmd uptime"},
 			manual:   "Mit Claude Code arbeiten",
 		},
+		"terminal": terminalDoc(),
 		"vscode": {
 			group:    helpMachines,
 			summary:  "open VS Code (Remote-SSH) on the machine",

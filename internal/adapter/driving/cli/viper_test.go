@@ -16,7 +16,7 @@ import (
 )
 
 func TestAMissingMachineNameGivesTheUsage(t *testing.T) {
-	for _, name := range []string{"preflight", "up", "check", "ssh", "vscode", "down", "dns"} {
+	for _, name := range []string{"preflight", "up", "check", "ssh", "vscode", "terminal", "down", "dns"} {
 		_, _, err := cli.Parse([]string{name})
 		if err == nil || !strings.HasPrefix(err.Error(), "Usage: viper "+name+" <machine>") {
 			t.Errorf("%s: %v", name, err)

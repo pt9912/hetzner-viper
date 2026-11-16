@@ -40,6 +40,8 @@ type Services struct {
 	MCPBinary func(goarch string) ([]byte, error)
 	// LaunchVSCode opens VS Code on a machine (viper vscode).
 	LaunchVSCode func(alias, workdir string) error
+	// LaunchTerminal opens a terminal window of the desktop that runs the words (viper terminal).
+	LaunchTerminal func(words []string) error
 }
 
 // Host is what the commands use of the outside world: the programs they run, the terminal and

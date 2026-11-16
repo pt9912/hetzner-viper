@@ -25,6 +25,7 @@ viper check web                    # read-only: DNS, access by name like another
 viper ssh web                      # shell on the machine (--cmd "..." for one command)
 viper ssh web --tmux                # attach to the tmux session "claude" (the one VS Code uses)
 viper vscode web                   # open VS Code on the machine again (as viper up does)
+viper terminal web                 # open a terminal window with the tmux session of the machine
 viper down web                     # check for unsaved work, then delete machine "web"
 viper dns web                      # print the DNS name of machine "web"
 viper log [web] [--full]           # events of the machines, or one machine's full output

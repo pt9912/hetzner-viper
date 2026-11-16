@@ -154,7 +154,7 @@ Ein unabhängiger Prüfer hat §10 gegen den Code und ein gebautes Programm gele
 2. `ssh --cmd` nur mit `--edit` und dem Wort `run` (Vorschlag), oder auch ohne Wort?
 3. Befehl im Ereignisprotokoll: nur die Länge (Vorschlag) oder der Text?
 
-## 11 Knopf „Terminal“ (Entwurf, vom Benutzer gewünscht, 16.11.2026)
+## 11 Knopf „Terminal“ (gebaut nach dem geprüften Entwurf, 16.11.2026)
 
 Die Oberfläche ist eine Seite im Browser und hat kein Terminal; `viper ssh NAME --tmux` geht nur am Terminal. Der Knopf öffnet auf **dem Computer, auf dem `viper ui` läuft**, ein Terminalfenster, das `viper ssh NAME [--in-group G] --tmux` ausführt (dieselbe tmux-Sitzung `claude` wie die Terminals von VS Code). Wie bei „VS Code“ (§10.1) ist die Oberfläche nur der Starter; das Terminal ist ein Programm des Desktops.
 

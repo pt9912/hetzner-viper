@@ -25,6 +25,7 @@ viper check web                    # nur lesend: DNS, Zugriff über den Namen wi
 viper ssh web                      # Shell auf dem Rechner (--cmd "..." für einen Befehl)
 viper ssh web --tmux                # an die tmux-Sitzung "claude" anhängen (die von VS Code)
 viper vscode web                   # VS Code erneut auf dem Rechner öffnen (wie viper up)
+viper terminal web                 # ein Terminalfenster mit der tmux-Sitzung des Rechners öffnen
 viper down web                     # auf ungesicherte Arbeit prüfen, dann Rechner "web" löschen
 viper dns web                      # DNS-Name des Rechners "web" ausgeben
 viper log [web] [--full]           # Ereignisse der Rechner oder die vollständige Ausgabe eines Rechners

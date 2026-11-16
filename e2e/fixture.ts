@@ -15,13 +15,14 @@ export interface UI {
   start: string;     // the address with the one-time key
   home: string;
   work: string;
+  root: string;
   stop(): Promise<void>;
   output(): string;
 }
 
 // startUI makes a directory of settings for PROVIDER=compose with a fake docker (it only prints and sleeps), and starts
 // viper ui on it. Nothing is made on any machine; every run of viper there ends at the fake.
-export async function startUI(extra: string[] = [], dockerSleep = 30, openBrowser = false, opts: { objects?: boolean } = {}): Promise<UI> {
+export async function startUI(extra: string[] = [], dockerSleep = 30, openBrowser = false, opts: { objects?: boolean; terminal?: boolean } = {}): Promise<UI> {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'viper-e2e-'));
   const home = path.join(root, 'home');
   const work = path.join(root, 'work');
@@ -39,6 +40,12 @@ export async function startUI(extra: string[] = [], dockerSleep = 30, openBrowse
     // the browser is "opened" by a fake that keeps a copy of the start file it is given
     fs.writeFileSync(path.join(bin, opener), `#!/bin/sh\ncp "$1" ${path.join(root, 'launch.html')}\n`, { mode: 0o755 });
   }
+  // a fake terminal program (Linux): it keeps its arguments, one per line, and ends; the machine web has an SSH configuration
+  if (opts.terminal && process.platform === 'linux') {
+    fs.writeFileSync(path.join(bin, 'gnome-terminal'), `#!/bin/sh\nprintf '%s\\n' "$@" > ${path.join(root, 'terminal.log')}\n`, { mode: 0o755 });
+    fs.mkdirSync(path.join(home, '.ssh'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.ssh', 'config_hetzner_e2e-web'), '');
+  }
   const stateDir = path.join(home, '.local', 'state', 'viper');
   fs.mkdirSync(stateDir, { recursive: true });
   fs.writeFileSync(path.join(stateDir, 'events.log'), '2026-11-14T10:00:00+00:00 e2e-web   up   start \u001b[31mred ghp_e2esecretvalue123\n');
@@ -46,7 +53,7 @@ export async function startUI(extra: string[] = [], dockerSleep = 30, openBrowse
   const viper = process.env.VIPER_BIN as string;
   const child: ChildProcess = spawn(viper, ['ui', ...(openBrowser ? [] : ['--no-open']), '--port', String(await freePort()), ...extra], {
     cwd: work,
-    env: envWith({ HOME: home, USERPROFILE: home }, bin),
+    env: envWith({ HOME: home, USERPROFILE: home, ...(opts.terminal ? { DISPLAY: ':99' } : {}) }, bin),
   });
   let out = '';
   child.stdout?.on('data', (d) => { out += d; });
@@ -60,7 +67,7 @@ export async function startUI(extra: string[] = [], dockerSleep = 30, openBrowse
   }
   if (!m) { child.kill('SIGKILL'); throw new Error('viper ui did not start: ' + out); }
   return {
-    base: m[1], start: openBrowser ? pathToFileURL(launch).href : m[0], home, work,
+    base: m[1], start: openBrowser ? pathToFileURL(launch).href : m[0], home, work, root,
     output: () => out,
     stop: async () => {
       if (child.exitCode === null) {

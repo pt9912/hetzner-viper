@@ -168,6 +168,11 @@ const tmuxCommand = `cd "$(cat ~/.config/viper/workdir 2>/dev/null)" 2>/dev/null
 // connect opens a shell or runs one command on a machine, with the machine's own ssh config
 // (pinned host key). With a command ssh gets a terminal only if we have one.
 func connect(o *options, env settings.Env, interactive bool) error {
+	return connectAs(o, env, interactive, false)
+}
+
+// connectAs is connect; with child ssh runs as a child of viper (which can then wait for it) and does not take its place.
+func connectAs(o *options, env settings.Env, interactive, child bool) error {
 	c, err := o.host().Services.Settings.Load(settingsDir(o), o.machine, env, false)
 	if err != nil {
 		return err
@@ -195,6 +200,9 @@ func connect(o *options, env settings.Env, interactive bool) error {
 	}
 	if err := o.host().need("ssh"); err != nil {
 		return err
+	}
+	if child {
+		return o.host().RunTool("ssh", args...)
 	}
 	// ssh takes our place (like exec): signals and the exit code are its own
 	return o.host().ExecTool("ssh", args...)

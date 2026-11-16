@@ -92,3 +92,27 @@ for (const scheme of ['light', 'dark'] as const) {
     });
   }
 }
+
+test('the button Terminal opens a window of the desktop that runs viper terminal --here with the settings directory as an absolute path', async ({ page }) => {
+  test.skip(process.platform !== 'linux', 'the fake terminal program is for Linux');
+  ui = await startUI([], 0, false, { terminal: true });
+  await page.goto(ui.start);
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3);
+  const overview = await page.evaluate(() => fetch('/api/overview', { credentials: 'same-origin' }).then((r) => r.json()));
+  for (const m of overview.machines) { if (m.name === 'web') { m.state = 'ready'; } }
+  await page.route('**/api/overview', (route) => route.fulfill({ json: overview }));
+  await page.reload();
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3);
+  await expect(page.getByRole('button', { name: 'Terminal on web', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Terminal on web', exact: true }).click();
+  await expect(page.locator('#run-output')).toContainText('$ viper terminal web');
+  const log = `${ui.root}/terminal.log`;
+  const fs = await import('node:fs');
+  await expect.poll(() => fs.existsSync(log), { timeout: 20_000 }).toBe(true);
+  const args = fs.readFileSync(log, 'utf8').trim().split('\n');
+  // gnome-terminal -- VIPER terminal web --here --dir DIR
+  expect(args[0]).toBe('--');
+  expect(args.slice(2, 6)).toEqual(['terminal', 'web', '--here', '--dir']);
+  expect(args[6]).toBe(ui.work);
+  expect(args[1]).toMatch(/viper(\.exe)?$/);
+});

@@ -11,7 +11,9 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/usecase/natsop"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +32,7 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/settingsfile"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/sshconfig"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/system"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/terminal"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driving/cli"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
@@ -86,8 +89,9 @@ func Run(version string, args []string, stdin io.Reader, stdout, stderr io.Write
 				}
 				return l, nil
 			},
-			ShowLog:      runlogfile.Show,
-			LaunchVSCode: vscode().Launch,
+			ShowLog:        runlogfile.Show,
+			LaunchVSCode:   vscode().Launch,
+			LaunchTerminal: terminalLauncher().Launch,
 		},
 	})
 }
@@ -244,4 +248,9 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.w.Write(p)
+}
+
+// terminalLauncher opens windows of the desktop; the program in them does not inherit the credentials that VS Code does not.
+func terminalLauncher() terminal.Launcher {
+	return terminal.Launcher{GOOS: runtime.GOOS, Env: editor.Env(os.Environ(), vscode().Secrets), Getenv: os.Getenv, LookPath: exec.LookPath}
 }

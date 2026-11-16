@@ -242,3 +242,14 @@ func CheckRemoteCommand(cmd string) error { return checkRemoteCommand(cmd) }
 
 // NativeSSH runs viper ssh (the checks of its command line before it connects).
 func NativeSSH(p *Opts) error { return nativeSSH(p.options()) }
+
+// Terminal runs viper terminal.
+func Terminal(p *Opts, env settings.Env) error { _ = env; return nativeTerminal(p.options()) }
+
+// TerminalWords is terminalWords for the tests.
+func TerminalWords(exe, machine, group, dir string) []string {
+	return terminalWords(exe, machine, group, dir)
+}
+
+// TerminalHere runs viper terminal --here.
+func TerminalHere(p *Opts, env settings.Env) error { return terminalHere(p.options(), env) }
