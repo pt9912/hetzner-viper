@@ -290,3 +290,13 @@ func TestAConnectionThatDoesNotComeUpSaysWhy(t *testing.T) {
 		t.Errorf("no reason: %q", msg)
 	}
 }
+
+func TestAnUnknownKeyIsNamedAndTheWayOutIsSaid(t *testing.T) {
+	got := natsmcp.AuthHint("nats: Authorization Violation", "dev")
+	if !strings.Contains(got, "viper nats revoke dev, then viper nats init dev") || !strings.Contains(got, "viper up MACHINE") {
+		t.Errorf("%q", got)
+	}
+	if natsmcp.AuthHint("connection refused", "dev") != "" {
+		t.Errorf("a refused connection is no unknown key")
+	}
+}

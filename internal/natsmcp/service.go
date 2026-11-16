@@ -149,7 +149,7 @@ func (s *Service) connectionState() string {
 		state = s.nc.Status().String()
 	}
 	if e := s.lastError(); e != "" {
-		state += "; the last error: " + e
+		state += "; the last error: " + e + authHint(e, s.cfg.Names.Group)
 	}
 	return state
 }
@@ -514,4 +514,13 @@ func (s *Service) subscribeTopics(nc *nats.Conn) error {
 		s.mu.Unlock()
 	}
 	return nil
+}
+
+// authHint says what to do when the server does not know the key: the usual cause of a connection that never comes up is a key
+// that is left over from an earlier group (viper check says so too).
+func authHint(lastError, group string) string {
+	if !strings.Contains(strings.ToLower(lastError), "authorization violation") {
+		return ""
+	}
+	return " (the server does not know this key; the key of the operator on this computer is renewed with viper nats revoke " + group + ", then viper nats init " + group + "; the key of a machine with viper up MACHINE)"
 }

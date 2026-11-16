@@ -48,3 +48,6 @@ const (
 	MaxAttachDirLen = maxAttachDirLen
 	MaxAttachDirMiB = maxAttachDirMiB
 )
+
+// AuthHint is authHint for the tests.
+func AuthHint(lastError, group string) string { return authHint(lastError, group) }
