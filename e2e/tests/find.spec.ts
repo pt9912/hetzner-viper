@@ -99,3 +99,29 @@ test('the options of runs reach viper: parallel for a group, force and the regis
   expect(await page.locator('#run-output').innerText()).not.toMatch(/whole number|unknown option|exclude each other/i);
   await page.click('#run-cancel', { timeout: 3000 }).catch(() => {}); // down asks for DELETE and waits; the run may also be over already
 });
+
+test('with the option the page stays where it is when a run starts, and says what was started', async ({ page }) => {
+  test.setTimeout(120_000);
+  ui = await startUI([], 0);
+  await page.goto(ui.start);
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3);
+  await page.click('#opt-button');
+  await page.check('#opt-stay');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Preflight web', exact: true }).click();
+  await expect(page.locator('#start-note')).toContainText('Started: preflight web');
+  await expect(page.locator('#page-overview')).toBeVisible();
+  await expect(page.locator('#page-runs')).toBeHidden();
+  // the run is there all the same
+  await page.click('#tab-runs');
+  await expect(page.locator('#run-list')).toContainText('preflight web');
+  // the choice stays in the browser; without it the page goes to the runs
+  await page.reload();
+  await page.click('#tab-overview');
+  await page.click('#opt-button');
+  await expect(page.locator('#opt-stay')).toBeChecked();
+  await page.uncheck('#opt-stay');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Preflight web', exact: true }).click();
+  await expect(page.locator('#page-runs')).toBeVisible();
+});

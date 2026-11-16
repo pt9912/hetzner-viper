@@ -1050,22 +1050,43 @@
     return '';
   }
 
-  // startRun starts a run and shows it
+  // the choice to stay on the page when a run starts is kept in the browser (not for anything that must last)
+  const STAY_KEY = 'viper-ui-stay';
+  function loadStay() { try { $('opt-stay').checked = window.localStorage.getItem(STAY_KEY) === '1'; } catch (e) { /* no storage: it is off */ } }
+  $('opt-stay').addEventListener('change', () => { try { window.localStorage.setItem(STAY_KEY, $('opt-stay').checked ? '1' : '0'); } catch (e) { /* not kept */ } });
+  loadStay();
+
+  let noteTimer = null;
+  // a short note beside the filter says what was started (or why not) when the page stays
+  function startNote(text, bad) {
+    const el = $('start-note');
+    el.textContent = text;
+    el.className = bad ? 'bad' : 'muted';
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => { el.textContent = ''; }, 8000);
+  }
+
+  // startRun starts a run and shows it (on the page Runs, or, with the option, it stays where it is)
   async function startRun(req) {
+    const stay = $('opt-stay').checked;
     const bad = addRunOptions(req);
-    if (bad) { show('runs'); $('run-status').textContent = bad; $('run-status').className = 'bad'; return false; }
+    if (bad) {
+      if (stay) { startNote(bad, true); return false; }
+      show('runs'); $('run-status').textContent = bad; $('run-status').className = 'bad'; return false;
+    }
     const repo = $('repo').value.trim();
     if (repo && (req.action === 'up' || req.action === 'preflight')) { req.repo = repo; }
     $('run-status').textContent = t('status.running');
     $('run-status').className = '';
     try {
       const r = await api('/api/run', req);
-      show('runs');
+      if (stay) { startNote(t('start.note', req.action, req.machine || req.group || req.nats || '')); } else { show('runs'); }
       await loadRuns();
       attach(r.id);
       load(); // the machines the run holds are busy now
       return true;
     } catch (e) {
+      if (stay) { startNote(t('run.notstarted', e.message), true); return false; }
       show('runs');
       $('run-status').textContent = t('run.notstarted', e.message);
       $('run-status').className = 'bad';

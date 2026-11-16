@@ -35,6 +35,7 @@
   </div>
 </nav>
 <main id="main" tabindex="-1">
+  <p id="start-note" class="muted" role="status"></p>
   <section id="page-overview" role="tabpanel" aria-labelledby="tab-overview">
     <h2 id="h-overview" data-i18n="h.machines">Machines</h2>
     <p id="overview-note" class="muted" role="status"></p>
@@ -69,6 +70,9 @@
             <option value="delete" data-i18n="opt.registry.delete">delete it</option>
             <option value="keep" data-i18n="opt.registry.keep">keep it</option>
           </select>
+        </div>
+        <div class="row">
+          <label><input type="checkbox" id="opt-stay"> <span data-i18n="opt.stay">Stay on this page when a run starts</span></label>
         </div>
         </div>
       </span>
