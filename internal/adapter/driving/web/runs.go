@@ -885,6 +885,16 @@ func findArgv(req runRequest) ([]string, error) {
 	if req.Disk > 0 {
 		argv = append(argv, "--disk="+strconv.Itoa(req.Disk))
 	}
+	where, err := findWhere(req)
+	if err != nil {
+		return nil, err
+	}
+	return append(argv, where...), nil
+}
+
+// findWhere are the options of viper find that say where to look: the architecture, the provider, the location and the VAT.
+func findWhere(req runRequest) ([]string, error) {
+	var argv []string
 	switch req.Arch {
 	case "":
 	case "x86", "arm":
