@@ -122,6 +122,6 @@ test('with the option the page stays where it is when a run starts, and says wha
   await expect(page.locator('#opt-stay')).toBeChecked();
   await page.uncheck('#opt-stay');
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Preflight web', exact: true }).click();
+  await page.getByRole('button', { name: 'Preflight a', exact: true }).click();
   await expect(page.locator('#page-runs')).toBeVisible();
 });
