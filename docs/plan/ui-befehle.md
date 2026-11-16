@@ -153,3 +153,43 @@ Ein unabhängiger Prüfer hat §10 gegen den Code und ein gebautes Programm gele
 1. `vscode` bei `--readonly` aus (Vorschlag) oder erlaubt?
 2. `ssh --cmd` nur mit `--edit` und dem Wort `run` (Vorschlag), oder auch ohne Wort?
 3. Befehl im Ereignisprotokoll: nur die Länge (Vorschlag) oder der Text?
+
+## 11 Knopf „Terminal“ (Entwurf, vom Benutzer gewünscht, 16.11.2026)
+
+Die Oberfläche ist eine Seite im Browser und hat kein Terminal; `viper ssh NAME --tmux` geht nur am Terminal. Der Knopf öffnet auf **dem Computer, auf dem `viper ui` läuft**, ein Terminalfenster, das `viper ssh NAME [--in-group G] --tmux` ausführt (dieselbe tmux-Sitzung `claude` wie die Terminals von VS Code). Wie bei „VS Code“ (§10.1) ist die Oberfläche nur der Starter; das Terminal ist ein Programm des Desktops.
+
+### 11.1 Aufbau
+
+* **Neuer Unterbefehl `viper terminal NAME [--in-group G]`** („open a terminal window on this computer with the tmux session of the machine“). Er prüft wie `vscode` die SSH-Konfiguration (`No SSH config … run viper up first`), baut die Befehlszeile des Fensters und startet das Terminalprogramm über einen Dienst des Hosts (wie `LaunchVSCode`: `host.go`, `app.go`, Fake in den Tests). Er **wartet nicht** auf das Fenster: Er startet das Programm, wartet kurz (etwa 1 s), ob es sofort mit einem Fehler endet (dann meldet er dessen Ausgabe und Exit 1), und endet mit 0. Das Fenster überlebt `viper` und die Oberfläche.
+* **Aktion `terminal` der Oberfläche** wie `vscode` (§10.1): Knopf „Terminal“ neben „VS Code“ nur bei Zustand „gestartet“ und nicht mit `--readonly`; Lauf der Seite (`isSide`, eigenes Budget „einer zugleich“, hält den Rechner, solange er startet); `argv` = `terminal NAME [--in-group G]` (Namen aus der Übersicht, kein Freitext). Es braucht **kein `--edit` und kein Wort**: Die Seite schickt keinen Befehl; die Shell tippt der Benutzer selbst im eigenen Fenster. *(Zu prüfen: gilt das auch für die Rechner mit `compose`/`kubernetes`, deren SSH-Konfiguration einen ProxyCommand hat? Der Zugang ist derselbe wie bei `viper ssh` am Terminal.)*
+* **Den Befehl des Fensters** baut `viper terminal` aus dem **absoluten Pfad der eigenen Datei** (`os.Executable`) und festen Wörtern: `<viper> ssh NAME [--in-group G] --tmux --dir DIR`. Der Name kommt aus der Übersicht (Muster der Dateinamen, kein Bindestrich am Anfang).
+
+### 11.2 Terminalprogramme je System (Annahmen, vor dem Bauen zu prüfen *[?]*)
+
+* **Nie eine Shell-Zeile zusammenbauen**, wo es vermeidbar ist: Das Programm bekommt die Wörter als einzelne Argumente.
+* **macOS:** Das Terminal nimmt keine Argumente für ein Programm; Weg: eine Datei `viper-ssh-NAME.command` (Rechte `0700`, in einem privaten Verzeichnis des Zustandsverzeichnisses, Inhalt `exec '<viper>' ssh 'NAME' --tmux --dir '<DIR>'` mit einfachen Anführungszeichen und Maskierung, nicht ändern lassbar), geöffnet mit `open -a Terminal DATEI`; die Datei löscht `viper terminal` beim nächsten Start nach 1 Tag (das Fenster liest sie sofort). Alternative `osascript` mit `do script` verlangt Maskierung in AppleScript: nicht nehmen.
+* **Linux:** Eine feste Liste in dieser Reihenfolge, die erste, die im `PATH` steht: `x-terminal-emulator -e`, `gnome-terminal --`, `konsole -e`, `xfce4-terminal -x`, `kitty`, `alacritty -e`, `wezterm start --`, `xterm -e`. Die Umgebungsvariable `VIPER_TERMINAL` (im Prozess von `viper ui`, **nicht** in einer Einstellungsdatei: die Seite „Ändern“ könnte sonst lokal Code einschleusen) wählt **einen Namen aus dieser Liste**, nie ein freies Programm. Ohne `DISPLAY` und `WAYLAND_DISPLAY`: Fehler „no desktop“.
+* **Windows:** `wt.exe new-tab` (Windows Terminal), sonst `cmd /c start "" cmd /k` mit dem Befehl als Argumente; verlangt den OpenSSH-Client im `PATH`. Anführungszeichen für `cmd` sind heikel: Der Entwurf nimmt `wt`, ohne `wt` den Fehler „Windows Terminal not found“ mit dem Hinweis auf `viper ssh --tmux` am Terminal.
+* Ob ein bestimmtes Programm bei einem Snap- oder Flatpak-Fenster oder in WSL richtig startet, ist nicht geprüft; dann hilft `VIPER_TERMINAL`.
+
+### 11.3 Grenzen und Sicherheit
+
+* Die Seite öffnet **keine Shell im Browser** und schickt keinen Text an sie. Das Fenster startet ein Programm mit festen Wörtern; die Bedrohung ist die der Seite „VS Code“: Ein Klick (mit Schlüssel, POST-Wache) startet ein lokales Programm und eine Verbindung zu einem eigenen Rechner.
+* `VIPER_TERMINAL` kommt nur aus der Umgebung und nur als Name aus der Liste. Der Pfad zu `viper` ist der der laufenden Datei; die Datei des macOS-Weges liegt in einem Verzeichnis mit Rechten `0700` und hat feste Wörter plus den geprüften Namen und das Verzeichnis der Einstellungen (Pfad, in einfache Anführungszeichen gesetzt; ein `'` im Pfad wird maskiert, oder der Befehl lehnt den Pfad ab).
+* Läuft `viper ui` auf einem Rechner ohne Desktop, scheitert der Lauf mit der Meldung des Befehls („no desktop“, „no terminal program found“).
+* Das Fenster gehört dem Benutzer: Die Oberfläche kann es nicht schließen, nicht lesen und nicht abbrechen. „Abbrechen“ des Laufs beendet nur den Start.
+
+### 11.4 Tests und Größe
+
+* **Echtes Programm (§2.3):** `viper terminal web` mit Fake-Terminalprogramm im `PATH` (ein Skript, das seine Argumente in eine Datei schreibt; Linux: `x-terminal-emulator` und `DISPLAY` gesetzt, macOS: Fake-`open`, Windows: Fake-`wt.cmd`), mit angelegter SSH-Konfiguration: Die Argumente sind genau `<viper> ssh web --tmux --dir …` als einzelne Wörter; ein Name mit Sonderzeichen kommt nicht vor (die Namen der Dateien lassen es nicht zu), der **Pfad** mit Leerzeichen und `'` kommt unverändert an. Ohne Konfiguration: „No SSH config“. Mit Fake-Programm, das sofort mit Fehler endet: Exit 1 und dessen Meldung. Ohne `DISPLAY`: „no desktop“.
+* **Reine Funktion** (Go-Test) je System: Eingabe (System, Umgebung, vorhandene Programme, Wörter) → Programm und Argumente; die Tabelle der Linux-Liste; `VIPER_TERMINAL` mit unbekanntem Namen wird abgelehnt; die `.command`-Datei mit Pfaden voller Sonderzeichen.
+* **Server (Go):** `terminal` ist `isSide`, hält den Rechner, ist mit `--readonly` 403, mit Gruppe 400, mit `cmd` 400; Tabelle der Befehlszeile.
+* **Browser:** Knopf nur bei „gestartet“ und nicht readonly (wie `VS Code`), axe, Tastatur.
+* **Größe:** etwa 0,5 KB in `app.js` und den Texten; Start etwa 154 KB bei 175 KB.
+* **Handbuch:** Abschnitt bei der Übersicht („Terminal“ öffnet ein Fenster **dieses Computers**), die Liste der Programme je System, `VIPER_TERMINAL`; Hilfe `viper terminal --help`; die Zeile in Kapitel 11.
+
+### 11.5 Offen für den Benutzer
+
+1. Nur die tmux-Sitzung `claude` (Vorschlag) oder auch eine einfache Shell als zweiter Knopf oder Auswahl?
+2. Soll der Befehl `viper terminal` auch am Terminal zur Verfügung stehen (Vorschlag: ja, er ist ohnehin ein Unterbefehl) oder nur von der Oberfläche?
+3. Windows im ersten Schritt nur mit Windows Terminal (`wt`)?
