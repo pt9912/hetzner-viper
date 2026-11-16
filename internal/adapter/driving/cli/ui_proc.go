@@ -11,6 +11,9 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/adapter/driving/web"
 )
 
+// uiChildEnv is system.UIChildEnv (an adapter of the driving side does not import one of the driven side)
+const uiChildEnv = "VIPER_UI_RUN"
+
 // process is viper started as a program of its own: the actions of the pages run as at the terminal, with the same
 // locks, logs and questions (docs/plan/ui.md §4).
 type process struct {
@@ -40,6 +43,7 @@ func spawner(dir string) web.Spawner {
 func startProcess(exe string, args []string) (*process, error) {
 	cmd := exec.CommandContext(context.Background(), exe, args...) //nolint:gosec // the arguments are made of names from the settings files and fixed words
 	prepare(cmd)
+	cmd.Env = append(os.Environ(), uiChildEnv+"=1") // viper passes the interrupt on to the program it runs (docker build)
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err

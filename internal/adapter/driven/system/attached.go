@@ -11,9 +11,13 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 )
 
+// UIChildEnv is set in the environment of the viper that viper ui starts for a run.
+const UIChildEnv = "VIPER_UI_RUN"
+
 // RunAttached runs a program on the terminal given by the streams. Ctrl-C reaches it with the terminal; viper itself must
 // survive it and wait, so that it can clean up. SIGTERM and SIGHUP are forwarded: they do not
-// reach the child on their own.
+// reach the child on their own. SIGINT is forwarded as well when viper runs for viper ui (UIChildEnv): viper ui interrupts
+// viper alone, in a group of its own, and nothing else would reach the child.
 func RunAttached(stdin io.Reader, stdout, stderr io.Writer, name string, args ...string) error {
 	cmd := exec.CommandContext(context.Background(), name, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
@@ -28,7 +32,7 @@ func RunAttached(stdin io.Reader, stdout, stderr io.Writer, name string, args ..
 		for {
 			select {
 			case s := <-sig:
-				if s != syscall.SIGINT {
+				if s != syscall.SIGINT || os.Getenv(UIChildEnv) != "" {
 					_ = cmd.Process.Signal(s)
 				}
 			case <-done:

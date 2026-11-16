@@ -297,7 +297,8 @@
     renderVersion();
     showActiveOptions();
     imageArea.refresh();
-    if (overview.readonly && !$('image-status').textContent) { $('image-status').textContent = t('image.ro'); }
+    const ro = $('image-status'); // the note of a page that only reads follows the language
+    if (overview.readonly && (!ro.textContent || ro.dataset.ro)) { ro.textContent = t('image.ro'); ro.dataset.ro = '1'; }
     $('opt-force').disabled = $('opt-registry').disabled = !!overview.readonly; // down is no action of a page that is read only
     $('tab-create').hidden = !overview.edit;
     $('tab-secrets').hidden = !overview.edit;
@@ -899,7 +900,7 @@
         const st = JSON.parse(ev.data);
         if (st.state !== 'done') { return; }
         // exit 1 of a search is "nothing fits" or a failure that the output names: not a failure of the page
-        end(st.code === 0 ? t(k.done) : st.code === 130 ? t(k.cancelled) : st.code === 1 && k.none ? t(k.none) : t(k.refused, 'exit ' + st.code));
+        end(st.code === 0 ? t(k.done) : st.code === 130 ? t(k.cancelled) : st.code === 1 && k.none ? t(k.none) : k.failed ? t(k.failed, st.code) : t(k.refused, 'exit ' + st.code));
         loadRuns();
       });
     }
@@ -969,7 +970,7 @@
   }
 
   const findArea = sideArea('find', 'find', { running: 'find.running', done: 'find.done', cancelled: 'find.cancelled', none: 'find.none', refused: 'find.refused', nostream: 'find.nostream' }, findRequest);
-  const imageArea = sideArea('image', 'image', { running: 'image.running', done: 'image.done', cancelled: 'find.cancelled', refused: 'image.refused', nostream: 'find.nostream' }, imageRequest);
+  const imageArea = sideArea('image', 'image', { running: 'image.running', done: 'image.done', cancelled: 'find.cancelled', failed: 'image.failed', refused: 'image.refused', nostream: 'image.nostream' }, imageRequest);
   const findFind = () => { findArea.follow(); imageArea.follow(); };
 
   // ---- runs: viper itself, started by the server; the page attaches to its output ----
@@ -981,7 +982,6 @@
   function showActiveOptions() {
     const n = ($('opt-parallel').value.trim() !== '') + $('opt-force').checked + ($('opt-registry').value !== '');
     $('opt-active').textContent = n ? t('opt.active', n) : '';
-    $('opt-button').classList.toggle('on', n > 0);
   }
   // the menu of the options: a button opens a panel; Escape and a click outside close it
   function optionsMenu(open) {

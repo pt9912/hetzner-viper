@@ -35,3 +35,18 @@ test('a name that is no image name is refused and nothing is built; a page that 
   await expect(page.locator('#image-go')).toBeDisabled();
   await expect(page.locator('#image-status')).toContainText('read only');
 });
+
+test('Cancel ends the build: the program that viper started is ended as well, not only viper', async ({ page }) => {
+  test.skip(process.platform === 'win32', 'the interrupt of a program works differently on Windows');
+  test.setTimeout(120_000);
+  ui = await startUI([], 60); // the fake docker waits 60 seconds
+  await page.goto(ui.start);
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3);
+  await page.click('#tab-image');
+  await page.click('#image-go');
+  await expect(page.locator('#image-out')).toContainText('fake docker build', { timeout: 30_000 });
+  await page.click('#image-stop');
+  // viper is interrupted at once and ends the fake docker; without that the run is killed only after 20 seconds
+  await expect(page.locator('#image-status')).toContainText('Cancelled', { timeout: 12_000 });
+  await expect(page.locator('#image-go')).toBeEnabled();
+});

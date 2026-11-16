@@ -15,13 +15,14 @@
   // add is called by the file of a language
   function add(l, texts) { dicts[l] = texts; }
 
-  // load gives a promise that is kept when the file of the language is there (also when it could not be read: the keys show then)
+  // load gives a promise: true when the file of the language is there, false when it could not be read
   function load(l) {
-    if (dicts[l]) { return Promise.resolve(); }
+    if (dicts[l]) { return Promise.resolve(true); }
     return new Promise((resolve) => {
       const s = document.createElement('script');
       s.src = '/i18n.' + l + '.js';
-      s.onload = s.onerror = () => resolve();
+      s.onload = () => resolve(!!dicts[l]);
+      s.onerror = () => resolve(false);
       document.head.appendChild(s);
     });
   }
@@ -41,10 +42,14 @@
     for (const el of document.querySelectorAll('[data-i18n-placeholder]')) { el.setAttribute('placeholder', t(el.dataset.i18nPlaceholder)); }
   }
 
-  // setLang loads the language if needed, then switches and sets the texts
+  // setLang loads the language if needed, then switches and sets the texts; a language that could not be loaded is not taken
+  // (and not kept), and of two quick choices the last one counts
+  let wanted = '';
   async function setLang(l) {
     if (!languages.includes(l)) { return; }
-    await load(l);
+    wanted = l;
+    const ok = await load(l);
+    if (!ok || wanted !== l) { return; }
     lang = l;
     try { window.localStorage.setItem('viper-ui-lang', l); } catch (e) { /* not kept */ }
     apply();
@@ -52,6 +57,6 @@
 
   lang = initial();
   // ready: the texts of the first language are there (the page waits for it)
-  const ready = load(lang);
+  const ready = load(lang).then((ok) => (ok ? true : (lang = 'en', load('en')))); // without the file of the language: English
   window.viperI18n = { t, apply, setLang, add, ready, lang: () => lang, languages };
 })();

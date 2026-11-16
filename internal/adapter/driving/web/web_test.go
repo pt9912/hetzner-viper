@@ -473,6 +473,9 @@ func TestTheTwoLanguagesHaveTheSameKeysAndThePageAsksForNoOther(t *testing.T) {
 	for _, m := range regexp.MustCompile(`\bt\('([a-z0-9.]+)'`).FindAllStringSubmatch(read("app.js"), -1) {
 		asked[m[1]] = true
 	}
+	for _, m := range regexp.MustCompile(`: '((?:find|image)\.[a-z]+)'`).FindAllStringSubmatch(read("app.js"), -1) { // the texts of the areas (sideArea)
+		asked[m[1]] = true
+	}
 	for _, a := range []string{"preflight", "up", "down"} {
 		for _, p := range []string{"btn.", "aria.", "btn.group.", "aria.group."} {
 			asked[p+a] = true
