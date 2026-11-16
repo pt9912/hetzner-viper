@@ -107,3 +107,41 @@ Ein unabhängiger Prüfer hat den Plan gegen den Code und das gebaute Programm g
 | Wiederaufnahme nach dem Neuladen nicht beschrieben; doppelte Bereiche | §3: über `/api/runs`, ein Bereich |
 
 **Antworten zu §8:** (1) die Rückfrage von `viper down` bleibt ohne weiteres Wort, die Beschriftung ist berichtigt; (2) zuerst Text, `--json` ist ein eigener Schritt am Befehl; (3) ein Block mit `--force` pro Anfrage; (4) gleicher Wert; (5) `setup` zuerst, dann `image build`; `ssh --cmd` nicht.
+
+## 10 Stufe 5: `vscode` und `ssh --cmd` (Entwurf, vom Benutzer gewünscht, 16.11.2026)
+
+Der Benutzer will beide Befehle in der Oberfläche. Die frühere Empfehlung (§5: `ssh --cmd` nicht bauen) bleibt als Warnung; dieser Abschnitt sagt, wie es gebaut würde, damit die Grenzen halten. *[V]* heißt im Code gelesen.
+
+### 10.1 `viper vscode NAME [--in-group G]`
+
+*[V]* Der Befehl lädt die Einstellungen des Rechners, verlangt die SSH-Konfiguration (`viper up` hat sie angelegt; sonst „No SSH config … run viper up first“), fragt den Rechner per `ssh` nach dem Arbeitsverzeichnis (`cat ~/.config/viper/workdir`, 5 s) und startet `code` mit Remote-SSH auf **diesem Computer** (`LaunchVSCode`). Er ändert weder Einstellungen noch Rechner, öffnet aber ein Programm auf dem Desktop.
+* **Knopf „VS Code“ in der Zeile** eines Rechners, nur bei Zustand „gestartet“ (die Wörter von §Zustand), neben „Down“. Befehlszeile `vscode NAME [--in-group G]` (Namen aus der Übersicht, wie bei `up`).
+* **Lauf der Seite (`isSide`)**, eigenes Budget „höchstens ein Start zugleich“ (der Befehl endet, sobald `code` gestartet ist); hält keinen Rechner. Die Ausgabe steht im Lauf („No SSH config …“, „code not found“ …).
+* **`--readonly`: nicht angeboten** (Knopf aus, Server 403): Es startet ein Programm, auch wenn es nichts ändert. *[?]* Zu entscheiden.
+* Läuft `viper ui` auf einem Computer ohne Desktop (etwa per SSH), scheitert der Lauf mit der Meldung des Befehls; die Seite sagt es im Handbuch, prüft es nicht vorher.
+
+### 10.2 `viper ssh NAME --cmd=BEFEHL` und `viper ssh --group G --cmd=BEFEHL`
+
+*[V]* Eine Maschine: `ssh` **ersetzt** `viper` (`ExecTool`), Standardeingabe und -ausgabe sind die des Laufs; die Oberfläche hält die Standardeingabe offen (ein Befehl, der liest, hängt). Eine Gruppe: `sshOnce` je Rechner mit `-n -o BatchMode=yes`, Ausgabe mit `[name]`-Zeilen, Tabelle am Ende, `--parallel` gilt. `--tmux` und die Shell bleiben **nie** (brauchen ein Terminal).
+* **Freier Befehlstext widerspricht §2.1** (nur geprüfte Felder). Der Ausweg, der die Regel nicht aufweicht: eine eigene, **ausdrückliche Ausnahme** mit diesen Grenzen:
+  1. **Nur mit `--edit`** (dem Schalter für „darf etwas ändern“); mit `--readonly` und ohne `--edit` lehnt der Server mit 403 ab. Der Befehl läuft als der Benutzer auf dem Rechner, mit allem, was er dort darf (wie `VIPER_POST_CLONE`, das die Seite „Ändern“ schon schreibt).
+  2. **Das Wort `run` tippen** (wie bei den gefährlichen Werten), zusammen mit dem Namen des Rechners oder der Gruppe; die Seite zeigt vorher den Befehl wörtlich.
+  3. Der Befehl wird **nie** Teil einer Shell-Zeile von `viper ui`: Er geht als ein einzelnes Argument `--cmd=BEFEHL` an `viper`, das ihn an `ssh` weitergibt. Grenzen: höchstens 4096 Byte, gültiges UTF-8, **eine Zeile** (kein Zeilenumbruch, kein Steuerzeichen, kein NUL).
+  4. Die erste Zeile des Laufs zeigt den Befehl (`$ viper ssh web --cmd=…`); die Ausgabe läuft durch dieselbe Schwärzung der Zugangsdaten wie jeder Lauf. Das Ereignisprotokoll bekommt eine Zeile mit Rechner und **Länge** des Befehls, nicht mit dem Text (er kann ein Geheimnis enthalten).
+  5. **Standardeingabe des Laufs wird nach dem Start geschlossen** (der Prozess sieht sofort EOF): kein Hängen, keine Rückfrage. Gilt nur für diesen Befehl.
+  6. Aktionslauf der Rechner: **hält den Rechner** (ein Lauf je Rechner, vier zugleich; bei einer Gruppe alle Rechner der Gruppe), damit kein `down` darunter läuft; gesperrt, während Einstellungen geändert werden (`beginEdit`).
+* **Seite „Befehl“** (Reiter nur mit `--edit`): Auswahl Rechner oder Gruppe, Textfeld einzeilig, Feld für das Wort, Knopf „Ausführen“, Bereich der Ausgabe wie bei „Finden“ (gemeinsame Funktion `sideArea`), Abbrechen. Es gibt **keinen Verlauf** und keine gespeicherten Befehle.
+* **Nicht gebaut:** `--tmux`, die Shell, Eingaben während des Laufs, mehrzeilige Befehle.
+
+### 10.3 Tests und Größe
+
+* **Echtes Programm (§2.3):** `viper vscode web` mit Fake-`ssh` und Fake-`code` im `PATH` (der Fixture hat schon ein Fake-Docker); `viper ssh web --cmd=…` und `--group … --cmd=…` mit Fake-`ssh`, die angenommene Befehlszeile und die EOF-Eigenschaft. Ein Befehl mit Anführungszeichen, `$`, `;`, `--x`, Umlauten und 4096 Byte kommt unverändert als ein Argument an.
+* **Server (Go):** Tabelle gültiger und ungültiger Anfragen (Zeilenumbruch, NUL, zu lang, ohne Wort, falsches Wort, ohne `--edit`, `--readonly`, unbekannter Rechner); Haltung der Rechner; Ablehnung bei Änderung der Einstellungen; Protokollzeile ohne Befehlstext.
+* **Browser:** Knopf nur im Zustand „gestartet“, Sperre ohne Wort, Wiederaufnahme, axe, Tastatur.
+* **Größe:** Start etwa 148 KB bei 175 KB; die Seite „Befehl“ und der Knopf brauchen etwa 6 bis 8 KB.
+
+### 10.4 Offen für den Benutzer
+
+1. `vscode` bei `--readonly` aus (Vorschlag) oder erlaubt?
+2. `ssh --cmd` nur mit `--edit` und dem Wort `run` (Vorschlag), oder auch ohne Wort?
+3. Befehl im Ereignisprotokoll: nur die Länge (Vorschlag) oder der Text?
