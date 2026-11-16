@@ -744,7 +744,7 @@ func TestACommandOnAMachineAndTheStartOfVSCodeBecomeAnArgvAndTheCommandHasItsLim
 		`{"action":"ssh","machine":"web","confirm":"run","cmd":"-oProxyCommand=id"}`, `{"action":"ssh","machine":"web","confirm":"run","cmd":"  -x"}`, `{"action":"ssh","machine":"web","confirm":"run","cmd":"--x"}`,
 		`{"action":"ssh","machine":"web","confirm":"run","cmd":"a\nb"}`, `{"action":"ssh","machine":"web","confirm":"run","cmd":"a\u0000b"}`, `{"action":"ssh","machine":"web","confirm":"run","cmd":"a\u001bb"}`,
 		`{"action":"ssh","machine":"nope","confirm":"run","cmd":"id"}`, `{"action":"ssh","machine":"web","confirm":"run","cmd":"id","repo":"x"}`,
-		`{"action":"up","machine":"web","cmd":"id"}`, `{"action":"vscode","scope":"group","group":"dev"}`, `{"action":"vscode","machine":"web","cmd":"id"}`,
+		`{"action":"up","machine":"web","cmd":"id"}`, `{"action":"find","cpu":2,"cmd":"id","confirm":"run"}`, `{"action":"vscode","scope":"group","group":"dev"}`, `{"action":"vscode","machine":"web","cmd":"id"}`,
 	} {
 		if _, code := st.start(t, bad); code != http.StatusBadRequest {
 			t.Errorf("%s: %d", bad, code)
@@ -785,6 +785,9 @@ func TestACommandIsRefusedWithoutEditOrWhenReadOnlyTakesNoAnswerAndHoldsTheMachi
 	}
 	p.say("x") // an open line: for another run this is a question
 	time.Sleep(900 * time.Millisecond)
+	if st.stateOf(t, id) != "running" {
+		t.Errorf("the state of a command with an open line is %q: it asks nothing", st.stateOf(t, id))
+	}
 	if _, code := st.start(t, `{"action":"down","machine":"web"}`); code != http.StatusConflict {
 		t.Errorf("down under a command: %d", code)
 	}
@@ -792,4 +795,26 @@ func TestACommandIsRefusedWithoutEditOrWhenReadOnlyTakesNoAnswerAndHoldsTheMachi
 		t.Errorf("an answer to a command: %d", code)
 	}
 	p.end(0)
+}
+
+// stateOf is the state of the run in the list of the runs.
+func (st *site) stateOf(t *testing.T, id string) string {
+	t.Helper()
+	resp, err := st.c.Get(st.base + "/api/runs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var r struct {
+		Runs []struct{ ID, State string }
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+		t.Fatal(err)
+	}
+	for _, x := range r.Runs {
+		if x.ID == id {
+			return x.State
+		}
+	}
+	return ""
 }

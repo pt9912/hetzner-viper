@@ -239,3 +239,6 @@ func UIEditor(p *Opts, env settings.Env) (*uiEditor, func(string) string) {
 
 // CheckRemoteCommand is checkRemoteCommand for the tests.
 func CheckRemoteCommand(cmd string) error { return checkRemoteCommand(cmd) }
+
+// NativeSSH runs viper ssh (the checks of its command line before it connects).
+func NativeSSH(p *Opts) error { return nativeSSH(p.options()) }

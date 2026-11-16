@@ -11,6 +11,10 @@ test('the page of the command is only there with --edit, and the command is chec
   await page.goto(ui.start);
   await expect(page.locator('#machines tr.unit')).toHaveCount(3);
   await expect(page.locator('#tab-cmd')).toBeHidden();
+  await page.click('#tab-image');
+  await page.keyboard.press('ArrowDown'); // the hidden tab of the command is skipped
+  await expect(page.locator('#tab-settings')).toBeFocused();
+  await expect(page.locator('#page-cmd')).toBeHidden();
   await ui.stop();
   ui = await startUI(['--edit'], 0);
   await page.goto(ui.start);

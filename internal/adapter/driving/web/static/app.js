@@ -865,12 +865,19 @@
   // the targets are the machines and the groups of the overview; what was chosen stays chosen when the list is made again
   function renderCmdTargets() {
     const sel = $('cmd-target');
+    const items = [];
+    for (const m of overview.machines || []) { if (!m.error) { items.push(['m\t' + m.name + '\t' + (m.group || ''), m.name + (m.group ? ' (' + m.group + ')' : '')]); } }
+    for (const g of overview.groups || []) { if ((g.machines || []).length) { items.push(['g\t' + g.name, t('cmd.group', g.name)]); } }
+    const key = JSON.stringify(items);
+    if (sel.dataset.key === key) { return; } // nothing changed: a list that is open is not made again
     const before = sel.value;
+    sel.dataset.key = key;
     sel.textContent = '';
-    const add = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; sel.appendChild(o); };
-    for (const m of overview.machines || []) { if (!m.error) { add('m\t' + m.name + '\t' + (m.group || ''), m.name + (m.group ? ' (' + m.group + ')' : '')); } }
-    for (const g of overview.groups || []) { if ((g.machines || []).length) { add('g\t' + g.name, t('cmd.group', g.name)); } }
-    if (Array.from(sel.options).some((o) => o.value === before)) { sel.value = before; }
+    for (const [value, text] of items) { const o = document.createElement('option'); o.value = value; o.textContent = text; sel.appendChild(o); }
+    if (Array.from(sel.options).some((o) => o.value === before)) { sel.value = before; } else if (before) {
+      sel.selectedIndex = -1; // what was chosen is gone: the command does not go to another machine
+      $('cmd-status').textContent = t('cmd.gone');
+    }
   }
 
   // the command of the form, or the reason there is none (the server checks it once more)
@@ -879,7 +886,8 @@
     const cmd = $('cmd-text').value;
     if (!kind) { return { error: t('cmd.notarget') }; }
     if (cmd.trim() === '') { return { error: t('cmd.need') }; }
-    if (cmd.trimStart().startsWith('-')) { return { error: t('cmd.dash') }; }
+    if (/^[ \t]*-/.test(cmd)) { return { error: t('cmd.dash') }; }
+    if (new TextEncoder().encode(cmd).length > 4096) { return { error: t('cmd.long') }; }
     if ($('cmd-word').value !== 'run') { return { error: t('cmd.word') }; }
     const req = { action: 'ssh', cmd, confirm: 'run' };
     if (kind === 'g') { req.scope = 'group'; req.group = name; } else { req.machine = name; req.group = group || ''; }
@@ -1184,7 +1192,7 @@
     if (name !== 'secrets') { wipeSecret(); }
   }
 
-  const shownPages = () => PAGES.filter((p) => !['create', 'secrets', 'change'].includes(p) || overview.edit);
+  const shownPages = () => PAGES.filter((p) => !['create', 'secrets', 'change', 'cmd'].includes(p) || overview.edit);
 
   $('tabs').addEventListener('keydown', (ev) => {
     const pages = shownPages();
@@ -1793,7 +1801,7 @@
   function busy() {
     const el = document.activeElement;
     const inside = (id) => !!el && !!$(id) && $(id).contains(el);
-    return removeAskedFor !== '' || removeArmed || inside('ch-table') || inside('create-form') || inside('secret-form') || inside('change-form');
+    return removeAskedFor !== '' || removeArmed || inside('ch-table') || inside('create-form') || inside('secret-form') || inside('change-form') || inside('cmd-form');
   }
 
   async function refreshPages() {

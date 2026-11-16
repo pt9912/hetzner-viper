@@ -272,3 +272,12 @@ func TestACommandThatStartsWithADashIsRefusedBecauseSshWouldReadItAsAnOption(t *
 		}
 	}
 }
+
+func TestSshRefusesACommandThatStartsWithADashInEveryForm(t *testing.T) {
+	_, h := fakeTools(t)
+	for _, o := range []*cli.Opts{{Host: h, Machine: "web", Cmd: "-oProxyCommand=id"}, {Host: h, Group: "dev", Cmd: "  -x"}, {Host: h, Machine: "web", Cmd: "-x", Tmux: true}} {
+		if err := cli.NativeSSH(o); err == nil || !strings.Contains(err.Error(), "dash") {
+			t.Errorf("%+v: %v", o, err)
+		}
+	}
+}

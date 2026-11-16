@@ -249,8 +249,8 @@ func isAction(a string) bool {
 	return a == "preflight" || a == "up" || a == "down" || a == "nats" || a == "check" || a == "find" || a == "image" || a == "ssh" || a == "vscode"
 }
 
-// isSide says whether the action holds no machine and is no change of a machine: viper nats, viper find and viper image build. They have their own
-// budget of runs and go on when settings are changed.
+// isSide says whether the action is no change of a machine and goes on when settings are changed: viper nats, viper find, viper
+// image build and viper vscode. They have their own budget of runs (VS Code holds its machine, as a command does, while it starts).
 func isSide(a string) bool { return a == "nats" || a == "find" || a == "image" || a == "vscode" }
 
 // budgetOf is the group of runs that share a limit: the actions on machines, the runs of NATS, and the search (one at a time: it
@@ -398,6 +398,10 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
 		fail(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	if req.Action != "ssh" && (req.Cmd != "" || req.Confirm != "") {
+		fail(w, http.StatusBadRequest, "a command is for ssh")
 		return
 	}
 	if !s.mayRun(req) {
