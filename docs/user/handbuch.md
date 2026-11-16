@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.190  
+Version: 1.191  
 Software-Version: v0.31.0  
 Stand: 16.11.2026  
 
@@ -815,6 +815,7 @@ viper nats broadcast entwicklung "Release um 15 Uhr" --topic news
 viper nats request   entwicklung "Wie ist der Stand?" --to beta --timeout 60
 viper nats listen    entwicklung [--topic news]           # bis Strg-C; --topic mehrfach oder mit Komma: --topic news,build
 viper nats listen    entwicklung --all                    # zusätzlich die Direktnachrichten zwischen den anderen Rechnern
+viper nats listen    entwicklung --all --no-presence      # ohne die Meldungen „ich bin da“ (Heartbeat) und die Themenlisten
 echo "langer Text" | viper nats send entwicklung - --to beta   # Text von der Standardeingabe
 viper nats broadcast entwicklung --topic news --file mitteilung.md   # Text aus einer Datei (--file - liest die Standardeingabe)
 ```
@@ -839,6 +840,7 @@ viper nats broadcast entwicklung --topic news --file mitteilung.md   # Text aus 
 * **Was der Betreiber darf:** senden nur in seinem eigenen Bereich `viper.<gruppe>.operator.>` und alles in der Gruppe mitlesen. Die Anfragebereiche der anderen Rechner (`…req.>`) und den Posteingang `_INBOX` hat er nicht; Antworten auf seine Anfragen kommen als normale Nachrichten an `viper.<gruppe>.<antwortender>.out.operator`. Wer den Schlüssel hat, kann als `operator` senden und alles in der Gruppe lesen (dieselbe Vertraulichkeit wie bei jedem Rechner). **Kein Rechner der Gruppe darf `operator` heißen** (und umgekehrt): `viper up` verweigert ihn, und ein Eintrag überschreibt nie den Schlüssel des anderen Typs.
 * **Agenten und der Betreiber:** Für die Agenten ist `operator` ein weiterer Absender, der Anweisungen schickt. `NATS_MCP_PUSH_FROM` darf `operator` nennen, dann schiebt der MCP-Server die Nachrichten des Betreibers von selbst in die Sitzung; Standard ist die leere Liste. Das ist Ihre Entscheidung über das Vertrauen, `viper` warnt dabei nicht.
 * **`listen --all`** zeigt zusätzlich die Direktnachrichten zwischen anderen Rechnern der Gruppe, mit Absender und Empfänger (`alpha -> beta: …`; `"to"` bei `--json`). Das ist kein neues Recht: der Server lässt jeden Rechner und den Betreiber die ganze Gruppe lesen. Es gibt in einer Gruppe keine Privatsphäre zwischen den Agenten. `--all` gilt nur für `listen`; `--topic` filtert nur Topic-Nachrichten, Direktnachrichten haben kein Topic.
+* **`listen --no-presence`** lässt die Meldungen „ich bin da“ (die Anwesenheit, alle 30 Sekunden, der Heartbeat) und die Themenlisten der Rechner weg. Im Text von `viper nats listen` fehlen sie ohnehin; bei `--json` und in der Oberfläche (Seite NATS, **Mitlesen**) erscheinen sie, und das Kästchen „ohne die Meldungen ‚ich bin da‘ (Heartbeat)“ blendet sie aus.
 * **`listen`** beendet das Programm auf der Maschine, wenn die Verbindung abbricht; es kann bis zur nächsten Nachricht der Gruppe (spätestens 30 Sekunden) weiterlaufen.
 
 ### Bilder, PDFs und ZIP-Dateien senden (`NATS_OBJECTS`)
@@ -1804,3 +1806,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.188 | nach v0.30.0 | `viper terminal` und `viper ssh --tmux`: der Titel des Fensters und die Statuszeile von tmux nennen den Rechner und die Gruppe. |
 | 1.189 | v0.31.0 | Release v0.31.0: die Änderung 1.188 (`viper terminal` und `viper ssh --tmux`: Titel des Fensters und Statuszeile von tmux nennen Rechner und Gruppe). |
 | 1.190 | nach v0.31.0 | `viper nats` und `viper-nats-mcp`: Kommt die Verbindung zum NATS-Server nicht zustande, nennt die Meldung den letzten Fehler (zum Beispiel „connection refused“ oder ein abgelaufenes Zertifikat); bisher stand immer „the connection is closed; restart the Claude Code session“. Kennt der Server den Schlüssel nicht („Authorization Violation“, zum Beispiel ein Schlüssel des Operators aus einer früheren Gruppe, auf den auch `viper check` hinweist), sagt die Meldung den Weg: `viper nats revoke GRUPPE`, dann `viper nats init GRUPPE` (auf der Seite NATS: **Abmelden**, dann **Anmelden**). |
+| 1.191 | nach v0.31.0 | `viper nats listen --no-presence` (und das Kästchen beim Mitlesen auf der Seite NATS) blendet die Meldungen „ich bin da“ (Heartbeat) und die Themenlisten aus, die `--json` und die Oberfläche sonst zeigen. |

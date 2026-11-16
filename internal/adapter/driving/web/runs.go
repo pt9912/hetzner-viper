@@ -219,6 +219,8 @@ type runRequest struct {
 	Text    string `json:"text"`    // the message
 	Timeout int    `json:"timeout"` // seconds
 	Query   bool   `json:"query"`
+	// listen without the messages "I am here" and the topic lists
+	NoPresence bool `json:"no_presence"`
 	// the options of the actions on machines: how many machines of a group at a time (a group only), down without the check for
 	// unsaved work, and what down does with a registry that viper made (delete or keep; "" asks)
 	Parallel int    `json:"parallel"`

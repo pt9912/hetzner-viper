@@ -62,6 +62,18 @@ func TestPeersAndTopicsAreRunsOfViperNats(t *testing.T) {
 		t.Errorf("argv %q", got)
 	}
 	l.end(130)
+	_, code = st.start(t, `{"action":"nats","sub":"listen","nats":"dev","all":true,"no_presence":true}`)
+	if code != 200 {
+		t.Fatal(code)
+	}
+	l = st.spawn.next(t)
+	if got := strings.Join(l.argv, " "); got != "nats listen dev --all --no-presence --json" {
+		t.Errorf("argv %q", got)
+	}
+	l.end(130)
+	if _, code = st.start(t, `{"action":"nats","sub":"peers","nats":"dev","no_presence":true}`); code != http.StatusBadRequest {
+		t.Errorf("no_presence for peers: %d", code)
+	}
 }
 
 func TestAMessageGoesByFilesOfTheRunNotByTheCommandLine(t *testing.T) {

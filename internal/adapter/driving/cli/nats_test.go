@@ -277,6 +277,27 @@ func TestNatsJSONOutput(t *testing.T) {
 	}
 }
 
+// --no-presence leaves out the messages "I am here" (the heartbeat) and the topic lists: --json shows them otherwise
+func TestListenWithoutPresenceHidesTheHeartbeatAlsoInJSON(t *testing.T) {
+	dir, env := natsGroup(t, "")
+	lines := `{"event":"ready","me":"alpha","group":"dev"}
+{"event":"message","from":"beta","via":"presence","type":"presence","state":"up"}
+{"event":"message","from":"beta","via":"topics","type":"topics","text":"news"}
+{"event":"message","from":"beta","via":"pub","topic":"news","type":"msg","text":"hi"}
+`
+	out, _, err := runNats(t, dir, env, &natsSSH{out: lines}, "", cli.Opts{Args: []string{"listen", "dev"}, JSON: true, All: true})
+	if err != nil || !strings.Contains(out, `"via":"presence"`) || !strings.Contains(out, `"via":"topics"`) {
+		t.Fatalf("by default --json shows them: %v %q", err, out)
+	}
+	out, _, err = runNats(t, dir, env, &natsSSH{out: lines}, "", cli.Opts{Args: []string{"listen", "dev"}, JSON: true, All: true, NoPresence: true})
+	if err != nil || strings.Contains(out, `"via":"presence"`) || strings.Contains(out, `"via":"topics"`) || !strings.Contains(out, `"text":"hi"`) {
+		t.Errorf("%v %q", err, out)
+	}
+	if _, _, err := runNats(t, dir, env, &natsSSH{out: lines}, "", cli.Opts{Args: []string{"peers", "dev"}, NoPresence: true}); err == nil {
+		t.Errorf("--no-presence is for listen")
+	}
+}
+
 func writeFile(t *testing.T, name string, data []byte) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), name)

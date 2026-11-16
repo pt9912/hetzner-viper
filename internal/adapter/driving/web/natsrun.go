@@ -127,6 +127,9 @@ func (s *Server) natsOptions(req runRequest, argv *[]string) (*runFiles, error) 
 		if req.All {
 			*argv = append(*argv, "--all")
 		}
+		if req.NoPresence {
+			*argv = append(*argv, "--no-presence")
+		}
 	case "send", "broadcast", "request":
 		return s.message(req, argv)
 	case "fetch":
@@ -148,6 +151,9 @@ func (s *Server) natsOptions(req runRequest, argv *[]string) (*runFiles, error) 
 func checkNATSFields(req runRequest) error {
 	if req.Topic != "" && !topicRe.MatchString(req.Topic) {
 		return fmt.Errorf("the topic is not usable")
+	}
+	if req.NoPresence && req.Sub != "listen" {
+		return fmt.Errorf("no_presence is for listen")
 	}
 	if req.Timeout < 0 || req.Timeout > 600 {
 		return fmt.Errorf("the timeout is 1 to 600 seconds")

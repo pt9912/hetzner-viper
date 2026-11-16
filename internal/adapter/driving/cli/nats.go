@@ -105,11 +105,11 @@ func checkNatsOptions(o *options, sub string) error {
 		"fetch":     {"sha256", "out"},
 		"peers":     {"timeout", "query"},
 		"topics":    {"timeout", "query"},
-		"listen":    {"topic", "all"},
+		"listen":    {"topic", "all", "no-presence"},
 		"init":      {},
 		"revoke":    {},
 	}[sub]
-	given := map[string]bool{"to": o.to != "", "topic": o.topic != "", "timeout": o.timeout != 0, "query": o.query, "all": o.all, "file": o.file != "", "pdf": o.pdf != "", "image": o.image != "", "zip": o.zip != "", "sha256": o.sha256 != "", "out": o.out != ""}
+	given := map[string]bool{"to": o.to != "", "topic": o.topic != "", "timeout": o.timeout != 0, "query": o.query, "all": o.all, "no-presence": o.noPresence, "file": o.file != "", "pdf": o.pdf != "", "image": o.image != "", "zip": o.zip != "", "sha256": o.sha256 != "", "out": o.out != ""}
 	for opt, set := range given {
 		if set && !slices.Contains(use, opt) {
 			return fmt.Errorf("viper nats %s: --%s is not used by this subcommand\n%s\nviper nats %s --help describes its options", sub, opt, usageLine("nats"), sub)
@@ -314,9 +314,13 @@ func sshRemote(o *options, m natsMachine) driving.NATSRemote {
 
 func natsRun(ctx context.Context, o *options, c driving.NATSCommand, sender string, remote driving.NATSRemote, stdout, stderr io.Writer) error {
 	show := func(e model.NATSLine) {
+		heartbeat := e.Via == "presence" || e.Via == "topics"
+		if heartbeat && o.noPresence {
+			return
+		}
 		if o.asJSON {
 			writeJSONLine(stdout, e)
-		} else if e.Via != "presence" && e.Via != "topics" {
+		} else if !heartbeat {
 			fmt.Fprintln(stdout, natsLine(e, sender))
 		}
 	}

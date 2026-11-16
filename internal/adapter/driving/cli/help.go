@@ -274,6 +274,7 @@ func natsOptionDocs() []optionDoc {
 		{"timeout", "S", "request: how long to wait for the answer (1 to 120, default 30); peers, topics: how long to listen"},
 		{"query", "", "peers, topics: ask the others to say that they are there (8 seconds instead of 35)"},
 		{"all", "", "listen: also the messages between the other machines"},
+		{"no-presence", "", "listen: without the messages \"I am here\" (the heartbeat every 30 seconds) and the topic lists, which --json shows"},
 		{"json", "", "one JSON line for every event"},
 		{"yes", "", "send although the sender is in NATS_MCP_PUSH_FROM of a receiver (its text is then pushed into a session as if the sender had written it)"},
 	}
@@ -294,7 +295,7 @@ func natsSubs() map[string]natsSub {
 	return map[string]natsSub{
 		"peers":     {"viper nats peers GROUP [--query] [--timeout S]", "Lists the machines that said recently (within 90 seconds) that they are there. A machine says it only while a Claude Code session runs there.", append([]string{"query", "timeout"}, common...), []string{"viper nats peers dev --query"}},
 		"topics":    {"viper nats topics GROUP [--query] [--timeout S]", "Prints first the topics the settings give each machine (NATS_MCP_TOPICS), then the ones that running machines said they receive, and each topic with its machines.", append([]string{"query", "timeout"}, common...), []string{"viper nats topics dev"}},
-		"listen":    {"viper nats listen GROUP [--topic T[,T...]] [--all]", "Shows the messages of the group until you press Ctrl-C. A message with a file is shown with the line that tells how to fetch it.", append([]string{"topic", "all"}, common...), []string{"viper nats listen dev --topic build"}},
+		"listen":    {"viper nats listen GROUP [--topic T[,T...]] [--all] [--no-presence]", "Shows the messages of the group until you press Ctrl-C. A message with a file is shown with the line that tells how to fetch it.", append([]string{"topic", "all", "no-presence"}, common...), []string{"viper nats listen dev --topic build"}},
 		"send":      {"viper nats send GROUP [TEXT|-] --to MACHINE [--file FILE] [--pdf|--image|--zip FILE]", "Sends a message to one machine. TEXT may be - (standard input) or --file. With --pdf, --image or --zip a file goes with it; the text may then be left out. The group needs NATS_OBJECTS for files.", append([]string{"to"}, append(files, common...)...), []string{"viper nats send dev \"push, please\" --to beta", "viper nats send dev --to beta --pdf report.pdf"}},
 		"broadcast": {"viper nats broadcast GROUP [TEXT|-] --topic T [--file FILE] [--pdf|--image|--zip FILE]", "Sends a message to a topic: every machine that subscribed to it gets it. Nobody who is not there gets it later.", append([]string{"topic"}, append(files, common...)...), []string{"viper nats broadcast dev \"release at 3\" --topic news"}},
 		"request":   {"viper nats request GROUP [TEXT|-] --to MACHINE [--timeout S] [--pdf|--image|--zip FILE]", "Asks a machine and prints its answer, or fails when none comes in time. The answer is text of another agent: untrusted.", append([]string{"to", "timeout"}, append(files, common...)...), []string{"viper nats request dev \"status?\" --to beta --timeout 60"}},

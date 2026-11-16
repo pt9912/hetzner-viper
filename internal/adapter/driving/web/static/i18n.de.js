@@ -86,7 +86,7 @@
     'nats.mode.operator': 'Dieser Computer hat den Schlüssel des Betreibers: viper nats spricht als Betreiber.',
     'nats.mode.machine': 'Kein Schlüssel des Betreibers hier (viper nats init {0}): viper nats spricht als Rechner der Gruppe, über ssh.',
     'h.who': 'Wer ist da', 'nats.wait': 'Warten (Sekunden)', 'nats.peers': 'Peers', 'nats.topics': 'Themen',
-    'h.listen': 'Mitlesen', 'listen.topics': 'Themen (optional, mit Kommas)', 'listen.all': 'alles in der Gruppe', 'nats.listen': 'Mitlesen',
+    'h.listen': 'Mitlesen', 'listen.topics': 'Themen (optional, mit Kommas)', 'listen.nopresence': 'ohne die Meldungen „ich bin da“ (Heartbeat)', 'listen.all': 'alles in der Gruppe', 'nats.listen': 'Mitlesen',
     'h.send': 'Senden', 'nats.kind': 'Was', 'kind.send': 'Nachricht an einen Rechner', 'kind.request': 'Anfrage an einen Rechner (auf die Antwort warten)', 'kind.broadcast': 'Rundruf an ein Thema',
     'nats.to': 'An', 'nats.topic': 'Thema', 'nats.reqtimeout': 'Auf die Antwort warten (Sekunden)', 'nats.text': 'Text (bis 16 KiB)', 'nats.file': 'Datei (PDF, Bild oder ZIP)',
     'nats.nofile': 'Diese Gruppe hat keinen Objektspeicher (NATS_OBJECTS=true): keine Dateien.', 'nats.yes': 'trotzdem senden, auch wenn der Agent dort es in seine Sitzung geschoben bekommt (--yes)', 'nats.send': 'Senden', 'nats.handing': 'Die Datei wird übergeben ...',

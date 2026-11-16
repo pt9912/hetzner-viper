@@ -86,7 +86,7 @@
     'nats.mode.operator': 'This computer has the key of the operator: viper nats speaks as the operator.',
     'nats.mode.machine': 'No key of the operator here (viper nats init {0}): viper nats speaks as a machine of the group, over ssh.',
     'h.who': 'Who is there', 'nats.wait': 'Wait (seconds)', 'nats.peers': 'Peers', 'nats.topics': 'Topics',
-    'h.listen': 'Listen', 'listen.topics': 'Topics (optional, with commas)', 'listen.all': 'everything of the group', 'nats.listen': 'Listen',
+    'h.listen': 'Listen', 'listen.topics': 'Topics (optional, with commas)', 'listen.nopresence': 'without the messages "I am here" (the heartbeat)', 'listen.all': 'everything of the group', 'nats.listen': 'Listen',
     'h.send': 'Send', 'nats.kind': 'What', 'kind.send': 'Message to a machine', 'kind.request': 'Request to a machine (wait for the answer)', 'kind.broadcast': 'Round to a topic',
     'nats.to': 'To', 'nats.topic': 'Topic', 'nats.reqtimeout': 'Wait for the answer (seconds)', 'nats.text': 'Text (up to 16 KiB)', 'nats.file': 'File (PDF, image or ZIP)',
     'nats.nofile': 'This group has no object store (NATS_OBJECTS=true): no files.', 'nats.yes': 'send anyway if the agent there gets it pushed (--yes)', 'nats.send': 'Send', 'nats.handing': 'Handing over the file ...',

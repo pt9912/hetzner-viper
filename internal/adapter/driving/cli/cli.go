@@ -26,6 +26,7 @@ type options struct {
 	sha256, out             string // viper nats fetch
 	timeout                 time.Duration
 	query, asJSON, yes, all bool
+	noPresence              bool // viper nats listen: without the messages "I am here" and the topic lists
 	// set by the group commands for the run of one machine, not by the command line
 	onServerCreated           func()
 	skipPreflight             bool
@@ -90,7 +91,7 @@ func commands() map[string]command {
 		"dns":          {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeDNS},
 		"find":         {usage: "[--cpu N] [--ram GB] [--disk GB] [--arch x86|arm] [--location L] [--provider P] [--vat PERCENT]", machine: noMachine, flags: []string{"cpu", "ram", "disk", "arch", "location", "provider", "vat"}, run: nativeFind},
 		"log":          {usage: "[<machine> [--in-group G]] [--full]", machine: maybeMachine, flags: []string{"full", "in-group"}, run: nativeLog},
-		"nats":         {usage: "peers|topics|listen|send|broadcast|request|fetch|init|revoke GROUP [TEXT|-|--file FILE|ID] [--pdf FILE|--image FILE|--zip FILE] [--sha256 HEX --out DIR] [--from MACHINE] [--to MACHINE] [--topic T[,T...]] [--timeout S] [--query] [--all] [--json] [--yes]", machine: restArgs, flags: []string{"to", "topic", "from", "file", "pdf", "image", "zip", "sha256", "out", "timeout", "query", "all", "json", "yes"}, run: nativeNats},
+		"nats":         {usage: "peers|topics|listen|send|broadcast|request|fetch|init|revoke GROUP [TEXT|-|--file FILE|ID] [--pdf FILE|--image FILE|--zip FILE] [--sha256 HEX --out DIR] [--from MACHINE] [--to MACHINE] [--topic T[,T...]] [--timeout S] [--query] [--all] [--no-presence] [--json] [--yes]", machine: restArgs, flags: []string{"to", "topic", "from", "file", "pdf", "image", "zip", "sha256", "out", "timeout", "query", "all", "json", "yes", "no-presence"}, run: nativeNats},
 		"image":        {usage: "build [--tag NAME:TAG] [--k3d CLUSTER]", machine: restArgs, flags: []string{"tag", "k3d"}, run: nativeImage},
 		"k8s-proxy":    {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeK8sProxy},
 		"docker-proxy": {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeDockerProxy},
@@ -271,6 +272,8 @@ func setSwitch(o *options, name, n string) error {
 		o.query = true
 	case "all":
 		o.all = true
+	case "no-presence":
+		o.noPresence = true
 	case "json":
 		o.asJSON = true
 	case "yes":

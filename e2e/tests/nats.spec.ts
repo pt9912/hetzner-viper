@@ -83,7 +83,10 @@ test('what listen shows is text; a file in a message offers Fetch, and a fetched
   await page.route('**/api/events?id=lis', (r) => r.fulfill({ contentType: 'text/event-stream', body: sse([['out', { seq: 0, text: JSON.stringify(msg) + '\n' }], ['state', { state: 'running', code: 0 }]]) }));
   await page.route('**/api/events?id=fet', (r) => r.fulfill({ contentType: 'text/event-stream', body: sse([['out', { seq: 0, text: '{"event":"fetched","text":"/tmp/x/p.pdf"}\n' }], ['state', { state: 'done', code: 0 }]]) }));
   await page.fill('#nats-listen-topic', 'build');
+  await page.check('#nats-listen-nopresence');
   await page.click('#nats-listen');
+  await expect.poll(() => bodies.length).toBeGreaterThan(0);
+  expect(bodies[0]).toMatchObject({ action: 'nats', sub: 'listen', topic: 'build', no_presence: true });
   // the messages are in the area of the page of NATS, which stays the page
   await expect(page.locator('#page-nats')).toBeVisible();
   await expect(page.locator('#nats-listen-out')).toContainText('a -> b: <img src=x onerror=window.pwned=1> [file p.pdf, pdf, 5 bytes]');

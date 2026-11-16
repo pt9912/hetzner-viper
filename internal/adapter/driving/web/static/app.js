@@ -553,7 +553,7 @@
   function natsEnabled() {
     const g = natsGroup();
     const off = !!overview.readonly || !g;
-    for (const id of ['nats-peers', 'nats-topics', 'nats-listen', 'nats-timeout', 'nats-reqtimeout', 'nats-listen-topic', 'nats-listen-all', 'nats-kind', 'nats-to', 'nats-topic', 'nats-text', 'nats-yes', 'nats-id', 'nats-sha', 'nats-from']) { $(id).disabled = off; }
+    for (const id of ['nats-peers', 'nats-topics', 'nats-listen', 'nats-timeout', 'nats-reqtimeout', 'nats-listen-topic', 'nats-listen-all', 'nats-listen-nopresence', 'nats-kind', 'nats-to', 'nats-topic', 'nats-text', 'nats-yes', 'nats-id', 'nats-sha', 'nats-from']) { $(id).disabled = off; }
     for (const f of ['nats-send', 'nats-fetch']) { for (const el of $(f).querySelectorAll('button')) { el.disabled = off; } }
     // the operator: made (init) when this computer has no key, removed (revoke) when it has; the removal asks once more
     $('nats-init').hidden = !g || g.operator;
@@ -835,7 +835,7 @@
   async function listenStart() {
     const g = natsGroup();
     if (!g || listenId) { return; }
-    const req = { action: 'nats', nats: g.name, sub: 'listen', topic: $('nats-listen-topic').value.trim(), all: $('nats-listen-all').checked };
+    const req = { action: 'nats', nats: g.name, sub: 'listen', topic: $('nats-listen-topic').value.trim(), all: $('nats-listen-all').checked, no_presence: $('nats-listen-nopresence').checked };
     if ($('nats-from').value) { req.from = $('nats-from').value; }
     $('nats-listen-status').textContent = '';
     try {
