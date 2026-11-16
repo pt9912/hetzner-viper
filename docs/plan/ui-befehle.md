@@ -57,7 +57,7 @@
 
 ## 5 Stufen 3 bis 5 (Vorschläge, einzeln zu entscheiden)
 
-* **Stufe 3: `setup`.** Legt `.env.local`, den Login-Schlüssel und die Host-CA an; ohne beides scheitert die Vorprüfung. Als Lauf mit Rückfragen (die Oberfläche kann Rückfragen); ein Knopf auf der Seite „Anlegen“ („Schlüssel und Host-CA anlegen“) und ein Hinweis in der Vorprüfung, wenn sie fehlen. *[V, geprüft]* `viper setup` ist **nicht interaktiv** (keine Fragen): Es schreibt `.env.local`, die Beispiele in `groups/` und `machines/` in `--dir`, legt Schlüssel und Host-CA in `~/.ssh` an, **überschreibt `~/.ssh/known_hosts_hetzner_claude_ca`** und druckt `export`-Zeilen und den öffentlichen Schlüssel der CA. Es bleibt bei `--readonly` gesperrt; ob es mit `--edit` angeboten wird, ist zu entscheiden (es schreibt außerhalb des Einstellungsverzeichnisses).
+* **Stufe 3: `setup`** (**zurückgestellt**, Benutzer, 16.11.2026: schreibt außerhalb des Einstellungsverzeichnisses; erst ein eigener Plan mit Bestätigungswort und Prüfung). Legt `.env.local`, den Login-Schlüssel und die Host-CA an; ohne beides scheitert die Vorprüfung. Als Lauf mit Rückfragen (die Oberfläche kann Rückfragen); ein Knopf auf der Seite „Anlegen“ („Schlüssel und Host-CA anlegen“) und ein Hinweis in der Vorprüfung, wenn sie fehlen. *[V, geprüft]* `viper setup` ist **nicht interaktiv** (keine Fragen): Es schreibt `.env.local`, die Beispiele in `groups/` und `machines/` in `--dir`, legt Schlüssel und Host-CA in `~/.ssh` an, **überschreibt `~/.ssh/known_hosts_hetzner_claude_ca`** und druckt `export`-Zeilen und den öffentlichen Schlüssel der CA. Es bleibt bei `--readonly` gesperrt; ob es mit `--edit` angeboten wird, ist zu entscheiden (es schreibt außerhalb des Einstellungsverzeichnisses).
 * **Stufe 4: `image build`** (gebaut: eigene Seite „Image“ mit Name und k3d-Cluster, ein Bau zugleich, nicht mit `--readonly`; kein Knopf je Rechner). Für `compose` und `kubernetes`: ein langer Lauf mit Ausgabe (`docker build`, braucht den Docker-Socket); Felder `--tag=NAME:TAG` und `--k3d=CLUSTER` in der Form `--name=wert`, mit engen Mustern. Ein Knopf je Rechner mit solchem Anbieter und auf der Seite „Anlegen“.
 * **Stufe 5: `ssh --cmd`.** **Empfehlung der Prüfung: nicht bauen.** Ein freier Befehlstext widerspricht §2.1, die Oberfläche hält die Standardeingabe des Prozesses offen (ein Befehl, der von ihr liest, hängt), und der Nutzen ist klein. Wer es will: nur mit `--edit`, `--cmd=…` mit getipptem Wort und der Zeile im Protokoll.
 * **Später/nie:** `vscode` (Knopf je Rechner, kleiner Nutzen), `dns` (besser als Spalte „Adresse“ in der Übersicht), Shell, Proxys und `mcp-binary` nie.
@@ -84,7 +84,7 @@
 2. **Ausgabe von `find` als Text** (Vorschlag) oder zuerst `viper find --json` und dann eine Tabelle der Seite (mehr Arbeit, aber „übernehmen“ möglich)? *Gebaut: Text.*
 3. **Ort der Optionen:** ein Block in der Übersicht (Vorschlag) oder je Knopf ein kleines Menü? *Zuerst ein Block unter der Tabelle (zu weit unten, nicht zu finden); jetzt ein Menü-Knopf rechts in der Filterzeile (Benutzer, 16.11.2026).*
 4. **`--parallel` bei „Prüfen“ der Gruppe:** gleicher Wert wie bei den anderen (Vorschlag). *Gebaut so.*
-5. **Reihenfolge der Stufen 3 bis 5** nach Stufe 2: **offen**.
+5. **Reihenfolge der Stufen 3 bis 5** nach Stufe 2: Stufe 4 gebaut, Stufe 3 zurückgestellt, Stufe 5 nicht gebaut (Empfehlung der Prüfung).
 
 ## 9 Prüfung
 
