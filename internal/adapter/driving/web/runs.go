@@ -231,24 +231,27 @@ type runRequest struct {
 	VAT      *float64 `json:"vat"`
 	All      bool     `json:"all"`
 	Yes      bool     `json:"yes"`
-	Upload   string   `json:"upload"` // the id of a file that was handed over (POST /api/upload)
-	ID       string   `json:"id"`     // fetch: the id of the file
-	SHA256   string   `json:"sha256"`
+	// the image of viper image build (action "image"): its name and the k3d cluster it is put into
+	Tag    string `json:"tag"`
+	K3D    string `json:"k3d"`
+	Upload string `json:"upload"` // the id of a file that was handed over (POST /api/upload)
+	ID     string `json:"id"`     // fetch: the id of the file
+	SHA256 string `json:"sha256"`
 }
 
 func isAction(a string) bool {
-	return a == "preflight" || a == "up" || a == "down" || a == "nats" || a == "check" || a == "find"
+	return a == "preflight" || a == "up" || a == "down" || a == "nats" || a == "check" || a == "find" || a == "image"
 }
 
-// isSide says whether the action holds no machine and is no change of a machine: viper nats and viper find. They have their own
+// isSide says whether the action holds no machine and is no change of a machine: viper nats, viper find and viper image build. They have their own
 // budget of runs and go on when settings are changed.
-func isSide(a string) bool { return a == "nats" || a == "find" }
+func isSide(a string) bool { return a == "nats" || a == "find" || a == "image" }
 
 // budgetOf is the group of runs that share a limit: the actions on machines, the runs of NATS, and the search (one at a time: it
 // reads price lists of four providers and shares its cache files).
 func budgetOf(a string) string {
 	switch a {
-	case "nats", "find":
+	case "nats", "find", "image":
 		return a
 	}
 	return "action"
@@ -256,6 +259,18 @@ func budgetOf(a string) string {
 
 // argv is the command line of the request, or the reason there is none. Names come from the files (the overview), so none
 // starts with a dash; the repository goes in the form --repo=URL for the same reason.
+// noTargetArgv gives the maker of the command line of the actions that need the request alone: the search and the build of an
+// image have no machine
+func noTargetArgv(action string) func(runRequest) ([]string, error) {
+	switch action {
+	case "find":
+		return findArgv
+	case "image":
+		return imageArgv
+	}
+	return nil
+}
+
 func runArgv(req runRequest, ov Overview) (argv, names []string, err error) {
 	if !isAction(req.Action) {
 		return nil, nil, fmt.Errorf("no such action")
@@ -263,8 +278,8 @@ func runArgv(req runRequest, ov Overview) (argv, names []string, err error) {
 	if !repoUsable(req) {
 		return nil, nil, fmt.Errorf("the repository is not usable here")
 	}
-	if req.Action == "find" {
-		argv, err = findArgv(req)
+	if build := noTargetArgv(req.Action); build != nil {
+		argv, err = build(req)
 		return argv, nil, err
 	}
 	if req.Action == "check" && req.Scope != "group" {
@@ -310,7 +325,7 @@ func repoUsable(req runRequest) bool {
 	if r == "" {
 		return true
 	}
-	if req.Action == "down" || req.Action == "check" || req.Action == "find" || len(r) > 512 || strings.HasPrefix(r, "-") || strings.ContainsFunc(r, func(c rune) bool { return unicode.IsControl(c) || unicode.IsSpace(c) }) {
+	if req.Action == "down" || req.Action == "check" || req.Action == "find" || req.Action == "image" || len(r) > 512 || strings.HasPrefix(r, "-") || strings.ContainsFunc(r, func(c rune) bool { return unicode.IsControl(c) || unicode.IsSpace(c) }) {
 		return false
 	}
 	if i := strings.Index(r, "://"); i >= 0 {
@@ -411,14 +426,9 @@ func (s *Server) hold(r *run) (int, string) {
 	if t.editing && !isSide(r.Action) {
 		return http.StatusConflict, "settings are being changed: try again in a moment"
 	}
-	active := 0
-	for _, o := range t.runs {
-		if o.current() != stateDone && budgetOf(o.Action) == budgetOf(r.Action) {
-			active++
-		}
-	}
-	if budgetOf(r.Action) == "find" && active >= maxFinds {
-		return http.StatusServiceUnavailable, "a search for a server type is going: wait for it, or cancel it"
+	active := t.activeOf(r.Action)
+	if what, one := oneAtATime(budgetOf(r.Action)); one && active >= maxFinds {
+		return http.StatusServiceUnavailable, what + " is going: wait for it, or cancel it"
 	}
 	if active >= maxRuns {
 		return http.StatusServiceUnavailable, "too many runs at once"
@@ -437,6 +447,28 @@ func (s *Server) hold(r *run) (int, string) {
 	t.runs = append(t.runs, r)
 	t.forgetFinished()
 	return 0, ""
+}
+
+// oneAtATime says what the budget is for if only one run of it goes at a time (the search and the build), as the message calls it
+func oneAtATime(budget string) (string, bool) {
+	switch budget {
+	case "find":
+		return "a search for a server type", true
+	case "image":
+		return "the build of an image", true
+	}
+	return "", false
+}
+
+// activeOf counts the runs that are not over and share the budget of the action; the caller holds the lock.
+func (t *runTable) activeOf(action string) int {
+	n := 0
+	for _, o := range t.runs {
+		if o.current() != stateDone && budgetOf(o.Action) == budgetOf(action) {
+			n++
+		}
+	}
+	return n
 }
 
 // forgetFinished drops the oldest finished runs beyond what is kept; the caller holds the lock.
@@ -859,6 +891,30 @@ func machineOptions(req runRequest) ([]string, error) {
 	return out, nil
 }
 
+var (
+	imageTag = regexp.MustCompile(`^([a-z0-9][a-z0-9.-]*(:[0-9]{1,5})?/)?[a-z0-9][a-z0-9._/-]*(:[A-Za-z0-9_][A-Za-z0-9_.-]*)?$`)
+	k3dName  = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$`)
+)
+
+// imageArgv is viper image build with a name and a cluster, if given. The words are checked against narrow patterns and go in
+// the form --name=value, so none is an option of its own.
+func imageArgv(req runRequest) ([]string, error) {
+	argv := []string{"image", "build"}
+	if req.Tag != "" {
+		if len(req.Tag) > 200 || !imageTag.MatchString(req.Tag) {
+			return nil, fmt.Errorf("the name of the image is name:tag in lowercase, like viper-machine:v1")
+		}
+		argv = append(argv, "--tag="+req.Tag)
+	}
+	if req.K3D != "" {
+		if !k3dName.MatchString(req.K3D) {
+			return nil, fmt.Errorf("the k3d cluster is a name of letters, digits and dashes")
+		}
+		argv = append(argv, "--k3d="+req.K3D)
+	}
+	return argv, nil
+}
+
 var findLocation = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,40}$`)
 
 // findArgv is viper find with the question of the request. The words are fixed or numbers, so none is an option of its own.
@@ -926,7 +982,7 @@ func (r *run) setTarget(req runRequest) {
 	switch {
 	case req.Action == "nats":
 		r.Sub, r.NATS = req.Sub, req.NATS
-	case req.Action == "find": // a search has no target
+	case req.Action == "find" || req.Action == "image": // a search and a build have no target
 	case req.Scope == "group":
 		r.Group = req.Group
 	default:

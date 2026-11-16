@@ -25,6 +25,7 @@
     <button type="button" role="tab" id="tab-runs" class="tab" aria-selected="false" aria-controls="page-runs" tabindex="-1" data-i18n="tab.runs">Runs</button>
     <button type="button" role="tab" id="tab-nats" class="tab" aria-selected="false" aria-controls="page-nats" tabindex="-1" data-i18n="tab.nats">NATS</button>
     <button type="button" role="tab" id="tab-find" class="tab" aria-selected="false" aria-controls="page-find" tabindex="-1" data-i18n="tab.find">Find</button>
+    <button type="button" role="tab" id="tab-image" class="tab" aria-selected="false" aria-controls="page-image" tabindex="-1" data-i18n="tab.image">Image</button>
     <button type="button" role="tab" id="tab-settings" class="tab" aria-selected="false" aria-controls="page-settings" tabindex="-1" data-i18n="tab.settings">Settings</button>
     <button type="button" role="tab" id="tab-change" class="tab" aria-selected="false" aria-controls="page-change" tabindex="-1" hidden data-i18n="tab.change">Change</button>
     <button type="button" role="tab" id="tab-secrets" class="tab" aria-selected="false" aria-controls="page-secrets" tabindex="-1" hidden data-i18n="tab.secrets">Credentials</button>
@@ -222,6 +223,28 @@
     </form>
     <p id="find-status" role="status" class="muted"></p>
     <pre id="find-out" class="listen" role="region" tabindex="0" aria-labelledby="h-find" aria-live="off"></pre>
+  </section>
+
+  <section id="page-image" role="tabpanel" aria-labelledby="tab-image" hidden>
+    <h2 id="h-image" data-i18n="h.image">Build the image of the machines</h2>
+    <p class="muted lead" data-i18n="image.intro">Builds the image for the providers compose and kubernetes with Docker (viper image build). The first build takes several minutes. With a k3d cluster the image is put into it as well.</p>
+    <form id="image-form" class="column" novalidate>
+      <div class="row">
+        <label for="i-tag" data-i18n="image.tag">Name of the image</label>
+        <input type="text" id="i-tag" size="34" spellcheck="false" autocapitalize="off" autocomplete="off" aria-describedby="i-tag-hint">
+        <span id="i-tag-hint" class="muted" data-i18n="image.tag.hint">Empty: viper-machine:&lt;version&gt;</span>
+      </div>
+      <div class="row">
+        <label for="i-k3d" data-i18n="image.k3d">k3d cluster (optional)</label>
+        <input type="text" id="i-k3d" size="20" spellcheck="false" autocapitalize="off" autocomplete="off">
+      </div>
+      <div class="row">
+        <button type="submit" id="image-go" class="primary" data-i18n="image.go">Build</button>
+        <button type="button" id="image-stop" class="danger" disabled data-i18n="find.stop">Cancel</button>
+      </div>
+    </form>
+    <p id="image-status" role="status" class="muted"></p>
+    <pre id="image-out" class="listen" role="region" tabindex="0" aria-labelledby="h-image" aria-live="off"></pre>
   </section>
 
   <section id="page-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>

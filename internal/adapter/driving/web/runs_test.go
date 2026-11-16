@@ -620,12 +620,15 @@ func TestTheOptionsOfMachineRunsAndTheQuestionOfFindBecomeAnArgvAndOnlyForWhatTh
 	ok(`{"action":"down","scope":"group","group":"dev","registry":"delete","parallel":2}`, "down --group dev --parallel=2 --delete-registry")
 	ok(`{"action":"find","cpu":4,"ram":16,"disk":80,"arch":"x86","provider":"hetzner","location":"fsn1","vat":19}`, "find --cpu=4 --ram=16 --disk=80 --arch=x86 --provider=hetzner --location=fsn1 --vat=19")
 	ok(`{"action":"find","ram":0.5,"vat":0}`, "find --ram=0.5 --vat=0")
+	ok(`{"action":"image"}`, "image build")
+	ok(`{"action":"image","tag":"registry.example:5000/team/viper-machine:v1","k3d":"viper-1"}`, "image build --tag=registry.example:5000/team/viper-machine:v1 --k3d=viper-1")
 	for _, bad := range []string{
 		`{"action":"up","machine":"web","parallel":2}`, `{"action":"up","scope":"group","group":"dev","parallel":65}`, `{"action":"up","scope":"group","group":"dev","parallel":-1}`,
 		`{"action":"up","machine":"web","force":true}`, `{"action":"preflight","machine":"web","registry":"delete"}`, `{"action":"down","machine":"web","registry":"x --y"}`,
 		`{"action":"find"}`, `{"action":"find","cpu":-1}`, `{"action":"find","cpu":2,"location":"fsn1"}`, `{"action":"find","cpu":2,"provider":"x"}`,
 		`{"action":"find","cpu":2,"arch":"mips"}`, `{"action":"find","cpu":2,"provider":"aws","location":"--evil"}`, `{"action":"find","cpu":2,"provider":"aws","location":"A B"}`,
 		`{"action":"find","cpu":2,"vat":101}`, `{"action":"find","cpu":2,"machine":"web","repo":"x"}`, `{"action":"find","cpu":99999}`,
+		`{"action":"image","tag":"--evil"}`, `{"action":"image","tag":"Upper:case"}`, `{"action":"image","tag":"a b"}`, `{"action":"image","k3d":"--x"}`, `{"action":"image","k3d":"a b"}`, `{"action":"image","repo":"x"}`,
 	} {
 		if _, code := st.start(t, bad); code != http.StatusBadRequest {
 			t.Errorf("%s: %d", bad, code)
@@ -681,4 +684,28 @@ func TestOnlyOneSearchGoesAtATimeAndItBlocksNeitherTheNATSRunsNorTheEditing(t *t
 		t.Errorf("changing a credential under a search: %d", code)
 	}
 	p.end(0)
+}
+
+func TestAnImageBuildIsOfTheSideHasItsOwnBudgetOfOneAndIsRefusedWhenThePageIsReadOnly(t *testing.T) {
+	ro := live(t, true)
+	if _, code := ro.start(t, `{"action":"image"}`); code != http.StatusForbidden {
+		t.Errorf("read only: %d", code)
+	}
+	st := live(t, false)
+	id, code := st.start(t, `{"action":"image"}`)
+	if code != 200 {
+		t.Fatalf("image: %d", code)
+	}
+	p := st.spawn.next(t)
+	if _, code := st.start(t, `{"action":"image","tag":"x:1"}`); code != http.StatusServiceUnavailable {
+		t.Errorf("a second build: %d", code)
+	}
+	for _, body := range []string{`{"action":"find","cpu":2}`, `{"action":"nats","nats":"dev","sub":"peers"}`, `{"action":"up","machine":"web"}`} {
+		if _, code := st.start(t, body); code != 200 {
+			t.Errorf("%s next to a build: %d", body, code)
+		}
+		_ = st.spawn.next(t)
+	}
+	p.end(0)
+	st.attach(t, id).until(t, state("done"))
 }

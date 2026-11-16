@@ -4,7 +4,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const { t } = window.viperI18n;
-  const PAGES = ['overview', 'runs', 'nats', 'find', 'settings', 'change', 'secrets', 'create', 'logs'];
+  const PAGES = ['overview', 'runs', 'nats', 'find', 'image', 'settings', 'change', 'secrets', 'create', 'logs'];
   let overview = { machines: [], groups: [], nats: [] };
   let logText = '';
   let page = 'overview';
@@ -296,6 +296,8 @@
   function renderAll() {
     renderVersion();
     showActiveOptions();
+    imageArea.refresh();
+    if (overview.readonly && !$('image-status').textContent) { $('image-status').textContent = t('image.ro'); }
     $('opt-force').disabled = $('opt-registry').disabled = !!overview.readonly; // down is no action of a page that is read only
     $('tab-create').hidden = !overview.edit;
     $('tab-secrets').hidden = !overview.edit;
@@ -855,51 +857,86 @@
     if (run) { listenAttach(run.id, run.nats); }
   }
 
-  // ---- find: the search for a server type; its own area on its page, the run is one of the server like any other ----
-  let findSource = null;
-  let findId = '';
-
-  function findState(on) {
-    $('find-go').disabled = on;
-    $('find-stop').disabled = !on;
-  }
-
-  let findEnded = '';
-  function findEnd(text) {
-    if (findSource) { findSource.close(); findSource = null; }
-    findEnded = findId; // a late list of runs still says "running": it does not attach again
-    findId = '';
-    findState(false);
-    $('find-status').textContent = text;
-    $('find-out').focus(); // the answer is here: the person can read it
-  }
-
-  function findAttach(id) {
-    if (findSource) { findSource.close(); }
-    findId = id;
-    findState(true);
-    $('find-status').textContent = t('find.running');
-    const out = $('find-out');
-    out.textContent = '';
-    findSource = new EventSource('/api/events?id=' + encodeURIComponent(id));
-    findSource.onerror = () => {
-      if (findSource && findSource.readyState === EventSource.CLOSED) { api('/api/runs').catch(() => {}); findEnd(t('find.nostream')); }
+  // ---- the runs of the side with an area of their own on their page: the search for a server type (find) and the build of
+  // an image (image). The run is one of the server like any other; the page follows its output and a run that goes on after
+  // the page was loaded again. p is the prefix of the elements (find-go, find-stop, find-status, find-out), k the texts ----
+  function sideArea(p, action, k, request) {
+    let source = null;
+    let id = '';
+    let ended = ''; // a late list of runs still says "running": it does not attach again
+    let sending = false; // the request is on its way: a second click does not send another
+    const state = (on) => { // a read-only page builds nothing
+      $(p + '-go').disabled = on || (action === 'image' && !!overview.readonly);
+      $(p + '-stop').disabled = !on;
     };
-    findSource.addEventListener('out', (ev) => {
-      const e = JSON.parse(ev.data);
-      out.appendChild(document.createTextNode(e.text)); // text, as it comes: the table stays a table
-      while (out.childNodes.length > 2000) { out.removeChild(out.firstChild); }
-    });
-    findSource.addEventListener('state', (ev) => {
-      const st = JSON.parse(ev.data);
-      if (st.state !== 'done') { return; }
-      // exit 1 is "nothing fits" or "a provider was skipped": not a failure of the page
-      findEnd(st.code === 0 ? t('find.done') : st.code === 130 ? t('find.cancelled') : st.code === 1 ? t('find.none') : t('find.refused', 'exit ' + st.code));
-      loadRuns();
-    });
+
+    function end(text) {
+      if (source) { source.close(); source = null; }
+      ended = id;
+      id = '';
+      state(false);
+      $(p + '-status').textContent = text;
+      $(p + '-out').focus(); // the answer is here: the person can read it
+    }
+
+    function attach(runId) {
+      if (source) { source.close(); }
+      id = runId;
+      state(true);
+      $(p + '-status').textContent = t(k.running);
+      const out = $(p + '-out');
+      out.textContent = '';
+      source = new EventSource('/api/events?id=' + encodeURIComponent(runId));
+      source.onerror = () => {
+        if (source && source.readyState === EventSource.CLOSED) { end(t(k.nostream)); }
+      };
+      source.addEventListener('out', (ev) => {
+        const e = JSON.parse(ev.data);
+        out.appendChild(document.createTextNode(e.text)); // text, as it comes: the table stays a table
+        while (out.childNodes.length > 2000) { out.removeChild(out.firstChild); }
+      });
+      source.addEventListener('state', (ev) => {
+        const st = JSON.parse(ev.data);
+        if (st.state !== 'done') { return; }
+        // exit 1 of a search is "nothing fits" or a failure that the output names: not a failure of the page
+        end(st.code === 0 ? t(k.done) : st.code === 130 ? t(k.cancelled) : st.code === 1 && k.none ? t(k.none) : t(k.refused, 'exit ' + st.code));
+        loadRuns();
+      });
+    }
+
+    async function start(ev) {
+      ev.preventDefault();
+      if (id || sending) { return; }
+      const q = request();
+      if (q.error) { $(p + '-status').textContent = q.error; return; }
+      $(p + '-status').textContent = '';
+      sending = true;
+      try {
+        const r = await api('/api/run', q.req);
+        attach(r.id);
+        loadRuns();
+      } catch (e) { $(p + '-status').textContent = t(k.refused, e.message); } finally { sending = false; }
+    }
+
+    async function stop() {
+      if (!id) { return; }
+      $(p + '-stop').disabled = true;
+      try { await api('/api/cancel', { id }); } catch (e) { $(p + '-status').textContent = e.message; $(p + '-stop').disabled = false; }
+    }
+
+    // a page that was opened or loaded again follows a run that is still going
+    function follow() {
+      if (id) { return; }
+      const run = runs.find((r) => r.action === action && r.state !== 'done');
+      if (run && run.id !== ended) { attach(run.id); }
+    }
+
+    $(p + '-form').addEventListener('submit', start);
+    $(p + '-stop').addEventListener('click', stop);
+    return { follow, refresh: () => { if (!id) { state(false); } } };
   }
 
-  // the question of the form, or the reason there is none
+  // the question of the form of the search, or the reason there is none
   function findRequest() {
     const num = (id) => { const v = $(id).value.trim(); return v === '' ? 0 : Number(v); };
     const req = { action: 'find', cpu: num('f-cpu'), ram: num('f-ram'), disk: num('f-disk') };
@@ -921,33 +958,19 @@
     return { req };
   }
 
-  let findSending = false; // the request of a search is on its way: a second click does not send another
-  async function findStart(ev) {
-    ev.preventDefault();
-    if (findId || findSending) { return; }
-    const q = findRequest();
-    if (q.error) { $('find-status').textContent = q.error; return; }
-    $('find-status').textContent = '';
-    findSending = true;
-    try {
-      const r = await api('/api/run', q.req);
-      findAttach(r.id);
-      loadRuns();
-    } catch (e) { $('find-status').textContent = t('find.refused', e.message); } finally { findSending = false; }
+  // the build of an image: the name and the k3d cluster are optional (the server checks them once more)
+  function imageRequest() {
+    const req = { action: 'image' };
+    const tag = $('i-tag').value.trim();
+    const k3d = $('i-k3d').value.trim();
+    if (tag) { req.tag = tag; }
+    if (k3d) { req.k3d = k3d; }
+    return { req };
   }
 
-  async function findStop() {
-    if (!findId) { return; }
-    $('find-stop').disabled = true;
-    try { await api('/api/cancel', { id: findId }); } catch (e) { $('find-status').textContent = e.message; $('find-stop').disabled = false; }
-  }
-
-  // a page that was opened or loaded again follows a search that is still going
-  function findFind() {
-    if (findId) { return; }
-    const run = runs.find((r) => r.action === 'find' && r.state !== 'done');
-    if (run && run.id !== findEnded) { findAttach(run.id); }
-  }
+  const findArea = sideArea('find', 'find', { running: 'find.running', done: 'find.done', cancelled: 'find.cancelled', none: 'find.none', refused: 'find.refused', nostream: 'find.nostream' }, findRequest);
+  const imageArea = sideArea('image', 'image', { running: 'image.running', done: 'image.done', cancelled: 'find.cancelled', refused: 'image.refused', nostream: 'find.nostream' }, imageRequest);
+  const findFind = () => { findArea.follow(); imageArea.follow(); };
 
   // ---- runs: viper itself, started by the server; the page attaches to its output ----
   let source = null;
@@ -1126,7 +1149,7 @@
       $('tab-' + p).tabIndex = on ? 0 : -1;
     }
     if (name === 'logs') { loadLog(); }
-    if (name === 'runs' || name === 'nats' || name === 'find') { loadRuns(); } // the page of NATS follows a listen run that is going
+    if (name === 'runs' || name === 'nats' || name === 'find' || name === 'image') { loadRuns(); } // the page of NATS follows a listen run that is going
     if (name === 'settings') { loadSettings(); }
     if (name === 'create' || name === 'secrets' || name === 'change') { loadTemplates(); }
     if (name === 'change') { loadBackups(); }
@@ -1782,7 +1805,7 @@
   document.addEventListener('visibilitychange', poll);
   window.addEventListener('focus', poll);
   function pollLater() {
-    const going = (overview.machines || []).some((m) => m.busy) || (runs || []).some((r) => !['nats', 'find'].includes(r.action) && (r.state === 'running' || r.state === 'waiting' || r.state === 'cancelling'));
+    const going = (overview.machines || []).some((m) => m.busy) || (runs || []).some((r) => !['nats', 'find', 'image'].includes(r.action) && (r.state === 'running' || r.state === 'waiting' || r.state === 'cancelling'));
     setTimeout(async () => { await poll(); pollLater(); }, going ? pollWhileRunning : pollEvery);
   }
   pollLater();
@@ -1818,8 +1841,6 @@
   $('nats-kind').addEventListener('change', natsKindChanged);
   $('nats-peers').addEventListener('click', () => natsRun({ sub: 'peers', timeout: Number($('nats-timeout').value) || 5 }));
   $('nats-topics').addEventListener('click', () => natsRun({ sub: 'topics', timeout: Number($('nats-timeout').value) || 5 }));
-  $('find-form').addEventListener('submit', findStart);
-  $('find-stop').addEventListener('click', findStop);
   $('nats-listen').addEventListener('click', listenStart);
   $('nats-listen-stop').addEventListener('click', listenStop);
   $('nats-listen-clear').addEventListener('click', () => { $('nats-listen-out').textContent = ''; listenView.carry = ''; $('nats-listen-out').focus(); });
