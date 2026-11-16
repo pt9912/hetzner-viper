@@ -33,9 +33,9 @@ Die Handbuch-Version (`Version:` im Kopf von `docs/user/handbuch.md`) zählt una
 5. **Probelauf gegen echte Dienste** (die Tests laufen nur gegen Fakes): Mit einem kleinen Server (`SERVER_TYPE=cpx02` in `machines/test.env.local`) nacheinander `viper preflight test`, `viper up test`, `viper check test`, `viper ssh test --cmd "echo ok"` und `viper down test`. Das kostet wenige Cent.
 6. Das Handbuch ist aktuell (`docs/user/handbuch.md`):
    * `Software-Version:` auf die neue Version setzen und `Stand:` aktualisieren,
-   * `Version:` um eins erhöhen und in Kapitel 11 eine Zeile mit der neuen Software-Version und der Änderung für die Nutzer ergänzen,
+   * `Version:` um eins erhöhen. Das Handbuch beschreibt den **Ist-Zustand** und führt **keine Chronik** (keine Änderungstabelle, keine Sätze „neu seit …“ außer dort, wo die Version für den Benutzer eine Rolle spielt, etwa eine Mindestversion): Was sich geändert hat, steht in den Release Notes und in der Git-Historie.
    * die Dateinamen der Binaries im Abschnitt „`viper` installieren“ auf die neue Version setzen,
-   * **jede** Nennung der Version in den Beispielen ersetzen, nicht nur die der letzten Version: `grep -n 'v0\.[0-9]*\.[0-9]*' docs/user/handbuch.md` außerhalb der Versionstabelle (Kapitel 11) darf nur die neue Version zeigen (Dateinamen der Binaries, `ghcr.io/pt9912/viper-machine:vX.Y.Z` beim Laden und bei `k3d image import`),
+   * **jede** Nennung der Version in den Beispielen ersetzen, nicht nur die der letzten Version: `grep -n 'v0\.[0-9]*\.[0-9]*' docs/user/handbuch.md` darf bei den Beispielen nur die neue Version zeigen (Dateinamen der Binaries, `ghcr.io/pt9912/viper-machine:vX.Y.Z` beim Laden und bei `k3d image import`),
    * das als eigenen Commit nach `main` pushen und den CI-Lauf abwarten.
 
 ## Release erstellen

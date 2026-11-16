@@ -69,7 +69,7 @@
 * **Echtes Programm (§2.3):** Browser-Test mit dem echten `viper` und Fake-Docker: Up einer Gruppe mit `--parallel=2`, Down mit `--force` und `--keep-registry` (Fake-k3d fehlt: es genügt, dass die Option angenommen wird), `find` mit allen Feldern **und einer `.env.local`** im Verzeichnis (ohne sie bricht es mit „No .env.local“ ab; im Test mit Netz oder ohne endet es mit Preisen oder einer Meldung über die Preisquellen, nicht über eine Option; der Test macht keine Annahme über das Netz).
 * **Server:** `beginEdit` und `hold` für `find` (blockiert das Ändern von Zugangsdaten nicht; eine zweite Suche wird mit 503 abgelehnt; vier NATS-Läufe daneben), die Regel für `--readonly`.
 * **Browser:** Formular und Pflichtangaben, Bereich der Ausgabe, Abbrechen, Wiederaufnahme nach Neuladen, `--force` wird nach dem Start wieder ausgeschaltet, `--parallel` nur bei Gruppenknöpfen, axe (hell, dunkel, Englisch, Deutsch), Tastatur.
-* **Handbuch:** Abschnitt „Passenden Server-Typ suchen“ nennt die Seite; die Optionen stehen im Kapitel der Oberfläche; die Zeile in Kapitel 11.
+* **Handbuch:** Abschnitt „Passenden Server-Typ suchen“ nennt die Seite; die Optionen stehen im Kapitel der Oberfläche; (das Handbuch führt keine Änderungstabelle).
 
 ## 7 Meilensteine
 
@@ -208,7 +208,7 @@ Die Oberfläche ist eine Seite im Browser und hat kein Terminal; `viper ssh NAME
 * **Browser:** Knopf nur bei „gestartet“ (`ready`) und nicht readonly (wie `VS Code`), `aria-label`, axe, Tastatur; `btn.terminal`, `aria.terminal` in beiden Sprachen.
 * **Größe:** etwa 0,5 KB in `app.js` und den Texten; Start etwa 154 KB bei 175 KB.
 * **README.md und README.de.md:** eine Zeile für `viper terminal`; **`help.go`:** Eintrag `terminal` (sagt, dass er ein Fenster öffnet; `--here`).
-* **Handbuch:** die Tabelle der Befehle (neben `viper vscode`), Abschnitt bei der Übersicht (ein aufpoppendes Fenster nimmt den Fokus: getippte Zeichen landen in der Remote-Shell) („Terminal“ öffnet ein Fenster **dieses Computers**), die Liste der Programme je System, `VIPER_TERMINAL`; Hilfe `viper terminal --help`; die Zeile in Kapitel 11.
+* **Handbuch:** die Tabelle der Befehle (neben `viper vscode`), Abschnitt bei der Übersicht (ein aufpoppendes Fenster nimmt den Fokus: getippte Zeichen landen in der Remote-Shell) („Terminal“ öffnet ein Fenster **dieses Computers**), die Liste der Programme je System, `VIPER_TERMINAL`; Hilfe `viper terminal --help`. Keine Änderungstabelle im Handbuch.
 
 ### 11.5 Offen für den Benutzer
 
