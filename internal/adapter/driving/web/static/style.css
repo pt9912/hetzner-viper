@@ -187,3 +187,6 @@ details.file { margin: .4rem 0; border: 1px solid var(--line); border-radius: 6p
 details.file > summary { padding: .45rem .7rem; cursor: pointer; font: 600 1rem var(--mono); }
 details.file > .file-body { padding: 0 .7rem .6rem; }
 details.file[open] > summary { border-bottom: 1px solid var(--line); margin-bottom: .5rem; }
+
+details.options { margin: .6rem 0 1rem; }
+details.options > summary { cursor: pointer; font-weight: 600; }

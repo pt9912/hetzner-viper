@@ -24,6 +24,7 @@
     <button type="button" role="tab" id="tab-overview" class="tab" aria-selected="true" aria-controls="page-overview" data-i18n="tab.overview">Overview</button>
     <button type="button" role="tab" id="tab-runs" class="tab" aria-selected="false" aria-controls="page-runs" tabindex="-1" data-i18n="tab.runs">Runs</button>
     <button type="button" role="tab" id="tab-nats" class="tab" aria-selected="false" aria-controls="page-nats" tabindex="-1" data-i18n="tab.nats">NATS</button>
+    <button type="button" role="tab" id="tab-find" class="tab" aria-selected="false" aria-controls="page-find" tabindex="-1" data-i18n="tab.find">Find</button>
     <button type="button" role="tab" id="tab-settings" class="tab" aria-selected="false" aria-controls="page-settings" tabindex="-1" data-i18n="tab.settings">Settings</button>
     <button type="button" role="tab" id="tab-change" class="tab" aria-selected="false" aria-controls="page-change" tabindex="-1" hidden data-i18n="tab.change">Change</button>
     <button type="button" role="tab" id="tab-secrets" class="tab" aria-selected="false" aria-controls="page-secrets" tabindex="-1" hidden data-i18n="tab.secrets">Credentials</button>
@@ -66,6 +67,26 @@
       <label for="repo" data-i18n="repo.label">Repository URL for up and preflight (optional)</label>
       <input type="text" id="repo" autocomplete="off" spellcheck="false" size="40">
     </div>
+    <details id="run-options" class="options">
+      <summary data-i18n="opt.summary">Options for runs</summary>
+      <div class="row">
+        <label for="opt-parallel" data-i18n="opt.parallel">Machines of a group at the same time</label>
+        <input type="number" id="opt-parallel" min="1" max="64" step="1" size="4" aria-describedby="opt-parallel-hint">
+        <span id="opt-parallel-hint" class="muted" data-i18n="opt.parallel.hint">Empty: 8. Only for the buttons of a group.</span>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="opt-force"> <span data-i18n="opt.force">Down: also delete when the machine cannot be reached or still has group members (--force)</span></label>
+      </div>
+      <p class="muted hint" data-i18n="opt.force.hint">For the next Down only (the box is cleared when it starts). If the machine can be reached, viper checks for unsaved work anyway.</p>
+      <div class="row">
+        <label for="opt-registry" data-i18n="opt.registry">Down: the registry of a k3d cluster</label>
+        <select id="opt-registry">
+          <option value="" data-i18n="opt.registry.ask">ask</option>
+          <option value="delete" data-i18n="opt.registry.delete">delete it</option>
+          <option value="keep" data-i18n="opt.registry.keep">keep it</option>
+        </select>
+      </div>
+    </details>
     <h2 id="h-check" data-i18n="h.check">Check</h2>
     <p id="check-status" role="status" class="muted"></p>
     <pre id="check-output" role="region" tabindex="0" aria-labelledby="h-check"></pre>
@@ -168,6 +189,37 @@
       </form>
       <p class="muted" data-i18n="nats.untrusted">A fetched file is from another agent: untrusted. Do not run it.</p>
     </div>
+  </section>
+
+  <section id="page-find" role="tabpanel" aria-labelledby="tab-find" hidden>
+    <h2 id="h-find" data-i18n="h.find">Find a server type</h2>
+    <p class="muted lead" data-i18n="find.intro">Looks through the price lists of the providers for the cheapest server types with at least this much CPU, RAM and disk. It makes no machine. The first search reads large price lists and takes a while.</p>
+    <form id="find-form" class="column" novalidate>
+      <div class="row">
+        <label for="f-cpu" data-i18n="find.cpu">CPUs</label>
+        <input type="number" id="f-cpu" min="1" max="4096" step="1" size="5">
+        <label for="f-ram" data-i18n="find.ram">RAM (GB)</label>
+        <input type="number" id="f-ram" min="0.1" max="65536" step="any" size="6">
+        <label for="f-disk" data-i18n="find.disk">Disk (GB)</label>
+        <input type="number" id="f-disk" min="1" max="100000" step="1" size="6">
+      </div>
+      <div class="row">
+        <label for="f-arch" data-i18n="find.arch">Architecture</label>
+        <select id="f-arch"><option value="" data-i18n="find.all">all</option><option value="x86">x86</option><option value="arm">arm</option></select>
+        <label for="f-provider" data-i18n="find.provider">Provider</label>
+        <select id="f-provider"><option value="" data-i18n="find.all">all</option><option value="hetzner">hetzner</option><option value="aws">aws</option><option value="azure">azure</option><option value="gcp">gcp</option></select>
+        <label for="f-location" data-i18n="find.location">Location (needs a provider)</label>
+        <input type="text" id="f-location" size="18" spellcheck="false" autocapitalize="off" placeholder="fsn1, eu-central-1">
+        <label for="f-vat" data-i18n="find.vat">VAT (%)</label>
+        <input type="number" id="f-vat" min="0" max="100" step="any" size="5">
+      </div>
+      <div class="row">
+        <button type="submit" id="find-go" class="primary" data-i18n="find.go">Search</button>
+        <button type="button" id="find-stop" class="danger" disabled data-i18n="find.stop">Cancel</button>
+      </div>
+    </form>
+    <p id="find-status" role="status" class="muted"></p>
+    <pre id="find-out" class="listen" role="region" tabindex="0" aria-labelledby="h-find" aria-live="off"></pre>
   </section>
 
   <section id="page-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>

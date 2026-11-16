@@ -4,7 +4,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const { t } = window.viperI18n;
-  const PAGES = ['overview', 'runs', 'nats', 'settings', 'change', 'secrets', 'create', 'logs'];
+  const PAGES = ['overview', 'runs', 'nats', 'find', 'settings', 'change', 'secrets', 'create', 'logs'];
   let overview = { machines: [], groups: [], nats: [] };
   let logText = '';
   let page = 'overview';
@@ -295,6 +295,7 @@
 
   function renderAll() {
     renderVersion();
+    $('opt-force').disabled = $('opt-registry').disabled = !!overview.readonly; // down is no action of a page that is read only
     $('tab-create').hidden = !overview.edit;
     $('tab-secrets').hidden = !overview.edit;
     $('tab-change').hidden = !overview.edit;
@@ -853,13 +854,115 @@
     if (run) { listenAttach(run.id, run.nats); }
   }
 
+  // ---- find: the search for a server type; its own area on its page, the run is one of the server like any other ----
+  let findSource = null;
+  let findId = '';
+
+  function findState(on) {
+    $('find-go').disabled = on;
+    $('find-stop').disabled = !on;
+  }
+
+  function findEnd(text) {
+    if (findSource) { findSource.close(); findSource = null; }
+    findId = '';
+    findState(false);
+    $('find-status').textContent = text;
+    $('find-out').focus(); // the answer is here: the person can read it
+  }
+
+  function findAttach(id) {
+    if (findSource) { findSource.close(); }
+    findId = id;
+    findState(true);
+    $('find-status').textContent = t('find.running');
+    const out = $('find-out');
+    out.textContent = '';
+    findSource = new EventSource('/api/events?id=' + encodeURIComponent(id));
+    findSource.onerror = () => {
+      if (findSource && findSource.readyState === EventSource.CLOSED) { api('/api/runs').catch(() => {}); findEnd(t('find.nostream')); }
+    };
+    findSource.addEventListener('out', (ev) => {
+      const e = JSON.parse(ev.data);
+      out.appendChild(document.createTextNode(e.text)); // text, as it comes: the table stays a table
+      while (out.childNodes.length > 2000) { out.removeChild(out.firstChild); }
+    });
+    findSource.addEventListener('state', (ev) => {
+      const st = JSON.parse(ev.data);
+      if (st.state !== 'done') { return; }
+      // exit 1 is "nothing fits" or "a provider was skipped": not a failure of the page
+      findEnd(st.code === 0 ? t('find.done') : st.code === 130 ? t('find.cancelled') : st.code === 1 ? t('find.none') : t('find.refused', 'exit ' + st.code));
+      loadRuns();
+    });
+  }
+
+  // the question of the form, or the reason there is none
+  function findRequest() {
+    const num = (id) => { const v = $(id).value.trim(); return v === '' ? 0 : Number(v); };
+    const req = { action: 'find', cpu: num('f-cpu'), ram: num('f-ram'), disk: num('f-disk') };
+    if (![req.cpu, req.ram, req.disk].every((x) => Number.isFinite(x) && x >= 0) || req.cpu !== Math.floor(req.cpu) || req.disk !== Math.floor(req.disk)) { return { error: t('find.badnumber') }; }
+    if (!req.cpu && !req.ram && !req.disk) { return { error: t('find.need') }; }
+    if ($('f-arch').value) { req.arch = $('f-arch').value; }
+    if ($('f-provider').value) { req.provider = $('f-provider').value; }
+    const loc = $('f-location').value.trim().toLowerCase(); // the names are in small letters
+    if (loc) {
+      if (!req.provider) { return { error: t('find.needprovider') }; }
+      req.location = loc;
+    }
+    const vat = $('f-vat').value.trim();
+    if (vat !== '') {
+      const v = Number(vat);
+      if (!Number.isFinite(v) || v < 0 || v > 100) { return { error: t('find.badnumber') }; }
+      req.vat = v;
+    }
+    return { req };
+  }
+
+  async function findStart(ev) {
+    ev.preventDefault();
+    if (findId) { return; }
+    const q = findRequest();
+    if (q.error) { $('find-status').textContent = q.error; return; }
+    $('find-status').textContent = '';
+    try {
+      const r = await api('/api/run', q.req);
+      findAttach(r.id);
+      loadRuns();
+    } catch (e) { $('find-status').textContent = t('find.refused', e.message); }
+  }
+
+  async function findStop() {
+    if (!findId) { return; }
+    $('find-stop').disabled = true;
+    try { await api('/api/cancel', { id: findId }); } catch (e) { $('find-status').textContent = e.message; $('find-stop').disabled = false; }
+  }
+
+  // a page that was opened or loaded again follows a search that is still going
+  function findFind() {
+    if (findId) { return; }
+    const run = runs.find((r) => r.action === 'find' && r.state !== 'done');
+    if (run) { findAttach(run.id); }
+  }
+
   // ---- runs: viper itself, started by the server; the page attaches to its output ----
   let source = null;
   let runs = [];
   let current = '';
 
   // startRun starts a run and shows it; it says whether it started
+  // the options for runs (the block of the overview): how many machines of a group at a time, and what down does. The box --force is
+  // read now and cleared at once: it is for this one request
+  function addRunOptions(req) {
+    const par = $('opt-parallel').value.trim();
+    if (par !== '' && req.scope === 'group' && ['preflight', 'up', 'down', 'check'].includes(req.action)) { req.parallel = Number(par); }
+    if (req.action === 'down') {
+      if ($('opt-force').checked) { req.force = true; $('opt-force').checked = false; }
+      if ($('opt-registry').value) { req.registry = $('opt-registry').value; }
+    }
+  }
+
   async function startRun(req) {
+    addRunOptions(req);
     const repo = $('repo').value.trim();
     if (repo && req.action !== 'down' && req.action !== 'nats') { req.repo = repo; }
     $('run-status').textContent = t('status.running');
@@ -889,6 +992,7 @@
     try { r = await api('/api/runs'); } catch (e) { return; }
     runs = r.runs;
     listenFind();
+    findFind();
     // a run in progress: the tab says so (the one thing on the page that moves)
     $('tab-runs').dataset.busy = String(runs.some((x) => x.state === 'running' || x.state === 'waiting' || x.state === 'cancelling'));
     const ul = $('run-list');
@@ -991,7 +1095,7 @@
       $('tab-' + p).tabIndex = on ? 0 : -1;
     }
     if (name === 'logs') { loadLog(); }
-    if (name === 'runs' || name === 'nats') { loadRuns(); } // the page of NATS follows a listen run that is going
+    if (name === 'runs' || name === 'nats' || name === 'find') { loadRuns(); } // the page of NATS follows a listen run that is going
     if (name === 'settings') { loadSettings(); }
     if (name === 'create' || name === 'secrets' || name === 'change') { loadTemplates(); }
     if (name === 'change') { loadBackups(); }
@@ -1647,7 +1751,7 @@
   document.addEventListener('visibilitychange', poll);
   window.addEventListener('focus', poll);
   function pollLater() {
-    const going = (overview.machines || []).some((m) => m.busy) || (runs || []).some((r) => r.state === 'running' || r.state === 'waiting' || r.state === 'cancelling');
+    const going = (overview.machines || []).some((m) => m.busy) || (runs || []).some((r) => !['nats', 'find'].includes(r.action) && (r.state === 'running' || r.state === 'waiting' || r.state === 'cancelling'));
     setTimeout(async () => { await poll(); pollLater(); }, going ? pollWhileRunning : pollEvery);
   }
   pollLater();
@@ -1683,6 +1787,8 @@
   $('nats-kind').addEventListener('change', natsKindChanged);
   $('nats-peers').addEventListener('click', () => natsRun({ sub: 'peers', timeout: Number($('nats-timeout').value) || 5 }));
   $('nats-topics').addEventListener('click', () => natsRun({ sub: 'topics', timeout: Number($('nats-timeout').value) || 5 }));
+  $('find-form').addEventListener('submit', findStart);
+  $('find-stop').addEventListener('click', findStop);
   $('nats-listen').addEventListener('click', listenStart);
   $('nats-listen-stop').addEventListener('click', listenStop);
   $('nats-listen-clear').addEventListener('click', () => { $('nats-listen-out').textContent = ''; listenView.carry = ''; $('nats-listen-out').focus(); });

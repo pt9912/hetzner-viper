@@ -72,9 +72,9 @@
 
 ## 7 Meilensteine
 
-1. **Server** (gemacht im Entwurf): `runRequest`, `findArgv`, `machineOptions`, `isSide`, Tests.
-2. **Seite „Finden“:** Reiter, Formular, Bereich, Wiederaufnahme, Texte, Tests, Handbuch.
-3. **Optionen für Läufe:** Block in der Übersicht, `startRun` fügt sie an, `--force` einmalig, Tests mit dem echten Programm, Handbuch.
+1. **Server** (gemacht): `runRequest`, `findArgv`, `machineOptions`, `isSide`, Tests.
+2. **Seite „Finden“** (gemacht, 156,1 KB der Seiten): Reiter, Formular, Bereich, Wiederaufnahme, Texte, Tests, Handbuch.
+3. **Optionen für Läufe** (gemacht): Block in der Übersicht, `startRun` fügt sie an, `--force` einmalig, Tests mit dem echten Programm, Handbuch.
 4. Nach jeder Stufe: unabhängige Prüfung, dann Release.
 5. Danach Entscheidung über Stufe 3 bis 5.
 

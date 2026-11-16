@@ -6,7 +6,7 @@ let ui: UI;
 test.beforeEach(async () => { ui = await startUI(); });
 test.afterEach(async () => { await ui.stop(); });
 
-const PAGES = ['overview', 'runs', 'nats', 'settings', 'logs'];
+const PAGES = ['overview', 'runs', 'nats', 'find', 'settings', 'logs'];
 
 for (const scheme of ['light', 'dark'] as const) {
   for (const lang of ['en', 'de']) {
