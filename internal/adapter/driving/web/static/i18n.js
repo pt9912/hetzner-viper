@@ -1,202 +1,10 @@
 'use strict';
-// The texts of the page, in one file: English (the language of viper's own messages) and German. A key that one language has
-// and the other lacks is a mistake that a test finds. The output of viper itself, and the errors of the server, stay English.
+// The engine for the texts of the page. The texts themselves are in i18n.en.js and i18n.de.js: the page loads only the file of
+// its language (and the other one when the language changes). The output of viper itself, and the errors of the server, stay
+// English.
 (function () {
-  const en = {
-    'title': 'viper',
-    'skip': 'Skip to the content',
-    'nav.label': 'Pages',
-    'lang.label': 'Language',
-    'tab.overview': 'Overview', 'tab.runs': 'Runs', 'tab.nats': 'NATS', 'tab.settings': 'Settings', 'tab.logs': 'Logs',
-    'banner.session': 'The session has ended (viper ui was restarted, or the key was used elsewhere). Start viper ui again and open its address.',
-    'aria.settings': 'Settings of {0}', 'aria.settings.group': 'Settings of group {0}', 'settings.viagroup': '{0} has no file of its own: its settings come from {1} (and .env.local).', 'settings.viabase': '{0} has no file of its own: its settings come from .env.local.',
-    'runs.clear': 'Remove finished runs', 'runs.remove': 'Remove', 'runs.remove.aria': 'Remove the run {0}',
-    'listen.stop': 'Stop', 'listen.clear': 'Clear', 'listen.on': 'Listening to the group {0} ...', 'listen.ending': 'Ending ...', 'listen.ended': 'Stopped listening.', 'listen.failed': 'Listening ended with an error (exit {0}). The list of runs has the output.',
-    'btn.group.check': 'Check group', 'aria.group.check': 'Check group {0}', 'busy.check': 'being checked ...',
-    'change.cut': 'The value is longer than the page shows: type the new value (the beginning is not taken over).', 'change.many': 'The file has {1} settings: the table shows the first {0}.', 'listen.nostream': 'The server does not give the stream (the session is gone, or too many streams are open). Press Listen again.', 'busy.mixed': 'busy ...',
-    'busy.up': 'starting up ...', 'busy.down': 'being removed ...', 'busy.preflight': 'being checked ...',
-    'settings.q.label': 'Search the settings', 'settings.q.placeholder': 'a part of the name of a setting', 'settings.count': '{0} settings', 'settings.more': 'Show {0} more ({1} left)', 'settings.morefiles': '{0} more files are not listed.', 'settings.hits': '{0} hits', 'settings.hits.more': 'There are more than shown: narrow the search.', 'th.file': 'File',
-    'tab.create': 'Create', 'editing': 'edit on', 'btn.dup': 'Duplicate', 'aria.dup': 'Duplicate {0}', 'aria.group.dup': 'Duplicate group {0}',
-    'create.copied': 'Copied from {0}. Not copied: {1}.', 'create.copied0': 'Copied from {0}.', 'create.noprovider': 'The provider comes from .env.local there: choose it.', 'create.dupfail': 'Could not copy: {0}',
-    'h.create': 'Create settings', 'create.intro': 'Makes a new file of settings. A file that exists is never changed. Tokens and passwords are not asked here.',
-    'create.kind': 'What', 'kind.machine': 'A machine (machines/NAME.env.local)', 'kind.group': 'A group (groups/NAME.env)', 'kind.base': 'The base file (.env.local)',
-    'create.name': 'Name', 'create.namehint': 'Lowercase letters, digits and hyphens.', 'create.provider': 'Provider', 'create.type': 'Type', 'create.location': 'Location',
-    'create.image': 'Image (a container needs one that viper image build made)', 'create.dns': 'DNS name', 'create.default': 'default',
-    'create.members': 'Machines of the group', 'create.nomembers': 'There is no machine yet: make one first.', 'create.nats': 'NATS for the group',
-    'create.prefix': 'Prefix of the server names', 'create.domain': 'Domain', 'create.preview': 'Preview', 'create.apply': 'Create the file', 'create.result': 'Preview',
-    'create.problem': 'Not possible: {0}', 'create.broken': 'Would break: {0}', 'create.note': 'viper up will still ask for: {0}', 'create.ok': 'Nothing is wrong. This is the file:',
-    'create.done': 'Created {0}.', 'create.changed': 'The form changed: press Preview again.', 'create.refused': 'Nothing was made.',
-    'tab.secrets': 'Credentials', 'h.secrets': 'Credentials', 'th.cred': 'Credential', 'th.setin': 'Set in',
-    'secrets.intro': 'Sets a token or a password in a settings file that exists. The value goes in and is never shown again. Before the change a copy of the file without credentials is kept.',
-    'secrets.name': 'Credential', 'secrets.file': 'In the file', 'secrets.value': 'New value', 'secrets.valuehint': 'At least 8 characters, one line. The value is sent once and wiped from this field.',
-    'secrets.preview': 'Preview', 'secrets.set': 'Set the value', 'secrets.remove': 'Remove from the file', 'secrets.remove.arm': 'Press again to remove {0} from {1}',
-    'secrets.notset': 'not set', 'secrets.nofile': 'no settings file', 'secrets.done': 'Done: {0}. A copy without credentials: {1}.', 'secrets.needvalue': 'Type the new value first.',
-    'secrets.ok': 'Nothing is wrong. This is what changes:', 'secrets.changed': 'The form changed: press Preview again.',
-    'stale': 'The files changed since the preview: press Preview again.',
-    'tab.change': 'Change', 'h.change': 'Change settings', 'th.setting': 'Setting', 'th.value': 'Value',
-    'change.intro': 'Changes or takes out one setting in a file that exists. Before the change a copy of the file without credentials is kept; every machine and group is checked with the change first. Tokens and passwords: the page Credentials.',
-    'change.file': 'File', 'change.name': 'Setting', 'change.value': 'New value', 'change.preview': 'Preview', 'change.apply': 'Change the setting',
-    'change.edit': 'Change', 'change.remove': 'Remove', 'change.remove.arm': 'Press again to remove {0}', 'change.remove.go': 'Remove the setting', 'change.shownot': 'set', 'change.nofile': 'There is no settings file.',
-    'change.limits.int': 'A number from {0} to {1}.', 'change.limits.danger': 'Dangerous: the preview asks to type a word.', 'change.limits.lines': 'Several lines are allowed. The text is shown in the preview and kept in the copy of the file: no tokens in it.', 'change.confirm': 'Type {0} to confirm',
-    'change.done': 'Done: {0}. A copy without credentials: {1}.', 'change.nothing': 'Choose a setting and a value first.',
-    'h.backups': 'Earlier versions', 'backups.intro': 'Every change keeps the file as it was, without credentials, in a ZIP. A ZIP can be downloaded; a replaced token is not in it.',
-    'backups.none': 'No change has been made yet.', 'backups.restore': 'Restore', 'backups.restore.aria': 'Restore the copy of {0}', 'backups.restore.go': 'Restore this version', 'backups.restoring': 'Restore {0}? Press Restore this version.', 'backups.download': 'Download', 'backups.aria': 'Download the copy of {0}',
-    'tab.find': 'Find', 'h.find': 'Find a server type', 'find.intro': 'Looks through the price lists of the providers for the cheapest server types with at least this much CPU, RAM and disk. It makes no machine. The first search reads large price lists and takes a while.',
-    'find.cpu': 'CPUs', 'find.ram': 'RAM (GB)', 'find.disk': 'Disk (GB)', 'find.arch': 'Architecture', 'find.provider': 'Provider', 'find.all': 'all', 'find.location': 'Location (needs a provider)', 'find.vat': 'VAT (%)',
-    'find.go': 'Search', 'find.stop': 'Cancel', 'find.running': 'Searching ... (the first search reads large price lists)', 'find.done': 'Done.', 'find.none': 'No server type found, or the search failed (for example without .env.local): see the output.',
-    'find.refused': 'The search was refused: {0}', 'find.cancelled': 'Cancelled.', 'find.need': 'Give at least one of CPUs, RAM and disk.', 'find.needprovider': 'A location needs a provider: its names differ by provider.',
-    'find.badnumber': 'CPUs and disk are whole numbers, RAM a number, the VAT from 0 to 100.', 'find.nostream': 'The server does not give the stream (the session is gone, or too many streams are open). Search again.',
-    'opt.summary': 'Options for runs', 'opt.active': '({0} set)', 'opt.parallel': 'Machines of a group at the same time', 'opt.parallel.bad': 'Machines at the same time: a whole number from 1 to 64.', 'opt.parallel.hint': 'Empty: 8. Only for the buttons of a group.',
-    'opt.force': 'Down: also delete when the machine cannot be reached or still has group members (--force)', 'opt.force.hint': 'For the next Down only (the box is cleared when it starts). If the machine can be reached, viper checks for unsaved work anyway.',
-    'opt.registry': 'Down: the registry of a k3d cluster', 'opt.registry.ask': 'ask', 'opt.registry.delete': 'delete it', 'opt.registry.keep': 'keep it',
-    'readonly': 'read only',
-    'h.machines': 'Machines',
-    'th.machine': 'Machine', 'th.group': 'Group', 'th.provider': 'Provider', 'th.type': 'Type', 'th.location': 'Location', 'th.nats': 'NATS',
-    'th.state': 'State', 'th.actions': 'Actions', 'th.machines': 'Machines',
-    'note.none': 'No machines found: machines/<name>.env.local or groups/<name>.env in the settings directory name them.',
-    'note.state': 'State is what this computer knows; Check asks the machine.',
-    'note.load': 'Could not load: {0}',
-    'filter.label': 'Filter', 'filter.placeholder': 'name, group, provider, type ...', 'filter.state': 'State', 'filter.allstates': 'All states', 'filter.clear': 'Clear the filter', 'filter.count': '{0} of {1} machines', 'filter.none': 'No machine matches the filter.', 'sort.label': 'Sort by {0}', 'state.partial': 'partly', 'group.none': 'No group', 'group.empty': 'no machines', 'state.ready': 'started', 'state.started': 'created', 'state.none': 'not started',
-    'error.prefix': 'error: {0}',
-    'repo.label': 'Repository URL for up and preflight (optional)',
-    'h.groups': 'Groups',
-    'btn.check': 'Check', 'btn.preflight': 'Preflight', 'btn.up': 'Up', 'btn.down': 'Down', 'btn.log': 'Log',
-    'btn.group.preflight': 'Preflight group', 'btn.group.up': 'Up group', 'btn.group.down': 'Down group',
-    'aria.check': 'Check {0}', 'aria.preflight': 'Preflight {0}', 'aria.up': 'Up {0}', 'aria.down': 'Down {0}', 'aria.log': 'Log of {0}',
-    'aria.group.preflight': 'Preflight group {0}', 'aria.group.up': 'Up group {0}', 'aria.group.down': 'Down group {0}',
-    'h.check': 'Check',
-    'check.hint': 'Pick a machine and press Check: it runs viper check and shows what it says.',
-    'check.running': 'Checking {0} ...', 'check.ok': '{0}: OK', 'check.problems': '{0}: problems (exit {1})', 'check.error': '{0}: {1}',
-    'cut': '[cut]',
-    'h.runs': 'Runs',
-    'runs.intro': 'A run is viper itself, as at the terminal. A question (Type DELETE ...) is answered below, with the word you type.',
-    'runs.none': 'No runs yet.',
-    'run.answer': 'Answer', 'run.send': 'Send', 'run.cancel': 'Cancel (like Ctrl-C)',
-    'run.cancel.hint': 'Cancel does not undo: a server that was half made can remain.',
-    'run.download': 'Download the file',
-    'run.notstarted': 'Not started: {0}',
-    'status.running': 'Running ...', 'status.waiting': 'Waiting for your answer', 'status.cancelling': 'Ending (this can take a while) ...',
-    'status.done0': 'Done: exit 0', 'status.ended': 'Ended: exit {0}', 'status.cancelled': ' (cancelled)',
-    'run.item': '{0} {1} ({2})', 'run.state.running': 'running', 'run.state.waiting': 'waiting', 'run.state.cancelling': 'cancelling', 'run.state.done': 'done, exit {0}',
-    'h.nats': 'NATS group',
-    'nats.none': 'No group with NATS machines found (groups/<name>.env with NATS_ENABLED machines).',
-    'nats.init': 'Register as operator', 'nats.revoke': 'Remove the operator', 'nats.revoke.sure': 'Sure? Remove it and delete the key', 'nats.operatorhint': 'The operator is an entry of its own at the NATS server, with a key that stays on this computer; the agents see it as the sender, and it can read everything in the group.', 'nats.drop': 'Drop a file here (PDF, image or ZIP) or paste with Ctrl+V: an image, a file or a text. A text file becomes the text of the message; one file goes with a message.', 'nats.clearfile': 'Remove the file', 'nats.taken': 'File taken: {0}', 'nats.texttaken': 'Text taken from {0}', 'nats.unsupported': 'Not usable: {0} (PDF, image, ZIP or a text file)', 'nats.toolarge': '{0} is larger than the group takes ({1})', 'nats.more': 'Only one file goes with a message: the others were left out', 'nats.texttoolong': 'The text is longer than 16 KiB: it was cut', 'nats.group': 'Group', 'nats.from': 'Speak as',
-    'nats.from.operator': 'the operator (key found here)', 'nats.from.machine': 'a machine of the group (over ssh)', 'nats.machine': 'machine {0}',
-    'nats.mode.operator': 'This computer has the key of the operator: viper nats speaks as the operator.',
-    'nats.mode.machine': 'No key of the operator here (viper nats init {0}): viper nats speaks as a machine of the group, over ssh.',
-    'h.who': 'Who is there', 'nats.wait': 'Wait (seconds)', 'nats.peers': 'Peers', 'nats.topics': 'Topics',
-    'h.listen': 'Listen', 'listen.topics': 'Topics (optional, with commas)', 'listen.all': 'everything of the group', 'nats.listen': 'Listen',
-    'h.send': 'Send', 'nats.kind': 'What', 'kind.send': 'Message to a machine', 'kind.request': 'Request to a machine (wait for the answer)', 'kind.broadcast': 'Round to a topic',
-    'nats.to': 'To', 'nats.topic': 'Topic', 'nats.reqtimeout': 'Wait for the answer (seconds)', 'nats.text': 'Text (up to 16 KiB)', 'nats.file': 'File (PDF, image or ZIP)',
-    'nats.nofile': 'This group has no object store (NATS_OBJECTS=true): no files.', 'nats.yes': 'send anyway if the agent there gets it pushed (--yes)', 'nats.send': 'Send', 'nats.handing': 'Handing over the file ...',
-    'h.fetch': 'Get a file', 'nats.id': 'ID', 'nats.sha': 'SHA-256', 'nats.fetch': 'Fetch', 'nats.fetchthis': 'Fetch this file',
-    'nats.untrusted': 'A fetched file is from another agent: untrusted. Do not run it.',
-    'nl.peer': 'present: {0}', 'nl.peer.topics': ' (topics: {0})', 'nl.configured': 'set in the settings: {0}: {1}', 'nl.notopic': 'no topic',
-    'nl.answer': 'answer from {0}: {1}', 'nl.sent': 'sent', 'nl.fetched': 'fetched: {0}', 'nl.ready': 'ready: {0} in {1}', 'nl.file': ' [file {0}, {1}, {2} bytes]',
-    'h.settings': 'Settings',
-    'settings.intro': 'The names of the settings in each file of the settings directory. A value is shown only for settings that are no credentials and hold nothing private; the rest is "set". Nothing here can be changed.',
-    'settings.set': 'set', 'settings.empty': 'no files found', 'settings.env': 'environment', 'settings.envnote': 'Set in the environment and in no file (the value is never shown).',
-    'settings.noentries': 'no settings', 'th.key': 'Setting', 'th.value': 'Value',
-    'h.logs': 'Logs', 'log.machine': 'Machine', 'log.all': 'all machines (events)', 'log.full': 'complete output', 'log.search': 'Search', 'log.reload': 'Reload', 'log.loading': 'Loading ...',
-  };
-  const de = {
-    'title': 'viper',
-    'skip': 'Zum Inhalt springen',
-    'nav.label': 'Seiten',
-    'lang.label': 'Sprache',
-    'tab.overview': 'Übersicht', 'tab.runs': 'Läufe', 'tab.nats': 'NATS', 'tab.settings': 'Einstellungen', 'tab.logs': 'Protokolle',
-    'banner.session': 'Die Sitzung ist zu Ende (viper ui wurde neu gestartet, oder der Schlüssel wurde woanders benutzt). Starten Sie viper ui neu und öffnen Sie seine Adresse.',
-    'aria.settings': 'Einstellungen von {0}', 'aria.settings.group': 'Einstellungen der Gruppe {0}', 'settings.viagroup': '{0} hat keine eigene Datei: die Einstellungen kommen aus {1} (und .env.local).', 'settings.viabase': '{0} hat keine eigene Datei: die Einstellungen kommen aus .env.local.',
-    'runs.clear': 'Beendete Läufe entfernen', 'runs.remove': 'Entfernen', 'runs.remove.aria': 'Den Lauf {0} entfernen',
-    'listen.stop': 'Anhalten', 'listen.clear': 'Leeren', 'listen.on': 'Liest mit in der Gruppe {0} ...', 'listen.ending': 'Wird beendet ...', 'listen.ended': 'Mitlesen beendet.', 'listen.failed': 'Das Mitlesen endete mit einem Fehler (Status {0}). Die Ausgabe steht bei den Läufen.',
-    'btn.group.check': 'Gruppe prüfen', 'aria.group.check': 'Gruppe {0} prüfen', 'busy.check': 'wird geprüft ...',
-    'change.cut': 'Der Wert ist länger, als die Seite zeigt: tippen Sie den neuen Wert (der Anfang wird nicht übernommen).', 'change.many': 'Die Datei hat {1} Einstellungen: die Tabelle zeigt die ersten {0}.', 'listen.nostream': 'Der Server gibt den Strom nicht (die Sitzung ist weg, oder zu viele Ströme sind offen). Drücken Sie noch einmal Mitlesen.', 'busy.mixed': 'beschäftigt ...',
-    'busy.up': 'fährt hoch ...', 'busy.down': 'wird abgebaut ...', 'busy.preflight': 'wird vorgeprüft ...',
-    'settings.q.label': 'Einstellungen suchen', 'settings.q.placeholder': 'ein Teil des Namens einer Einstellung', 'settings.count': '{0} Einstellungen', 'settings.more': '{0} weitere anzeigen ({1} übrig)', 'settings.morefiles': '{0} weitere Dateien sind nicht aufgelistet.', 'settings.hits': '{0} Treffer', 'settings.hits.more': 'Es gibt mehr als gezeigt: grenzen Sie die Suche ein.', 'th.file': 'Datei',
-    'tab.create': 'Anlegen', 'editing': 'Bearbeiten an', 'btn.dup': 'Duplizieren', 'aria.dup': '{0} duplizieren', 'aria.group.dup': 'Gruppe {0} duplizieren',
-    'create.copied': 'Kopiert von {0}. Nicht kopiert: {1}.', 'create.copied0': 'Kopiert von {0}.', 'create.noprovider': 'Der Anbieter kommt dort aus .env.local: wählen Sie ihn.', 'create.dupfail': 'Konnte nicht kopieren: {0}',
-    'h.create': 'Einstellungen anlegen', 'create.intro': 'Legt eine neue Datei mit Einstellungen an. Eine Datei, die es gibt, wird nie geändert. Tokens und Passwörter werden hier nicht abgefragt.',
-    'create.kind': 'Was', 'kind.machine': 'Ein Rechner (machines/NAME.env.local)', 'kind.group': 'Eine Gruppe (groups/NAME.env)', 'kind.base': 'Die Grunddatei (.env.local)',
-    'create.name': 'Name', 'create.namehint': 'Kleinbuchstaben, Ziffern und Bindestriche.', 'create.provider': 'Anbieter', 'create.type': 'Typ', 'create.location': 'Ort',
-    'create.image': 'Image (ein Container braucht eines, das viper image build gemacht hat)', 'create.dns': 'DNS-Name', 'create.default': 'Standard',
-    'create.members': 'Rechner der Gruppe', 'create.nomembers': 'Es gibt noch keinen Rechner: legen Sie zuerst einen an.', 'create.nats': 'NATS für die Gruppe',
-    'create.prefix': 'Vorsilbe der Servernamen', 'create.domain': 'Domain', 'create.preview': 'Vorschau', 'create.apply': 'Datei anlegen', 'create.result': 'Vorschau',
-    'create.problem': 'Nicht möglich: {0}', 'create.broken': 'Würde brechen: {0}', 'create.note': 'viper up fragt noch nach: {0}', 'create.ok': 'Nichts spricht dagegen. Das ist die Datei:',
-    'create.done': 'Angelegt: {0}.', 'create.changed': 'Das Formular hat sich geändert: drücken Sie noch einmal Vorschau.', 'create.refused': 'Es wurde nichts angelegt.',
-    'tab.secrets': 'Zugangsdaten', 'h.secrets': 'Zugangsdaten', 'th.cred': 'Zugangsdatum', 'th.setin': 'Gesetzt in',
-    'secrets.intro': 'Setzt ein Token oder ein Passwort in einer Einstellungsdatei, die es schon gibt. Der Wert geht hinein und wird nie wieder angezeigt. Vor der Änderung wird eine Kopie der Datei ohne Zugangsdaten aufbewahrt.',
-    'secrets.name': 'Zugangsdatum', 'secrets.file': 'In der Datei', 'secrets.value': 'Neuer Wert', 'secrets.valuehint': 'Mindestens 8 Zeichen, eine Zeile. Der Wert wird einmal gesendet und aus diesem Feld gelöscht.',
-    'secrets.preview': 'Vorschau', 'secrets.set': 'Wert setzen', 'secrets.remove': 'Aus der Datei entfernen', 'secrets.remove.arm': 'Noch einmal drücken: {0} aus {1} entfernen',
-    'secrets.notset': 'nicht gesetzt', 'secrets.nofile': 'keine Einstellungsdatei', 'secrets.done': 'Fertig: {0}. Eine Kopie ohne Zugangsdaten: {1}.', 'secrets.needvalue': 'Tippen Sie zuerst den neuen Wert.',
-    'secrets.ok': 'Nichts spricht dagegen. Das ändert sich:', 'secrets.changed': 'Das Formular hat sich geändert: drücken Sie noch einmal Vorschau.',
-    'stale': 'Die Dateien haben sich seit der Vorschau geändert: drücken Sie noch einmal Vorschau.',
-    'tab.change': 'Ändern', 'h.change': 'Einstellungen ändern', 'th.setting': 'Einstellung', 'th.value': 'Wert',
-    'change.intro': 'Ändert oder entfernt eine Einstellung in einer Datei, die es schon gibt. Vor der Änderung wird eine Kopie der Datei ohne Zugangsdaten aufbewahrt; vorher werden alle Rechner und Gruppen mit der Änderung geprüft. Tokens und Passwörter: die Seite Zugangsdaten.',
-    'change.file': 'Datei', 'change.name': 'Einstellung', 'change.value': 'Neuer Wert', 'change.preview': 'Vorschau', 'change.apply': 'Einstellung ändern',
-    'change.edit': 'Ändern', 'change.remove': 'Entfernen', 'change.remove.arm': 'Noch einmal drücken: {0} entfernen', 'change.remove.go': 'Einstellung entfernen', 'change.shownot': 'gesetzt', 'change.nofile': 'Es gibt keine Einstellungsdatei.',
-    'change.limits.int': 'Eine Zahl von {0} bis {1}.', 'change.limits.danger': 'Gefährlich: die Vorschau verlangt, ein Wort zu tippen.', 'change.limits.lines': 'Mehrere Zeilen sind erlaubt. Der Text steht in der Vorschau und in der Kopie der Datei: keine Tokens darin.', 'change.confirm': 'Tippen Sie {0} zur Bestätigung',
-    'change.done': 'Fertig: {0}. Eine Kopie ohne Zugangsdaten: {1}.', 'change.nothing': 'Wählen Sie zuerst eine Einstellung und einen Wert.',
-    'h.backups': 'Frühere Fassungen', 'backups.intro': 'Jede Änderung bewahrt die Datei, wie sie war, ohne Zugangsdaten in einem ZIP auf. Ein ZIP lässt sich herunterladen; ein ersetztes Token steht nicht darin.',
-    'backups.none': 'Es wurde noch nichts geändert.', 'backups.restore': 'Wiederherstellen', 'backups.restore.aria': 'Die Kopie von {0} wiederherstellen', 'backups.restore.go': 'Diese Fassung wiederherstellen', 'backups.restoring': '{0} wiederherstellen? Drücken Sie „Diese Fassung wiederherstellen“.', 'backups.download': 'Herunterladen', 'backups.aria': 'Die Kopie von {0} herunterladen',
-    'tab.find': 'Finden', 'h.find': 'Server-Typ finden', 'find.intro': 'Sucht in den Preislisten der Anbieter die günstigsten Server-Typen mit mindestens so viel CPU, RAM und Platte. Es legt keinen Rechner an. Die erste Suche liest große Preislisten und dauert etwas.',
-    'find.cpu': 'CPUs', 'find.ram': 'RAM (GB)', 'find.disk': 'Platte (GB)', 'find.arch': 'Architektur', 'find.provider': 'Anbieter', 'find.all': 'alle', 'find.location': 'Standort (braucht einen Anbieter)', 'find.vat': 'MwSt (%)',
-    'find.go': 'Suchen', 'find.stop': 'Abbrechen', 'find.running': 'Suche läuft ... (die erste Suche liest große Preislisten)', 'find.done': 'Fertig.', 'find.none': 'Kein Server-Typ gefunden, oder die Suche ist fehlgeschlagen (zum Beispiel ohne .env.local): siehe die Ausgabe.',
-    'find.refused': 'Die Suche wurde abgelehnt: {0}', 'find.cancelled': 'Abgebrochen.', 'find.need': 'Geben Sie mindestens eines von CPUs, RAM und Platte an.', 'find.needprovider': 'Ein Standort braucht einen Anbieter: die Namen unterscheiden sich je Anbieter.',
-    'find.badnumber': 'CPUs und Platte sind ganze Zahlen, RAM eine Zahl, die MwSt von 0 bis 100.', 'find.nostream': 'Der Server gibt den Strom nicht (die Sitzung ist weg, oder zu viele Ströme sind offen). Suchen Sie noch einmal.',
-    'opt.summary': 'Optionen für Läufe', 'opt.active': '({0} gesetzt)', 'opt.parallel': 'Rechner einer Gruppe gleichzeitig', 'opt.parallel.bad': 'Rechner gleichzeitig: eine ganze Zahl von 1 bis 64.', 'opt.parallel.hint': 'Leer: 8. Nur für die Knöpfe einer Gruppe.',
-    'opt.force': 'Down: auch löschen, wenn der Rechner nicht erreichbar ist oder noch Mitglieder hat (--force)', 'opt.force.hint': 'Nur für das nächste Down (das Kästchen wird beim Start wieder ausgeschaltet). Ist der Rechner erreichbar, prüft viper trotzdem auf ungesicherte Arbeit.',
-    'opt.registry': 'Down: die Registry eines k3d-Clusters', 'opt.registry.ask': 'fragen', 'opt.registry.delete': 'löschen', 'opt.registry.keep': 'behalten',
-    'readonly': 'nur lesen',
-    'h.machines': 'Rechner',
-    'th.machine': 'Rechner', 'th.group': 'Gruppe', 'th.provider': 'Anbieter', 'th.type': 'Typ', 'th.location': 'Ort', 'th.nats': 'NATS',
-    'th.state': 'Zustand', 'th.actions': 'Aktionen', 'th.machines': 'Rechner',
-    'note.none': 'Keine Rechner gefunden: machines/<name>.env.local oder groups/<name>.env im Einstellungsverzeichnis nennen sie.',
-    'note.state': 'Der Zustand ist, was dieser Computer weiß; „Prüfen“ fragt den Rechner.',
-    'note.load': 'Konnte nicht laden: {0}',
-    'filter.label': 'Filter', 'filter.placeholder': 'Name, Gruppe, Anbieter, Typ ...', 'filter.state': 'Zustand', 'filter.allstates': 'Alle Zustände', 'filter.clear': 'Filter löschen', 'filter.count': '{0} von {1} Rechnern', 'filter.none': 'Kein Rechner passt zum Filter.', 'sort.label': 'Sortieren nach {0}', 'state.partial': 'teilweise', 'group.none': 'Ohne Gruppe', 'group.empty': 'keine Rechner', 'state.ready': 'gestartet', 'state.started': 'angelegt', 'state.none': 'nicht gestartet',
-    'error.prefix': 'Fehler: {0}',
-    'repo.label': 'Repository-URL für Up und Preflight (optional)',
-    'h.groups': 'Gruppen',
-    'btn.check': 'Prüfen', 'btn.preflight': 'Vorprüfung', 'btn.up': 'Up', 'btn.down': 'Down', 'btn.log': 'Protokoll',
-    'btn.group.preflight': 'Gruppe vorprüfen', 'btn.group.up': 'Gruppe: Up', 'btn.group.down': 'Gruppe: Down',
-    'aria.check': '{0} prüfen', 'aria.preflight': '{0} vorprüfen', 'aria.up': 'Up für {0}', 'aria.down': 'Down für {0}', 'aria.log': 'Protokoll von {0}',
-    'aria.group.preflight': 'Gruppe {0} vorprüfen', 'aria.group.up': 'Up für Gruppe {0}', 'aria.group.down': 'Down für Gruppe {0}',
-    'h.check': 'Prüfung',
-    'check.hint': 'Wählen Sie einen Rechner und drücken Sie „Prüfen“: Das führt viper check aus und zeigt dessen Ausgabe.',
-    'check.running': '{0} wird geprüft ...', 'check.ok': '{0}: in Ordnung', 'check.problems': '{0}: Probleme (Exit {1})', 'check.error': '{0}: {1}',
-    'cut': '[gekürzt]',
-    'h.runs': 'Läufe',
-    'runs.intro': 'Ein Lauf ist viper selbst, wie am Terminal. Eine Rückfrage (Type DELETE ...) beantworten Sie unten mit dem Wort, das Sie tippen.',
-    'runs.none': 'Noch keine Läufe.',
-    'run.answer': 'Antwort', 'run.send': 'Senden', 'run.cancel': 'Abbrechen (wie Strg-C)',
-    'run.cancel.hint': 'Abbrechen macht nichts rückgängig: Ein halb angelegter Server kann bleiben.',
-    'run.download': 'Datei herunterladen',
-    'run.notstarted': 'Nicht gestartet: {0}',
-    'status.running': 'Läuft ...', 'status.waiting': 'Wartet auf Ihre Antwort', 'status.cancelling': 'Wird beendet (das kann dauern) ...',
-    'status.done0': 'Fertig: Exit 0', 'status.ended': 'Beendet: Exit {0}', 'status.cancelled': ' (abgebrochen)',
-    'run.item': '{0} {1} ({2})', 'run.state.running': 'läuft', 'run.state.waiting': 'wartet', 'run.state.cancelling': 'wird beendet', 'run.state.done': 'fertig, Exit {0}',
-    'h.nats': 'NATS-Gruppe',
-    'nats.none': 'Keine Gruppe mit NATS-Rechnern gefunden (groups/<name>.env mit Rechnern, die NATS_ENABLED haben).',
-    'nats.init': 'Als Betreiber anmelden', 'nats.revoke': 'Betreiber abmelden', 'nats.revoke.sure': 'Sicher? Abmelden und den Schlüssel löschen', 'nats.operatorhint': 'Der Betreiber ist ein eigener Eintrag am NATS-Server, mit einem Schlüssel, der auf diesem Computer bleibt; die Agenten sehen ihn als Absender, und er kann alles in der Gruppe lesen.', 'nats.drop': 'Eine Datei hierher ziehen (PDF, Bild oder ZIP) oder mit Strg+V einfügen: ein Bild, eine Datei oder einen Text. Eine Textdatei wird zum Text der Nachricht; zu einer Nachricht gehört eine Datei.', 'nats.clearfile': 'Datei entfernen', 'nats.taken': 'Datei übernommen: {0}', 'nats.texttaken': 'Text übernommen aus {0}', 'nats.unsupported': 'Nicht brauchbar: {0} (PDF, Bild, ZIP oder Textdatei)', 'nats.toolarge': '{0} ist größer, als die Gruppe nimmt ({1})', 'nats.more': 'Zu einer Nachricht gehört eine Datei: die anderen wurden weggelassen', 'nats.texttoolong': 'Der Text ist länger als 16 KiB: er wurde gekürzt', 'nats.group': 'Gruppe', 'nats.from': 'Sprechen als',
-    'nats.from.operator': 'der Betreiber (Schlüssel liegt hier)', 'nats.from.machine': 'ein Rechner der Gruppe (über ssh)', 'nats.machine': 'Rechner {0}',
-    'nats.mode.operator': 'Dieser Computer hat den Schlüssel des Betreibers: viper nats spricht als Betreiber.',
-    'nats.mode.machine': 'Kein Schlüssel des Betreibers hier (viper nats init {0}): viper nats spricht als Rechner der Gruppe, über ssh.',
-    'h.who': 'Wer ist da', 'nats.wait': 'Warten (Sekunden)', 'nats.peers': 'Peers', 'nats.topics': 'Themen',
-    'h.listen': 'Mitlesen', 'listen.topics': 'Themen (optional, mit Kommas)', 'listen.all': 'alles in der Gruppe', 'nats.listen': 'Mitlesen',
-    'h.send': 'Senden', 'nats.kind': 'Was', 'kind.send': 'Nachricht an einen Rechner', 'kind.request': 'Anfrage an einen Rechner (auf die Antwort warten)', 'kind.broadcast': 'Rundruf an ein Thema',
-    'nats.to': 'An', 'nats.topic': 'Thema', 'nats.reqtimeout': 'Auf die Antwort warten (Sekunden)', 'nats.text': 'Text (bis 16 KiB)', 'nats.file': 'Datei (PDF, Bild oder ZIP)',
-    'nats.nofile': 'Diese Gruppe hat keinen Objektspeicher (NATS_OBJECTS=true): keine Dateien.', 'nats.yes': 'trotzdem senden, auch wenn der Agent dort es in seine Sitzung geschoben bekommt (--yes)', 'nats.send': 'Senden', 'nats.handing': 'Die Datei wird übergeben ...',
-    'h.fetch': 'Datei holen', 'nats.id': 'ID', 'nats.sha': 'SHA-256', 'nats.fetch': 'Holen', 'nats.fetchthis': 'Diese Datei holen',
-    'nats.untrusted': 'Eine geholte Datei stammt von einem anderen Agenten: nicht vertrauenswürdig. Nicht ausführen.',
-    'nl.peer': 'da: {0}', 'nl.peer.topics': ' (Themen: {0})', 'nl.configured': 'in den Einstellungen: {0}: {1}', 'nl.notopic': 'kein Thema',
-    'nl.answer': 'Antwort von {0}: {1}', 'nl.sent': 'gesendet', 'nl.fetched': 'geholt: {0}', 'nl.ready': 'bereit: {0} in {1}', 'nl.file': ' [Datei {0}, {1}, {2} Bytes]',
-    'h.settings': 'Einstellungen',
-    'settings.intro': 'Die Namen der Einstellungen in jeder Datei des Einstellungsverzeichnisses. Ein Wert wird nur bei Einstellungen gezeigt, die keine Zugangsdaten sind und nichts Privates enthalten; der Rest ist „gesetzt“. Hier lässt sich nichts ändern.',
-    'settings.set': 'gesetzt', 'settings.empty': 'keine Dateien gefunden', 'settings.env': 'Umgebung', 'settings.envnote': 'In der Umgebung gesetzt und in keiner Datei (der Wert wird nie gezeigt).',
-    'settings.noentries': 'keine Einstellungen', 'th.key': 'Einstellung', 'th.value': 'Wert',
-    'h.logs': 'Protokolle', 'log.machine': 'Rechner', 'log.all': 'alle Rechner (Ereignisse)', 'log.full': 'vollständige Ausgabe', 'log.search': 'Suchen', 'log.reload': 'Neu laden', 'log.loading': 'Lädt ...',
-  };
-  const dicts = { en, de };
+  const dicts = {};
+  const languages = ['en', 'de'];
   let lang = 'en';
 
   function initial() {
@@ -204,9 +12,23 @@
     return (navigator.language || 'en').toLowerCase().startsWith('de') ? 'de' : 'en';
   }
 
+  // add is called by the file of a language
+  function add(l, texts) { dicts[l] = texts; }
+
+  // load gives a promise that is kept when the file of the language is there (also when it could not be read: the keys show then)
+  function load(l) {
+    if (dicts[l]) { return Promise.resolve(); }
+    return new Promise((resolve) => {
+      const s = document.createElement('script');
+      s.src = '/i18n.' + l + '.js';
+      s.onload = s.onerror = () => resolve();
+      document.head.appendChild(s);
+    });
+  }
+
   // t gives the text of a key; {0}, {1} are filled with the arguments (as text, never as markup).
   function t(key, ...args) {
-    const text = dicts[lang][key] ?? en[key] ?? key;
+    const text = (dicts[lang] && dicts[lang][key]) ?? (dicts.en && dicts.en[key]) ?? key;
     return text.replace(/\{(\d)\}/g, (m, i) => (args[Number(i)] === undefined ? '' : String(args[Number(i)])));
   }
 
@@ -219,13 +41,17 @@
     for (const el of document.querySelectorAll('[data-i18n-placeholder]')) { el.setAttribute('placeholder', t(el.dataset.i18nPlaceholder)); }
   }
 
-  function setLang(l) {
-    if (!dicts[l]) { return; }
+  // setLang loads the language if needed, then switches and sets the texts
+  async function setLang(l) {
+    if (!languages.includes(l)) { return; }
+    await load(l);
     lang = l;
     try { window.localStorage.setItem('viper-ui-lang', l); } catch (e) { /* not kept */ }
     apply();
   }
 
   lang = initial();
-  window.viperI18n = { t, apply, setLang, lang: () => lang, languages: Object.keys(dicts) };
+  // ready: the texts of the first language are there (the page waits for it)
+  const ready = load(lang);
+  window.viperI18n = { t, apply, setLang, add, ready, lang: () => lang, languages };
 })();

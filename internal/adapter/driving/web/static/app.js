@@ -1,6 +1,6 @@
 'use strict';
 // The page of viper ui. Everything that comes from the server is set as text (textContent), never as markup. The texts of
-// the page are in i18n.js.
+// the page are in i18n.en.js and i18n.de.js (loaded by i18n.js, one language at a time).
 (function () {
   const $ = (id) => document.getElementById(id);
   const { t } = window.viperI18n;
@@ -1802,7 +1802,7 @@
       renderMachines();
     });
   }
-  $('lang').addEventListener('change', () => { window.viperI18n.setLang($('lang').value); translate(); });
+  $('lang').addEventListener('change', async () => { await window.viperI18n.setLang($('lang').value); translate(); });
   $('nats-group').addEventListener('change', natsGroupChanged);
   $('nats-kind').addEventListener('change', natsKindChanged);
   $('nats-peers').addEventListener('click', () => natsRun({ sub: 'peers', timeout: Number($('nats-timeout').value) || 5 }));
@@ -1823,7 +1823,10 @@
   $('log-full').addEventListener('change', loadLog);
   $('log-filter').addEventListener('input', filterLog);
   dropSetup();
-  window.viperI18n.apply();
-  $('lang').value = window.viperI18n.lang();
-  load().then(poll); // the first stamp is the state the page starts from
+  // the page starts when the texts of its language are there
+  window.viperI18n.ready.then(() => {
+    window.viperI18n.apply();
+    $('lang').value = window.viperI18n.lang();
+    load().then(poll); // the first stamp is the state the page starts from
+  });
 })();

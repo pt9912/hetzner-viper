@@ -137,3 +137,18 @@ test('the pages are small and need nothing from elsewhere', async ({ page }) => 
   const total = Object.values(sizes).reduce((a, b) => a + b, 0);
   expect(total).toBeLessThan(175 * 1024) // the limit of the Go test as well;
 });
+
+test('a page loads the texts of its language only, and the other language when it is chosen', async ({ browser }) => {
+  const ctx = await browser.newContext({ locale: 'en' });
+  const page = await ctx.newPage();
+  const files: string[] = [];
+  page.on('response', (r) => { files.push(new URL(r.url()).pathname); });
+  await page.goto(ui.start);
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3);
+  expect(files).toContain('/i18n.en.js');
+  expect(files).not.toContain('/i18n.de.js');
+  await page.selectOption('#lang', 'de');
+  await expect(page.locator('#tab-runs')).toHaveText('Läufe');
+  expect(files).toContain('/i18n.de.js');
+  await ctx.close();
+});

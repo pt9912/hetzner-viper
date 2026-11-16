@@ -102,7 +102,7 @@ Ein unabhängiger Prüfer hat den Plan gegen den Code und das gebaute Programm g
 | Einmaliges `--force` nur per Zustand der Seite ist anfällig (zwei Reiter, Doppelklick) | §4: pro Anfrage, sofort zurückgesetzt |
 | `setup` ist nicht interaktiv, überschreibt `known_hosts_hetzner_claude_ca` | §5: berichtigt |
 | `ssh --cmd` widerspricht der Regel „nur geprüfte Felder“, hält die Standardeingabe offen | §5: nicht bauen |
-| Die Seiten sind 143,9 KB groß bei 175 KB; Stufe 3 bis 5 passen nicht mehr hinein | Stufe 1 und 2 brauchen etwa 10 bis 15 KB; die Grenze wird vor Stufe 3 bewusst entschieden |
+| Die Seiten sind 156 KB groß bei 175 KB; Stufe 3 bis 5 passen nicht mehr hinein (gemildert: die Texte laden je Sprache, der Start lädt jetzt etwa 143 KB; weiter bei Bedarf: `app.js` nach Seiten teilen) | Stufe 1 und 2 brauchen etwa 10 bis 15 KB; die Grenze wird vor Stufe 3 bewusst entschieden |
 | Die Abfrage alle zwei Sekunden läuft auch für `find` | §3: nur für Aktionsläufe |
 | Wiederaufnahme nach dem Neuladen nicht beschrieben; doppelte Bereiche | §3: über `/api/runs`, ein Bereich |
 

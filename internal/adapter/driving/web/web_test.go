@@ -328,7 +328,7 @@ func TestThePagesHaveNothingThatTheModelForbids(t *testing.T) {
 		}
 		return nil
 	})
-	if want := []string{"app.js", "favicon.svg", "i18n.js", "index.html", "style.css"}; err != nil || !slices.Equal(names, want) {
+	if want := []string{"app.js", "favicon.svg", "i18n.de.js", "i18n.en.js", "i18n.js", "index.html", "style.css"}; err != nil || !slices.Equal(names, want) {
 		t.Fatalf("the files of the pages are %v (%v), not %v", names, err, want)
 	}
 }
@@ -411,16 +411,24 @@ func TestARefusalAndAMissingPageAreAnswersAPersonCanRead(t *testing.T) {
 }
 
 func TestThePagesStaySmall(t *testing.T) {
-	total := 0
+	total, texts, biggest := 0, 0, 0
 	_ = fs.WalkDir(web.Pages(), ".", func(p string, d fs.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
 			b, _ := fs.ReadFile(web.Pages(), p)
+			if strings.HasPrefix(p, "i18n.") && p != "i18n.js" { // the texts of one language: a page loads only one
+				texts += len(b)
+				biggest = max(biggest, len(b))
+				return nil
+			}
 			total += len(b)
 		}
 		return nil
 	})
-	if total > 175<<10 {
-		t.Errorf("the pages are %d bytes: no build step, no library, so they stay small", total)
+	if first := total + biggest; first > 175<<10 { // what a page loads when it opens
+		t.Errorf("the pages load %d bytes at the start: no build step, no library, so they stay small", first)
+	}
+	if all := total + texts; all > 200<<10 { // all files together
+		t.Errorf("the files are %d bytes together", all)
 	}
 }
 
@@ -433,15 +441,13 @@ func TestTheTwoLanguagesHaveTheSameKeysAndThePageAsksForNoOther(t *testing.T) {
 		}
 		return string(b)
 	}
-	js := read("i18n.js")
 	block := func(name string) map[string]bool {
-		i := strings.Index(js, "const "+name+" = {")
-		j := strings.Index(js[i:], "\n  };")
-		if i < 0 || j < 0 {
+		js := read("i18n." + name + ".js")
+		if !strings.Contains(js, "add('"+name+"', {") {
 			t.Fatalf("no dictionary %s", name)
 		}
 		keys := map[string]bool{}
-		for _, m := range regexp.MustCompile(`'([a-z0-9.]+)':`).FindAllStringSubmatch(js[i:i+j], -1) {
+		for _, m := range regexp.MustCompile(`'([a-z0-9.]+)':`).FindAllStringSubmatch(js, -1) {
 			keys[m[1]] = true
 		}
 		return keys
