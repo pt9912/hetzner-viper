@@ -88,6 +88,7 @@ func (p *process) Output() io.Reader { return p.out }
 func (p *process) Input() io.Writer  { return p.in }
 func (p *process) Interrupt() error  { return interrupt(p.cmd) }
 func (p *process) Kill() error       { return p.cmd.Process.Kill() }
+func (p *process) CloseInput() error { return p.in.Close() }
 
 func (p *process) Wait() int {
 	code := <-p.done

@@ -123,7 +123,10 @@ func (e *uiEditor) Create(_ context.Context, req web.EditRequest) (web.EditResul
 }
 
 // trace is one line of events.log, in the form the runs write: the time, the server ("ui"), the action and the text.
-func (e *uiEditor) trace(text string) {
+func (e *uiEditor) trace(text string) { e.traceAs("edit", text) }
+
+// traceAs is one line of events.log for an action of the pages
+func (e *uiEditor) traceAs(action, text string) {
 	dir := model.StateDir(e.b.env.Home)
 	if os.MkdirAll(dir, 0o700) != nil {
 		return
@@ -133,7 +136,7 @@ func (e *uiEditor) trace(text string) {
 		return
 	}
 	defer func() { _ = f.Close() }() // best effort, like the log of a run
-	fmt.Fprintf(f, "%s %-24s %-9s %s\n", time.Now().Format("2006-01-02T15:04:05-07:00"), "ui", "edit", text)
+	fmt.Fprintf(f, "%s %-24s %-9s %s\n", time.Now().Format("2006-01-02T15:04:05-07:00"), "ui", action, text)
 }
 
 // traceChange says which settings changed in which file, and where the copy is: the names, never a value.

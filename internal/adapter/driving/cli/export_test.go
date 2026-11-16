@@ -236,3 +236,6 @@ func UIEditor(p *Opts, env settings.Env) (*uiEditor, func(string) string) {
 	secrets := &secretValues{}
 	return &uiEditor{b: &uiBackend{o: p.options(), env: env, secrets: secrets}}, secrets.redact
 }
+
+// CheckRemoteCommand is checkRemoteCommand for the tests.
+func CheckRemoteCommand(cmd string) error { return checkRemoteCommand(cmd) }

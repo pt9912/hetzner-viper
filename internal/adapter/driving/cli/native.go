@@ -255,7 +255,19 @@ func nativeSetup(o *options) error {
 	return setup(o, env, o.host().Stdout)
 }
 
+// checkRemoteCommand refuses a command that starts with a dash: ssh reads options after the host as well, and
+// -oProxyCommand=... would run a program on this computer, not on the machine. Write exec -- ... or sh -c '...' for such a command.
+func checkRemoteCommand(cmd string) error {
+	if strings.HasPrefix(strings.TrimLeft(cmd, " \t"), "-") {
+		return fmt.Errorf("viper ssh: the command does not start with a dash (ssh would read it as an option): write exec -- ... or sh -c '...'")
+	}
+	return nil
+}
+
 func nativeSSH(o *options) error {
+	if err := checkRemoteCommand(o.cmd); err != nil {
+		return err
+	}
 	env, err := o.env()
 	if err != nil {
 		return err

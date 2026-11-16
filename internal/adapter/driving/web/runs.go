@@ -28,6 +28,8 @@ type Proc interface {
 	Kill() error
 	// Wait returns the exit status when the process has ended (130: ended by a signal).
 	Wait() int
+	// CloseInput closes the standard input: the process sees the end of it (a run that takes no answer).
+	CloseInput() error
 }
 
 // Spawner starts viper with the arguments (the words after the program name).
@@ -37,7 +39,7 @@ const (
 	flushAfter     = 600 * time.Millisecond // a line that is not finished after this long is shown: it is a question
 	killAfter      = 20 * time.Second       // Ctrl-C is a request; after this the process is killed
 	maxRuns        = 4                      // running at the same time, of the actions; the NATS runs have as many of their own
-	maxFinds       = 1                      // searches for a server type at the same time
+	maxOne         = 1                      // runs of the budgets of one at a time (the search, the build, the start of VS Code)
 	minWordHeld    = 8                      // the last word of an unfinished line is kept back (see splitWord) when it is this long
 	keepFinished   = 20
 	maxRetained    = 1 << 20 // what of the output of a run is kept for a page that attaches late
@@ -67,6 +69,7 @@ type run struct {
 	Sub     string   `json:"sub,omitempty"`  // a NATS run: the subcommand
 	NATS    string   `json:"nats,omitempty"` // and the group
 	Names   []string `json:"-"`              // the machines the run holds
+	noInput bool     // the run takes no answer: its standard input is closed (a command on a machine)
 
 	mu            sync.Mutex
 	proc          Proc // set under mu, once, after the run is in the table
@@ -232,26 +235,29 @@ type runRequest struct {
 	All      bool     `json:"all"`
 	Yes      bool     `json:"yes"`
 	// the image of viper image build (action "image"): its name and the k3d cluster it is put into
-	Tag    string `json:"tag"`
-	K3D    string `json:"k3d"`
-	Upload string `json:"upload"` // the id of a file that was handed over (POST /api/upload)
-	ID     string `json:"id"`     // fetch: the id of the file
-	SHA256 string `json:"sha256"`
+	// the command on a machine (action "ssh"): the text, and the word that is typed
+	Cmd     string `json:"cmd"`
+	Confirm string `json:"confirm"`
+	Tag     string `json:"tag"`
+	K3D     string `json:"k3d"`
+	Upload  string `json:"upload"` // the id of a file that was handed over (POST /api/upload)
+	ID      string `json:"id"`     // fetch: the id of the file
+	SHA256  string `json:"sha256"`
 }
 
 func isAction(a string) bool {
-	return a == "preflight" || a == "up" || a == "down" || a == "nats" || a == "check" || a == "find" || a == "image"
+	return a == "preflight" || a == "up" || a == "down" || a == "nats" || a == "check" || a == "find" || a == "image" || a == "ssh" || a == "vscode"
 }
 
 // isSide says whether the action holds no machine and is no change of a machine: viper nats, viper find and viper image build. They have their own
 // budget of runs and go on when settings are changed.
-func isSide(a string) bool { return a == "nats" || a == "find" || a == "image" }
+func isSide(a string) bool { return a == "nats" || a == "find" || a == "image" || a == "vscode" }
 
 // budgetOf is the group of runs that share a limit: the actions on machines, the runs of NATS, and the search (one at a time: it
 // reads price lists of four providers and shares its cache files).
 func budgetOf(a string) string {
 	switch a {
-	case "nats", "find", "image":
+	case "nats", "find", "image", "vscode":
 		return a
 	}
 	return "action"
@@ -282,31 +288,13 @@ func runArgv(req runRequest, ov Overview) (argv, names []string, err error) {
 		argv, err = build(req)
 		return argv, nil, err
 	}
-	if req.Action == "check" && req.Scope != "group" {
-		return nil, nil, fmt.Errorf("check as a run is for a group (a machine has its own check)")
-	}
-	opts, err := machineOptions(req)
+	opts, err := runOptions(req)
 	if err != nil {
 		return nil, nil, err
 	}
-	argv = []string{req.Action}
-	if req.Scope == "group" {
-		g, ok := findGroup(ov, req.Group)
-		if !ok || len(g.Machines) == 0 {
-			return nil, nil, fmt.Errorf("no such group")
-		}
-		argv = append(argv, "--group", g.Name)
-		names = g.Machines
-	} else {
-		m, ok := findMachine(ov, req.Machine, req.Group)
-		if !ok {
-			return nil, nil, fmt.Errorf("no such machine")
-		}
-		argv = append(argv, m.Name)
-		if m.Group != "" {
-			argv = append(argv, "--in-group", m.Group)
-		}
-		names = []string{m.Name}
+	argv, names, err = targetArgv(req, ov)
+	if err != nil {
+		return nil, nil, err
 	}
 	if req.Action == "up" && req.Scope != "group" {
 		argv = append(argv, "--no-code") // there is no desktop to open VS Code on (a group opens none: that is its default)
@@ -318,6 +306,50 @@ func runArgv(req runRequest, ov Overview) (argv, names []string, err error) {
 	return argv, names, nil
 }
 
+// runOptions are the options of an action on machines (how many at a time, what down does, the command), after the checks of
+// what belongs where.
+func runOptions(req runRequest) ([]string, error) {
+	if req.Action == "check" && req.Scope != "group" {
+		return nil, fmt.Errorf("check as a run is for a group (a machine has its own check)")
+	}
+	if req.Action == "vscode" && req.Scope == "group" {
+		return nil, fmt.Errorf("VS Code opens on one machine")
+	}
+	opts, err := machineOptions(req)
+	if err != nil {
+		return nil, err
+	}
+	cmd, err := commandOptions(req)
+	if err != nil {
+		return nil, err
+	}
+	if cmd != "" {
+		opts = append(opts, cmd)
+	}
+	return opts, nil
+}
+
+// targetArgv is the action and its target (a group, or a machine with its group), and the names the run holds.
+func targetArgv(req runRequest, ov Overview) (argv, names []string, err error) {
+	argv = []string{req.Action}
+	if req.Scope == "group" {
+		g, ok := findGroup(ov, req.Group)
+		if !ok || len(g.Machines) == 0 {
+			return nil, nil, fmt.Errorf("no such group")
+		}
+		return append(argv, "--group", g.Name), g.Machines, nil
+	}
+	m, ok := findMachine(ov, req.Machine, req.Group)
+	if !ok {
+		return nil, nil, fmt.Errorf("no such machine")
+	}
+	argv = append(argv, m.Name)
+	if m.Group != "" {
+		argv = append(argv, "--in-group", m.Group)
+	}
+	return argv, []string{m.Name}, nil
+}
+
 // repoUsable: a repository belongs to up and preflight, and is one word without control characters that is no option and has no
 // credentials in it (the preflight refuses those too; a token must not reach a protocol).
 func repoUsable(req runRequest) bool {
@@ -325,7 +357,7 @@ func repoUsable(req runRequest) bool {
 	if r == "" {
 		return true
 	}
-	if req.Action == "down" || req.Action == "check" || req.Action == "find" || req.Action == "image" || len(r) > 512 || strings.HasPrefix(r, "-") || strings.ContainsFunc(r, func(c rune) bool { return unicode.IsControl(c) || unicode.IsSpace(c) }) {
+	if (req.Action != "up" && req.Action != "preflight") || len(r) > 512 || strings.HasPrefix(r, "-") || strings.ContainsFunc(r, func(c rune) bool { return unicode.IsControl(c) || unicode.IsSpace(c) }) {
 		return false
 	}
 	if i := strings.Index(r, "://"); i >= 0 {
@@ -368,8 +400,8 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	if s.cfg.Readonly && req.Action != "check" && req.Action != "find" { // looking is allowed when the page is read only: the check of a group, and the search of a server type
-		fail(w, http.StatusForbidden, "this page is read only")
+	if !s.mayRun(req) {
+		fail(w, http.StatusForbidden, "this page is read only, or the command needs viper ui --edit and the word run")
 		return
 	}
 	ov, err := s.fresh(r.Context())
@@ -396,6 +428,7 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 	}
 	run := &run{files: files, ID: random(), Action: req.Action, Names: names, state: stateRunning, started: s.cfg.Now(), notify: make(chan struct{})}
 	run.setTarget(req)
+	run.noInput = req.Action == "ssh"
 	if code, msg := s.hold(run); code != 0 {
 		files.remove()
 		fail(w, code, msg)
@@ -409,10 +442,24 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	started = true
+	if run.noInput {
+		_ = proc.CloseInput() // the command reads nothing: it sees the end of its input at once
+	}
+	s.trace(req, names)
 	run.add(s.show("$ viper " + strings.Join(argv, " ") + "\n"))
 	run.setProc(proc)
 	go s.pump(run)
 	reply(w, map[string]string{"id": run.ID})
+}
+
+// mayRun says whether the page may start the action: looking is allowed when it is read only (the check of a group, the search
+// of a server type), and a command on a machine needs --edit and the word run (a brake against a wrong click, not a boundary:
+// the boundary is the key of the session).
+func (s *Server) mayRun(req runRequest) bool {
+	if s.cfg.Readonly && req.Action != "check" && req.Action != "find" {
+		return false
+	}
+	return req.Action != "ssh" || (s.cfg.Editor != nil && req.Confirm == "run")
 }
 
 // hold puts the run in the table if the machines are free: one run per machine, and a limit on the runs at once.
@@ -427,7 +474,7 @@ func (s *Server) hold(r *run) (int, string) {
 		return http.StatusConflict, "settings are being changed: try again in a moment"
 	}
 	active := t.activeOf(r.Action)
-	if what, one := oneAtATime(budgetOf(r.Action)); one && active >= maxFinds {
+	if what, one := oneAtATime(budgetOf(r.Action)); one && active >= maxOne {
 		return http.StatusServiceUnavailable, what + " is going: wait for it, or cancel it"
 	}
 	if active >= maxRuns {
@@ -456,6 +503,8 @@ func oneAtATime(budget string) (string, bool) {
 		return "a search for a server type", true
 	case "image":
 		return "the build of an image", true
+	case "vscode":
+		return "the start of VS Code", true
 	}
 	return "", false
 }
@@ -585,7 +634,9 @@ func (s *Server) flushOpenLine(r *run, pending []byte, held bool) (rest []byte, 
 	if len(keep) > 0 {
 		return keep, true
 	}
-	r.setState(stateWaiting)
+	if !r.noInput {
+		r.setState(stateWaiting)
+	}
 	return nil, false
 }
 
@@ -774,6 +825,10 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.Text) > maxAnswer || strings.ContainsFunc(req.Text, func(c rune) bool { return c < ' ' || c == 0x7f }) {
 		fail(w, http.StatusBadRequest, "the answer is one short line")
+		return
+	}
+	if run.noInput {
+		fail(w, http.StatusConflict, "the run takes no answer")
 		return
 	}
 	if !run.claimQuestion() { // the first of two answers gets it
@@ -988,4 +1043,44 @@ func (r *run) setTarget(req runRequest) {
 	default:
 		r.Machine, r.Group = req.Machine, req.Group
 	}
+}
+
+// maxCommand is the longest command for a machine (bytes).
+const maxCommand = 4096
+
+// commandOptions is --cmd=TEXT of a command on a machine (action ssh), and "" for the others. The text is one line of text
+// without control characters. It may not start with a dash (after blanks): ssh reads options after the host as well, and
+// -oProxyCommand=... would run a program on this computer.
+func commandOptions(req runRequest) (string, error) {
+	if req.Action != "ssh" {
+		if req.Cmd != "" || req.Confirm != "" {
+			return "", fmt.Errorf("a command is for ssh")
+		}
+		return "", nil
+	}
+	c := req.Cmd
+	switch {
+	case strings.TrimSpace(c) == "":
+		return "", fmt.Errorf("give the command")
+	case len(c) > maxCommand || !utf8.ValidString(c):
+		return "", fmt.Errorf("the command is text of up to %d bytes", maxCommand)
+	case strings.ContainsFunc(c, func(r rune) bool { return (unicode.IsControl(r) && r != '\t') || r == 0x7f }):
+		return "", fmt.Errorf("the command is one line without control characters")
+	case strings.HasPrefix(strings.TrimLeft(c, " \t"), "-"):
+		return "", fmt.Errorf("the command does not start with a dash (ssh would read it as an option): write exec -- ... or sh -c '...'")
+	}
+	return "--cmd=" + c, nil
+}
+
+// trace notes a command on a machine and the start of VS Code in events.log: the target and, for a command, its length (the
+// text can hold a secret; it is in the run, which stays in memory)
+func (s *Server) trace(req runRequest, names []string) {
+	if s.cfg.Trace == nil || (req.Action != "ssh" && req.Action != "vscode") {
+		return
+	}
+	what := strings.Join(names, ",")
+	if req.Action == "ssh" {
+		what += fmt.Sprintf(": command of %d bytes", len(req.Cmd))
+	}
+	s.cfg.Trace(req.Action, what)
 }

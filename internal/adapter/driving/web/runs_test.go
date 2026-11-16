@@ -26,10 +26,12 @@ type proc struct {
 	interrupts chan struct{}
 	killed     chan struct{}
 	argv       []string
+	closed     chan struct{} // closed when the server closes the standard input
+	closeOnce  sync.Once
 }
 
 func newProc(argv []string) *proc {
-	p := &proc{code: make(chan int, 1), interrupts: make(chan struct{}, 4), killed: make(chan struct{}, 1), argv: argv}
+	p := &proc{code: make(chan int, 1), interrupts: make(chan struct{}, 4), killed: make(chan struct{}, 1), argv: argv, closed: make(chan struct{})}
 	p.outR, p.outW = io.Pipe()
 	p.inR, p.inW = io.Pipe()
 	return p
@@ -40,6 +42,7 @@ func (p *proc) Input() io.Writer  { return p.inW }
 func (p *proc) Interrupt() error  { p.interrupts <- struct{}{}; return nil }
 func (p *proc) Kill() error       { p.killed <- struct{}{}; p.end(137); return nil }
 func (p *proc) Wait() int         { return <-p.code }
+func (p *proc) CloseInput() error { p.closeOnce.Do(func() { close(p.closed) }); return p.inW.Close() }
 func (p *proc) say(s string)      { _, _ = io.WriteString(p.outW, s) }
 func (p *proc) end(code int)      { _ = p.outW.Close(); p.code <- code }
 
@@ -332,7 +335,7 @@ func TestOneRunPerMachineAndAGroupHoldsItsMembers(t *testing.T) {
 func TestOnlyKnownActionsAndNamesGetAProcess(t *testing.T) {
 	st := live(t, false)
 	for _, body := range []string{
-		`{"action":"ssh","machine":"web"}`, `{"action":"up","machine":"nope"}`, `{"action":"up","machine":"--dir"}`, `{"action":"up","machine":"bad"}`,
+		`{"action":"up","machine":"nope"}`, `{"action":"up","machine":"--dir"}`, `{"action":"up","machine":"bad"}`,
 		`{"action":"up","machine":"web","group":"dev"}`, `{"action":"up","scope":"group","group":"nope"}`, `{"action":"down","machine":"web","repo":"https://x.example/r.git"}`,
 		`{"action":"up","machine":"web","repo":"--evil"}`, `{"action":"up","machine":"web","repo":"a b"}`, `{"action":"up","machine":"web","extra":1}`, `nope`,
 	} {
@@ -708,4 +711,85 @@ func TestAnImageBuildIsOfTheSideHasItsOwnBudgetOfOneAndIsRefusedWhenThePageIsRea
 	}
 	p.end(0)
 	st.attach(t, id).until(t, state("done"))
+}
+
+func TestACommandOnAMachineAndTheStartOfVSCodeBecomeAnArgvAndTheCommandHasItsLimits(t *testing.T) {
+	var traced []string
+	st := liveWith(t, false, func(c *web.Config) {
+		c.Editor = &fakeEditor{}
+		c.Trace = func(action, text string) { traced = append(traced, action+" "+text) }
+	})
+	ok := func(body, want string) *proc {
+		t.Helper()
+		id, code := st.start(t, body)
+		if code != 200 || id == "" {
+			t.Fatalf("%s: %d", body, code)
+		}
+		p := st.spawn.next(t)
+		if got := strings.Join(p.argv, " "); got != want {
+			t.Errorf("%s:\n got  %q\n want %q", body, got, want)
+		}
+		p.end(0)
+		st.attach(t, id).until(t, state("done"))
+		return p
+	}
+	ok(`{"action":"ssh","machine":"web","confirm":"run","cmd":"echo \"a b\"; $X ü --x"}`, `ssh web --cmd=echo "a b"; $X ü --x`)
+	ok(`{"action":"ssh","scope":"group","group":"dev","confirm":"run","cmd":"uptime","parallel":2}`, "ssh --group dev --parallel=2 --cmd=uptime")
+	ok(`{"action":"vscode","machine":"web"}`, "vscode web")
+	if len(traced) != 3 || !strings.HasPrefix(traced[0], "ssh web: command of ") || strings.Contains(strings.Join(traced, "|"), "uptime") || strings.Contains(strings.Join(traced, "|"), "echo") {
+		t.Errorf("events.log: %q", traced)
+	}
+	for _, bad := range []string{
+		`{"action":"ssh","machine":"web","confirm":"run"}`, `{"action":"ssh","machine":"web","confirm":"run","cmd":"   "}`,
+		`{"action":"ssh","machine":"web","confirm":"run","cmd":"-oProxyCommand=id"}`, `{"action":"ssh","machine":"web","confirm":"run","cmd":"  -x"}`, `{"action":"ssh","machine":"web","confirm":"run","cmd":"--x"}`,
+		`{"action":"ssh","machine":"web","confirm":"run","cmd":"a\nb"}`, `{"action":"ssh","machine":"web","confirm":"run","cmd":"a\u0000b"}`, `{"action":"ssh","machine":"web","confirm":"run","cmd":"a\u001bb"}`,
+		`{"action":"ssh","machine":"nope","confirm":"run","cmd":"id"}`, `{"action":"ssh","machine":"web","confirm":"run","cmd":"id","repo":"x"}`,
+		`{"action":"up","machine":"web","cmd":"id"}`, `{"action":"vscode","scope":"group","group":"dev"}`, `{"action":"vscode","machine":"web","cmd":"id"}`,
+	} {
+		if _, code := st.start(t, bad); code != http.StatusBadRequest {
+			t.Errorf("%s: %d", bad, code)
+		}
+	}
+	long := strings.Repeat("a", 4097)
+	if _, code := st.start(t, `{"action":"ssh","machine":"web","confirm":"run","cmd":"`+long+`"}`); code != http.StatusBadRequest {
+		t.Errorf("too long: %d", code)
+	}
+	for _, body := range []string{`{"action":"ssh","machine":"web","cmd":"id"}`, `{"action":"ssh","machine":"web","confirm":"RUN","cmd":"id"}`} {
+		if _, code := st.start(t, body); code != http.StatusForbidden {
+			t.Errorf("without the word %s: %d", body, code)
+		}
+	}
+}
+
+func TestACommandIsRefusedWithoutEditOrWhenReadOnlyTakesNoAnswerAndHoldsTheMachine(t *testing.T) {
+	plain := live(t, false) // no --edit
+	if _, code := plain.start(t, `{"action":"ssh","machine":"web","confirm":"run","cmd":"id"}`); code != http.StatusForbidden {
+		t.Errorf("without --edit: %d", code)
+	}
+	ro := live(t, true)
+	for _, body := range []string{`{"action":"ssh","machine":"web","confirm":"run","cmd":"id"}`, `{"action":"vscode","machine":"web"}`} {
+		if _, code := ro.start(t, body); code != http.StatusForbidden {
+			t.Errorf("read only %s: %d", body, code)
+		}
+	}
+	st := liveWith(t, false, func(c *web.Config) { c.Editor = &fakeEditor{} })
+	id, code := st.start(t, `{"action":"ssh","machine":"web","confirm":"run","cmd":"printf x; sleep 2"}`)
+	if code != 200 {
+		t.Fatalf("ssh: %d", code)
+	}
+	p := st.spawn.next(t)
+	select {
+	case <-p.closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the standard input of the command was not closed")
+	}
+	p.say("x") // an open line: for another run this is a question
+	time.Sleep(900 * time.Millisecond)
+	if _, code := st.start(t, `{"action":"down","machine":"web"}`); code != http.StatusConflict {
+		t.Errorf("down under a command: %d", code)
+	}
+	if code, _ := st.post(t, "/api/answer", `{"id":"`+id+`","text":"y"}`); code != http.StatusConflict {
+		t.Errorf("an answer to a command: %d", code)
+	}
+	p.end(0)
 }

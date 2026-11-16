@@ -259,3 +259,16 @@ func TestDnsNameWithoutDNSGivesTheAddress(t *testing.T) {
 		t.Errorf("running: %q %v", out.String(), err)
 	}
 }
+
+func TestACommandThatStartsWithADashIsRefusedBecauseSshWouldReadItAsAnOption(t *testing.T) {
+	for _, bad := range []string{"-oProxyCommand=id", "  -x", "\t--x", "-"} {
+		if cli.CheckRemoteCommand(bad) == nil {
+			t.Errorf("%q was taken", bad)
+		}
+	}
+	for _, good := range []string{"", "uptime", "exec -- -x", "echo -n a", "sh -c 'id'"} {
+		if err := cli.CheckRemoteCommand(good); err != nil {
+			t.Errorf("%q: %v", good, err)
+		}
+	}
+}

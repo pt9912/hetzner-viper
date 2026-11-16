@@ -26,6 +26,7 @@
     <button type="button" role="tab" id="tab-nats" class="tab" aria-selected="false" aria-controls="page-nats" tabindex="-1" data-i18n="tab.nats">NATS</button>
     <button type="button" role="tab" id="tab-find" class="tab" aria-selected="false" aria-controls="page-find" tabindex="-1" data-i18n="tab.find">Find</button>
     <button type="button" role="tab" id="tab-image" class="tab" aria-selected="false" aria-controls="page-image" tabindex="-1" data-i18n="tab.image">Image</button>
+    <button type="button" role="tab" id="tab-cmd" class="tab" aria-selected="false" aria-controls="page-cmd" tabindex="-1" hidden data-i18n="tab.cmd">Command</button>
     <button type="button" role="tab" id="tab-settings" class="tab" aria-selected="false" aria-controls="page-settings" tabindex="-1" data-i18n="tab.settings">Settings</button>
     <button type="button" role="tab" id="tab-change" class="tab" aria-selected="false" aria-controls="page-change" tabindex="-1" hidden data-i18n="tab.change">Change</button>
     <button type="button" role="tab" id="tab-secrets" class="tab" aria-selected="false" aria-controls="page-secrets" tabindex="-1" hidden data-i18n="tab.secrets">Credentials</button>
@@ -245,6 +246,27 @@
     </form>
     <p id="image-status" role="status" class="muted"></p>
     <pre id="image-out" class="listen" role="region" tabindex="0" aria-labelledby="h-image" aria-live="off"></pre>
+  </section>
+
+  <section id="page-cmd" role="tabpanel" aria-labelledby="tab-cmd" hidden>
+    <h2 id="h-cmd" data-i18n="h.cmd">Run a command on a machine</h2>
+    <p class="muted lead" data-i18n="cmd.intro">Runs one command with viper ssh on a machine or on every machine of a group, as your user on the machine. The output is on the page Runs. Do not write secrets into the command: it is in the run and in the process list of this computer, and viper hides only the secrets of your settings. A command that runs long holds the machine; end it with Cancel, or start it with timeout 60.</p>
+    <form id="cmd-form" class="column" novalidate>
+      <div class="row">
+        <label for="cmd-target" data-i18n="cmd.target">Machine or group</label>
+        <select id="cmd-target"></select>
+      </div>
+      <div class="row">
+        <label for="cmd-text" data-i18n="cmd.text">Command</label>
+        <input type="text" id="cmd-text" size="60" maxlength="4096" spellcheck="false" autocapitalize="off" autocomplete="off">
+      </div>
+      <div class="row">
+        <label for="cmd-word" data-i18n="cmd.wordlabel">Type run to confirm</label>
+        <input type="text" id="cmd-word" size="8" spellcheck="false" autocapitalize="off" autocomplete="off">
+        <button type="submit" id="cmd-go" class="danger" data-i18n="cmd.go">Run the command</button>
+      </div>
+    </form>
+    <p id="cmd-status" role="status" class="muted"></p>
   </section>
 
   <section id="page-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>

@@ -123,6 +123,8 @@ type Config struct {
 	LongestSecret func() int
 	// UploadLife is how long a file that was handed over waits for its message (default 30 minutes).
 	UploadLife time.Duration
+	// Trace writes one line to events.log for an action of the pages (nil: none): the action and what it was for.
+	Trace func(action, text string)
 	// Spawn starts viper for an action (nil: the pages offer none).
 	Spawn Spawner
 	// TokenTTL is how long after the start the one-time key can be exchanged (default one minute).

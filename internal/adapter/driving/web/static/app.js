@@ -4,7 +4,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const { t } = window.viperI18n;
-  const PAGES = ['overview', 'runs', 'nats', 'find', 'image', 'settings', 'change', 'secrets', 'create', 'logs'];
+  const PAGES = ['overview', 'runs', 'nats', 'find', 'image', 'cmd', 'settings', 'change', 'secrets', 'create', 'logs'];
   let overview = { machines: [], groups: [], nats: [] };
   let logText = '';
   let page = 'overview';
@@ -239,6 +239,7 @@
     for (const a of ACTIONS) {
       act.appendChild(button(t('btn.' + a), t('aria.' + a, m.name), () => startRun({ action: a, machine: m.name, group: m.group || '' }), !!m.error || overview.readonly || !!m.busy, kinds[a]));
     }
+    if (m.state === 'ready' && !overview.readonly) { act.appendChild(button(t('btn.vscode'), t('aria.vscode', m.name), () => startRun({ action: 'vscode', machine: m.name, group: m.group || '' }), !!m.error, 'quiet')); }
     act.appendChild(button(t('btn.log'), t('aria.log', m.name), () => { $('log-machine').value = m.name; show('logs'); }, false, 'quiet'));
     if (overview.edit) { act.appendChild(button(t('btn.dup'), t('aria.dup', m.name), () => duplicate('machine', m.name), !!m.error, 'quiet')); }
     return tr;
@@ -303,7 +304,9 @@
     $('tab-create').hidden = !overview.edit;
     $('tab-secrets').hidden = !overview.edit;
     $('tab-change').hidden = !overview.edit;
-    if (!overview.edit && (page === 'create' || page === 'secrets' || page === 'change')) { show('overview'); }
+    $('tab-cmd').hidden = !overview.edit;
+    renderCmdTargets();
+    if (!overview.edit && (page === 'create' || page === 'secrets' || page === 'change' || page === 'cmd')) { show('overview'); }
     renderMachines();
     renderLogChoices();
     renderNats();
@@ -858,6 +861,31 @@
     if (run) { listenAttach(run.id, run.nats); }
   }
 
+  // ---- a command on a machine or on the machines of a group (viper ssh --cmd): the run is shown on the page of the runs ----
+  // the targets are the machines and the groups of the overview; what was chosen stays chosen when the list is made again
+  function renderCmdTargets() {
+    const sel = $('cmd-target');
+    const before = sel.value;
+    sel.textContent = '';
+    const add = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; sel.appendChild(o); };
+    for (const m of overview.machines || []) { if (!m.error) { add('m\t' + m.name + '\t' + (m.group || ''), m.name + (m.group ? ' (' + m.group + ')' : '')); } }
+    for (const g of overview.groups || []) { if ((g.machines || []).length) { add('g\t' + g.name, t('cmd.group', g.name)); } }
+    if (Array.from(sel.options).some((o) => o.value === before)) { sel.value = before; }
+  }
+
+  // the command of the form, or the reason there is none (the server checks it once more)
+  function cmdRequest() {
+    const [kind, name, group] = $('cmd-target').value.split('\t');
+    const cmd = $('cmd-text').value;
+    if (!kind) { return { error: t('cmd.notarget') }; }
+    if (cmd.trim() === '') { return { error: t('cmd.need') }; }
+    if (cmd.trimStart().startsWith('-')) { return { error: t('cmd.dash') }; }
+    if ($('cmd-word').value !== 'run') { return { error: t('cmd.word') }; }
+    const req = { action: 'ssh', cmd, confirm: 'run' };
+    if (kind === 'g') { req.scope = 'group'; req.group = name; } else { req.machine = name; req.group = group || ''; }
+    return { req };
+  }
+
   // ---- the runs of the side with an area of their own on their page: the search for a server type (find) and the build of
   // an image (image). The run is one of the server like any other; the page follows its output and a run that goes on after
   // the page was loaded again. p is the prefix of the elements (find-go, find-stop, find-status, find-out), k the texts ----
@@ -1000,7 +1028,7 @@
   // the box --force and the choice for the registry are for this one request, as the block may be closed
   function addRunOptions(req) {
     const par = $('opt-parallel').value.trim();
-    if (par !== '' && req.scope === 'group' && ['preflight', 'up', 'down', 'check'].includes(req.action)) {
+    if (par !== '' && req.scope === 'group' && ['preflight', 'up', 'down', 'check', 'ssh'].includes(req.action)) {
       const n = Number(par);
       if (!Number.isInteger(n) || n < 1 || n > 64) { return t('opt.parallel.bad'); }
       req.parallel = n;
@@ -1018,7 +1046,7 @@
     const bad = addRunOptions(req);
     if (bad) { show('runs'); $('run-status').textContent = bad; $('run-status').className = 'bad'; return false; }
     const repo = $('repo').value.trim();
-    if (repo && req.action !== 'down' && req.action !== 'nats') { req.repo = repo; }
+    if (repo && (req.action === 'up' || req.action === 'preflight')) { req.repo = repo; }
     $('run-status').textContent = t('status.running');
     $('run-status').className = '';
     try {
@@ -1854,6 +1882,13 @@
   $('log-machine').addEventListener('change', loadLog);
   $('log-full').addEventListener('change', loadLog);
   $('log-filter').addEventListener('input', filterLog);
+  $('cmd-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const q = cmdRequest();
+    $('cmd-status').textContent = q.error || '';
+    if (q.error) { return; }
+    if (await startRun(q.req)) { $('cmd-word').value = ''; } // the word is typed again for the next command
+  });
   dropSetup();
   // the page starts when the texts of its language are there
   window.viperI18n.ready.then(() => {
