@@ -114,3 +114,22 @@ func (r *countingReader) Read(p []byte) (int, error) {
 	}
 	return n, nil
 }
+
+// a machine that a group names: the title of the window and the status line say the same, with the group
+func TestTheTitleAndTheStatusLineNameTheGroupOfTheMachine(t *testing.T) {
+	o, calls, h, env := terminalSetup(t, true)
+	if err := os.MkdirAll(filepath.Join(o.Dir, "groups"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(o.Dir, "groups", "dev.env"), []byte("GROUP_MACHINES=web\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var screen bytes.Buffer
+	h.Stdout, h.IsTerminal = &screen, func() bool { return true }
+	if err := cli.TerminalHere(o, env); err != nil {
+		t.Fatal(err)
+	}
+	if screen.String() != "\x1b]0;web (dev)\x07" || !strings.Contains(strings.Join((*calls)[0], " "), "set-option status-left '[web (dev)] '") {
+		t.Errorf("title %q, call %q", screen.String(), (*calls)[0])
+	}
+}

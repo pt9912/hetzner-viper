@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -284,10 +285,28 @@ func TestSshRefusesACommandThatStartsWithADashInEveryForm(t *testing.T) {
 
 func TestTheTmuxStatusLineNamesTheMachineAndTheGroupAndNoQuoteGetsThroughTheShell(t *testing.T) {
 	got := cli.TmuxCommand("web (dev)")
-	if !strings.HasSuffix(got, `\; set-option status-left-length 40 \; set-option status-left '[web (dev)] '`) || !strings.Contains(got, "exec tmux new-session -A -s claude") {
+	if !strings.HasSuffix(got, `\; set-option status-left-length 80 \; set-option status-left '[web (dev)] '`) || !strings.Contains(got, "exec tmux new-session -A -s claude") {
 		t.Errorf("%s", got)
 	}
 	if got := cli.TmuxCommand("a'; id; '\n"); strings.Count(got, "'") != 2 || strings.Contains(got, "\n") {
 		t.Errorf("a quote or a line break got through: %q", got)
+	}
+}
+
+// the shell of the machine reads the command: \; is the argument ; for tmux, and the label is one argument
+func TestTheShellOfTheMachineGivesTmuxTheArgumentsOneByOne(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sh")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "tmux"), []byte("#!/bin/sh\nfor a in \"$@\"; do printf '<%s>' \"$a\"; done\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", "-c", cli.TmuxCommand("web (dev)"))
+	cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "HOME="+t.TempDir())
+	out, err := cmd.Output()
+	want := "<new-session><-A><-s><claude><;><set-option><status-left-length><80><;><set-option><status-left><[web (dev)] >"
+	if err != nil || string(out) != want {
+		t.Errorf("%q %v", out, err)
 	}
 }

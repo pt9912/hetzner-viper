@@ -173,7 +173,7 @@ func tmuxCommand(label string) string {
 		}
 		return r
 	}, label)
-	return `cd "$(cat ~/.config/viper/workdir 2>/dev/null)" 2>/dev/null; exec tmux new-session -A -s claude \; set-option status-left-length 40 \; set-option status-left '[` + label + `] '`
+	return `cd "$(cat ~/.config/viper/workdir 2>/dev/null)" 2>/dev/null; exec tmux new-session -A -s claude \; set-option status-left-length 80 \; set-option status-left '[` + label + `] '`
 }
 
 // machineLabel is the machine, and with its group in brackets ("web (dev)"): the title of a window and the status line of tmux.
@@ -221,6 +221,9 @@ func connectAs(o *options, env settings.Env, interactive, child bool) error {
 		return err
 	}
 	if child {
+		if o.tmux && interactive { // the title of the window: the label is the one of the status line (the group of the settings)
+			fmt.Fprintf(o.host().Stdout, "\x1b]0;%s\x07", machineLabel(o.machine, c.Group))
+		}
 		return o.host().RunTool("ssh", args...)
 	}
 	// ssh takes our place (like exec): signals and the exit code are its own

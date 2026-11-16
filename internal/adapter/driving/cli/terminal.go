@@ -52,9 +52,6 @@ func terminalWords(exe, machine, group, dir string) []string {
 func terminalHere(o *options, env settings.Env) error {
 	o.tmux, o.cmd = true, ""
 	interactive := o.host().IsTerminal()
-	if interactive { // the title of the window (the terminal programs know this sequence)
-		fmt.Fprintf(o.host().Stdout, "\x1b]0;%s\x07", machineLabel(o.machine, o.within))
-	}
 	err := connectAs(o, env, interactive, true)
 	if err == nil || !interactive {
 		return err
