@@ -80,11 +80,11 @@
 
 ## 8 Offen (zu entscheiden)
 
-1. **`--force` ohne weitere Bestätigung** (Vorschlag: ja, die Rückfrage von `viper down` bleibt) oder mit einem getippten Wort in der Oberfläche?
-2. **Ausgabe von `find` als Text** (Vorschlag) oder zuerst `viper find --json` und dann eine Tabelle der Seite (mehr Arbeit, aber „übernehmen“ möglich)?
-3. **Ort der Optionen:** ein Block in der Übersicht (Vorschlag) oder je Knopf ein kleines Menü?
-4. **`--parallel` bei „Prüfen“ der Gruppe:** gleicher Wert wie bei den anderen (Vorschlag).
-5. **Reihenfolge der Stufen 3 bis 5** nach Stufe 2.
+1. **`--force` ohne weitere Bestätigung** (Vorschlag: ja, die Rückfrage von `viper down` bleibt) oder mit einem getippten Wort in der Oberfläche? *Gebaut nach dem Vorschlag (ohne Wort); vom Benutzer nicht ausdrücklich bestätigt.*
+2. **Ausgabe von `find` als Text** (Vorschlag) oder zuerst `viper find --json` und dann eine Tabelle der Seite (mehr Arbeit, aber „übernehmen“ möglich)? *Gebaut: Text.*
+3. **Ort der Optionen:** ein Block in der Übersicht (Vorschlag) oder je Knopf ein kleines Menü? *Gebaut: Block.*
+4. **`--parallel` bei „Prüfen“ der Gruppe:** gleicher Wert wie bei den anderen (Vorschlag). *Gebaut so.*
+5. **Reihenfolge der Stufen 3 bis 5** nach Stufe 2: **offen**.
 
 ## 9 Prüfung
 
