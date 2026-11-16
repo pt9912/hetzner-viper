@@ -32,6 +32,8 @@ type Service struct {
 	inbox *Inbox
 	peers *Peers
 	now   func() time.Time
+	// lastErrText is the last error of the connection (under mu): the message of a connection that does not come up
+	lastErrText string
 
 	// notify pushes a message into the session (nil: no channel); jitter waits before an answer to a presence query.
 	notify func(content string, meta map[string]string) error
@@ -88,6 +90,7 @@ func (s *Service) Connect(ctx context.Context) error {
 		nats.RetryOnFailedConnect(true), nats.MaxReconnects(-1), nats.ReconnectWait(2 * time.Second),
 		nats.IgnoreAuthErrorAbort(), // the server may not know the key yet (viper up of the machine is running): keep trying
 		nats.ErrorHandler(func(_ *nats.Conn, _ *nats.Subscription, err error) { s.logError("server error", err) }),
+		nats.ReconnectErrHandler(func(_ *nats.Conn, err error) { s.noteError(err) }), // a connection that does not come up: why
 		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) { s.logError("disconnected", err) }),
 		nats.ReconnectHandler(func(*nats.Conn) {
 			s.log.Printf("reconnected")
@@ -136,14 +139,35 @@ func (s *Service) connectionState() string {
 	if s.nc == nil {
 		return "no connection was made"
 	}
+	var state string
 	switch s.nc.Status() {
 	case nats.CLOSED:
-		return "the connection is closed; restart the Claude Code session"
+		state = "the connection is closed; restart the Claude Code session"
 	case nats.CONNECTING, nats.RECONNECTING, nats.DRAINING_SUBS, nats.DRAINING_PUBS:
-		return "it is retried; try again in a moment"
+		state = "it is retried; try again in a moment"
 	default:
-		return s.nc.Status().String()
+		state = s.nc.Status().String()
 	}
+	if e := s.lastError(); e != "" {
+		state += "; the last error: " + e
+	}
+	return state
+}
+
+// noteError keeps the last error of the connection: a connection that does not come up says why.
+func (s *Service) noteError(err error) {
+	if err == nil {
+		return
+	}
+	s.mu.Lock()
+	s.lastErrText = err.Error()
+	s.mu.Unlock()
+}
+
+func (s *Service) lastError() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastErrText
 }
 
 // logLimited writes a line about a message of another machine: the first ones, then one of a hundred, so that
@@ -162,6 +186,7 @@ func (s *Service) logError(what string, err error) {
 	if err == nil {
 		return // a disconnect that was asked for
 	}
+	s.noteError(err)
 	s.mu.Lock()
 	s.errs++
 	n := s.errs

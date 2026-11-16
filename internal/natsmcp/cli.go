@@ -109,8 +109,9 @@ func connectOnce(ctx context.Context, cfg Config, stderr io.Writer, tap func(See
 	deadline := time.Now().Add(10 * time.Second)
 	for !s.Connected() {
 		if time.Now().After(deadline) || ctx.Err() != nil {
+			state := s.connectionState() // before Close: afterwards it always says "closed"
 			s.nc.Close()
-			return nil, errors.New("not connected to the NATS server (" + s.connectionState() + ")")
+			return nil, errors.New("not connected to the NATS server (" + state + ")")
 		}
 		time.Sleep(50 * time.Millisecond)
 	}

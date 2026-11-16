@@ -267,3 +267,26 @@ func TestWatchAllShowsTheMessagesBetweenOtherMachinesOnceAndOnlyWithTheOption(t 
 		t.Errorf("%+v", msgs)
 	}
 }
+
+// A connection that does not come up says why (the last error), and not only that it is "closed": the state was read after the
+// connection was closed, which made every failure look like a lost connection that needs a new session.
+func TestAConnectionThatDoesNotComeUpSaysWhy(t *testing.T) {
+	if testing.Short() {
+		t.Skip("waits 10 seconds for the connection")
+	}
+	ms := setup(t, nil)
+	cfg := ms["a"].svc.Cfg()
+	cfg.URL = "nats://127.0.0.1:1" // nobody listens
+	var out, errb bytes.Buffer
+	code := natsmcp.RunCLI(context.Background(), cfg, "topics", nil, strings.NewReader(""), &out, &errb)
+	msg := errb.String()
+	if code == 0 || !strings.Contains(msg, "not connected to the NATS server") {
+		t.Fatalf("code %d: %q", code, msg)
+	}
+	if strings.Contains(msg, "the connection is closed; restart the Claude Code session") {
+		t.Errorf("a connection that never came up is no lost connection: %q", msg)
+	}
+	if !strings.Contains(msg, "the last error:") {
+		t.Errorf("no reason: %q", msg)
+	}
+}

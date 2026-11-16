@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.189  
+Version: 1.190  
 Software-Version: v0.31.0  
 Stand: 16.11.2026  
 
@@ -1803,3 +1803,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.187 | v0.30.0 | Release v0.30.0: die Änderung 1.186 (neuer Befehl `viper terminal` und der Knopf „Terminal“ in der Übersicht). |
 | 1.188 | nach v0.30.0 | `viper terminal` und `viper ssh --tmux`: der Titel des Fensters und die Statuszeile von tmux nennen den Rechner und die Gruppe. |
 | 1.189 | v0.31.0 | Release v0.31.0: die Änderung 1.188 (`viper terminal` und `viper ssh --tmux`: Titel des Fensters und Statuszeile von tmux nennen Rechner und Gruppe). |
+| 1.190 | nach v0.31.0 | `viper nats` und `viper-nats-mcp`: Kommt die Verbindung zum NATS-Server nicht zustande, nennt die Meldung den letzten Fehler (zum Beispiel „connection refused“ oder ein abgelaufenes Zertifikat); bisher stand immer „the connection is closed; restart the Claude Code session“. |
