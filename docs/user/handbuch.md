@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.194  
+Version: 1.195  
 Software-Version: v0.33.0  
 Stand: 16.11.2026  
 
@@ -88,7 +88,7 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 
 **Mit Homebrew** (Linux und macOS): `brew install pt9912/viper/viper`, dann `viper version` (Update: `brew upgrade viper`). Sonst von Hand:
 
-1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.20.1_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.20.1_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
+1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.33.0_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.33.0_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
 2. Prüfen Sie die Datei und machen Sie sie ausführbar:
    ```bash
    grep viper_v0.33.0_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
@@ -211,7 +211,7 @@ Sie können `viper` auch ohne Cloud-Konto ausprobieren und nutzen: Der Rechner i
 #### Vorgehen
 
 1. **Image beschaffen.** Diesen Schritt können Sie überspringen: Ohne `COMPOSE_IMAGE` bzw. `K8S_IMAGE` nimmt `viper` das veröffentlichte Image seiner Version, `ghcr.io/pt9912/viper-machine:<Version>`; Compose und ein k3d-Cluster laden es selbst. Für ein eigenes Image oder eine andere Version gehen Sie auf einem von zwei Wegen:
-   * **Laden** (schnell): `docker pull ghcr.io/pt9912/viper-machine:v0.33.0`, mit der Version, die `viper version` meldet. Bei Docker Compose können Sie das Laden `viper up` überlassen: Der Name in `COMPOSE_IMAGE` genügt. Das Image ist öffentlich und mehrere GB groß; das Image gibt es für **amd64 und arm64**, Docker wählt die passende Architektur. Der Name ist `ghcr.io/pt9912/viper-machine:v0.20.1`. Bei k3d (vorher `k3d cluster create viper`) lädt der Cluster das öffentliche Image beim ersten Start selbst, das dauert etwa eine halbe Minute; Sie müssen es nicht einspielen. **Jeder Knoten lädt es für sich**, auf dem ein Rechner läuft: Hat der Cluster mehrere Knoten, laden Sie es mehrmals aus dem Internet. Dann spielen Sie das geladene Image mit `k3d image import ghcr.io/pt9912/viper-machine:v0.20.1 -c viper` ein (kopiert es auf alle Knoten, ohne Download) oder nutzen eine gemeinsame Registry (unten).
+   * **Laden** (schnell): `docker pull ghcr.io/pt9912/viper-machine:v0.33.0`, mit der Version, die `viper version` meldet. Bei Docker Compose können Sie das Laden `viper up` überlassen: Der Name in `COMPOSE_IMAGE` genügt. Das Image ist öffentlich und mehrere GB groß; das Image gibt es für **amd64 und arm64**, Docker wählt die passende Architektur. Der Name ist `ghcr.io/pt9912/viper-machine:v0.33.0`. Bei k3d (vorher `k3d cluster create viper`) lädt der Cluster das öffentliche Image beim ersten Start selbst, das dauert etwa eine halbe Minute; Sie müssen es nicht einspielen. **Jeder Knoten lädt es für sich**, auf dem ein Rechner läuft: Hat der Cluster mehrere Knoten, laden Sie es mehrmals aus dem Internet. Dann spielen Sie das geladene Image mit `k3d image import ghcr.io/pt9912/viper-machine:v0.33.0 -c viper` ein (kopiert es auf alle Knoten, ohne Download) oder nutzen eine gemeinsame Registry (unten).
    * **Bauen:** `viper image build` (für k3d: erst `k3d cluster create viper`, dann `viper image build --k3d viper`). Das dauert beim ersten Mal einige Minuten. Die Ausgabe nennt den Namen des Images.
 2. **Einstellungen** in `machines/lokal.env.local` (die Zeile mit dem Image brauchen Sie nur für ein selbst gebautes oder anderes Image):
 
@@ -1810,3 +1810,4 @@ Zu `viper` gibt es keinen eigenen Support. Prüfen Sie bei Problemen zuerst Kapi
 | 1.192 | v0.32.0 | Release v0.32.0: die Änderungen 1.190 und 1.191 (`viper nats`: eine Verbindung, die nicht zustande kommt, nennt den letzten Fehler und bei einem unbekannten Schlüssel den Weg `revoke`, dann `init`; `viper nats listen --no-presence` und das Kästchen beim Mitlesen blenden den Heartbeat aus). |
 | 1.193 | nach v0.32.0 | `viper ui`: Das Kästchen „Beim Start eines Laufs auf dieser Seite bleiben“ im Menü „Optionen für Läufe“ verhindert den Wechsel auf die Seite „Läufe“. |
 | 1.194 | v0.33.0 | Release v0.33.0: die Änderung 1.193 (`viper ui`: Das Kästchen „Beim Start eines Laufs auf dieser Seite bleiben“ im Menü „Optionen für Läufe“). |
+| 1.195 | nach v0.33.0 | Berichtigt: Der Name des Images (`ghcr.io/pt9912/viper-machine:v0.33.0`, auch beim Einspielen mit `k3d image import`) und das Beispiel für den Dateinamen der Binaries standen noch auf v0.20.1; sie nennen jetzt die Software-Version. |

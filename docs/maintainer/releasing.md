@@ -35,6 +35,7 @@ Die Handbuch-Version (`Version:` im Kopf von `docs/user/handbuch.md`) zählt una
    * `Software-Version:` auf die neue Version setzen und `Stand:` aktualisieren,
    * `Version:` um eins erhöhen und in Kapitel 11 eine Zeile mit der neuen Software-Version und der Änderung für die Nutzer ergänzen,
    * die Dateinamen der Binaries im Abschnitt „`viper` installieren“ auf die neue Version setzen,
+   * **jede** Nennung der Version in den Beispielen ersetzen, nicht nur die der letzten Version: `grep -n 'v0\.[0-9]*\.[0-9]*' docs/user/handbuch.md` außerhalb der Versionstabelle (Kapitel 11) darf nur die neue Version zeigen (Dateinamen der Binaries, `ghcr.io/pt9912/viper-machine:vX.Y.Z` beim Laden und bei `k3d image import`),
    * das als eigenen Commit nach `main` pushen und den CI-Lauf abwarten.
 
 ## Release erstellen
