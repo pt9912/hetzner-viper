@@ -75,8 +75,10 @@ test('the options of runs reach viper: parallel for a group, force and the regis
   ui = await startUI([], 0);
   await page.goto(ui.start);
   await expect(page.locator('#machines tr.unit')).toHaveCount(3);
+  await expect(page.locator('#opt-active')).toHaveText('');
   await page.locator('#run-options summary').click();
   await page.fill('#opt-parallel', '2');
+  await expect(page.locator('#opt-active')).toHaveText('(1 set)');
   await page.getByRole('button', { name: 'Up group dev', exact: true }).click();
   await expect(page.locator('#run-output')).toContainText('$ viper up --group dev --parallel=2');
   await expect(page.locator('#run-status')).toContainText(/Ended|exit/, { timeout: 60_000 });
@@ -85,9 +87,11 @@ test('the options of runs reach viper: parallel for a group, force and the regis
   await page.click('#tab-overview');
   await page.check('#opt-force');
   await page.selectOption('#opt-registry', 'keep');
+  await expect(page.locator('#opt-active')).toHaveText('(3 set)');
   await page.getByRole('button', { name: 'Down web', exact: true }).click();
   await expect(page.locator('#run-output')).toContainText('$ viper down web --force --keep-registry');
   await expect(page.locator('#opt-force')).not.toBeChecked();
+  await expect(page.locator('#opt-active')).toHaveText('(1 set)'); // force and registry are back, parallel stays
   expect(await page.locator('#run-output').innerText()).not.toMatch(/whole number|unknown option|exclude each other/i);
   if (await page.locator('#run-cancel').isEnabled()) { await page.click('#run-cancel'); } // down asks for DELETE: it waits
 });

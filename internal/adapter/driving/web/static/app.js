@@ -295,6 +295,7 @@
 
   function renderAll() {
     renderVersion();
+    showActiveOptions();
     $('opt-force').disabled = $('opt-registry').disabled = !!overview.readonly; // down is no action of a page that is read only
     $('tab-create').hidden = !overview.edit;
     $('tab-secrets').hidden = !overview.edit;
@@ -953,6 +954,13 @@
   let runs = [];
   let current = '';
 
+  // the summary of the block says how many options are set, also when the block is closed
+  function showActiveOptions() {
+    const n = ($('opt-parallel').value.trim() !== '') + $('opt-force').checked + ($('opt-registry').value !== '');
+    $('opt-active').textContent = n ? t('opt.active', n) : '';
+  }
+  ['opt-parallel', 'opt-force', 'opt-registry'].forEach((id) => { $(id).addEventListener('input', showActiveOptions); $(id).addEventListener('change', showActiveOptions); });
+
   // the options for runs (the block of the overview): how many machines of a group at a time, and what down does. The box --force is
   // read now and cleared at once: it is for this one request
   // the box --force and the choice for the registry are for this one request, as the block may be closed
@@ -967,6 +975,7 @@
       if ($('opt-force').checked) { req.force = true; $('opt-force').checked = false; }
       if ($('opt-registry').value) { req.registry = $('opt-registry').value; $('opt-registry').value = ''; }
     }
+    showActiveOptions();
     return '';
   }
 
