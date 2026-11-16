@@ -45,52 +45,52 @@ func TestLinuxTakesTheFirstProgramOfTheListAndGivesTheWordsOneByOne(t *testing.T
 		{[]string{"xterm"}, "/bin/xterm", []string{"-e"}},
 	}
 	for _, c := range cases {
-		name, args, err := terminal.Plan("linux", env(map[string]string{"DISPLAY": ":0"}), have(c.have...), wordsOf())
+		name, args, err := terminal.Plan("linux", env(map[string]string{"DISPLAY": ":0"}), have(c.have...), "", wordsOf())
 		if err != nil || name != c.want || !reflect.DeepEqual(args, append(append([]string(nil), c.before...), wordsOf()...)) {
 			t.Errorf("%v: %s %q %v", c.have, name, args, err)
 		}
 	}
 	// x-terminal-emulator is not used: its -e may take one line of a shell
-	if _, _, err := terminal.Plan("linux", env(map[string]string{"WAYLAND_DISPLAY": "wayland-0"}), have("x-terminal-emulator"), wordsOf()); err == nil || !strings.Contains(err.Error(), "no terminal program found") {
+	if _, _, err := terminal.Plan("linux", env(map[string]string{"WAYLAND_DISPLAY": "wayland-0"}), have("x-terminal-emulator"), "", wordsOf()); err == nil || !strings.Contains(err.Error(), "no terminal program found") {
 		t.Errorf("x-terminal-emulator: %v", err)
 	}
 }
 
 func TestVIPERTERMINALNamesOneOfTheListAndNothingElse(t *testing.T) {
 	e := env(map[string]string{"DISPLAY": ":0", "VIPER_TERMINAL": "xterm"})
-	name, _, err := terminal.Plan("linux", e, have("gnome-terminal", "xterm"), wordsOf())
+	name, _, err := terminal.Plan("linux", e, have("gnome-terminal", "xterm"), "", wordsOf())
 	if err != nil || name != "/bin/xterm" {
 		t.Errorf("%s %v", name, err)
 	}
 	for _, bad := range []string{"/bin/sh", "sh -c id", "rm", "x-terminal-emulator"} {
 		e := env(map[string]string{"DISPLAY": ":0", "VIPER_TERMINAL": bad})
-		if _, _, err := terminal.Plan("linux", e, have("gnome-terminal", "xterm", "rm", "sh", "x-terminal-emulator"), wordsOf()); err == nil || !strings.Contains(err.Error(), "VIPER_TERMINAL") {
+		if _, _, err := terminal.Plan("linux", e, have("gnome-terminal", "xterm", "rm", "sh", "x-terminal-emulator"), "", wordsOf()); err == nil || !strings.Contains(err.Error(), "VIPER_TERMINAL") {
 			t.Errorf("%q: %v", bad, err)
 		}
 	}
-	if _, _, err := terminal.Plan("linux", env(map[string]string{"DISPLAY": ":0", "VIPER_TERMINAL": "kitty"}), have("xterm"), wordsOf()); err == nil || !strings.Contains(err.Error(), "no terminal program found") {
+	if _, _, err := terminal.Plan("linux", env(map[string]string{"DISPLAY": ":0", "VIPER_TERMINAL": "kitty"}), have("xterm"), "", wordsOf()); err == nil || !strings.Contains(err.Error(), "no terminal program found") {
 		t.Errorf("a named program that is missing: %v", err)
 	}
 }
 
 func TestWithoutADesktopThereIsNoWindow(t *testing.T) {
-	if _, _, err := terminal.Plan("linux", env(nil), have("xterm"), wordsOf()); err == nil || !strings.Contains(err.Error(), "no desktop") {
+	if _, _, err := terminal.Plan("linux", env(nil), have("xterm"), "", wordsOf()); err == nil || !strings.Contains(err.Error(), "no desktop") {
 		t.Errorf("%v", err)
 	}
 }
 
 func TestWindowsUsesWindowsTerminalAndRefusesASemicolon(t *testing.T) {
-	name, args, err := terminal.Plan("windows", env(nil), have("wt.exe"), wordsOf())
+	name, args, err := terminal.Plan("windows", env(nil), have("wt.exe"), "", wordsOf())
 	if err != nil || name != "/bin/wt.exe" || !reflect.DeepEqual(args, append([]string{"new-tab"}, wordsOf()...)) {
 		t.Errorf("%s %q %v", name, args, err)
 	}
-	if _, _, err := terminal.Plan("windows", env(nil), have(), wordsOf()); err == nil || !strings.Contains(err.Error(), "Windows Terminal not found") {
+	if _, _, err := terminal.Plan("windows", env(nil), have(), "", wordsOf()); err == nil || !strings.Contains(err.Error(), "Windows Terminal not found") {
 		t.Errorf("%v", err)
 	}
-	if _, _, err := terminal.Plan("windows", env(nil), have("wt.exe"), []string{"C:\\a;b\\viper.exe", "terminal", "web"}); err == nil || !strings.Contains(err.Error(), ";") {
+	if _, _, err := terminal.Plan("windows", env(nil), have("wt.exe"), "", []string{"C:\\a;b\\viper.exe", "terminal", "web"}); err == nil || !strings.Contains(err.Error(), ";") {
 		t.Errorf("a semicolon: %v", err)
 	}
-	if _, _, err := terminal.Plan("plan9", env(nil), have(), wordsOf()); err == nil {
+	if _, _, err := terminal.Plan("plan9", env(nil), have(), "", wordsOf()); err == nil {
 		t.Errorf("an unknown system")
 	}
 }
@@ -135,7 +135,7 @@ func TestLaunchDoesNotWaitForTheWindowAndReportsAProgramThatFailsAtOnce(t *testi
 		return filepath.Join(dir, n), nil
 	}}
 	start := nowMs()
-	if err := l.Launch(wordsOf()); err != nil {
+	if err := l.Launch("", wordsOf()); err != nil {
 		t.Fatal(err)
 	}
 	if took := nowMs() - start; took > 3000 {
@@ -146,7 +146,7 @@ func TestLaunchDoesNotWaitForTheWindowAndReportsAProgramThatFailsAtOnce(t *testi
 		t.Errorf("arguments %q", got)
 	}
 	fake("xterm", "echo 'cannot open display' >&2\nexit 1\n")
-	err := l.Launch(wordsOf())
+	err := l.Launch("", wordsOf())
 	var exit *exec.ExitError
 	if err == nil || !strings.Contains(err.Error(), "cannot open display") || errors.As(err, &exit) {
 		t.Errorf("a failure at once is said, and is no *exec.ExitError (viper would take it for the status of a program): %v", err)
@@ -159,9 +159,38 @@ func TestLaunchDoesNotWaitForTheWindowAndReportsAProgramThatFailsAtOnce(t *testi
 		}
 	}
 	fake("xterm", "exit 0\n")
-	if err := l.Launch(wordsOf()); err != nil {
+	if err := l.Launch("", wordsOf()); err != nil {
 		t.Errorf("a program that hands the window over: %v", err)
 	}
 }
 
 func nowMs() int64 { return time.Now().UnixMilli() }
+
+func TestTheTitleOfTheWindowGoesToTheProgramsThatHaveAFlagForIt(t *testing.T) {
+	e := env(map[string]string{"DISPLAY": ":0"})
+	cases := []struct {
+		program string
+		want    []string
+	}{
+		{"gnome-terminal", []string{"--title=web (dev)", "--"}},
+		{"xfce4-terminal", []string{"--title=web (dev)", "-x"}},
+		{"kitty", []string{"--title", "web (dev)"}},
+		{"alacritty", []string{"--title", "web (dev)", "-e"}},
+		{"xterm", []string{"-T", "web (dev)", "-e"}},
+		{"konsole", []string{"-e"}},
+		{"wezterm", []string{"start", "--"}},
+	}
+	for _, c := range cases {
+		_, args, err := terminal.Plan("linux", e, have(c.program), "web (dev)", wordsOf())
+		if err != nil || !reflect.DeepEqual(args, append(append([]string(nil), c.want...), wordsOf()...)) {
+			t.Errorf("%s: %q %v", c.program, args, err)
+		}
+	}
+	_, args, err := terminal.Plan("windows", env(nil), have("wt.exe"), "web (dev)", wordsOf())
+	if err != nil || !reflect.DeepEqual(args[:4], []string{"new-tab", "--title", "web (dev)", "--suppressApplicationTitle"}) {
+		t.Errorf("wt: %q %v", args, err)
+	}
+	if _, _, err := terminal.Plan("windows", env(nil), have("wt.exe"), "a;b", wordsOf()); err == nil {
+		t.Errorf("a semicolon in the title")
+	}
+}

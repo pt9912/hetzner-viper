@@ -110,9 +110,10 @@ test('the button Terminal opens a window of the desktop that runs viper terminal
   const fs = await import('node:fs');
   await expect.poll(() => fs.existsSync(log), { timeout: 20_000 }).toBe(true);
   const args = fs.readFileSync(log, 'utf8').trim().split('\n');
-  // gnome-terminal -- VIPER terminal web --here --dir DIR
-  expect(args[0]).toBe('--');
-  expect(args.slice(2, 6)).toEqual(['terminal', 'web', '--here', '--dir']);
-  expect(args[6]).toBe(ui.work);
-  expect(args[1]).toMatch(/viper(\.exe)?$/);
+  // gnome-terminal --title=web -- VIPER terminal web --here --dir DIR
+  expect(args[0]).toBe('--title=web');
+  expect(args[1]).toBe('--');
+  expect(args.slice(3, 7)).toEqual(['terminal', 'web', '--here', '--dir']);
+  expect(args[7]).toBe(ui.work);
+  expect(args[2]).toMatch(/viper(\.exe)?$/);
 });

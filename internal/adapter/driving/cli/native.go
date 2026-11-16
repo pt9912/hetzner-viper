@@ -163,7 +163,26 @@ func exists(p string) bool { _, err := os.Stat(p); return err == nil }
 
 // tmuxCommand attaches to the tmux session "claude" of the machine, the one the terminals of VS Code
 // use, or creates it in the work directory (a command over ssh does not start in it by itself).
-const tmuxCommand = `cd "$(cat ~/.config/viper/workdir 2>/dev/null)" 2>/dev/null; exec tmux new-session -A -s claude`
+//
+// The status line of the session names the machine (and the group), so that a window shows where it belongs: set-option after
+// the new-session (\; for the shell of the machine) works for a new session and for one that is attached.
+func tmuxCommand(label string) string {
+	label = strings.Map(func(r rune) rune {
+		if r == '\'' || r < ' ' || r == 0x7f {
+			return -1
+		}
+		return r
+	}, label)
+	return `cd "$(cat ~/.config/viper/workdir 2>/dev/null)" 2>/dev/null; exec tmux new-session -A -s claude \; set-option status-left-length 40 \; set-option status-left '[` + label + `] '`
+}
+
+// machineLabel is the machine, and with its group in brackets ("web (dev)"): the title of a window and the status line of tmux.
+func machineLabel(machine, group string) string {
+	if group == "" {
+		return machine
+	}
+	return machine + " (" + group + ")"
+}
 
 // connect opens a shell or runs one command on a machine, with the machine's own ssh config
 // (pinned host key). With a command ssh gets a terminal only if we have one.
@@ -188,7 +207,7 @@ func connectAs(o *options, env settings.Env, interactive, child bool) error {
 		if !interactive {
 			return fmt.Errorf("viper ssh: --tmux needs a terminal")
 		}
-		command = tmuxCommand
+		command = tmuxCommand(machineLabel(o.machine, c.Group))
 	}
 	var args []string
 	if command != "" && interactive {

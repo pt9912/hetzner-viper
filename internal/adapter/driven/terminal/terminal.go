@@ -22,19 +22,21 @@ import (
 // x-terminal-emulator is not among them: its -e takes only one line of a shell for some of the programs it stands for.
 func programs() []program {
 	return []program{
-		{"gnome-terminal", []string{"--"}},
-		{"konsole", []string{"-e"}},
-		{"xfce4-terminal", []string{"-x"}},
-		{"kitty", nil},
-		{"alacritty", []string{"-e"}},
-		{"wezterm", []string{"start", "--"}},
-		{"xterm", []string{"-e"}},
+		{"gnome-terminal", []string{"--"}, func(t string) []string { return []string{"--title=" + t} }},
+		{"konsole", []string{"-e"}, nil},
+		{"xfce4-terminal", []string{"-x"}, func(t string) []string { return []string{"--title=" + t} }},
+		{"kitty", nil, func(t string) []string { return []string{"--title", t} }},
+		{"alacritty", []string{"-e"}, func(t string) []string { return []string{"--title", t} }},
+		{"wezterm", []string{"start", "--"}, nil},
+		{"xterm", []string{"-e"}, func(t string) []string { return []string{"-T", t} }},
 	}
 }
 
 type program struct {
 	name   string
 	before []string
+	// title gives the arguments that set the title of the window (before the words); nil: the program has none
+	title func(string) []string
 }
 
 // Names are the terminal programs VIPER_TERMINAL may name.
@@ -48,21 +50,21 @@ func Names() []string {
 
 // Plan is the program and the arguments that open a window that runs the words, for Linux and Windows. getenv reads the
 // environment, lookPath finds a program. The error says what is missing, in a form that is shown to the person.
-func Plan(goos string, getenv func(string) string, lookPath func(string) (string, error), words []string) (string, []string, error) {
+func Plan(goos string, getenv func(string) string, lookPath func(string) (string, error), title string, words []string) (string, []string, error) {
 	if len(words) == 0 {
 		return "", nil, errors.New("nothing to run")
 	}
 	switch goos {
 	case "windows":
-		return planWindows(lookPath, words)
+		return planWindows(lookPath, title, words)
 	case "linux", "freebsd", "openbsd", "netbsd":
-		return planUnix(getenv, lookPath, words)
+		return planUnix(getenv, lookPath, title, words)
 	}
 	return "", nil, fmt.Errorf("a terminal window is not supported on %s", goos)
 }
 
-func planWindows(lookPath func(string) (string, error), words []string) (string, []string, error) {
-	for _, w := range words {
+func planWindows(lookPath func(string) (string, error), title string, words []string) (string, []string, error) {
+	for _, w := range append([]string{title}, words...) {
 		if strings.Contains(w, ";") {
 			return "", nil, fmt.Errorf("Windows Terminal reads ; as a separator: %q cannot be passed", w)
 		}
@@ -71,10 +73,14 @@ func planWindows(lookPath func(string) (string, error), words []string) (string,
 	if err != nil {
 		return "", nil, errors.New("Windows Terminal not found: install it, or run viper ssh --tmux in a terminal yourself")
 	}
-	return path, append([]string{"new-tab"}, words...), nil
+	args := []string{"new-tab"}
+	if title != "" {
+		args = append(args, "--title", title, "--suppressApplicationTitle")
+	}
+	return path, append(args, words...), nil
 }
 
-func planUnix(getenv func(string) string, lookPath func(string) (string, error), words []string) (string, []string, error) {
+func planUnix(getenv func(string) string, lookPath func(string) (string, error), title string, words []string) (string, []string, error) {
 	if getenv("DISPLAY") == "" && getenv("WAYLAND_DISPLAY") == "" {
 		return "", nil, errors.New("no desktop: viper ui runs without DISPLAY or WAYLAND_DISPLAY, so there is no window to open")
 	}
@@ -86,7 +92,11 @@ func planUnix(getenv func(string) string, lookPath func(string) (string, error),
 		}
 		known = true
 		if path, err := lookPath(p.name); err == nil {
-			return path, append(append([]string(nil), p.before...), words...), nil
+			var args []string
+			if title != "" && p.title != nil {
+				args = p.title(title)
+			}
+			return path, append(append(args, p.before...), words...), nil
 		}
 	}
 	if want != "" && !known {
@@ -123,8 +133,8 @@ type Launcher struct {
 // Launch opens a window that runs the words. It does not wait for the window: it waits one second to see whether the program
 // ends at once with an error, and says so (a window that stays open is the usual case). The window is in a session of its own
 // and outlives viper.
-func (l Launcher) Launch(words []string) error {
-	name, args, err := l.plan(words)
+func (l Launcher) Launch(title string, words []string) error {
+	name, args, err := l.plan(title, words)
 	if err != nil {
 		return err
 	}
@@ -165,9 +175,9 @@ func cleanup(f *os.File) {
 	_ = os.Remove(f.Name())
 }
 
-func (l Launcher) plan(words []string) (string, []string, error) {
+func (l Launcher) plan(title string, words []string) (string, []string, error) {
 	if l.GOOS != "darwin" {
-		return Plan(l.GOOS, l.Getenv, l.LookPath, words)
+		return Plan(l.GOOS, l.Getenv, l.LookPath, title, words)
 	}
 	path, err := macFile(words)
 	if err != nil {

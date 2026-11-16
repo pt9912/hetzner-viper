@@ -220,8 +220,8 @@ func TestConnectWithTmuxAttachesToTheClaudeSession(t *testing.T) {
 	if err := cli.Connect(o, env, true); err != nil {
 		t.Fatal(err)
 	}
-	want := [][]string{{"ssh", "-t", "-F", cfg, "hetzner-claude-web", cli.TmuxCommand}}
-	if !reflect.DeepEqual(*calls, want) || !strings.Contains(cli.TmuxCommand, "new-session -A -s claude") {
+	want := [][]string{{"ssh", "-t", "-F", cfg, "hetzner-claude-web", cli.TmuxCommand("web")}}
+	if !reflect.DeepEqual(*calls, want) || !strings.Contains(cli.TmuxCommand("web"), "new-session -A -s claude") {
 		t.Errorf("calls %q", *calls)
 	}
 	if err := cli.Connect(o, env, false); err == nil || !strings.Contains(err.Error(), "needs a terminal") {
@@ -279,5 +279,15 @@ func TestSshRefusesACommandThatStartsWithADashInEveryForm(t *testing.T) {
 		if err := cli.NativeSSH(o); err == nil || !strings.Contains(err.Error(), "dash") {
 			t.Errorf("%+v: %v", o, err)
 		}
+	}
+}
+
+func TestTheTmuxStatusLineNamesTheMachineAndTheGroupAndNoQuoteGetsThroughTheShell(t *testing.T) {
+	got := cli.TmuxCommand("web (dev)")
+	if !strings.HasSuffix(got, `\; set-option status-left-length 40 \; set-option status-left '[web (dev)] '`) || !strings.Contains(got, "exec tmux new-session -A -s claude") {
+		t.Errorf("%s", got)
+	}
+	if got := cli.TmuxCommand("a'; id; '\n"); strings.Count(got, "'") != 2 || strings.Contains(got, "\n") {
+		t.Errorf("a quote or a line break got through: %q", got)
 	}
 }

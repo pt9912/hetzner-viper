@@ -233,3 +233,9 @@ Ein unabhängiger Prüfer hat §11 gegen den Code gelesen und mit einem gebauten
 | Meldung ohne das Präfix `viper: ` zitiert; Reihenfolge der Prüfungen in `connect` | §11.1a berichtigt |
 | `tmux` im Abbild ist belegt (`image/Dockerfile`) | als *[V]* geführt; ProxyCommand mit `-t` bleibt *[?]* |
 | Fehlt: Stellen in `runs.go`, `trace`, README, Hilfe, Tabelle der Befehle im Handbuch, `aria-label` | §11.4 ergänzt |
+
+### 11.7 Titel und Statuszeile (Wunsch des Benutzers, 16.11.2026: „im Terminalfenster ist nicht zu erkennen, zu welcher Gruppe/Maschine es gehört“)
+
+* **Titel des Fensters:** `viper terminal --here` schreibt vor `ssh` die Escape-Folge für den Titel (`ESC ] 0 ; web (dev) BEL`, nur wenn ein Terminal da ist), und `viper terminal` gibt dem Terminalprogramm den Titel mit, wo es ein Flag dafür gibt: `gnome-terminal --title=`, `xfce4-terminal --title=`, `kitty --title`, `alacritty --title`, `xterm -T`, Windows Terminal `--title … --suppressApplicationTitle` (`konsole`, `wezterm` und das macOS-Terminal nur über die Escape-Folge). *[?]* Ob ein Programm den Titel später überschreibt, ist nur mit echten Fenstern zu sehen.
+* **Statuszeile von tmux:** `viper ssh --tmux` hängt `\; set-option status-left-length 40 \; set-option status-left '[web (dev)] '` an den Befehl: Die Namen kommen aus den Dateien (kein `'`; die Funktion entfernt es und Steuerzeichen trotzdem), der Befehl ändert nichts an der Maschine und gilt für eine neue wie für eine vorhandene Sitzung.
+* **Der Prompt der Maschine** wird nicht geändert: Er käme aus der Einrichtung der Maschine und gälte nur für neue Rechner.

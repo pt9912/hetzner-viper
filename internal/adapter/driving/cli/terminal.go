@@ -34,7 +34,7 @@ func nativeTerminal(o *options) error {
 	if err != nil {
 		return err
 	}
-	return o.host().Services.LaunchTerminal(terminalWords(exe, o.machine, o.within, dir))
+	return o.host().Services.LaunchTerminal(machineLabel(o.machine, c.Group), terminalWords(exe, o.machine, o.within, dir))
 }
 
 // terminalWords is the program of the window: viper terminal NAME [--in-group G] --here --dir DIR, every word as it is (the
@@ -52,6 +52,9 @@ func terminalWords(exe, machine, group, dir string) []string {
 func terminalHere(o *options, env settings.Env) error {
 	o.tmux, o.cmd = true, ""
 	interactive := o.host().IsTerminal()
+	if interactive { // the title of the window (the terminal programs know this sequence)
+		fmt.Fprintf(o.host().Stdout, "\x1b]0;%s\x07", machineLabel(o.machine, o.within))
+	}
 	err := connectAs(o, env, interactive, true)
 	if err == nil || !interactive {
 		return err

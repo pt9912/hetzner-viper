@@ -48,7 +48,7 @@ func terminalSetup(t *testing.T, ssh bool) (*cli.Opts, *[][]string, *cli.Host, s
 func TestViperTerminalOpensTheWindowWithTheWordsAndNeedsTheSshConfig(t *testing.T) {
 	o, _, h, env := terminalSetup(t, false)
 	var opened [][]string
-	h.Services.LaunchTerminal = func(words []string) error { opened = append(opened, words); return nil }
+	h.Services.LaunchTerminal = func(title string, words []string) error { opened = append(opened, words); return nil }
 	if err := cli.Terminal(o, env); err == nil || !strings.Contains(err.Error(), "run viper up web first") {
 		t.Fatalf("without the SSH config: %v", err)
 	}
@@ -66,8 +66,16 @@ func TestHereRunsSshAsAChildAndWaitsForEnterOnlyOnAnError(t *testing.T) {
 	h.Stderr = &errOut
 	h.IsTerminal = func() bool { return true }
 	h.Stdin = strings.NewReader("\n")
+	var screen bytes.Buffer
+	h.Stdout = &screen
 	if err := cli.TerminalHere(o, env); err != nil {
 		t.Fatal(err)
+	}
+	if screen.String() != "\x1b]0;web\x07" {
+		t.Errorf("the title of the window: %q", screen.String())
+	}
+	if !strings.Contains(strings.Join((*calls)[0], " "), "set-option status-left '[web] '") {
+		t.Errorf("the status line names the machine: %q", (*calls)[0])
 	}
 	if execs != 0 || len(*calls) != 1 || (*calls)[0][0] != "ssh" || !strings.Contains(strings.Join((*calls)[0], " "), "exec tmux new-session -A -s claude") || (*calls)[0][1] != "-t" {
 		t.Errorf("exec %d, calls %q", execs, *calls)

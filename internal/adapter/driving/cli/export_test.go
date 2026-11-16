@@ -125,8 +125,8 @@ func IsNative(name string) bool { return commands()[name].run != nil }
 // ManualLines are the lines of the help text that name the manual.
 func ManualLines(version string) string { return manualLines(version) }
 
-// TmuxCommand is what viper ssh --tmux runs on the machine.
-const TmuxCommand = tmuxCommand
+// TmuxCommand is what viper ssh --tmux runs on the machine, for the label of the status line.
+func TmuxCommand(label string) string { return tmuxCommand(label) }
 
 // MachineRun is the command for one machine of a group.
 type MachineRun func(ctx context.Context, p *Opts, env settings.Env, out, errOut io.Writer) error
