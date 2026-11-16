@@ -192,7 +192,7 @@ func (s *Server) beginEdit() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	for _, o := range t.runs {
-		if o.Action != "nats" && o.current() != stateDone {
+		if !isSide(o.Action) && o.current() != stateDone {
 			return false
 		}
 	}

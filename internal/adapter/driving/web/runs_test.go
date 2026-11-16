@@ -598,3 +598,87 @@ func TestOnlyTheGroupOfTheRunShowsItsMachinesBusy(t *testing.T) {
 	p2.end(0)
 	st.attach(t, id2).until(t, state("done"))
 }
+
+func TestTheOptionsOfMachineRunsAndTheQuestionOfFindBecomeAnArgvAndOnlyForWhatTheyAreFor(t *testing.T) {
+	st := live(t, false)
+	ok := func(body, want string) {
+		t.Helper()
+		id, code := st.start(t, body)
+		if code != 200 || id == "" {
+			t.Fatalf("%s: %d", body, code)
+		}
+		p := st.spawn.next(t)
+		if got := strings.Join(p.argv, " "); got != want {
+			t.Errorf("%s:\n got  %q\n want %q", body, got, want)
+		}
+		p.end(0)
+		st.attach(t, id).until(t, state("done"))
+	}
+	ok(`{"action":"up","scope":"group","group":"dev","parallel":3}`, "up --group dev --parallel=3")
+	ok(`{"action":"check","scope":"group","group":"dev","parallel":64}`, "check --group dev --parallel=64")
+	ok(`{"action":"down","machine":"web","force":true,"registry":"keep"}`, "down web --force --keep-registry")
+	ok(`{"action":"down","scope":"group","group":"dev","registry":"delete","parallel":2}`, "down --group dev --parallel=2 --delete-registry")
+	ok(`{"action":"find","cpu":4,"ram":16,"disk":80,"arch":"x86","provider":"hetzner","location":"fsn1","vat":19}`, "find --cpu=4 --ram=16 --disk=80 --arch=x86 --provider=hetzner --location=fsn1 --vat=19")
+	ok(`{"action":"find","ram":0.5,"vat":0}`, "find --ram=0.5 --vat=0")
+	for _, bad := range []string{
+		`{"action":"up","machine":"web","parallel":2}`, `{"action":"up","scope":"group","group":"dev","parallel":65}`, `{"action":"up","scope":"group","group":"dev","parallel":-1}`,
+		`{"action":"up","machine":"web","force":true}`, `{"action":"preflight","machine":"web","registry":"delete"}`, `{"action":"down","machine":"web","registry":"x --y"}`,
+		`{"action":"find"}`, `{"action":"find","cpu":-1}`, `{"action":"find","cpu":2,"location":"fsn1"}`, `{"action":"find","cpu":2,"provider":"x"}`,
+		`{"action":"find","cpu":2,"arch":"mips"}`, `{"action":"find","cpu":2,"provider":"aws","location":"--evil"}`, `{"action":"find","cpu":2,"provider":"aws","location":"A B"}`,
+		`{"action":"find","cpu":2,"vat":101}`, `{"action":"find","cpu":2,"machine":"web","repo":"x"}`, `{"action":"find","cpu":99999}`,
+	} {
+		if _, code := st.start(t, bad); code != http.StatusBadRequest {
+			t.Errorf("%s: %d", bad, code)
+		}
+	}
+}
+
+func TestFindRunsAreOfTheSideAndAllowedWhenTheWholePageIsReadOnlyAndTakeNoMachine(t *testing.T) {
+	ro := live(t, true)
+	id, code := ro.start(t, `{"action":"find","cpu":2}`)
+	if code != 200 {
+		t.Fatalf("read only: %d", code)
+	}
+	p := ro.spawn.next(t)
+	// a find run holds no machine: a run of a machine goes on next to it (here a normal page: the budget of the side is apart)
+	st := live(t, false)
+	if _, code := st.start(t, `{"action":"find","ram":8}`); code != 200 {
+		t.Fatalf("find: %d", code)
+	}
+	_ = st.spawn.next(t)
+	for i := 0; i < 4; i++ { // the actions have a budget of four: the runs of the side do not use it
+		if _, code := st.start(t, `{"action":"nats","nats":"dev","sub":"peers"}`); code != 200 {
+			t.Fatalf("nats %d: %d", i, code)
+		}
+		_ = st.spawn.next(t)
+	}
+	if _, code := st.start(t, `{"action":"up","machine":"web"}`); code != 200 {
+		t.Errorf("an action next to a search and four NATS runs: %d", code)
+	}
+	p.end(0)
+	ro.attach(t, id).until(t, state("done"))
+}
+
+func TestOnlyOneSearchGoesAtATimeAndItBlocksNeitherTheNATSRunsNorTheEditing(t *testing.T) {
+	ed := &fakeEditor{}
+	st := liveWith(t, false, func(c *web.Config) { c.Editor = ed })
+	if _, code := st.start(t, `{"action":"find","cpu":2}`); code != 200 {
+		t.Fatalf("find: %d", code)
+	}
+	p := st.spawn.next(t)
+	if _, code := st.start(t, `{"action":"find","ram":4}`); code != http.StatusServiceUnavailable {
+		t.Errorf("a second search: %d", code)
+	}
+	for i := 0; i < 4; i++ { // four NATS runs are their own budget
+		if _, code := st.start(t, `{"action":"nats","nats":"dev","sub":"peers"}`); code != 200 {
+			t.Fatalf("nats %d: %d", i, code)
+		}
+		_ = st.spawn.next(t)
+	}
+	// a search goes on while credentials are changed: it holds no machine and reads no settings that change
+	body := `{"kind":"credential","target":"base","name":"","fields":{"HCLOUD_TOKEN":"abcdefgh12345"},"etag":"x"}`
+	if code, _ := st.post(t, "/api/edit/apply", body); code != 200 {
+		t.Errorf("changing a credential under a search: %d", code)
+	}
+	p.end(0)
+}

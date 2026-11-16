@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -35,6 +37,7 @@ const (
 	flushAfter     = 600 * time.Millisecond // a line that is not finished after this long is shown: it is a question
 	killAfter      = 20 * time.Second       // Ctrl-C is a request; after this the process is killed
 	maxRuns        = 4                      // running at the same time, of the actions; the NATS runs have as many of their own
+	maxFinds       = 1                      // searches for a server type at the same time
 	minWordHeld    = 8                      // the last word of an unfinished line is kept back (see splitWord) when it is this long
 	keepFinished   = 20
 	maxRetained    = 1 << 20 // what of the output of a run is kept for a page that attaches late
@@ -213,15 +216,42 @@ type runRequest struct {
 	Text    string `json:"text"`    // the message
 	Timeout int    `json:"timeout"` // seconds
 	Query   bool   `json:"query"`
-	All     bool   `json:"all"`
-	Yes     bool   `json:"yes"`
-	Upload  string `json:"upload"` // the id of a file that was handed over (POST /api/upload)
-	ID      string `json:"id"`     // fetch: the id of the file
-	SHA256  string `json:"sha256"`
+	// the options of the actions on machines: how many machines of a group at a time (a group only), down without the check for
+	// unsaved work, and what down does with a registry that viper made (delete or keep; "" asks)
+	Parallel int    `json:"parallel"`
+	Force    bool   `json:"force"`
+	Registry string `json:"registry"`
+	// the question of viper find (action "find"): what the server type needs, and where to look
+	CPU      int      `json:"cpu"`
+	RAM      float64  `json:"ram"`
+	Disk     int      `json:"disk"`
+	Arch     string   `json:"arch"`
+	Provider string   `json:"provider"`
+	Location string   `json:"location"`
+	VAT      *float64 `json:"vat"`
+	All      bool     `json:"all"`
+	Yes      bool     `json:"yes"`
+	Upload   string   `json:"upload"` // the id of a file that was handed over (POST /api/upload)
+	ID       string   `json:"id"`     // fetch: the id of the file
+	SHA256   string   `json:"sha256"`
 }
 
 func isAction(a string) bool {
-	return a == "preflight" || a == "up" || a == "down" || a == "nats" || a == "check"
+	return a == "preflight" || a == "up" || a == "down" || a == "nats" || a == "check" || a == "find"
+}
+
+// isSide says whether the action holds no machine and is no change of a machine: viper nats and viper find. They have their own
+// budget of runs and go on when settings are changed.
+func isSide(a string) bool { return a == "nats" || a == "find" }
+
+// budgetOf is the group of runs that share a limit: the actions on machines, the runs of NATS, and the search (one at a time: it
+// reads price lists of four providers and shares its cache files).
+func budgetOf(a string) string {
+	switch a {
+	case "nats", "find":
+		return a
+	}
+	return "action"
 }
 
 // argv is the command line of the request, or the reason there is none. Names come from the files (the overview), so none
@@ -233,8 +263,16 @@ func runArgv(req runRequest, ov Overview) (argv, names []string, err error) {
 	if !repoUsable(req) {
 		return nil, nil, fmt.Errorf("the repository is not usable here")
 	}
+	if req.Action == "find" {
+		argv, err = findArgv(req)
+		return argv, nil, err
+	}
 	if req.Action == "check" && req.Scope != "group" {
 		return nil, nil, fmt.Errorf("check as a run is for a group (a machine has its own check)")
+	}
+	opts, err := machineOptions(req)
+	if err != nil {
+		return nil, nil, err
 	}
 	argv = []string{req.Action}
 	if req.Scope == "group" {
@@ -258,6 +296,7 @@ func runArgv(req runRequest, ov Overview) (argv, names []string, err error) {
 	if req.Action == "up" && req.Scope != "group" {
 		argv = append(argv, "--no-code") // there is no desktop to open VS Code on (a group opens none: that is its default)
 	}
+	argv = append(argv, opts...)
 	if req.Repo != "" {
 		argv = append(argv, "--repo="+req.Repo)
 	}
@@ -271,7 +310,7 @@ func repoUsable(req runRequest) bool {
 	if r == "" {
 		return true
 	}
-	if req.Action == "down" || req.Action == "check" || len(r) > 512 || strings.HasPrefix(r, "-") || strings.ContainsFunc(r, func(c rune) bool { return unicode.IsControl(c) || unicode.IsSpace(c) }) {
+	if req.Action == "down" || req.Action == "check" || req.Action == "find" || len(r) > 512 || strings.HasPrefix(r, "-") || strings.ContainsFunc(r, func(c rune) bool { return unicode.IsControl(c) || unicode.IsSpace(c) }) {
 		return false
 	}
 	if i := strings.Index(r, "://"); i >= 0 {
@@ -314,7 +353,7 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	if s.cfg.Readonly && req.Action != "check" { // looking is allowed when the page is read only: the check of a group
+	if s.cfg.Readonly && req.Action != "check" && req.Action != "find" { // looking is allowed when the page is read only: the check of a group, and the search of a server type
 		fail(w, http.StatusForbidden, "this page is read only")
 		return
 	}
@@ -375,14 +414,17 @@ func (s *Server) hold(r *run) (int, string) {
 	if t.closing {
 		return http.StatusServiceUnavailable, "viper ui is ending"
 	}
-	if t.editing && r.Action != "nats" {
+	if t.editing && !isSide(r.Action) {
 		return http.StatusConflict, "settings are being changed: try again in a moment"
 	}
 	active := 0
 	for _, o := range t.runs {
-		if o.current() != stateDone && (o.Action == "nats") == (r.Action == "nats") {
+		if o.current() != stateDone && budgetOf(o.Action) == budgetOf(r.Action) {
 			active++
 		}
+	}
+	if budgetOf(r.Action) == "find" && active >= maxFinds {
+		return http.StatusServiceUnavailable, "a search for a server type is going: wait for it, or cancel it"
 	}
 	if active >= maxRuns {
 		return http.StatusServiceUnavailable, "too many runs at once"
@@ -594,8 +636,10 @@ func (s *Server) finish(r *run, code int) {
 	r.changed()
 	r.mu.Unlock()
 	s.release(r)
-	s.forgetOverview() // what the run did (a machine made or deleted) is in the next overview
-	r.files.finish()   // the text and the file that went out; a fetched file stays for the page to take
+	if !isSide(r.Action) {
+		s.forgetOverview() // what the run did (a machine made or deleted) is in the next overview
+	}
+	r.files.finish() // the text and the file that went out; a fetched file stays for the page to take
 }
 
 func (r *run) cancel() {
@@ -790,4 +834,85 @@ func (s *Server) endRuns(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// machineOptions are the options of preflight, up, down and check that the page may add: --parallel for a group, --force and the
+// registry for down. Each is checked for what it is.
+func machineOptions(req runRequest) ([]string, error) {
+	var out []string
+	if req.Parallel != 0 {
+		if req.Scope != "group" || req.Parallel < 1 || req.Parallel > 64 {
+			return nil, fmt.Errorf("--parallel is a whole number from 1 to 64, for a group")
+		}
+		out = append(out, "--parallel="+strconv.Itoa(req.Parallel))
+	}
+	if req.Force {
+		if req.Action != "down" {
+			return nil, fmt.Errorf("--force is for down")
+		}
+		out = append(out, "--force")
+	}
+	switch req.Registry {
+	case "":
+	case "delete", "keep":
+		if req.Action != "down" {
+			return nil, fmt.Errorf("the registry is for down")
+		}
+		out = append(out, "--"+req.Registry+"-registry")
+	default:
+		return nil, fmt.Errorf("the registry is deleted or kept")
+	}
+	return out, nil
+}
+
+var findLocation = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,40}$`)
+
+// findArgv is viper find with the question of the request. The words are fixed or numbers, so none is an option of its own.
+func findArgv(req runRequest) ([]string, error) {
+	if req.CPU < 0 || req.CPU > 4096 || req.Disk < 0 || req.Disk > 100000 || req.RAM < 0 || req.RAM > 65536 || math.IsNaN(req.RAM) {
+		return nil, fmt.Errorf("the CPUs, the RAM and the disk are positive numbers (CPUs and disk whole)")
+	}
+	if req.CPU == 0 && req.RAM == 0 && req.Disk == 0 {
+		return nil, fmt.Errorf("give at least one of the CPUs, the RAM and the disk")
+	}
+	argv := []string{"find"}
+	if req.CPU > 0 {
+		argv = append(argv, "--cpu="+strconv.Itoa(req.CPU))
+	}
+	if req.RAM > 0 {
+		argv = append(argv, "--ram="+strconv.FormatFloat(req.RAM, 'f', -1, 64))
+	}
+	if req.Disk > 0 {
+		argv = append(argv, "--disk="+strconv.Itoa(req.Disk))
+	}
+	switch req.Arch {
+	case "":
+	case "x86", "arm":
+		argv = append(argv, "--arch="+req.Arch)
+	default:
+		return nil, fmt.Errorf("the architecture is x86 or arm")
+	}
+	switch req.Provider {
+	case "":
+		if req.Location != "" {
+			return nil, fmt.Errorf("a location needs a provider: the names differ by provider")
+		}
+	case "hetzner", "aws", "azure", "gcp":
+		argv = append(argv, "--provider="+req.Provider)
+	default:
+		return nil, fmt.Errorf("the provider is hetzner, aws, azure or gcp")
+	}
+	if req.Location != "" {
+		if !findLocation.MatchString(req.Location) {
+			return nil, fmt.Errorf("the location is a name like fsn1 or eu-central-1")
+		}
+		argv = append(argv, "--location="+req.Location)
+	}
+	if req.VAT != nil {
+		if math.IsNaN(*req.VAT) || *req.VAT < 0 || *req.VAT > 100 {
+			return nil, fmt.Errorf("the VAT is a percentage from 0 to 100")
+		}
+		argv = append(argv, "--vat="+strconv.FormatFloat(*req.VAT, 'f', -1, 64))
+	}
+	return argv, nil
 }

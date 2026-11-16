@@ -1,6 +1,6 @@
 # Plan: fehlende Befehle in der Oberfläche (`viper ui`)
 
-**Stand:** Entwurf (16.11.2026). Gehört zu [`ui.md`](ui.md) (Funktion, Sicherheit, Aufbau) und [`ui-gestaltung.md`](ui-gestaltung.md) (Gestalt). Stufe 1 und 2 sind entschieden (Benutzer, 16.11.2026); Stufe 3 bis 5 sind Vorschläge. *[V]* heißt: im Code gelesen; *[?]* ist eine Vermutung, die vor dem Bauen zu prüfen ist.
+**Stand:** Entwurf (16.11.2026), einmal unabhängig gegen den Code und das gebaute Programm geprüft (§9), dessen Funde eingearbeitet sind. Gehört zu [`ui.md`](ui.md) (Funktion, Sicherheit, Aufbau) und [`ui-gestaltung.md`](ui-gestaltung.md) (Gestalt). Stufe 1 und 2 sind entschieden (Benutzer, 16.11.2026); Stufe 3 bis 5 sind Vorschläge. *[V]* heißt: im Code gelesen; *[?]* ist eine Vermutung, die vor dem Bauen zu prüfen ist.
 
 **Ziel:** Befehle von `viper`, die in der Oberfläche fehlen, dort anbieten, **ohne** einen zweiten Weg zu schaffen: Was die Oberfläche tut, tut sie als Unterprozess `viper <befehl>` (`ui.md` §4), mit denselben Prüfungen, Rückfragen und Protokollen wie am Terminal.
 
@@ -29,42 +29,44 @@
 
 ## 3 Stufe 1: die Seite „Finden“ (`viper find`)
 
-**Befehl** *[V]*: `viper find [--cpu N] [--ram GB] [--disk GB] [--arch x86|arm] [--provider P] [--location L] [--vat PERCENT]`; mindestens eines von `--cpu`, `--ram`, `--disk`; `--location` braucht `--provider`; liest nur, braucht keinen Rechner und nur öffentliche Preisquellen (Zugangsdaten machen die Angaben genauer).
+**Befehl** *[V]*: `viper find [--cpu N] [--ram GB] [--disk GB] [--arch x86|arm] [--provider P] [--location L] [--vat PERCENT]`; mindestens eines von `--cpu`, `--ram`, `--disk`; `--location` braucht `--provider`; braucht keinen Rechner, aber **eine `.env.local`** im Einstellungsverzeichnis (ohne sie: „No .env.local: run viper setup“, Exit 1). *[V]* Es ist **nicht rein lesend**: Es legt Preislisten als Dateien im Cache-Verzeichnis des Benutzers ab (`os.UserCacheDir()/viper`: `aws-ec2-*.json`, `azure-*.json`, `gcp-*.json`, `hetzner-web.json`, `ecb-rates.json`), und Azure und GCP fragen mit den vorhandenen Zugangsdaten der Cloud ab (`AZURE_SUBSCRIPTION_ID`, `GCP_PROJECT` aus der `.env.local`); die Ausgabe hat kein Token gezeigt. Das erste Mal lädt es große Preislisten (Meldungen „reading the price list … a large file“ auf stderr). Exit-Status: 0 Treffer, **1 kein Treffer oder ein Anbieter übersprungen** (kein Fehler der Seite), 2 Fehler der Befehlszeile, 130 abgebrochen. Die Ausgabe ist eine Tabelle in Festbreite mit `€` und `*`, einer Zeile `PROVIDER=… SERVER_TYPE=…` und Hinweisen; **englisch auch in der deutschen Oberfläche**; stdout und stderr kommen in einem Strom.
 
 **Seite:** ein neuer Reiter „Finden“ (immer sichtbar, auch mit `--readonly`):
 
 * **Formular:** CPUs (ganze Zahl 1 bis 4096), RAM in GB (Zahl bis 65536, auch 0,5), Platte in GB (ganze Zahl bis 100000), Architektur (alle, x86, arm), Anbieter (alle, hetzner, aws, azure, gcp), Standort (Text nach `[a-z0-9-]`, höchstens 41 Zeichen; nur mit Anbieter), Mehrwertsteuer in Prozent (0 bis 100; leer: der Satz des Projekts, sonst keine). Die Seite meldet fehlende Pflichtangaben selbst; der Server prüft alles noch einmal.
 * **Ablauf:** „Suchen“ startet `viper find …` als Lauf (`POST /api/run`, Aktion `find`). Die Ausgabe erscheint in einem **eigenen Bereich dieser Seite** (`pre`, `role=region`, Festbreite, die Tabelle von `viper find` bleibt lesbar), nicht im Terminal der Läufe; der Lauf steht zusätzlich in der Liste der Läufe. „Abbrechen“ schickt Strg-C. Die Seite bleibt auf „Finden“ und merkt sich die Eingaben (bis zum Neuladen).
 * **Wiederaufnahme:** Läuft beim Öffnen der Seite ein `find`-Lauf, hängt sich der Bereich daran (wie das Mitlesen in NATS).
-* **Wartezeit:** Die Preise kommen aus dem Netz (Sekunden, bei AWS länger). Die Seite sagt „Suche läuft …“ und zeigt die Ausgabe, sobald sie kommt.
+* **Wartezeit:** Die Preise kommen aus dem Netz (Sekunden, beim ersten Mal bei AWS und GCP länger). Die Seite sagt „Suche läuft …“ (`role=status`) und zeigt die Ausgabe, sobald sie kommt. **Exit 1 ist „kein Treffer oder ein Anbieter ohne Preisliste“**, nicht „Fehler“: die Seite sagt es neutral („Die Suche hat nichts gefunden oder einen Anbieter übersprungen: siehe die Ausgabe“). Nach dem Ende geht der Fokus auf den Bereich der Ausgabe.
+* **Eingabe:** Der Standort steht in Kleinbuchstaben (`[a-z0-9-]`, nicht mit `-` beginnend, höchstens 41 Zeichen; die echten Namen `fsn1`, `eu-central-1b`, `germanywestcentral`, `europe-west3-b` passen); ein Großbuchstabe ist am Terminal kein Fehler, sondern „kein Typ passt“: die Seite schreibt klein oder weist darauf hin. Der Anbieter ist hetzner, aws, azure oder gcp (`compose` und `kubernetes` haben keine Preisliste). Die Mehrwertsteuer leer: **der Satz, den ein Anbieter meldet (Hetzner), sonst 0**.
 * **Ausgabe:** Sie geht wie jede Ausgabe durch Reinigung und Schwärzung; die Seite setzt sie als Text (`textContent`).
 
-**Server** *[V, entworfen]*: `runRequest` bekommt `cpu`, `ram`, `disk`, `arch`, `provider`, `location`, `vat`; `findArgv` baut die Befehlszeile (feste Wörter und Zahlen, §2.1); `repo` ist für `find` nicht erlaubt; `isAction` kennt `find`, `isSide` zählt es zur Nebenseite (§2.5); `startRun` lässt es bei `--readonly` zu.
+**Server** *[V, entworfen]*: `runRequest` bekommt `cpu`, `ram`, `disk`, `arch`, `provider`, `location`, `vat`; `findArgv` baut die Befehlszeile (feste Wörter und Zahlen, §2.1); `repo` ist für `find` nicht erlaubt; `isAction` kennt `find`; `isSide` zählt es zu den Läufen ohne Rechner (§2.5: `beginEdit` und die Sperre `editing` betreffen nur Aktionen; kein `forgetOverview` am Ende). **Eigenes Budget: höchstens eine Suche zugleich** (`maxFinds`), getrennt vom Budget der NATS-Läufe (vier): jede Suche liest vier Preislisten und teilt die Cache-Dateien. `startRun` lässt `find` bei `--readonly` zu (die Knöpfe der Seite sind dort nicht aus); die Abfrage alle zwei Sekunden gilt nur, solange ein **Aktionslauf** geht (nicht für `find` oder `nats`). **Schreibt `find` bei `--readonly`?** Ja: Preislisten im Cache-Verzeichnis (siehe oben); das Handbuch sagt es, `--readonly` meint „nichts an Einstellungen und Rechnern“.
 
 **Nicht Teil der Stufe:** „Typ und Standort in ein Formular übernehmen“ (Anlegen). Es setzt voraus, dass die Ausgabe maschinenlesbar ist (`viper find --json` gibt es nicht): ein späterer Schritt, zuerst am Befehl.
 
 ## 4 Stufe 2: Optionen für Läufe
 
 * **Ort in der Oberfläche:** unter dem Feld „Repository-URL“ der Übersicht ein aufklappbarer Block **„Optionen für Läufe“** (`<details>`, zu): 
-  * **Gleichzeitig (Gruppen):** Zahl 1 bis 64, leer: der Standard von `viper` (8). Gilt für Gruppenläufe von Vorprüfung, Up, Down und Prüfen.
-  * **Down ohne Prüfung auf ungesicherte Arbeit (`--force`):** Kontrollkästchen, mit einem Satz, was es bedeutet (nicht gesicherte Arbeit auf dem Server geht verloren). **Es gilt nur für den nächsten Down-Lauf und wird nach dem Start wieder ausgeschaltet** (nie dauerhaft an).
+  * **Gleichzeitig (Gruppen):** Zahl 1 bis 64, leer: der Standard von `viper` (8). Gilt für Gruppenläufe von Vorprüfung, Up, Down und Prüfen (am Terminal nimmt auch ein einzelner Rechner die Option und ignoriert sie; die Oberfläche schickt sie nur für Gruppen).
+  * **Down erzwingen (`--force`):** Kontrollkästchen. *[V, korrigiert nach der Prüfung]* `--force` überspringt die Prüfung auf ungesicherte Arbeit **nur, wenn die SSH-Verbindung zum Server scheitert**; ist der Server erreichbar, läuft die Prüfung mit oder ohne `--force` (`stop.go`). Außerdem löscht `--force` einen NATS-Server, der noch Peers hat, und löscht, auch wenn das Widerrufen des Schlüssels scheitert. Die Beschriftung sagt darum: „Auch löschen, wenn der Rechner nicht erreichbar ist oder noch Mitglieder hat (`--force`)“, mit dem Hinweis, dass es bei einem erreichbaren Rechner kaum etwas ändert. **Es gilt für die eine Anfrage**: Die Seite liest das Kästchen im Augenblick des Klicks auf „Down“ und schaltet es sofort wieder aus (derselbe Zug des Browsers, damit zwei Klicks oder zwei Reiter es nicht doppelt nutzen).
   * **Registry bei Down (k3d):** Auswahl „fragen“ (Standard), „löschen“ (`--delete-registry`), „behalten“ (`--keep-registry`).
 * **Sichtbarkeit:** Der Befehl, den die Oberfläche startet, steht in der ersten Zeile des Laufs (`$ viper down web --force`): Was die Option bewirkt hat, ist im Protokoll zu sehen.
-* **Bestätigung:** `viper down` fragt weiter selbst (`DELETE` tippen); `--force` ändert die Frage nicht, nur die Prüfung davor. Eine zusätzliche Bestätigung in der Oberfläche gibt es nicht: der Kasten warnt, die Zeile im Lauf zeigt es, und die Rückfrage von `viper` bleibt.
+* **Bestätigung:** `viper down` fragt weiter selbst, in dieser Reihenfolge: `DISCARD` (nur, wenn die Prüfung auf ungesicherte Arbeit lief), „Type DELETE to continue“, danach (nur beim letzten Rechner eines k3d-Clusters) die Frage nach der Registry, die `--delete-registry` oder `--keep-registry` ersetzt (beide zusammen sind ein Fehler: Exit 2). Bei einer Gruppe fragt jeder Rechner einzeln (Zeilen mit `[name]`), die Registry einmal. `--force` ändert die Fragen nicht. Eine zusätzliche Bestätigung in der Oberfläche gibt es nicht: der Kasten warnt, die Zeile im Lauf zeigt es, und die Rückfrage von `viper` bleibt.
 * **Server** *[V, entworfen]*: `machineOptions` baut `--parallel=N`, `--force`, `--delete-registry` oder `--keep-registry` und lehnt sie an anderer Stelle ab (§2.2).
 * **Nicht Teil der Stufe:** `--cmd`, `--tmux` (Stufe 5 und nie).
 
 ## 5 Stufen 3 bis 5 (Vorschläge, einzeln zu entscheiden)
 
-* **Stufe 3: `setup`.** Legt `.env.local`, den Login-Schlüssel und die Host-CA an; ohne beides scheitert die Vorprüfung. Als Lauf mit Rückfragen (die Oberfläche kann Rückfragen); ein Knopf auf der Seite „Anlegen“ („Schlüssel und Host-CA anlegen“) und ein Hinweis in der Vorprüfung, wenn sie fehlen. *[?]* zu prüfen: was `viper setup` an Eingaben verlangt (Passphrase des Schlüssels? Domain?), und ob es mit `--readonly` gesperrt bleibt (ja: es schreibt in `~/.ssh`).
-* **Stufe 4: `image build`.** Für `compose` und `kubernetes`: ein langer Lauf mit Ausgabe; Felder `--tag NAME:TAG` (Muster) und `--k3d CLUSTER` (Name nach Muster). Ein Knopf je Rechner mit solchem Anbieter und auf der Seite „Anlegen“.
-* **Stufe 5: `ssh --cmd`.** Beliebige Befehle auf dem Server: nur mit `--edit`, mit der Rückfrage „Befehl tippen“ und der Zeile im Protokoll; für eine Gruppe nur mit `--parallel`. Heikel (Befehlsausführung auf dem Server aus dem Browser): erst nach der Entscheidung, ob das nötig ist; die Einstellung `VIPER_POST_CLONE` ist ein Vorbild für die Bestätigung.
+* **Stufe 3: `setup`.** Legt `.env.local`, den Login-Schlüssel und die Host-CA an; ohne beides scheitert die Vorprüfung. Als Lauf mit Rückfragen (die Oberfläche kann Rückfragen); ein Knopf auf der Seite „Anlegen“ („Schlüssel und Host-CA anlegen“) und ein Hinweis in der Vorprüfung, wenn sie fehlen. *[V, geprüft]* `viper setup` ist **nicht interaktiv** (keine Fragen): Es schreibt `.env.local`, die Beispiele in `groups/` und `machines/` in `--dir`, legt Schlüssel und Host-CA in `~/.ssh` an, **überschreibt `~/.ssh/known_hosts_hetzner_claude_ca`** und druckt `export`-Zeilen und den öffentlichen Schlüssel der CA. Es bleibt bei `--readonly` gesperrt; ob es mit `--edit` angeboten wird, ist zu entscheiden (es schreibt außerhalb des Einstellungsverzeichnisses).
+* **Stufe 4: `image build`.** Für `compose` und `kubernetes`: ein langer Lauf mit Ausgabe (`docker build`, braucht den Docker-Socket); Felder `--tag=NAME:TAG` und `--k3d=CLUSTER` in der Form `--name=wert`, mit engen Mustern. Ein Knopf je Rechner mit solchem Anbieter und auf der Seite „Anlegen“.
+* **Stufe 5: `ssh --cmd`.** **Empfehlung der Prüfung: nicht bauen.** Ein freier Befehlstext widerspricht §2.1, die Oberfläche hält die Standardeingabe des Prozesses offen (ein Befehl, der von ihr liest, hängt), und der Nutzen ist klein. Wer es will: nur mit `--edit`, `--cmd=…` mit getipptem Wort und der Zeile im Protokoll.
 * **Später/nie:** `vscode` (Knopf je Rechner, kleiner Nutzen), `dns` (besser als Spalte „Adresse“ in der Übersicht), Shell, Proxys und `mcp-binary` nie.
 
 ## 6 Tests
 
 * **Server (Go):** Tabelle der Anfragen gegen die erwartete Befehlszeile; alle ungültigen (Grenzen, Muster, Optionen am falschen Befehl, `find` ohne Größe, Standort ohne Anbieter, `--` im Standort, NaN); `find` und Läufe ohne Rechner haben ein eigenes Budget und gehen neben vier Aktionen; `--readonly` lässt nur `check` und `find` zu.
-* **Echtes Programm (§2.3):** Browser-Test mit dem echten `viper` und Fake-Docker: Up einer Gruppe mit `--parallel=2`, Down mit `--force` und `--keep-registry` (Fake-k3d fehlt: es genügt, dass die Option angenommen wird), `find` mit allen Feldern (ohne Netz endet es mit einer Meldung über die Preisquellen, nicht über eine Option).
+* **Echtes Programm (§2.3):** Browser-Test mit dem echten `viper` und Fake-Docker: Up einer Gruppe mit `--parallel=2`, Down mit `--force` und `--keep-registry` (Fake-k3d fehlt: es genügt, dass die Option angenommen wird), `find` mit allen Feldern **und einer `.env.local`** im Verzeichnis (ohne sie bricht es mit „No .env.local“ ab; im Test mit Netz oder ohne endet es mit Preisen oder einer Meldung über die Preisquellen, nicht über eine Option; der Test macht keine Annahme über das Netz).
+* **Server:** `beginEdit` und `hold` für `find` (blockiert das Ändern von Zugangsdaten nicht; eine zweite Suche wird mit 503 abgelehnt; vier NATS-Läufe daneben), die Regel für `--readonly`.
 * **Browser:** Formular und Pflichtangaben, Bereich der Ausgabe, Abbrechen, Wiederaufnahme nach Neuladen, `--force` wird nach dem Start wieder ausgeschaltet, `--parallel` nur bei Gruppenknöpfen, axe (hell, dunkel, Englisch, Deutsch), Tastatur.
 * **Handbuch:** Abschnitt „Passenden Server-Typ suchen“ nennt die Seite; die Optionen stehen im Kapitel der Oberfläche; die Zeile in Kapitel 11.
 
@@ -86,4 +88,22 @@
 
 ## 9 Prüfung
 
-*(wird nach der Prüfung des Plans ausgefüllt)*
+Ein unabhängiger Prüfer hat den Plan gegen den Code und das gebaute Programm gelesen. Die Funde und was daraus wurde:
+
+| Fund | Folge |
+|---|---|
+| `--force` ist falsch beschrieben: es überspringt die Prüfung auf ungesicherte Arbeit nur, wenn SSH scheitert; es löscht auch NATS-Server mit Peers und trotz gescheitertem Widerruf | §4: neue Beschriftung und Hinweis, Reihenfolge der Fragen |
+| `find` braucht eine `.env.local` und hat sonst keine Einstellung | §3, §6: der Test legt eine an |
+| `find` schreibt Dateien in den Cache und nutzt Zugangsdaten der Cloud (Azure, GCP) | §3: gesagt, `--readonly` meint Einstellungen und Rechner |
+| `beginEdit` und `hold` blockieren für `find` | §2.5, Code: `isSide`; Test |
+| Ein Budget für `find` und `nats` ist falsch (vier lange Mitleser blockieren die Suche; mehrere Suchen teilen den Cache) | eigenes Budget: eine Suche zugleich |
+| Exit 1 heißt „kein Treffer“, nicht Fehler; Ausgabe englisch, stdout und stderr gemischt | §3: neutraler Satz, Hinweis |
+| Die Mehrwertsteuer ohne Angabe ist der Satz eines Anbieters (Hetzner), sonst 0, nicht „des Projekts“ | §3 berichtigt |
+| Einmaliges `--force` nur per Zustand der Seite ist anfällig (zwei Reiter, Doppelklick) | §4: pro Anfrage, sofort zurückgesetzt |
+| `setup` ist nicht interaktiv, überschreibt `known_hosts_hetzner_claude_ca` | §5: berichtigt |
+| `ssh --cmd` widerspricht der Regel „nur geprüfte Felder“, hält die Standardeingabe offen | §5: nicht bauen |
+| Die Seiten sind 143,9 KB groß bei 175 KB; Stufe 3 bis 5 passen nicht mehr hinein | Stufe 1 und 2 brauchen etwa 10 bis 15 KB; die Grenze wird vor Stufe 3 bewusst entschieden |
+| Die Abfrage alle zwei Sekunden läuft auch für `find` | §3: nur für Aktionsläufe |
+| Wiederaufnahme nach dem Neuladen nicht beschrieben; doppelte Bereiche | §3: über `/api/runs`, ein Bereich |
+
+**Antworten zu §8:** (1) die Rückfrage von `viper down` bleibt ohne weiteres Wort, die Beschriftung ist berichtigt; (2) zuerst Text, `--json` ist ein eigener Schritt am Befehl; (3) ein Block mit `--force` pro Anfrage; (4) gleicher Wert; (5) `setup` zuerst, dann `image build`; `ssh --cmd` nicht.
