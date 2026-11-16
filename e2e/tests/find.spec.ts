@@ -93,5 +93,5 @@ test('the options of runs reach viper: parallel for a group, force and the regis
   await expect(page.locator('#opt-force')).not.toBeChecked();
   await expect(page.locator('#opt-active')).toHaveText('(1 set)'); // force and registry are back, parallel stays
   expect(await page.locator('#run-output').innerText()).not.toMatch(/whole number|unknown option|exclude each other/i);
-  if (await page.locator('#run-cancel').isEnabled()) { await page.click('#run-cancel'); } // down asks for DELETE: it waits
+  await page.click('#run-cancel', { timeout: 3000 }).catch(() => {}); // down asks for DELETE and waits; the run may also be over already
 });
