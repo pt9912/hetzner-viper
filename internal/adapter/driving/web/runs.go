@@ -380,13 +380,7 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	run := &run{files: files, ID: random(), Action: req.Action, Names: names, state: stateRunning, started: s.cfg.Now(), notify: make(chan struct{})}
-	if req.Action == "nats" {
-		run.Sub, run.NATS = req.Sub, req.NATS // checked by natsArgv: names of the overview and fixed words
-	} else if req.Scope == "group" {
-		run.Group = req.Group
-	} else {
-		run.Machine, run.Group = req.Machine, req.Group // found in the overview
-	}
+	run.setTarget(req)
 	if code, msg := s.hold(run); code != 0 {
 		files.remove()
 		fail(w, code, msg)
@@ -925,4 +919,17 @@ func findWhere(req runRequest) ([]string, error) {
 		argv = append(argv, "--vat="+strconv.FormatFloat(*req.VAT, 'f', -1, 64))
 	}
 	return argv, nil
+}
+
+// setTarget notes what the run is for: the names are those of the overview or fixed words (checked by the argv)
+func (r *run) setTarget(req runRequest) {
+	switch {
+	case req.Action == "nats":
+		r.Sub, r.NATS = req.Sub, req.NATS
+	case req.Action == "find": // a search has no target
+	case req.Scope == "group":
+		r.Group = req.Group
+	default:
+		r.Machine, r.Group = req.Machine, req.Group
+	}
 }

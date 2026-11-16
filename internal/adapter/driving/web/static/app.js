@@ -863,8 +863,10 @@
     $('find-stop').disabled = !on;
   }
 
+  let findEnded = '';
   function findEnd(text) {
     if (findSource) { findSource.close(); findSource = null; }
+    findEnded = findId; // a late list of runs still says "running": it does not attach again
     findId = '';
     findState(false);
     $('find-status').textContent = text;
@@ -918,17 +920,19 @@
     return { req };
   }
 
+  let findSending = false; // the request of a search is on its way: a second click does not send another
   async function findStart(ev) {
     ev.preventDefault();
-    if (findId) { return; }
+    if (findId || findSending) { return; }
     const q = findRequest();
     if (q.error) { $('find-status').textContent = q.error; return; }
     $('find-status').textContent = '';
+    findSending = true;
     try {
       const r = await api('/api/run', q.req);
       findAttach(r.id);
       loadRuns();
-    } catch (e) { $('find-status').textContent = t('find.refused', e.message); }
+    } catch (e) { $('find-status').textContent = t('find.refused', e.message); } finally { findSending = false; }
   }
 
   async function findStop() {
@@ -941,7 +945,7 @@
   function findFind() {
     if (findId) { return; }
     const run = runs.find((r) => r.action === 'find' && r.state !== 'done');
-    if (run) { findAttach(run.id); }
+    if (run && run.id !== findEnded) { findAttach(run.id); }
   }
 
   // ---- runs: viper itself, started by the server; the page attaches to its output ----
@@ -949,20 +953,27 @@
   let runs = [];
   let current = '';
 
-  // startRun starts a run and shows it; it says whether it started
   // the options for runs (the block of the overview): how many machines of a group at a time, and what down does. The box --force is
   // read now and cleared at once: it is for this one request
+  // the box --force and the choice for the registry are for this one request, as the block may be closed
   function addRunOptions(req) {
     const par = $('opt-parallel').value.trim();
-    if (par !== '' && req.scope === 'group' && ['preflight', 'up', 'down', 'check'].includes(req.action)) { req.parallel = Number(par); }
+    if (par !== '' && req.scope === 'group' && ['preflight', 'up', 'down', 'check'].includes(req.action)) {
+      const n = Number(par);
+      if (!Number.isInteger(n) || n < 1 || n > 64) { return t('opt.parallel.bad'); }
+      req.parallel = n;
+    }
     if (req.action === 'down') {
       if ($('opt-force').checked) { req.force = true; $('opt-force').checked = false; }
-      if ($('opt-registry').value) { req.registry = $('opt-registry').value; }
+      if ($('opt-registry').value) { req.registry = $('opt-registry').value; $('opt-registry').value = ''; }
     }
+    return '';
   }
 
+  // startRun starts a run and shows it
   async function startRun(req) {
-    addRunOptions(req);
+    const bad = addRunOptions(req);
+    if (bad) { show('runs'); $('run-status').textContent = bad; $('run-status').className = 'bad'; return false; }
     const repo = $('repo').value.trim();
     if (repo && req.action !== 'down' && req.action !== 'nats') { req.repo = repo; }
     $('run-status').textContent = t('status.running');

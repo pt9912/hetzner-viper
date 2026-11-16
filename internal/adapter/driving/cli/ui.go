@@ -345,7 +345,7 @@ func announceMode(out io.Writer, o *options) {
 // uiConfig is what the pages may do: look, run viper (not with --readonly), make new settings files (--edit).
 func uiConfig(o *options, b *uiBackend, secrets *secretValues) web.Config {
 	cfg := web.Config{Backend: b, Readonly: o.readonly, Version: o.version, Clean: natsmcp.Clean, Redact: secrets.redact, LongestSecret: secrets.longest}
-	cfg.Spawn = spawner(settingsDir(o)) // with --readonly the server starts only the check of a group (web: startRun)
+	cfg.Spawn = spawner(settingsDir(o)) // with --readonly the server starts only the check of a group and the search (web: startRun)
 	if o.edit {
 		cfg.Editor = &uiEditor{b: b}
 	}
