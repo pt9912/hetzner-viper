@@ -146,8 +146,17 @@ func TestLaunchDoesNotWaitForTheWindowAndReportsAProgramThatFailsAtOnce(t *testi
 		t.Errorf("arguments %q", got)
 	}
 	fake("xterm", "echo 'cannot open display' >&2\nexit 1\n")
-	if err := l.Launch(wordsOf()); err == nil || !strings.Contains(err.Error(), "cannot open display") {
-		t.Errorf("a failure at once: %v", err)
+	err := l.Launch(wordsOf())
+	var exit *exec.ExitError
+	if err == nil || !strings.Contains(err.Error(), "cannot open display") || errors.As(err, &exit) {
+		t.Errorf("a failure at once is said, and is no *exec.ExitError (viper would take it for the status of a program): %v", err)
+	}
+	if left, _ := filepath.Glob(filepath.Join(os.TempDir(), "viper-terminal-*")); len(left) != 0 && os.Getenv("VIPER_TEST_KEEP") == "" {
+		for _, f := range left {
+			if st, e := os.Stat(f); e == nil && time.Since(st.ModTime()) < time.Minute {
+				t.Errorf("a file of the error output is left: %s", f)
+			}
+		}
 	}
 	fake("xterm", "exit 0\n")
 	if err := l.Launch(wordsOf()); err != nil {

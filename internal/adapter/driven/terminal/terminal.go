@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -91,7 +92,11 @@ func planUnix(getenv func(string) string, lookPath func(string) (string, error),
 	if want != "" && !known {
 		return "", nil, fmt.Errorf("VIPER_TERMINAL=%s: not one of %s", want, strings.Join(Names(), ", "))
 	}
-	return "", nil, fmt.Errorf("no terminal program found (tried %s): install one, or set VIPER_TERMINAL to one of them", strings.Join(Names(), ", "))
+	tried := strings.Join(Names(), ", ")
+	if want != "" {
+		return "", nil, fmt.Errorf("%s (VIPER_TERMINAL) is not installed: no terminal program found; install it or unset VIPER_TERMINAL", want)
+	}
+	return "", nil, fmt.Errorf("no terminal program found (tried %s): install one, or set VIPER_TERMINAL to one of them", tried)
 }
 
 // quote is a word in single quotes for sh (a ' becomes '\”).
@@ -132,26 +137,32 @@ func (l Launcher) Launch(words []string) error {
 	cmd.Stderr = errFile
 	cmd.SysProcAttr = detached()
 	if err := cmd.Start(); err != nil {
-		_ = errFile.Close()
-		_ = os.Remove(errFile.Name())
+		cleanup(errFile)
 		return err
 	}
+	if runtime.GOOS != "windows" {
+		_ = os.Remove(errFile.Name()) // the child holds it: nothing is left behind when viper ends before the window does
+	}
 	done := make(chan error, 1)
-	go func() {
-		e := cmd.Wait()
-		done <- e
-	}()
+	go func() { done <- cmd.Wait() }()
 	select {
 	case e := <-done:
-		defer func() { _ = errFile.Close(); _ = os.Remove(errFile.Name()) }()
+		defer cleanup(errFile)
 		if e != nil {
-			return fmt.Errorf("%s: %w%s", filepath.Base(name), e, firstLines(errFile.Name()))
+			// %v, not %w: a wrapped *exec.ExitError would be taken by viper for the exit status of a program it ran, and not shown
+			return fmt.Errorf("%s: %v%s", filepath.Base(name), e, firstLines(errFile))
 		}
 		return nil // some programs (gnome-terminal, konsole, open) hand the window over and end at once
 	case <-time.After(time.Second):
-		go func() { e := <-done; _ = e; _ = errFile.Close(); _ = os.Remove(errFile.Name()) }()
+		go func() { e := <-done; _ = e; cleanup(errFile) }()
 		return nil
 	}
+}
+
+// cleanup closes the file of the error output and removes it (where it is still there).
+func cleanup(f *os.File) {
+	_ = f.Close()
+	_ = os.Remove(f.Name())
 }
 
 func (l Launcher) plan(words []string) (string, []string, error) {
@@ -180,6 +191,9 @@ func macFile(words []string) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
+	if err := os.Chmod(dir, 0o700); err != nil { // a folder that was there before keeps its rights otherwise
+		return "", err
+	}
 	if old, _ := filepath.Glob(filepath.Join(dir, "*.command")); old != nil {
 		for _, f := range old {
 			if st, err := os.Stat(f); err == nil && time.Since(st.ModTime()) > 24*time.Hour {
@@ -191,24 +205,26 @@ func macFile(words []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = f.Close() }()
+	fail := func(err error) (string, error) { _ = f.Close(); _ = os.Remove(f.Name()); return "", err }
 	if err := f.Chmod(0o700); err != nil {
-		return "", err
+		return fail(err)
 	}
 	if _, err := io.WriteString(f, MacScript(words)); err != nil {
+		return fail(err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(f.Name())
 		return "", err
 	}
 	return f.Name(), nil
 }
 
 // firstLines is what the program wrote to its error output, a few lines, for the message.
-func firstLines(path string) string {
-	b, err := os.ReadFile(path)
-	if err != nil || len(b) == 0 {
+func firstLines(f *os.File) string {
+	b := make([]byte, 400)
+	n, _ := f.ReadAt(b, 0)
+	if n == 0 {
 		return ""
 	}
-	if len(b) > 400 {
-		b = b[:400]
-	}
-	return ": " + strings.TrimSpace(string(b))
+	return ": " + strings.TrimSpace(string(b[:n]))
 }

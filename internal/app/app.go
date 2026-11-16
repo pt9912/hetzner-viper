@@ -252,5 +252,16 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 
 // terminalLauncher opens windows of the desktop; the program in them does not inherit the credentials that VS Code does not.
 func terminalLauncher() terminal.Launcher {
-	return terminal.Launcher{GOOS: runtime.GOOS, Env: editor.Env(os.Environ(), vscode().Secrets), Getenv: os.Getenv, LookPath: exec.LookPath}
+	return terminal.Launcher{GOOS: runtime.GOOS, Env: withoutRunMark(editor.Env(os.Environ(), vscode().Secrets)), Getenv: os.Getenv, LookPath: exec.LookPath}
+}
+
+// withoutRunMark takes VIPER_UI_RUN out of the environment of a window: the window is no run of the pages.
+func withoutRunMark(env []string) []string {
+	var out []string
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, "VIPER_UI_RUN=") {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
