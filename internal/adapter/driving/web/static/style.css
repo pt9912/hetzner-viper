@@ -188,5 +188,5 @@ details.file > summary { padding: .45rem .7rem; cursor: pointer; font: 600 1rem 
 details.file > .file-body { padding: 0 .7rem .6rem; }
 details.file[open] > summary { border-bottom: 1px solid var(--line); margin-bottom: .5rem; }
 
-details.options { margin: .6rem 0 1rem; }
-details.options > summary { cursor: pointer; font-weight: 600; }
+#run-options { position: relative; margin-left: auto; }
+#run-options .panel { position: absolute; right: 0; top: calc(100% + .3rem); z-index: 5; width: min(34rem, 90vw); padding: .8rem 1rem; background: var(--panel); border: 1px solid var(--line); border-radius: .4rem; box-shadow: 0 .4rem 1.2rem rgb(0 0 0 / .25); }

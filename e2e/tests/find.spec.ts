@@ -65,7 +65,7 @@ test('find also runs when the page is read only', async ({ page }) => {
   await expect.poll(() => bodies.length).toBe(1);
   // the options that change something are off
   await page.click('#tab-overview');
-  await page.locator('#run-options summary').click();
+  await page.locator('#opt-button').click();
   await expect(page.locator('#opt-force')).toBeDisabled();
   await expect(page.locator('#opt-registry')).toBeDisabled();
 });
@@ -76,18 +76,22 @@ test('the options of runs reach viper: parallel for a group, force and the regis
   await page.goto(ui.start);
   await expect(page.locator('#machines tr.unit')).toHaveCount(3);
   await expect(page.locator('#opt-active')).toHaveText('');
-  await page.locator('#run-options summary').click();
+  await page.locator('#opt-button').click();
   await page.fill('#opt-parallel', '2');
   await expect(page.locator('#opt-active')).toHaveText('(1 set)');
+  await page.keyboard.press('Escape'); // the menu closes and the buttons below are free
+  await expect(page.locator('#opt-panel')).toBeHidden();
   await page.getByRole('button', { name: 'Up group dev', exact: true }).click();
   await expect(page.locator('#run-output')).toContainText('$ viper up --group dev --parallel=2');
   await expect(page.locator('#run-status')).toContainText(/Ended|exit/, { timeout: 60_000 });
   expect(await page.locator('#run-output').innerText()).not.toMatch(/whole number|unknown option|exclude each other/i);
   // down of one machine: parallel is for groups only, force and the registry go along, and the box is clear afterwards
   await page.click('#tab-overview');
+  await page.click('#opt-button');
   await page.check('#opt-force');
   await page.selectOption('#opt-registry', 'keep');
   await expect(page.locator('#opt-active')).toHaveText('(3 set)');
+  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Down web', exact: true }).click();
   await expect(page.locator('#run-output')).toContainText('$ viper down web --force --keep-registry');
   await expect(page.locator('#opt-force')).not.toBeChecked();

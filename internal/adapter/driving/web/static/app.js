@@ -958,7 +958,18 @@
   function showActiveOptions() {
     const n = ($('opt-parallel').value.trim() !== '') + $('opt-force').checked + ($('opt-registry').value !== '');
     $('opt-active').textContent = n ? t('opt.active', n) : '';
+    $('opt-button').classList.toggle('on', n > 0);
   }
+  // the menu of the options: a button opens a panel; Escape and a click outside close it
+  function optionsMenu(open) {
+    $('opt-panel').hidden = !open;
+    $('opt-button').setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  $('opt-button').addEventListener('click', () => optionsMenu($('opt-panel').hidden));
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && !$('opt-panel').hidden) { optionsMenu(false); $('opt-button').focus(); }
+  });
+  document.addEventListener('click', (ev) => { if (!$('opt-panel').hidden && !$('run-options').contains(ev.target)) { optionsMenu(false); } });
   ['opt-parallel', 'opt-force', 'opt-registry'].forEach((id) => { $(id).addEventListener('input', showActiveOptions); $(id).addEventListener('change', showActiveOptions); });
 
   // the options for runs (the block of the overview): how many machines of a group at a time, and what down does. The box --force is

@@ -48,6 +48,28 @@
       </select>
       <button type="button" id="f-clear" class="quiet" hidden data-i18n="filter.clear">Clear the filter</button>
       <span id="f-count" class="muted" role="status"></span>
+      <span class="menu" id="run-options">
+        <button type="button" id="opt-button" class="quiet" aria-expanded="false" aria-controls="opt-panel"><span data-i18n="opt.summary">Options for runs</span> <span id="opt-active"></span></button>
+        <div id="opt-panel" class="panel" role="group" aria-labelledby="opt-button" hidden>
+        <div class="row">
+          <label for="opt-parallel" data-i18n="opt.parallel">Machines of a group at the same time</label>
+          <input type="number" id="opt-parallel" min="1" max="64" step="1" size="4" aria-describedby="opt-parallel-hint">
+          <span id="opt-parallel-hint" class="muted" data-i18n="opt.parallel.hint">Empty: 8. Only for the buttons of a group.</span>
+        </div>
+        <div class="row">
+          <label><input type="checkbox" id="opt-force"> <span data-i18n="opt.force">Down: also delete when the machine cannot be reached or still has group members (--force)</span></label>
+        </div>
+        <p class="muted hint" data-i18n="opt.force.hint">For the next Down only (the box is cleared when it starts). If the machine can be reached, viper checks for unsaved work anyway.</p>
+        <div class="row">
+          <label for="opt-registry" data-i18n="opt.registry">Down: the registry of a k3d cluster</label>
+          <select id="opt-registry">
+            <option value="" data-i18n="opt.registry.ask">ask</option>
+            <option value="delete" data-i18n="opt.registry.delete">delete it</option>
+            <option value="keep" data-i18n="opt.registry.keep">keep it</option>
+          </select>
+        </div>
+        </div>
+      </span>
     </div>
     <div class="scroll">
     <table id="machines">
@@ -67,26 +89,6 @@
       <label for="repo" data-i18n="repo.label">Repository URL for up and preflight (optional)</label>
       <input type="text" id="repo" autocomplete="off" spellcheck="false" size="40">
     </div>
-    <details id="run-options" class="options">
-      <summary><span data-i18n="opt.summary">Options for runs</span> <span id="opt-active" class="muted"></span></summary>
-      <div class="row">
-        <label for="opt-parallel" data-i18n="opt.parallel">Machines of a group at the same time</label>
-        <input type="number" id="opt-parallel" min="1" max="64" step="1" size="4" aria-describedby="opt-parallel-hint">
-        <span id="opt-parallel-hint" class="muted" data-i18n="opt.parallel.hint">Empty: 8. Only for the buttons of a group.</span>
-      </div>
-      <div class="row">
-        <label><input type="checkbox" id="opt-force"> <span data-i18n="opt.force">Down: also delete when the machine cannot be reached or still has group members (--force)</span></label>
-      </div>
-      <p class="muted hint" data-i18n="opt.force.hint">For the next Down only (the box is cleared when it starts). If the machine can be reached, viper checks for unsaved work anyway.</p>
-      <div class="row">
-        <label for="opt-registry" data-i18n="opt.registry">Down: the registry of a k3d cluster</label>
-        <select id="opt-registry">
-          <option value="" data-i18n="opt.registry.ask">ask</option>
-          <option value="delete" data-i18n="opt.registry.delete">delete it</option>
-          <option value="keep" data-i18n="opt.registry.keep">keep it</option>
-        </select>
-      </div>
-    </details>
     <h2 id="h-check" data-i18n="h.check">Check</h2>
     <p id="check-status" role="status" class="muted"></p>
     <pre id="check-output" role="region" tabindex="0" aria-labelledby="h-check"></pre>
