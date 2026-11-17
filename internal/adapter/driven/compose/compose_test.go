@@ -461,6 +461,10 @@ func TestDockerModes(t *testing.T) {
 			(want.env != "" && !strings.Contains(string(b), want.env)) || strings.Contains(string(b), "privileged") != want.sidecar {
 			t.Errorf("%s: sidecar=%v\n%s", mode, h.containers["m-docker"] != nil, b)
 		}
+		// the daemon of dind has the home directory of the machine at the same path: docker run -v /home/builder/work/x:/x finds the files
+		if homes := strings.Count(string(b), ":/home/builder"); homes != map[bool]int{true: 2, false: 1}[want.sidecar] {
+			t.Errorf("%s: %d mounts of the home directory\n%s", mode, homes, b)
+		}
 	}
 }
 

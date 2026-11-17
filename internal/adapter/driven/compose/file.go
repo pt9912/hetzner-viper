@@ -158,12 +158,15 @@ func (o Options) fileFor(p project, s model.ServerSpec, cpus float64, memMiB int
 // dockerService is the Docker daemon next to the machine (COMPOSE_DOCKER=dind). It shares the network of the machine and
 // listens on its loopback address only: without TLS and without a login, anything that reached it would be root on the
 // host. It is privileged, which a Docker daemon needs. restart: true restarts it with the machine on compose operations
-// (a plain docker restart of the machine is repaired by viper: docs/plan/compose.md §7.8).
+// (a plain docker restart of the machine is repaired by viper: docs/plan/compose.md §7.8). The home directory of the machine is
+// mounted at the same path: a bind mount of a directory of the machine (docker run -v /home/builder/work/repo:/repo) names a path
+// of the daemon, and without this the daemon would find an empty one there.
 func (o Options) dockerService(p project, server string) service {
 	addr := fmt.Sprintf("tcp://127.0.0.1:%d", DockerPort)
 	return service{
 		Image: o.dockerImage(), PullPolicy: "missing", ContainerName: dockerName(server),
 		Privileged: true, NetworkMode: "service:" + p.service(server),
+		Volumes:     []string{p.item(server, "home") + ":/home/builder"},
 		Environment: map[string]string{"DOCKER_TLS_CERTDIR": ""},
 		Command:     []string{"dockerd", "--host=unix:///var/run/docker.sock", "--host=" + addr},
 		Healthcheck: &healthcheck{Test: []string{"CMD", "docker", "-H", addr, "info"}, Interval: "3s", Timeout: "5s", Retries: 20},
