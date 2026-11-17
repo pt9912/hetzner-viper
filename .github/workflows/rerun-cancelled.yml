@@ -23,6 +23,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN: ${{ github.event.workflow_run.id }}
           REPO: ${{ github.repository }}
+          GH_REPO: ${{ github.repository }} # gh needs it: there is no checkout here
         run: |
           conclusions=$(gh api "repos/$REPO/actions/runs/$RUN/jobs" --paginate --jq '.jobs[].conclusion')
           echo "$conclusions"
