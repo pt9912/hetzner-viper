@@ -124,7 +124,9 @@ func dockerSpec(o Options) corev1.Container {
 		Args:            []string{"dockerd", "--host=unix:///var/run/docker.sock", "--host=" + addr},
 		Env:             []corev1.EnvVar{{Name: "DOCKER_TLS_CERTDIR", Value: ""}},
 		SecurityContext: &corev1.SecurityContext{Privileged: ptr(true)},
-		VolumeMounts:    []corev1.VolumeMount{{Name: "docker", MountPath: "/var/lib/docker"}},
+		// the home directory of the machine at the same path: docker run -v /home/builder/work/x:/x names a path of this daemon,
+		// and without this it would find an empty one there
+		VolumeMounts: []corev1.VolumeMount{{Name: "docker", MountPath: "/var/lib/docker"}, {Name: "home", MountPath: homeDir}},
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler:  corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{"docker", "-H", addr, "version"}}},
 			PeriodSeconds: 2, FailureThreshold: 30, TimeoutSeconds: 5,

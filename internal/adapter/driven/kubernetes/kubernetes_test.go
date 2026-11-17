@@ -151,6 +151,17 @@ func TestThePodRunsWithoutRootAndWithoutKeysInTheEnvironment(t *testing.T) {
 	if len(pod.Containers) != 2 || pod.Containers[1].Name != "dockerd" || !*pod.Containers[1].SecurityContext.Privileged {
 		t.Errorf("the Docker sidecar (the default): %+v", pod.Containers)
 	}
+	// the daemon has the home directory of the machine at the same path: docker run -v /home/builder/work/x:/x finds the files
+	var homeInDaemon, homeInMachine bool
+	for _, vm := range pod.Containers[1].VolumeMounts {
+		homeInDaemon = homeInDaemon || (vm.Name == "home" && vm.MountPath == "/home/builder")
+	}
+	for _, vm := range m.VolumeMounts {
+		homeInMachine = homeInMachine || (vm.Name == "home" && vm.MountPath == "/home/builder")
+	}
+	if !homeInDaemon || !homeInMachine {
+		t.Errorf("the home directory is at the same path in the machine (%v) and in the daemon (%v): %+v", homeInMachine, homeInDaemon, pod.Containers[1].VolumeMounts)
+	}
 	if m.Env[0].Name != "DOCKER_HOST" || m.Env[0].Value != "tcp://127.0.0.1:2375" || pod.Containers[1].ReadinessProbe == nil {
 		t.Errorf("the machine finds the daemon, and the pod is ready when the daemon is: %+v", m.Env)
 	}
