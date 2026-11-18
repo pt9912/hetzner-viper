@@ -29,7 +29,7 @@ body { margin: 0; background: var(--canvas); color: #17231f; font: 15px/1.5 var(
 .scroll { overflow-x: auto; padding-bottom: 6px; }
 
 /* a board is one screen, as the person would see it; the theme is set on the board */
-.board { width: 1180px; height: 760px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); color: var(--fg); display: grid; grid-template-rows: 46px 1fr; position: relative; font-size: 14px; }
+.board { width: 1180px; height: 780px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); color: var(--fg); display: grid; grid-template-rows: 46px 1fr; position: relative; font-size: 14px; }
 .board.phone { width: 390px; height: 760px; }
 .board[data-theme="dark"] {
   --bg: #0d1613; --panel: #131f1b; --fg: #e2ebe6; --muted: #9db1a8; --line: #2b3d36; --hair: #1f2e29;
@@ -55,8 +55,8 @@ body { margin: 0; background: var(--canvas); color: #17231f; font: 15px/1.5 var(
 .search { margin: 12px 12px 6px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; background: var(--bg); color: var(--muted); font-size: .88rem; }
 .grp { margin: 6px 12px 2px; display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: .84rem; font-weight: 600; padding: 7px 8px; border-radius: 8px; background: var(--bg); border: 1px solid var(--hair); }
 .grp small { margin-left: auto; font-weight: 400; color: var(--muted); font-family: var(--sans); }
-.sec { margin: 12px 14px 3px; font-size: .74rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
-.row { display: grid; grid-template-columns: 38px 1fr auto; gap: 10px; align-items: center; padding: 8px 14px; border-left: 3px solid transparent; }
+.sec { margin: 9px 14px 2px; font-size: .74rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.row { display: grid; grid-template-columns: 38px 1fr auto; gap: 10px; align-items: center; padding: 5px 14px; border-left: 3px solid transparent; }
 .row.sel { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); border-left-color: var(--accent); }
 .row .nm { font-family: var(--mono); font-weight: 600; font-size: .9rem; display: flex; gap: 7px; align-items: center; }
 .row .pv { color: var(--muted); font-size: .82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
@@ -67,6 +67,13 @@ body { margin: 0; background: var(--canvas); color: #17231f; font: 15px/1.5 var(
 .av { width: 38px; height: 38px; border-radius: 9px; display: grid; place-items: center; font-family: var(--mono); font-weight: 700; font-size: .92rem; color: #fff; position: relative; }
 .av .led { position: absolute; right: -3px; bottom: -3px; border: 2px solid var(--panel); width: 13px; height: 13px; }
 .av.t { border-radius: 50%; font-size: 1.05rem; }
+.avp { position: relative; width: 38px; height: 38px; }
+.avp .av { width: 25px; height: 25px; font-size: .62rem; border-radius: 7px; position: absolute; border: 2px solid var(--panel); }
+.avp .av:first-child { left: 0; top: 0; } .avp .av:last-child { right: 0; bottom: 0; }
+.m.right { grid-template-columns: minmax(0, 640px) 34px; justify-content: end; }
+.m.right .bub { border-radius: 12px 4px 12px 12px; }
+.chip.mitgel { color: var(--muted); text-transform: none; letter-spacing: 0; }
+.pairs { display: flex; gap: 8px; }
 .c1 { background: #2f6f5a; } .c2 { background: #6d5a2e; } .c3 { background: #4a5f78; } .c4 { background: #7a4a55; } .c5 { background: #55645a; } .c0 { background: #34403a; }
 .foot { margin-top: auto; border-top: 1px solid var(--line); padding: 10px 14px; font-size: .8rem; color: var(--muted); display: flex; gap: 8px; align-items: center; }
 
@@ -178,10 +185,15 @@ svg { display: block; }
       <div class="sec">Themen</div>
       <div class="row unread"><div class="av t c3">#</div><div><div class="nm">general</div><div class="pv">w1: Release-Branch ist eingefroren</div></div><div class="tm">14:06<span class="badge">2</span></div></div>
       <div class="row"><div class="av t c3">#</div><div><div class="nm">build</div><div class="pv">Sie: Bitte alle Gates laufen lassen</div></div><div class="tm">Gestern</div></div>
+      <div class="row"><div class="av t c5">#</div><div><div class="nm">alerts <span class="chip">niemand abonniert</span></div><div class="pv">w2: Festplatte bei 91 %</div></div><div class="tm">12:20</div></div>
       <div class="sec">Rechner</div>
       <div class="row"><div class="av c1">w1<span class="led on"></span></div><div><div class="nm">w1 <span class="chip">Server</span></div><div class="pv">Sie: Wer hat den Cache gelöscht?</div></div><div class="tm">13:41</div></div>
       <div class="row sel"><div class="av c2">w2<span class="led on"></span></div><div><div class="nm">w2</div><div class="pv">w2: Bericht liegt bei, 4 Seiten</div></div><div class="tm">14:07</div></div>
       <div class="row unread"><div class="av c4">w3<span class="led on"></span></div><div><div class="nm">w3</div><div class="pv">w3: Frage: darf ich main pushen?</div></div><div class="tm">14:09<span class="badge">1</span></div></div>
+      <div class="sec">Zwischen Rechnern <span class="chip mitgel">mitgelesen</span></div>
+      <div class="row"><div class="avp"><span class="av c1">w1</span><span class="av c2">w2</span></div><div><div class="nm">w1 ↔ w2</div><div class="pv">w1: Cache ist leer, baue neu</div></div><div class="tm">14:03</div></div>
+      <div class="row"><div class="avp"><span class="av c1">w1</span><span class="av c4">w3</span></div><div><div class="nm">w1 ↔ w3</div><div class="pv">w3: Danke. Ich friere den Release …</div></div><div class="tm">14:03</div></div>
+      <div class="row"><div class="avp"><span class="av c2">w2</span><span class="av c4">w3</span></div><div><div class="nm">w2 ↔ w3</div><div class="pv">w2: Wartet jemand auf #build?</div></div><div class="tm">13:50</div></div>
       <div class="sec">Weitere Gruppen</div>
       <div class="grp" style="margin-top:2px"><span class="led off"></span>dev<small>nicht verbunden</small></div>
       <div class="foot"><span class="led on"></span>Verlauf wird auf diesem Rechner gespeichert</div>
@@ -225,10 +237,15 @@ svg { display: block; }
       <div class="sec">Themen</div>
       <div class="row sel"><div class="av t c3">#</div><div><div class="nm">general</div><div class="pv">w1: Release-Branch ist eingefroren</div></div><div class="tm">14:06</div></div>
       <div class="row"><div class="av t c3">#</div><div><div class="nm">build</div><div class="pv">Sie: Bitte alle Gates laufen lassen</div></div><div class="tm">Gestern</div></div>
+      <div class="row"><div class="av t c5">#</div><div><div class="nm">alerts <span class="chip">niemand abonniert</span></div><div class="pv">w2: Festplatte bei 91 %</div></div><div class="tm">12:20</div></div>
       <div class="sec">Rechner</div>
       <div class="row"><div class="av c1">w1<span class="led on"></span></div><div><div class="nm">w1 <span class="chip">Server</span></div><div class="pv">Sie: Wer hat den Cache gelöscht?</div></div><div class="tm">13:41</div></div>
       <div class="row"><div class="av c2">w2<span class="led on"></span></div><div><div class="nm">w2</div><div class="pv">w2: Verstanden. Ich warte auf …</div></div><div class="tm">14:07</div></div>
       <div class="row"><div class="av c4">w3<span class="led on"></span></div><div><div class="nm">w3</div><div class="pv">w3: Frage: darf ich main pushen?</div></div><div class="tm">14:09</div></div>
+      <div class="sec">Zwischen Rechnern <span class="chip mitgel">mitgelesen</span></div>
+      <div class="row"><div class="avp"><span class="av c1">w1</span><span class="av c2">w2</span></div><div><div class="nm">w1 ↔ w2</div><div class="pv">w1: Cache ist leer, baue neu</div></div><div class="tm">14:03</div></div>
+      <div class="row"><div class="avp"><span class="av c1">w1</span><span class="av c4">w3</span></div><div><div class="nm">w1 ↔ w3</div><div class="pv">w3: Danke. Ich friere den Release …</div></div><div class="tm">14:03</div></div>
+      <div class="row"><div class="avp"><span class="av c2">w2</span><span class="av c4">w3</span></div><div><div class="nm">w2 ↔ w3</div><div class="pv">w2: Wartet jemand auf #build?</div></div><div class="tm">13:50</div></div>
     </aside>
     <main class="conv">
       <div class="ch"><div class="av t c3" style="width:40px;height:40px">#</div><div><h2>#general</h2><div class="sub">Rundruf an Rechner, die das Thema empfangen: <span class="tag">w1</span> <span class="tag">w3</span> · <span style="color:var(--warn)">w2 empfängt es nicht</span></div></div><span class="sp"></span><span class="btn">Suchen</span><span class="btn">Angaben</span></div>
@@ -262,10 +279,15 @@ svg { display: block; }
       <div class="sec">Themen</div>
       <div class="row"><div class="av t c3">#</div><div><div class="nm">general</div><div class="pv">w1: Release-Branch ist eingefroren</div></div><div class="tm">14:06</div></div>
       <div class="row"><div class="av t c3">#</div><div><div class="nm">build</div><div class="pv">Sie: Bitte alle Gates laufen lassen</div></div><div class="tm">Gestern</div></div>
+      <div class="row"><div class="av t c5">#</div><div><div class="nm">alerts <span class="chip">niemand abonniert</span></div><div class="pv">w2: Festplatte bei 91 %</div></div><div class="tm">12:20</div></div>
       <div class="sec">Rechner</div>
       <div class="row"><div class="av c1">w1<span class="led on"></span></div><div><div class="nm">w1 <span class="chip">Server</span></div><div class="pv">Sie: Wer hat den Cache gelöscht?</div></div><div class="tm">13:41</div></div>
       <div class="row"><div class="av c2">w2<span class="led on"></span></div><div><div class="nm">w2</div><div class="pv">w2: Verstanden. Ich warte auf …</div></div><div class="tm">14:07</div></div>
       <div class="row"><div class="av c4">w3<span class="led on"></span></div><div><div class="nm">w3</div><div class="pv">w3: Frage: darf ich main pushen?</div></div><div class="tm">14:09</div></div>
+      <div class="sec">Zwischen Rechnern <span class="chip mitgel">mitgelesen</span></div>
+      <div class="row"><div class="avp"><span class="av c1">w1</span><span class="av c2">w2</span></div><div><div class="nm">w1 ↔ w2</div><div class="pv">w1: Cache ist leer, baue neu</div></div><div class="tm">14:03</div></div>
+      <div class="row"><div class="avp"><span class="av c1">w1</span><span class="av c4">w3</span></div><div><div class="nm">w1 ↔ w3</div><div class="pv">w3: Danke. Ich friere den Release …</div></div><div class="tm">14:03</div></div>
+      <div class="row"><div class="avp"><span class="av c2">w2</span><span class="av c4">w3</span></div><div><div class="nm">w2 ↔ w3</div><div class="pv">w2: Wartet jemand auf #build?</div></div><div class="tm">13:50</div></div>
     </aside>
     <main class="conv">
       <div class="ch"><div class="av c0" style="width:40px;height:40px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z"/><circle cx="12" cy="12" r="2.5"/></svg></div><div><h2>Alle Meldungen</h2><div class="sub">Alles, was in der Gruppe gesendet wird (<code>viper nats listen --all</code>) · seit 13:21, als diese Seite sich verband</div></div><span class="sp"></span><span class="btn">Suchen</span></div>
@@ -282,6 +304,93 @@ svg { display: block; }
       </div>
       <div class="ro">Nur lesen. Zum Antworten öffnen Sie einen Chat: ein Klick auf einen Namen in der Liste.</div>
     </main>
+  </div>
+</div></div>
+</section>
+
+
+<!-- ===================== 3b. Paar ===================== -->
+<section>
+<p class="cap"><b>3b Gespräch zwischen zwei Rechnern.</b> Was <code>w1</code> und <code>w2</code> einander schreiben, wird mitgelesen und als Gespräch gezeigt (<code>viper nats listen --all</code>). Man kann nur lesen: Sie sind nicht beteiligt. Ein Gespräch erscheint erst, wenn die beiden einander etwas geschrieben haben.</p>
+<div class="scroll"><div class="board" id="b7">
+  <div class="top"><h1><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent)"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z"/></svg>viper chat</h1><span class="pill">127.0.0.1:41873</span><span class="sp"></span>
+    <span class="me"><span class="led on"></span>Operator <b>operator</b> angemeldet</span><span class="pill">Deutsch</span><span class="pill">hell</span></div>
+  <div class="shell">
+    <aside class="list">
+      <div class="search">Gespräche suchen</div>
+      <div class="grp"><span class="led on"></span>bedrock-eu-guard-compose<small>3 online</small></div>
+      <div class="sec">Alles</div>
+      <div class="row"><div class="av c0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z"/><circle cx="12" cy="12" r="2.5"/></svg></div><div><div class="nm">Alle Meldungen</div><div class="pv">nur lesen</div></div><div class="tm">14:09</div></div>
+      <div class="sec">Themen</div>
+      <div class="row"><div class="av t c3">#</div><div><div class="nm">general</div><div class="pv">w1: Release-Branch ist eingefroren</div></div><div class="tm">14:06</div></div>
+      <div class="row"><div class="av t c3">#</div><div><div class="nm">build</div><div class="pv">Sie: Bitte alle Gates laufen lassen</div></div><div class="tm">Gestern</div></div>
+      <div class="row"><div class="av t c5">#</div><div><div class="nm">alerts <span class="chip">niemand abonniert</span></div><div class="pv">w2: Festplatte bei 91 %</div></div><div class="tm">12:20</div></div>
+      <div class="sec">Rechner</div>
+      <div class="row"><div class="av c1">w1<span class="led on"></span></div><div><div class="nm">w1 <span class="chip">Server</span></div><div class="pv">Sie: Wer hat den Cache gelöscht?</div></div><div class="tm">13:41</div></div>
+      <div class="row"><div class="av c2">w2<span class="led on"></span></div><div><div class="nm">w2</div><div class="pv">w2: Verstanden. Ich warte auf …</div></div><div class="tm">14:07</div></div>
+      <div class="row"><div class="av c4">w3<span class="led on"></span></div><div><div class="nm">w3</div><div class="pv">w3: Frage: darf ich main pushen?</div></div><div class="tm">14:09</div></div>
+      <div class="sec">Zwischen Rechnern <span class="chip mitgel">mitgelesen</span></div>
+      <div class="row sel"><div class="avp"><span class="av c1">w1</span><span class="av c2">w2</span></div><div><div class="nm">w1 ↔ w2</div><div class="pv">w1: Cache ist leer, baue neu</div></div><div class="tm">14:03</div></div>
+      <div class="row"><div class="avp"><span class="av c1">w1</span><span class="av c4">w3</span></div><div><div class="nm">w1 ↔ w3</div><div class="pv">w3: Danke. Ich friere den Release …</div></div><div class="tm">14:03</div></div>
+      <div class="row"><div class="avp"><span class="av c2">w2</span><span class="av c4">w3</span></div><div><div class="nm">w2 ↔ w3</div><div class="pv">w2: Wartet jemand auf #build?</div></div><div class="tm">13:50</div></div>
+    </aside>
+    <main class="conv">
+      <div class="ch"><div class="avp" style="width:44px;height:44px"><span class="av c1" style="width:29px;height:29px">w1</span><span class="av c2" style="width:29px;height:29px">w2</span></div><div><h2>w1 ↔ w2</h2><div class="sub"><span class="chip mitgel">mitgelesen, nur lesen</span> Direktnachrichten und Fragen der beiden · Sie sind nicht beteiligt</div></div><span class="sp"></span><span class="btn">Suchen</span></div>
+      <div class="msgs">
+        <div class="day">Heute</div>
+        <div class="m"><div class="av c1">w1</div><div class="bub"><div class="who"><b>w1</b><span>13:52</span><span class="chip req">Frage an w2</span></div><div class="txt">Hast du den Cache angefasst? Der Build findet nichts mehr unter <code>~/.cache/viper</code>.</div></div></div>
+        <div class="m right"><div class="bub"><div class="who"><b>w2</b><span>13:53</span><span class="chip ok">Antwort nach 41 s</span></div><div class="txt">Nein. Das war w3 beim Umbau. Ich habe nur gelesen.</div></div><div class="av c2">w2</div></div>
+        <div class="m"><div class="av c1">w1</div><div class="bub"><div class="who"><b>w1</b><span>14:03</span></div><div class="txt">Cache ist leer, baue neu.</div></div></div>
+        <div class="m right"><div class="bub"><div class="who"><b>w2</b><span>14:03</span></div><div class="txt">Sag Bescheid, wenn der Build durch ist. Ich warte auf <span class="tag">#build</span>.</div></div><div class="av c2">w2</div></div>
+        <div class="sys">Mitgelesen von diesem Rechner aus: Jeder Rechner der Gruppe darf das lesen (kein neues Recht). Nachrichten, die ankamen, als der Chat nicht lief, fehlen.</div>
+      </div>
+      <div class="ro">Nur lesen. Schreiben können Sie an einen der beiden: <span class="btn">Chat mit w1</span> <span class="btn">Chat mit w2</span></div>
+    </main>
+  </div>
+</div></div>
+</section>
+
+<!-- ===================== 3c. Thema ohne Abonnent ===================== -->
+<section>
+<p class="cap"><b>3c Ein Thema, das niemand abonniert hat.</b> Der Chat liest <em>alle</em> Themen der Gruppe mit, auch die, die kein Rechner empfängt. Die Zeile sagt es. Schreiben Sie dorthin, warnt die Seite vor dem Senden: Die Nachricht käme bei niemandem an.</p>
+<div class="scroll"><div class="board" id="b8">
+  <div class="top"><h1><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent)"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z"/></svg>viper chat</h1><span class="pill">127.0.0.1:41873</span><span class="sp"></span>
+    <span class="me"><span class="led on"></span>Operator <b>operator</b> angemeldet</span><span class="pill">Deutsch</span><span class="pill">hell</span></div>
+  <div class="shell info">
+    <aside class="list">
+      <div class="search">Gespräche suchen</div>
+      <div class="grp"><span class="led on"></span>bedrock-eu-guard-compose<small>3 online</small></div>
+      <div class="sec">Alles</div>
+      <div class="row"><div class="av c0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z"/><circle cx="12" cy="12" r="2.5"/></svg></div><div><div class="nm">Alle Meldungen</div><div class="pv">nur lesen</div></div><div class="tm">14:09</div></div>
+      <div class="sec">Themen</div>
+      <div class="row"><div class="av t c3">#</div><div><div class="nm">general</div><div class="pv">w1: Release-Branch ist eingefroren</div></div><div class="tm">14:06</div></div>
+      <div class="row"><div class="av t c3">#</div><div><div class="nm">build</div><div class="pv">Sie: Bitte alle Gates laufen lassen</div></div><div class="tm">Gestern</div></div>
+      <div class="row sel"><div class="av t c5">#</div><div><div class="nm">alerts <span class="chip">niemand abonniert</span></div><div class="pv">w2: Festplatte bei 91 %</div></div><div class="tm">12:20</div></div>
+      <div class="sec">Rechner</div>
+      <div class="row"><div class="av c1">w1<span class="led on"></span></div><div><div class="nm">w1 <span class="chip">Server</span></div><div class="pv">Sie: Wer hat den Cache gelöscht?</div></div><div class="tm">13:41</div></div>
+      <div class="row"><div class="av c2">w2<span class="led on"></span></div><div><div class="nm">w2</div><div class="pv">w2: Verstanden. Ich warte auf …</div></div><div class="tm">14:07</div></div>
+      <div class="row"><div class="av c4">w3<span class="led on"></span></div><div><div class="nm">w3</div><div class="pv">w3: Frage: darf ich main pushen?</div></div><div class="tm">14:09</div></div>
+      <div class="sec">Zwischen Rechnern <span class="chip mitgel">mitgelesen</span></div>
+      <div class="row"><div class="avp"><span class="av c1">w1</span><span class="av c2">w2</span></div><div><div class="nm">w1 ↔ w2</div><div class="pv">w1: Cache ist leer, baue neu</div></div><div class="tm">14:03</div></div>
+      <div class="row"><div class="avp"><span class="av c1">w1</span><span class="av c4">w3</span></div><div><div class="nm">w1 ↔ w3</div><div class="pv">w3: Danke. Ich friere den Release …</div></div><div class="tm">14:03</div></div>
+      <div class="row"><div class="avp"><span class="av c2">w2</span><span class="av c4">w3</span></div><div><div class="nm">w2 ↔ w3</div><div class="pv">w2: Wartet jemand auf #build?</div></div><div class="tm">13:50</div></div>
+    </aside>
+    <main class="conv">
+      <div class="ch"><div class="av t c5" style="width:40px;height:40px">#</div><div><h2>#alerts</h2><div class="sub"><span style="color:var(--warn)">niemand abonniert</span> · gesendet von w2 (2 Meldungen)</div></div><span class="sp"></span><span class="btn">Suchen</span><span class="btn">Angaben</span></div>
+      <div class="msgs">
+        <div class="day">Heute</div>
+        <div class="m"><div class="av c2">w2</div><div class="bub"><div class="who"><b>w2</b><span>11:48</span></div><div class="txt">Festplatte bei 87 %.</div></div></div>
+        <div class="m"><div class="av c2">w2</div><div class="bub"><div class="who"><b>w2</b><span>12:20</span></div><div class="txt">Festplatte bei 91 %.</div></div></div>
+        <div class="sys warn">Kein Rechner empfängt <span class="tag">#alerts</span>. Eine Nachricht hierhin käme bei niemandem an. Ein Rechner empfängt ein Thema, wenn es in <code>NATS_MCP_TOPICS</code> steht oder sein Agent es abonniert.</div>
+      </div>
+      <div class="comp"><div class="box">Rundruf an #alerts …</div>
+        <div class="tools"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12l-8.5 8.5a5 5 0 0 1-7-7L14 5a3.3 3.3 0 0 1 4.7 4.7L10 18.4a1.7 1.7 0 0 1-2.4-2.4L15 8.6"/></svg>Datei<span class="seg"><span class="on">Rundruf</span></span><span class="sp"></span><span style="color:var(--warn)">an 0 Rechner</span><span class="btn">Senden</span></div></div>
+    </main>
+    <aside class="side">
+      <div><h3>Thema alerts</h3><dl class="kv"><dt>Abonnenten</dt><dd>keine</dd><dt>Gesendet von</dt><dd>w2</dd><dt>Erste Meldung</dt><dd>11:48</dd></dl></div>
+      <div><h3>Wer es empfangen könnte</h3><div class="tags"><span>w1</span><span>w2</span><span>w3</span></div></div>
+      <div class="note">Das Thema steht in keiner Einstellung <code>NATS_MCP_TOPICS</code> der Gruppe. Es ist durch Meldungen im Verlauf entstanden.</div>
+    </aside>
   </div>
 </div></div>
 </section>
@@ -356,6 +465,10 @@ svg { display: block; }
     <div class="row"><div class="av c1">w1<span class="led on"></span></div><div><div class="nm">w1</div><div class="pv">Sie: Wer hat den Cache gelöscht?</div></div><div class="tm">13:41</div></div>
     <div class="row"><div class="av c2">w2<span class="led on"></span></div><div><div class="nm">w2</div><div class="pv">w2: Verstanden. Ich warte auf …</div></div><div class="tm">14:07</div></div>
     <div class="row unread"><div class="av c4">w3<span class="led on"></span></div><div><div class="nm">w3</div><div class="pv">w3: Frage: darf ich main pushen?</div></div><div class="tm">14:09<span class="badge">1</span></div></div>
+      <div class="sec">Zwischen Rechnern <span class="chip mitgel">mitgelesen</span></div>
+      <div class="row"><div class="avp"><span class="av c1">w1</span><span class="av c2">w2</span></div><div><div class="nm">w1 ↔ w2</div><div class="pv">w1: Cache ist leer, baue neu</div></div><div class="tm">14:03</div></div>
+      <div class="row"><div class="avp"><span class="av c1">w1</span><span class="av c4">w3</span></div><div><div class="nm">w1 ↔ w3</div><div class="pv">w3: Danke. Ich friere den Release …</div></div><div class="tm">14:03</div></div>
+      <div class="row"><div class="avp"><span class="av c2">w2</span><span class="av c4">w3</span></div><div><div class="nm">w2 ↔ w3</div><div class="pv">w2: Wartet jemand auf #build?</div></div><div class="tm">13:50</div></div>
   </aside><div class="tabbar"><b>Chats</b><span>Alle Meldungen</span><span>Angaben</span></div></div>
 </div>
 <div class="board phone" id="b6b" data-theme="dark">
