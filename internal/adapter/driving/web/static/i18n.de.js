@@ -6,7 +6,7 @@
     'skip': 'Zum Inhalt springen',
     'nav.label': 'Seiten',
     'lang.label': 'Sprache',
-    'tab.overview': 'Übersicht', 'tab.runs': 'Läufe', 'tab.nats': 'NATS', 'tab.settings': 'Einstellungen', 'tab.logs': 'Protokolle',
+    'tab.overview': 'Übersicht', 'tab.runs.waiting': 'Läufe (wartet auf Ihre Antwort)', 'tab.runs': 'Läufe', 'tab.nats': 'NATS', 'tab.settings': 'Einstellungen', 'tab.logs': 'Protokolle',
     'banner.session': 'Die Sitzung ist zu Ende (viper ui wurde neu gestartet, oder der Schlüssel wurde woanders benutzt). Starten Sie viper ui neu und öffnen Sie seine Adresse.',
     'aria.settings': 'Einstellungen von {0}', 'aria.settings.group': 'Einstellungen der Gruppe {0}', 'settings.viagroup': '{0} hat keine eigene Datei: die Einstellungen kommen aus {1} (und .env.local).', 'settings.viabase': '{0} hat keine eigene Datei: die Einstellungen kommen aus .env.local.',
     'runs.clear': 'Beendete Läufe entfernen', 'runs.remove': 'Entfernen', 'runs.remove.aria': 'Den Lauf {0} entfernen',

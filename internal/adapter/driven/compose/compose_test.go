@@ -465,6 +465,10 @@ func TestDockerModes(t *testing.T) {
 		if homes := strings.Count(string(b), ":/home/builder"); homes != map[bool]int{true: 2, false: 1}[want.sidecar] {
 			t.Errorf("%s: %d mounts of the home directory\n%s", mode, homes, b)
 		}
+		// both mounts are the same volume: the machine's and the daemon's
+		if n := strings.Count(string(b), "- home:/home/builder"); n != map[bool]int{true: 2, false: 1}[want.sidecar] {
+			t.Errorf("%s: the mounts are not all of the volume of the machine (%d)\n%s", mode, n, b)
+		}
 	}
 }
 

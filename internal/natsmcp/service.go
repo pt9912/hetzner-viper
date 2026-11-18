@@ -93,6 +93,7 @@ func (s *Service) Connect(ctx context.Context) error {
 		nats.ReconnectErrHandler(func(_ *nats.Conn, err error) { s.noteError(err) }), // a connection that does not come up: why
 		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) { s.logError("disconnected", err) }),
 		nats.ReconnectHandler(func(*nats.Conn) {
+			s.clearError() // the last error is one of the connection that is down, not of this one
 			s.log.Printf("reconnected")
 			s.publishPresence("up", true) // the table of the others is empty after a break: ask who is there
 		}),
@@ -149,7 +150,7 @@ func (s *Service) connectionState() string {
 		state = s.nc.Status().String()
 	}
 	if e := s.lastError(); e != "" {
-		state += "; the last error: " + e + authHint(e, s.cfg.Names.Group)
+		state += "; the last error: " + e
 	}
 	return state
 }
@@ -161,6 +162,12 @@ func (s *Service) noteError(err error) {
 	}
 	s.mu.Lock()
 	s.lastErrText = err.Error()
+	s.mu.Unlock()
+}
+
+func (s *Service) clearError() {
+	s.mu.Lock()
+	s.lastErrText = ""
 	s.mu.Unlock()
 }
 

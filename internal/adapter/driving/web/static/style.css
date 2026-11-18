@@ -42,6 +42,7 @@ code { font-family: var(--mono); font-size: .92em; }
 .tab[aria-selected="true"] { color: var(--fg); background: var(--panel); border-left-color: var(--accent-fill); box-shadow: 0 0 0 1px var(--line); }
 /* a run is going: the one thing on the page that moves */
 .tab[data-busy="true"]::after { content: ""; display: inline-block; width: .55rem; height: .55rem; margin-left: .55rem; border-radius: 50%; background: var(--warn); animation: beat 1.4s ease-in-out infinite; }
+.tab[data-waiting="true"]::after { background: var(--bad); animation-duration: .7s; }
 @keyframes beat { 50% { opacity: .25; } }
 main { padding: 1.4rem 1.6rem 3rem; max-width: 76rem; }
 main:focus { outline: none; }

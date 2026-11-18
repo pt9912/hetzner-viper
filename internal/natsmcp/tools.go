@@ -263,7 +263,7 @@ func (s *Service) askWith(ctx context.Context, to, text string, att *Attachment,
 }
 
 // askAnnounced is askWith that tells the ID of the request (chosen here) to onID before it waits for the answer, if onID is not nil.
-// An answer that comes after the time is over is found by that ID.
+// A reader that goes on reading finds an answer that comes after the time is over by that ID (this command ends with the time).
 func (s *Service) askAnnounced(ctx context.Context, to, text string, att *Attachment, timeout time.Duration, onID func(id string)) (Envelope, error) {
 	if err := s.checkPeer(to); err != nil {
 		return Envelope{}, err

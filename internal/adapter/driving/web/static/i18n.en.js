@@ -6,7 +6,7 @@
     'skip': 'Skip to the content',
     'nav.label': 'Pages',
     'lang.label': 'Language',
-    'tab.overview': 'Overview', 'tab.runs': 'Runs', 'tab.nats': 'NATS', 'tab.settings': 'Settings', 'tab.logs': 'Logs',
+    'tab.overview': 'Overview', 'tab.runs.waiting': 'Runs (waits for your answer)', 'tab.runs': 'Runs', 'tab.nats': 'NATS', 'tab.settings': 'Settings', 'tab.logs': 'Logs',
     'banner.session': 'The session has ended (viper ui was restarted, or the key was used elsewhere). Start viper ui again and open its address.',
     'aria.settings': 'Settings of {0}', 'aria.settings.group': 'Settings of group {0}', 'settings.viagroup': '{0} has no file of its own: its settings come from {1} (and .env.local).', 'settings.viabase': '{0} has no file of its own: its settings come from .env.local.',
     'runs.clear': 'Remove finished runs', 'runs.remove': 'Remove', 'runs.remove.aria': 'Remove the run {0}',

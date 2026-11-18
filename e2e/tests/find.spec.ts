@@ -109,7 +109,7 @@ test('with the option the page stays where it is when a run starts, and says wha
   await page.check('#opt-stay');
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Preflight web', exact: true }).click();
-  await expect(page.locator('#start-note')).toContainText('Started: preflight web');
+  await expect(page.locator('#start-note')).toContainText('Started: Preflight web');
   await expect(page.locator('#page-overview')).toBeVisible();
   await expect(page.locator('#page-runs')).toBeHidden();
   // the run is there all the same
@@ -124,4 +124,32 @@ test('with the option the page stays where it is when a run starts, and says wha
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Preflight a', exact: true }).click();
   await expect(page.locator('#page-runs')).toBeVisible();
+});
+
+test('with the option the page stays also when the server refuses the run, and says so instead of "running"', async ({ page }) => {
+  ui = await startUI([], 0);
+  await page.goto(ui.start);
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3);
+  await page.click('#opt-button');
+  await page.check('#opt-stay');
+  await page.keyboard.press('Escape');
+  await page.route('**/api/run', (r) => r.fulfill({ status: 409, contentType: 'application/json', body: '{"error":"a run holds the machine web"}' }));
+  await page.getByRole('button', { name: 'Preflight web', exact: true }).click();
+  await expect(page.locator('#start-note')).toContainText('a run holds the machine web');
+  await expect(page.locator('#page-overview')).toBeVisible();
+  await page.click('#tab-runs');
+  await expect(page.locator('#run-status')).toContainText('a run holds the machine web');
+  await expect(page.locator('#run-status')).not.toContainText('Running');
+});
+
+test('a run that waits for an answer is marked on the tab of the runs, so that a page that stays notices it', async ({ page }) => {
+  ui = await startUI([], 0);
+  await page.goto(ui.start);
+  await expect(page.locator('#machines tr.unit')).toHaveCount(3);
+  await page.route('**/api/runs', (r) => r.fulfill({ contentType: 'application/json', body: '{"runs":[{"id":"w1","action":"down","machine":"web","state":"waiting","code":0}]}' }));
+  await page.click('#tab-runs');
+  await expect(page.locator('#tab-runs')).toHaveAttribute('data-waiting', 'true');
+  await expect(page.locator('#tab-runs')).toHaveAttribute('aria-label', /waits for your answer/);
+  await page.click('#tab-overview');
+  await expect(page.locator('#tab-runs')).toHaveAttribute('data-waiting', 'true');
 });

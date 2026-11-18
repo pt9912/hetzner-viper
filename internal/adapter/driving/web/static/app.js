@@ -1076,22 +1076,29 @@
     }
     const repo = $('repo').value.trim();
     if (repo && (req.action === 'up' || req.action === 'preflight')) { req.repo = repo; }
-    $('run-status').textContent = t('status.running');
-    $('run-status').className = '';
     try {
       const r = await api('/api/run', req);
-      if (stay) { startNote(t('start.note', req.action, req.machine || req.group || req.nats || '')); } else { show('runs'); }
+      $('run-status').textContent = t('status.running'); // the run is there: its page says so
+      $('run-status').className = '';
+      if (stay) { startNote(t('start.note', actionName(req.action), req.machine || req.group || req.nats || '')); } else { show('runs'); }
       await loadRuns();
       attach(r.id);
       load(); // the machines the run holds are busy now
       return true;
     } catch (e) {
-      if (stay) { startNote(t('run.notstarted', e.message), true); return false; }
-      show('runs');
       $('run-status').textContent = t('run.notstarted', e.message);
       $('run-status').className = 'bad';
+      if (stay) { startNote(t('run.notstarted', e.message), true); return false; }
+      show('runs');
       return false;
     }
+  }
+
+  // the name of an action as the buttons call it ("Terminal", "Down"); an action without a button keeps its word
+  function actionName(action) {
+    const key = ({ ssh: 'tab.cmd', image: 'tab.image', find: 'tab.find' })[action] || 'btn.' + action;
+    const text = t(key);
+    return text === key ? action : text;
   }
 
   function runLabel(run) {
@@ -1107,6 +1114,10 @@
     findFind();
     // a run in progress: the tab says so (the one thing on the page that moves)
     $('tab-runs').dataset.busy = String(runs.some((x) => x.state === 'running' || x.state === 'waiting' || x.state === 'cancelling'));
+    // a run that asks something waits for the person: the tab says so, also when the page stays where it is
+    const waiting = runs.some((x) => x.state === 'waiting');
+    $('tab-runs').dataset.waiting = String(waiting);
+    if (waiting) { $('tab-runs').setAttribute('aria-label', t('tab.runs.waiting')); } else { $('tab-runs').removeAttribute('aria-label'); } // without it the text of the tab names it
     const ul = $('run-list');
     ul.replaceChildren();
     if (runs.length === 0) { const li = document.createElement('li'); li.className = 'muted'; li.textContent = t('runs.none'); ul.appendChild(li); }

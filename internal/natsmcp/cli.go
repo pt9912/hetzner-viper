@@ -111,9 +111,10 @@ func connectOnce(ctx context.Context, cfg Config, stderr io.Writer, tap func(See
 	deadline := time.Now().Add(10 * time.Second)
 	for !s.Connected() {
 		if time.Now().After(deadline) || ctx.Err() != nil {
-			state := s.connectionState() // before Close: afterwards it always says "closed"
+			state := s.connectionState()                     // before Close: afterwards it always says "closed"
+			hint := authHint(s.lastError(), cfg.Names.Group) // only here: the commands of viper, not the tools of an agent on a machine
 			s.nc.Close()
-			return nil, errors.New("not connected to the NATS server (" + state + ")")
+			return nil, errors.New("not connected to the NATS server (" + state + hint + ")")
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -200,6 +201,8 @@ func runCLI(ctx context.Context, cfg Config, name string, a cliArgs, text string
 		var e Envelope
 		var onID func(string)
 		if a.announce { // not by default: a reader that does not know the event refuses it
+			// written before the request is published: the ID is known before any answer can exist (also one that comes in the stream of
+			// another connection). If the request is not sent after all, the command ends with an error: a reader drops what it asked
 			onID = func(id string) { _ = writeLine(stdout, Line{Event: "asked", To: a.to, ID: id}) }
 		}
 		if e, err = s.askAnnounced(ctx, a.to, text, att, a.timeout, onID); err == nil {
