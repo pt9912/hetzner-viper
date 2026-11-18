@@ -106,3 +106,10 @@ select { font: inherit; background: var(--bg); color: var(--fg); border: 1px sol
 .ch .plain { font-size: .8rem; }
 .back { display: none; }
 @media (max-width: 900px) { .back { display: inline; } .msg { max-width: 95%; } .ch .plain { font-size: .75rem; } .top { flex-wrap: wrap; gap: .4rem .8rem; } }
+.fold, .sec { all: unset; box-sizing: border-box; cursor: pointer; display: flex; align-items: center; gap: .4rem; width: 100%; }
+.fold { padding: .2rem .9rem; font: 600 .9rem var(--mono); }
+.sec { margin: .5rem 0 .1rem; padding: .1rem .9rem; font-size: .74rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.fold:focus-visible, .sec:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tri { width: .8rem; color: var(--muted); }
+.count { margin-left: auto; font-weight: 400; }
+.hint { padding: .2rem .9rem; font-size: .84rem; color: var(--muted); }

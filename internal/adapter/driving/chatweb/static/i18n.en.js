@@ -89,5 +89,13 @@
     'del.confirm.all': 'Delete the whole history of the group {0} on this computer? NATS keeps nothing: it cannot be fetched again.',
     'del.failed': 'Not deleted: {0}',
     'nav.back': 'Back to the list',
+    'presence.short.here': 'here',
+    'presence.short.gone': 'away',
+    'sec.pairs.none': 'No messages between machines yet.',
+    'group.connected': 'connected',
+    'group.connecting': 'connecting',
+    'group.disturbed': 'not reachable',
+    'group.auth': 'key not known',
+    'group.nokey': 'not logged in',
   });
 })();

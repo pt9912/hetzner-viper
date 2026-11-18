@@ -10,6 +10,7 @@
   let page = 'overview';
 
   function banner(text) {
+    if (text && $('banner').textContent !== text) { console.warn('viper: ' + text); } // also in the console of the browser
     $('banner').textContent = text || '';
     $('banner').hidden = !text;
   }

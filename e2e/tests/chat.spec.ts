@@ -19,8 +19,10 @@ test('with the key the machines of the group are conversations, and one opens', 
   ui = await startUI([], 0, false, { command: 'ui-chat', operator: true });
   await page.goto(ui.start);
   await expect(page.locator('#me')).toContainText('Operator operator logged in');
-  await expect(page.locator('.group h2')).toHaveText('dev');
-  await expect(page.locator('.conv-btn')).toHaveCount(3);
+  await expect(page.locator('.group h2')).toContainText('dev');
+  await expect(page.locator('.group h2 .led')).toHaveClass(/warn/); // no server runs: the group is not green
+  await expect(page.locator('.group h2')).toContainText('not reachable');
+  await expect(page.locator('.conv-btn')).toHaveCount(4); // all, two machines and their pair
   await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
   await expect(page.locator('#conv-name')).toHaveText('a');
   await expect(page.locator('#conv-sub')).toContainText('Machine of the group dev');
@@ -191,7 +193,7 @@ test('unread counts name the entry and the tab, search finds a part of a word an
   await page.locator('#delall').click();
   await page.locator('#confirm-ok').click();
   await expect(page.locator('#msgs')).toContainText('No messages yet');
-  await expect(page.locator('.conv-btn[data-key="dev/paar__a__b"]')).toHaveCount(0);
+  await expect(page.locator('.conv-btn[data-key="dev/paar__a__b"] .pv')).toHaveCount(0); // the pair of two machines stays, empty
   await ui.stop();
   ui = await startUI(['--readonly'], 0, false, { command: 'ui-chat', operator: true, history });
   await page.goto(ui.start);
@@ -224,6 +226,42 @@ test('keyboard: the arrow keys move in the list; narrow: the thread takes the pl
   await page.locator('.conv-btn[data-key="dev/alle"]').click();
   await expect(page.locator('#msgs')).toHaveAttribute('aria-live', 'off');
   await ctx.close();
+});
+
+test('the page stays still: the list is not built again every few seconds, and the line at the top does not come and go', async ({ page }) => {
+  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true, history });
+  await page.goto(ui.start);
+  const btn = page.locator('.conv-btn[data-key="dev/rechner__a"]');
+  await btn.focus();
+  await btn.evaluate((e) => { (e as unknown as { mark: number }).mark = 1; });
+  await expect(page.locator('#banner')).toBeVisible(); // no server runs: the line says so, and stays
+  const top = (await page.locator('.shell').boundingBox())!.y;
+  await page.waitForTimeout(11_000); // two snapshots of the server
+  expect(await btn.evaluate((e) => (e as unknown as { mark?: number }).mark)).toBe(1); // the same element: nothing was built again
+  await expect(btn).toBeFocused();
+  expect((await page.locator('.shell').boundingBox())!.y).toBe(top);
+  const lamp = page.locator('.group h2 .led');
+  await expect(lamp).toHaveClass(/warn/);
+});
+
+test('groups and their parts fold, and the choice is kept; pairs of few machines are there before they write', async ({ page }) => {
+  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true });
+  await page.goto(ui.start);
+  await expect(page.locator('.conv-btn[data-key="dev/paar__a__b"]')).toBeVisible(); // nothing written yet
+  await expect(page.locator('.conv-btn[data-key="dev/rechner__a"]')).toBeVisible();
+  const machines = page.locator('button.sec[data-fold="dev/Machines"]');
+  await expect(machines).toHaveAttribute('aria-expanded', 'true');
+  await machines.click();
+  await expect(page.locator('.conv-btn[data-key="dev/rechner__a"]')).toHaveCount(0);
+  await expect(machines).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('.conv-btn[data-key="dev/paar__a__b"]')).toBeVisible(); // the other parts stay
+  await page.reload();
+  await expect(page.locator('.conv-btn[data-key="dev/rechner__a"]')).toHaveCount(0); // kept
+  await page.locator('button.fold', { hasText: 'dev' }).click();
+  await expect(page.locator('.conv-btn')).toHaveCount(0);
+  await expect(page.locator('button.fold', { hasText: 'dev' })).toHaveAttribute('aria-expanded', 'false');
+  await page.locator('button.fold', { hasText: 'dev' }).click();
+  await expect(page.locator('.conv-btn[data-key="dev/alle"]')).toBeVisible();
 });
 
 test('the notification is off, and a choice to turn it on is kept', async ({ browser, browserName }) => {

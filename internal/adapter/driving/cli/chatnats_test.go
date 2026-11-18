@@ -24,9 +24,10 @@ import (
 // chatWorld is a group dev with a server (the operator registered, ssh replaced by a direct address) and the machine beta as an agent
 // would be.
 type chatWorld struct {
-	opts *cli.Opts
-	env  settings.Env
-	beta *natsmcp.Service
+	opts  *cli.Opts
+	env   settings.Env
+	beta  *natsmcp.Service
+	gamma *natsmcp.Service
 }
 
 func newChatWorld(t *testing.T) *chatWorld {
@@ -45,8 +46,13 @@ func newChatWorld(t *testing.T) *chatWorld {
 	if err := os.WriteFile(seed, []byte(id.Seed+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	gid, _ := natsserver.NewIdentity()
+	gseed := filepath.Join(tmp, "gamma.nk")
+	if err := os.WriteFile(gseed, []byte(gid.Seed+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	block, err := natsserver.AuthorizationBlock("dev", []natsserver.Client{
-		{Machine: "beta", PublicKey: id.PublicKey}, {Machine: "operator", PublicKey: op.registered["operator"], Operator: true}}, false)
+		{Machine: "beta", PublicKey: id.PublicKey}, {Machine: "gamma", PublicKey: gid.PublicKey}, {Machine: "operator", PublicKey: op.registered["operator"], Operator: true}}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,10 +81,16 @@ func newChatWorld(t *testing.T) *chatWorld {
 		t.Fatal(err)
 	}
 	t.Cleanup(beta.Close)
+	gamma := natsmcp.NewService(natsmcp.Config{URL: srv.ClientURL(), SeedFile: gseed, Names: natsmcp.Names{Group: "dev", Me: "gamma"},
+		PushFrom: map[string]bool{}, MaxText: natsmcp.DefaultMaxText, InboxMax: 50, InboxPerMan: 50, Quiet: true}, quietLog{}, nil)
+	if err := gamma.Connect(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(gamma.Close)
 	h.OpenTunnel = func(context.Context, driving.NATSTarget, string, int) (string, func(), error) {
 		return strings.TrimPrefix(srv.ClientURL(), "nats://"), func() {}, nil
 	}
-	return &chatWorld{opts: &cli.Opts{Host: h, Dir: dir}, env: env, beta: beta}
+	return &chatWorld{opts: &cli.Opts{Host: h, Dir: dir}, env: env, beta: beta, gamma: gamma}
 }
 
 func (w *chatWorld) tool(t *testing.T, name, args string) string {
@@ -215,3 +227,29 @@ type syncBuf struct {
 
 func (s *syncBuf) Write(p []byte) (int, error) { s.mu.Lock(); defer s.mu.Unlock(); return s.b.Write(p) }
 func (s *syncBuf) String() string              { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
+
+func TestTheStreamShowsWhatTwoMachinesWriteToEachOther(t *testing.T) {
+	w := newChatWorld(t)
+	conn, err := cli.ChatConnector(w.opts, w.env).Connect(context.Background(), "dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var out syncBuf
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = conn.Watch(ctx, &out, &syncBuf{}) }()
+	waitFor(t, "the stream is ready", func() bool { return strings.Contains(out.String(), `"ready"`) })
+	if err := w.beta.SendText("gamma", "hello gamma, from beta"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the line between the two machines is in the stream", func() bool {
+		for _, l := range strings.Split(out.String(), "\n") {
+			var x model.NATSLine
+			if json.Unmarshal([]byte(l), &x) == nil && x.From == "beta" && x.To == "gamma" && x.Via == "out" && x.Text == "hello gamma, from beta" {
+				return true
+			}
+		}
+		return false
+	})
+}

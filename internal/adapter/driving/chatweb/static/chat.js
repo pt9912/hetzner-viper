@@ -38,6 +38,8 @@
 
   const CONV = { rechner: 'conv.machine', thema: 'conv.topic', paar: 'conv.pair', alle: 'conv.stream' };
   const PRESENCE = { here: 'presence.here', gone: 'presence.gone', unknown: 'presence.unknown' };
+  const GROUP_WORD = { connected: 'group.connected', connecting: 'group.connecting', disturbed: 'group.disturbed', auth: 'group.auth', nokey: 'group.nokey' };
+  const PRESENCE_SHORT = { here: 'presence.short.here', gone: 'presence.short.gone', unknown: 'presence.unknown' };
   const colours = ['c1', 'c2', 'c3', 'c4', 'c5'];
   const colourOf = (name) => colours[Array.from(name).reduce((a, c) => a + c.charCodeAt(0), 0) % colours.length];
   const keyOf = (kind, name) => (kind === 'alle' ? 'alle' : kind + '__' + name.split(' ').join('__'));
@@ -81,7 +83,7 @@
       b.appendChild(badge);
     }
     const words = [label];
-    if (kind === 'rechner') { words.push(t(PRESENCE[presence(g, name).state] || PRESENCE.unknown, ago(presence(g, name).seen_ago))); }
+    if (kind === 'rechner') { words.push(t(PRESENCE_SHORT[presence(g, name).state] || PRESENCE_SHORT.unknown)); }
     if (c.unread > 0) { words.push(t('list.unread', c.unread)); }
     b.setAttribute('aria-label', words.join(', '));
     b.setAttribute('aria-current', String(!!current && current.group === g.name && current.key === key));
@@ -90,11 +92,38 @@
     return li;
   }
 
-  function section(box, title, items) {
-    if (!items.length) { return; }
-    box.appendChild(el('div', 'sec', title));
+  // what the person has folded: groups and the parts of their lists (kept in the browser)
+  const folded = (() => {
+    try { return JSON.parse(window.localStorage.getItem('viper-chat-fold') || '{}') || {}; } catch (e) { return {}; }
+  })();
+
+  function fold(key) {
+    folded[key] = !folded[key];
+    try { window.localStorage.setItem('viper-chat-fold', JSON.stringify(folded)); } catch (e) { /* not kept */ }
+    renderList();
+  }
+
+  // a title that folds its part of the list
+  function foldButton(cls, key, label, count) {
+    const b = el('button', cls);
+    b.type = 'button';
+    b.dataset.fold = key;
+    b.setAttribute('aria-expanded', String(!folded[key]));
+    b.appendChild(el('span', 'tri', folded[key] ? '▸' : '▾'));
+    b.appendChild(el('span', '', label));
+    if (count !== undefined) { b.appendChild(el('span', 'count', String(count))); }
+    b.addEventListener('click', () => fold(key));
+    return b;
+  }
+
+  function section(box, group, title, items, hint) {
+    if (!items.length && !hint) { return; }
+    const key = group + '/' + title;
+    box.appendChild(foldButton('sec', key, title, items.length));
+    if (folded[key]) { return; }
     const ul = el('ul');
     for (const i of items) { ul.appendChild(i); }
+    if (!items.length) { const li = el('li', 'hint', hint); ul.appendChild(li); }
     box.appendChild(ul);
   }
 
@@ -107,6 +136,10 @@
       if (c.kind === 'thema') { topics.add(c.name); }
       if (c.kind === 'paar' && !state.no_pairs) { pairs.push(c.name); }
     }
+    if (!state.no_pairs) { // few machines: every pair has its place, also before the two have written; many: only those that did
+      const ms = (g.machines || []).map((m) => m.name).sort();
+      if (ms.length <= 6) { for (let i = 0; i < ms.length; i++) { for (let j = i + 1; j < ms.length; j++) { if (!pairs.includes(ms[i] + ' ' + ms[j])) { pairs.push(ms[i] + ' ' + ms[j]); } } } }
+    }
     return { topics: Array.from(topics).sort(), pairs: pairs.sort() };
   }
 
@@ -116,7 +149,41 @@
     return n;
   }
 
+  // what of a snapshot the list shows: the state of the machines, not the seconds
+  function listSignature(s) {
+    return s && s.machines ? (s.status ? s.status.status : '') + '|' + Object.keys(s.machines).sort().map((m) => m + ':' + s.machines[m].state).join(',') : '';
+  }
+
   function renderList() {
+    const had = document.activeElement && document.activeElement.classList.contains('conv-btn') ? document.activeElement.dataset.key : null;
+    const pane = $('list-pane');
+    const top = pane.scrollTop;
+    drawList();
+    pane.scrollTop = top; // a list that is built again stays where it was, and keeps the focus
+    if (had) { const b = Array.from(pane.querySelectorAll('.conv-btn')).find((x) => x.dataset.key === had); if (b) { b.focus(); } }
+  }
+
+  // the state of a group: no key here, or what the stream says (a group that is not running is not reachable)
+  function groupState(g) {
+    if (!g.operator) { return 'nokey'; }
+    const s = live[g.name] && live[g.name].snapshot && live[g.name].snapshot.status;
+    return s ? s.status : 'connecting';
+  }
+
+  // the lamp of a group and its word
+  function lampIn(hb, g) {
+    const gs = groupState(g);
+    const led = hb.querySelector('.led');
+    led.className = 'led' + (gs === 'connected' ? '' : gs === 'connecting' || gs === 'disturbed' ? ' warn' : ' off');
+    hb.querySelector('.sr').textContent = t(GROUP_WORD[gs] || GROUP_WORD.connecting);
+  }
+
+  function lampOf(g) {
+    const hb = Array.from($('groups').querySelectorAll('button.fold')).find((b) => b.dataset.fold === g.name);
+    if (hb) { lampIn(hb, g); }
+  }
+
+  function drawList() {
     const total = unreadTotal();
     document.title = (total > 0 ? '(' + total + ') ' : '') + t('title');
     const root = $('groups');
@@ -124,16 +191,22 @@
     for (const g of state.groups) {
       const box = el('section', 'group');
       const h = el('h2');
-      const led = el('span', 'led' + (g.operator ? '' : ' off'));
+      const hb = foldButton('fold', g.name, g.name);
+      const led = el('span', 'led');
       led.setAttribute('aria-hidden', 'true');
-      h.append(led, document.createTextNode(g.name));
+      hb.insertBefore(led, hb.children[1]);
+      hb.appendChild(el('span', 'sr'));
+      lampIn(hb, g); // the lamp has a word
+      h.appendChild(hb);
       box.appendChild(h);
-      if (g.operator) {
+      if (g.operator && !folded[g.name]) {
         const e = entries(g);
-        section(box, '', [convButton(g, 'alle', '')]);
-        section(box, t('sec.topics'), e.topics.map((n) => convButton(g, 'thema', n)));
-        section(box, t('sec.machines'), (g.machines || []).map((m) => convButton(g, 'rechner', m.name)));
-        section(box, t('sec.pairs'), e.pairs.map((n) => convButton(g, 'paar', n)));
+        const all = el('ul');
+        all.appendChild(convButton(g, 'alle', ''));
+        box.appendChild(all);
+        section(box, g.name, t('sec.topics'), e.topics.map((n) => convButton(g, 'thema', n)));
+        section(box, g.name, t('sec.machines'), (g.machines || []).map((m) => convButton(g, 'rechner', m.name)));
+        section(box, g.name, t('sec.pairs'), e.pairs.map((n) => convButton(g, 'paar', n)), state.no_pairs ? '' : t('sec.pairs.none'));
       }
       root.appendChild(box);
     }
@@ -489,13 +562,18 @@
   // ---- what happens in the groups
 
   function banner(text) {
-    $('banner').textContent = text || '';
-    $('banner').hidden = !text;
+    const b = $('banner');
+    if ((b.textContent || '') !== (text || '')) {
+      b.textContent = text || ''; // the same text again is not announced again
+      if (text) { console.warn('viper chat: ' + text); } // also in the console of the browser
+    }
+    if (b.hidden === !!text) { b.hidden = !text; }
   }
 
   function showStatus(g) {
     const s = live[g.name] && live[g.name].snapshot && live[g.name].snapshot.status;
-    if (!s || s.status === 'connected' || s.status === 'connecting') { banner(s && s.dropped ? t('status.dropped', g.name, s.dropped) : ''); return; }
+    if (s && s.status === 'connecting') { return; } // a new try is on its way: the line stays as it is, it does not blink
+    if (!s || s.status === 'connected') { banner(s && s.dropped ? t('status.dropped', g.name, s.dropped) : ''); return; }
     if (s.status === 'auth') { banner(t('status.auth', g.name, 'viper nats init ' + g.name)); return; }
     banner(t('status.disturbed', g.name, s.reason || '', s.retry_in || 0));
   }
@@ -537,11 +615,18 @@
     if (L.es) { return; }
     const es = new EventSource('/api/chat/events?group=' + encodeURIComponent(g.name));
     L.es = es;
-    es.addEventListener('snapshot', (e) => { L.snapshot = JSON.parse(e.data); showStatus(g); renderList(); header(); });
+    es.addEventListener('snapshot', (e) => {
+      const before = listSignature(L.snapshot);
+      L.snapshot = JSON.parse(e.data);
+      showStatus(g);
+      if (listSignature(L.snapshot) !== before) { renderList(); } // the list is not built again every five seconds
+      header();
+    });
     es.addEventListener('status', (e) => {
       const ev = JSON.parse(e.data);
       L.snapshot = Object.assign(L.snapshot || { machines: {}, topics: {} }, { status: ev.status });
       showStatus(g);
+      lampOf(g); // only the lamp of the group, not the whole list
     });
     es.addEventListener('message', (e) => onMessage(g, JSON.parse(e.data)));
     es.addEventListener('ask_end', (e) => {
