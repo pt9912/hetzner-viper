@@ -215,6 +215,21 @@ func helpsImages() map[string]commandDoc {
 			examples: []string{"viper ui", "viper ui --no-open --port 8787"},
 			manual:   "Die Oberfläche im Browser",
 		},
+		"ui-chat": {
+			group:   helpImages,
+			summary: "chat with the machines of a NATS group in the browser",
+			about:   "Starts a small web server on 127.0.0.1, like viper ui, with a chat: every machine of a NATS group, every topic and (later) every pair of machines is a conversation of its own. It needs the key of the operator (viper nats init GROUP). Only this computer reaches it, with a key that works once; Ctrl-C ends it. Only one viper ui-chat runs at a time. The history stays on this computer.",
+			options: []optionDoc{
+				{"port", "N", "listen on this port (default: a free one)"},
+				{"no-open", "", "do not open the browser; print the address with the key (valid for ten minutes)"},
+				{"readonly", "", "only look: no sending, no logging in or out, no deleting"},
+				{"no-pairs", "", "do not show what two machines write to each other"},
+				{"keep-days", "N", "how long the history is kept (default 90 days)"},
+				{"no-history", "", "keep nothing on the disk"},
+			},
+			examples: []string{"viper ui-chat", "viper ui-chat --no-open --port 8788"},
+			manual:   "Die Oberfläche im Browser",
+		},
 		"find": {
 			group:   helpImages,
 			summary: "find the cheapest server types with at least this much CPU, RAM and disk",

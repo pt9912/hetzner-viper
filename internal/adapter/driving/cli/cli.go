@@ -36,6 +36,8 @@ type options struct {
 	parallel                  int                 // how many machines of a group at the same time (0: the default)
 	force, full, noCode, tmux bool
 	here                      bool   // viper terminal: run in this terminal, not in a window of its own
+	noPairs, noHistory        bool   // viper ui-chat: without the conversations between two machines; nothing kept on disk
+	keepDays                  int    // viper ui-chat: how long the history is kept
 	registry                  string // viper down: delete or keep a registry viper made ("" asks)
 	within                    string // the group a single machine is looked at in (viper up web --in-group dev)
 	// the need of viper find
@@ -71,7 +73,7 @@ var errHelp = errors.New("help")
 // isValueFlag reports whether the option takes a value.
 func isValueFlag(n string) bool {
 	switch n {
-	case "repo", "cmd", "dir", "group", "in-group", "parallel", "cpu", "ram", "disk", "arch", "location", "provider", "vat", "to", "topic", "from", "file", "pdf", "image", "zip", "sha256", "out", "timeout", "tag", "k3d", "port":
+	case "repo", "cmd", "dir", "group", "in-group", "parallel", "cpu", "ram", "disk", "arch", "location", "provider", "vat", "to", "topic", "from", "file", "pdf", "image", "zip", "sha256", "out", "timeout", "tag", "k3d", "port", "keep-days":
 		return true
 	}
 	return false
@@ -96,6 +98,7 @@ func commands() map[string]command {
 		"k8s-proxy":    {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeK8sProxy},
 		"docker-proxy": {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeDockerProxy},
 		"mcp-binary":   {usage: "--arch amd64|arm64", machine: noMachine, flags: []string{"arch"}, run: nativeMCPBinary},
+		"ui-chat":      {usage: "[--port N] [--no-open] [--readonly] [--no-pairs] [--keep-days N] [--no-history]", machine: noMachine, flags: []string{"port", "no-open", "readonly", "no-pairs", "keep-days", "no-history"}, run: nativeUIChat},
 		"ui":           {usage: "[--port N] [--no-open] [--readonly|--edit]", machine: noMachine, flags: []string{"port", "no-open", "readonly", "edit"}, run: nativeUI},
 		"version":      {usage: "", machine: noMachine},
 	}
@@ -249,37 +252,22 @@ func parseFlag(o *options, name string, args []string, i *int, allowed map[strin
 
 // setSwitch sets the option that takes no value.
 func setSwitch(o *options, name, n string) error {
-	switch n {
-	case "force":
-		o.force = true
-	case "delete-registry", "keep-registry":
+	if n == "delete-registry" || n == "keep-registry" {
 		return setRegistry(o, name, n)
-	case "full":
-		o.full = true
-	case "no-open":
-		o.noOpen = true
-	case "readonly":
-		o.readonly = true
-	case "edit":
-		o.edit = true
-	case "no-code":
-		o.noCode = true
-	case "tmux":
-		o.tmux = true
-	case "here":
-		o.here = true
-	case "query":
-		o.query = true
-	case "all":
-		o.all = true
-	case "no-presence":
-		o.noPresence = true
-	case "json":
-		o.asJSON = true
-	case "yes":
-		o.yes = true
+	}
+	if p, ok := switches(o)[n]; ok {
+		*p = true
 	}
 	return nil
+}
+
+// switches are the options without a value, each with what it sets.
+func switches(o *options) map[string]*bool {
+	return map[string]*bool{
+		"force": &o.force, "full": &o.full, "no-open": &o.noOpen, "readonly": &o.readonly, "edit": &o.edit, "no-code": &o.noCode,
+		"tmux": &o.tmux, "here": &o.here, "no-pairs": &o.noPairs, "no-history": &o.noHistory, "query": &o.query, "all": &o.all,
+		"no-presence": &o.noPresence, "json": &o.asJSON, "yes": &o.yes,
+	}
 }
 
 // setNumber reads the value of --cpu, --ram or --disk: a positive number.
@@ -337,7 +325,7 @@ func setValue(o *options, name, flag, v string) error {
 		return setGroup(o, name, flag, v)
 	case "to", "topic", "from", "file", "pdf", "image", "zip", "sha256", "out", "timeout", "tag", "k3d":
 		return setNatsValue(o, name, flag, v)
-	case "port", "parallel":
+	case "port", "parallel", "keep-days":
 		return setCount(o, name, flag, v)
 	default:
 		return setNumber(o, name, flag, v)
@@ -353,6 +341,13 @@ func setCount(o *options, name, flag, v string) error {
 			return fmt.Errorf("viper %s: --port needs a port from 1 to 65535: %s", name, v)
 		}
 		o.port = n
+		return nil
+	}
+	if flag == "keep-days" {
+		if err != nil || n < 1 || n > 3650 {
+			return fmt.Errorf("viper %s: --keep-days needs a number of days from 1 to 3650: %s", name, v)
+		}
+		o.keepDays = n
 		return nil
 	}
 	if err != nil || n < 1 || n > 64 {

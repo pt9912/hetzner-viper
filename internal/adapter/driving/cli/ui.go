@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -23,7 +24,6 @@ import (
 
 // nativeUI is viper ui: the web server on 127.0.0.1 with the pages of docs/plan/ui.md.
 func nativeUI(o *options) error {
-	h := o.host()
 	env, err := o.env()
 	if err != nil {
 		return err
@@ -35,6 +35,13 @@ func nativeUI(o *options) error {
 	b := &uiBackend{o: o, env: env, secrets: secrets}
 	b.learnEnvironment()
 	cfg := uiConfig(o, b, secrets)
+	return serveBrowser(o, cfg, "viper ui", nil, nil)
+}
+
+// serveBrowser starts the web server of cfg on 127.0.0.1, opens the browser on it (or prints the address) and serves until Ctrl-C.
+// The name is what the messages call the program; onPort is called with the port once the server listens, onEnd when it is over.
+func serveBrowser(o *options, cfg web.Config, name string, onPort func(port string), onEnd func()) error {
+	h := o.host()
 	if o.noOpen {
 		cfg.TokenTTL = 10 * time.Minute // the address is copied by hand
 	}
@@ -42,21 +49,30 @@ func nativeUI(o *options) error {
 	ln, err := srv.Listen(o.port)
 	if err != nil {
 		if o.port != 0 {
-			return fmt.Errorf("viper ui: cannot listen on 127.0.0.1:%d (%v); --port chooses another, without it a free one is taken", o.port, err)
+			return fmt.Errorf("%s: cannot listen on 127.0.0.1:%d (%v); --port chooses another, without it a free one is taken", name, o.port, err)
 		}
-		return fmt.Errorf("viper ui: cannot listen: %w", err)
+		return fmt.Errorf("%s: cannot listen: %w", name, err)
+	}
+	if onPort != nil {
+		_, port, _ := net.SplitHostPort(srv.Host())
+		onPort(port)
+	}
+	if onEnd != nil {
+		defer onEnd()
 	}
 	if os.Geteuid() == 0 {
-		fmt.Fprintln(h.Stderr, "viper ui: warning: you are root; the pages can run viper checks as root. Start it as your own user.")
+		fmt.Fprintf(h.Stderr, "%s: warning: you are root; the pages can run viper checks as root. Start it as your own user.\n", name)
 	}
 	ctx, stop := notifyContext(context.Background())
 	defer stop()
 	done := make(chan error, 1)
 	go func() { done <- srv.Serve(ctx, ln) }()
-	fmt.Fprintf(h.Stdout, "viper ui: http://%s/ (Ctrl-C ends it)\n", srv.Host())
-	announceMode(h.Stdout, o)
+	fmt.Fprintf(h.Stdout, "%s: http://%s/ (Ctrl-C ends it)\n", name, srv.Host())
+	if cfg.Chat == nil {
+		announceMode(h.Stdout, o)
+	}
 	if o.noOpen {
-		fmt.Fprintf(h.Stdout, "viper ui: open this address in your browser within %d minutes (it works once): %s\n", int(cfg.TokenTTL.Minutes()), srv.URL())
+		fmt.Fprintf(h.Stdout, "%s: open this address in your browser within %d minutes (it works once): %s\n", name, int(cfg.TokenTTL.Minutes()), srv.URL())
 	} else {
 		start := make(chan string, 1)
 		go func() { start <- openStart(h, srv) }() // a program that opens the browser may take its time: Ctrl-C does not wait for it
@@ -74,7 +90,7 @@ func nativeUI(o *options) error {
 	case err := <-done:
 		return err
 	case <-ctx.Done():
-		fmt.Fprintln(h.Stdout, "viper ui: ending")
+		fmt.Fprintf(h.Stdout, "%s: ending\n", name)
 		return <-done
 	}
 }

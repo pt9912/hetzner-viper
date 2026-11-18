@@ -131,6 +131,21 @@ type Config struct {
 	TokenTTL time.Duration
 	// Now is the clock (tests).
 	Now func() time.Time
+	// Chat makes the server the one of viper ui-chat: other pages and only the routes of the chat (nil: viper ui).
+	Chat *Chat
+}
+
+// Chat is what makes a Server the one of viper ui-chat. The session (key, cookie, host and origin checks, headers) is the same; the
+// pages and the programme interface are the chat's, and none of the routes of viper ui (runs, edits, settings) is there: a key of the
+// chat must not start viper up or down.
+type Chat struct {
+	// Site is the pages (index.html and what it loads).
+	Site fs.FS
+	// Handle adds the routes of the chat to the mux; they begin with /api/chat/.
+	Handle func(mux *http.ServeMux)
+	// Streams are the paths of event streams (they count against the limit of open streams, not against the requests); Octet the
+	// paths of POST requests that carry a file (content type application/octet-stream).
+	Streams, Octet []string
 }
 
 const (
@@ -302,7 +317,12 @@ func (s *Server) forgetOverview() {
 // Handler is the whole site, behind the guard.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("GET /", site())
+	if c := s.cfg.Chat; c != nil {
+		mux.Handle("GET /", siteOf(c.Site))
+		c.Handle(mux)
+		return s.guard(mux)
+	}
+	mux.Handle("GET /", siteOf(pages()))
 	mux.HandleFunc("GET /api/overview", s.overview)
 	mux.HandleFunc("GET /api/stamp", s.stamp)
 	mux.HandleFunc("GET /api/log", s.log)
@@ -346,7 +366,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			return
 		}
 		slot := s.sem
-		if r.URL.Path == "/api/events" {
+		if s.isStream(r.URL.Path) {
 			slot = s.streams // an open stream must not take the place of a cancel
 		}
 		select {
@@ -358,6 +378,21 @@ func (s *Server) guard(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isStream says whether the path is an event stream; isOctet whether a POST there carries a file.
+func (s *Server) isStream(p string) bool {
+	if c := s.cfg.Chat; c != nil {
+		return slices.Contains(c.Streams, p)
+	}
+	return p == "/api/events"
+}
+
+func (s *Server) isOctet(p string) bool {
+	if c := s.cfg.Chat; c != nil {
+		return slices.Contains(c.Octet, p)
+	}
+	return p == "/api/upload"
 }
 
 func setHeaders(h http.Header) {
@@ -399,7 +434,7 @@ func equal(a, b string) bool { return subtle.ConstantTimeCompare([]byte(a), []by
 // content type is not one a form can send.
 func (s *Server) sameOrigin(r *http.Request) bool {
 	want := "application/json"
-	if r.URL.Path == "/api/upload" {
+	if s.isOctet(r.URL.Path) {
 		want = "application/octet-stream" // not a type a form can send: another origin needs a preflight, which gets no answer
 	}
 	if r.Header.Get("Origin") != "http://"+s.host || r.Header.Get("X-Viper-UI") != "1" || r.Header.Get("Content-Type") != want {
@@ -570,6 +605,12 @@ func (s *Server) check(w http.ResponseWriter, r *http.Request) {
 	reply(w, map[string]any{"code": code, "ok": code == 0, "output": text, "truncated": out.cut})
 }
 
+// Reply answers with v as JSON; Fail with an error (for the routes of the chat).
+func Reply(w http.ResponseWriter, v any) { reply(w, v) }
+
+// Fail answers with the status and the message as JSON.
+func Fail(w http.ResponseWriter, code int, msg string) { fail(w, code, msg) }
+
 func reply(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
@@ -609,14 +650,14 @@ func (l *limited) String() string {
 func (s *Server) URL() string { return fmt.Sprintf("http://%s/?t=%s", s.host, s.token) }
 
 // site serves the pages of the program, and a page of its own for what is not there.
-func site() http.Handler {
-	files := http.FileServerFS(pages())
+func siteOf(pages fs.FS) http.Handler {
+	files := http.FileServerFS(pages)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
 		if name == "" {
 			name = "."
 		}
-		if st, err := fs.Stat(pages(), name); err != nil || (st.IsDir() && name != ".") {
+		if st, err := fs.Stat(pages, name); err != nil || (st.IsDir() && name != ".") {
 			errorPage(w, http.StatusNotFound, "Not found / Nicht gefunden", "There is no such page. Go back to the overview.", "Diese Seite gibt es nicht. Zurück zur Übersicht.")
 			return
 		}
