@@ -58,6 +58,7 @@ type Backend interface {
 // Sent is what the sending knows of the message: the ID of a question, and the file as the server took it.
 type Sent struct {
 	ID                     string
+	Via                    string // the server that took it: the machine that holds it, and its address
 	AttID, AttType, AttSHA string
 	AttSize                int64
 }
@@ -580,10 +581,10 @@ func (h *handlers) send(w http.ResponseWriter, r *http.Request) {
 	}
 	kept, err := h.o.Engine.Add(g.Name, keys, rec)
 	if err != nil { // it is out: the person is told, and does not send it again
-		web.Reply(w, map[string]any{"record": rec, "keys": keys, "warning": "sent, but not kept in the history: " + err.Error()})
+		web.Reply(w, map[string]any{"record": rec, "keys": keys, "via": sent.Via, "warning": "sent, but not kept in the history: " + err.Error()})
 		return
 	}
-	web.Reply(w, map[string]any{"record": kept, "keys": keys})
+	web.Reply(w, map[string]any{"record": kept, "keys": keys, "via": sent.Via})
 }
 
 func errText(err error) string {

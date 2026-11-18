@@ -180,6 +180,8 @@ func writePrivate(path, text string) error {
 type operatorSession struct {
 	remote driving.NATSRemote
 	close  func()
+	// server says which server the session speaks to: the machine that holds it, and its address in the group
+	server string
 }
 
 func openOperator(ctx context.Context, o *options, g *natsGroup) (*operatorSession, error) {
@@ -220,7 +222,7 @@ func openOperatorDead(ctx context.Context, o *options, g *natsGroup, dead chan s
 	} else {
 		cfg.URL, cfg.TLSServerName = "nats://"+addr, ""
 	}
-	return &operatorSession{close: stop, remote: func(ctx context.Context, _, stdin string, stdout, stderr io.Writer, words ...string) error {
+	return &operatorSession{close: stop, server: fmt.Sprintf("%s (%s:%d)", srv.Machine.Name, srv.Host, srv.Port), remote: func(ctx context.Context, _, stdin string, stdout, stderr io.Writer, words ...string) error {
 		if len(words) < 2 {
 			return errors.New("no subcommand")
 		}

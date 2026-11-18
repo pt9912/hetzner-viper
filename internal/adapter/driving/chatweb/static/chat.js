@@ -458,6 +458,17 @@
     });
   }
 
+  // where the text goes: the machine or the topic, in which group; a group that is not running takes nothing
+  function showTarget() {
+    if (!current || !canWrite()) { return; }
+    const down = groupState(groupOf(current.group)) === 'down';
+    $('target').textContent = down ? t('send.down', current.group) : t(current.kind === 'thema' ? 'send.totopic' : 'send.to', current.name, current.group);
+    $('target').classList.toggle('bad', down);
+    $('text').disabled = down;
+    $('attach').disabled = down || !fileLimit();
+    count();
+  }
+
   function showComposer() {
     const box = $('composer');
     box.hidden = !canWrite();
@@ -474,13 +485,14 @@
     $('replying').hidden = true;
     $('send-status').textContent = '';
     showFile();
+    showTarget();
   }
 
   function count() {
     const n = bytes($('text').value);
     $('count').textContent = t('send.count', n, 16384);
     $('count').classList.toggle('over', n > 16384);
-    $('send').disabled = sending || (n === 0 && !picked) || n > 16384;
+    $('send').disabled = sending || (n === 0 && !picked) || n > 16384 || (!!current && groupState(groupOf(current.group)) === 'down');
   }
 
   function startReply(rec) {
@@ -533,12 +545,12 @@
         if ($('text').value === body.text) { $('text').value = ''; } // what was typed meanwhile stays
         stopReply();
         if (picked === file) { picked = null; showFile(); }
-        $('send-status').textContent = r.warning || t('send.sent');
+        $('send-status').textContent = r.warning || (r.via ? t('send.sent.via', mine.group, r.via) : t('send.sent'));
       }
     } catch (e) {
       if (current === mine && e.push) {
         asked = { key: ckey, push: e.push };
-        $('ack-text').textContent = t('send.push', e.push.join(', '));
+        $('ack-text').textContent = t('send.push', e.push.join(', ')) + ' (' + mine.group + ')';
         $('ack').hidden = false;
         $('ack-ok').focus();
         $('send-status').textContent = '';
@@ -634,6 +646,7 @@
       L.snapshot = Object.assign(L.snapshot || { machines: {}, topics: {} }, { status: ev.status });
       showStatus();
       lampOf(g); // only the lamp of the group, not the whole list
+      showTarget();
     });
     es.addEventListener('message', (e) => onMessage(g, JSON.parse(e.data)));
     es.addEventListener('ask_end', (e) => {

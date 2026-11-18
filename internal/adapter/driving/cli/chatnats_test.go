@@ -123,8 +123,12 @@ func TestTheChatSendsAMessageAndABroadcastAsTheOperator(t *testing.T) {
 	b := cli.ChatBackend(w.opts, w.env)
 	w.tool(t, "subscribe", `{"topic":"news"}`)
 	text := "line one\n```\n$(id) 'quoted' \"double\"\n```"
-	if _, err := b.Send(context.Background(), "dev", chatweb.Outgoing{Kind: "msg", To: "beta", Text: text}, nil); err != nil {
+	sent, err := b.Send(context.Background(), "dev", chatweb.Outgoing{Kind: "msg", To: "beta", Text: text}, nil)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(sent.Via, "alpha") || !strings.Contains(sent.Via, "10.0.0.2:4222") { // the server that took it is named
+		t.Errorf("via %q", sent.Via)
 	}
 	if _, err := b.Send(context.Background(), "dev", chatweb.Outgoing{Kind: "topic", Topic: "news", Text: "to all"}, nil); err != nil {
 		t.Fatal(err)

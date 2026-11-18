@@ -248,7 +248,9 @@ func (c *chatBackend) Send(ctx context.Context, group string, o chatweb.Outgoing
 	if err := sess.remote(ctx, "", stdin, &stdout, &stderr, words...); err != nil {
 		return chatweb.Sent{}, sendError(&stderr, err)
 	}
-	return sentLine(stdout.String()), nil
+	sent := sentLine(stdout.String())
+	sent.Via = sess.server
+	return sent, nil
 }
 
 // sendTimeout is 60 seconds, and for a file 5 seconds more for each MiB (the file goes through ssh).

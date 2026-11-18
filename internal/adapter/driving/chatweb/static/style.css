@@ -114,3 +114,5 @@ select { font: inherit; background: var(--bg); color: var(--fg); border: 1px sol
 .tri { width: .8rem; color: var(--muted); }
 .count { margin-left: auto; font-weight: 400; }
 .hint { padding: .2rem .9rem; font-size: .84rem; color: var(--muted); }
+.target { margin: 0; font-size: .84rem; color: var(--muted); }
+.target.bad { color: var(--warn); }

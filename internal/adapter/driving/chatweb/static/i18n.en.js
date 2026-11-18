@@ -99,5 +99,9 @@
     'group.nokey': 'not logged in',
     'group.down': 'not started',
     'status.several': '{0} groups have a problem:',
+    'send.to': 'Sends to {0} in the group {1}',
+    'send.totopic': 'Sends to the topic {0} in the group {1}',
+    'send.down': 'The group {0} is not started (viper up): nothing can be sent.',
+    'send.sent.via': 'Handed to the server of the group {0}, on {1} (not confirmed: the machine may be away).',
   });
 })();

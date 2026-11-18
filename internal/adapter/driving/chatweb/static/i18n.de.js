@@ -99,5 +99,9 @@
     'group.nokey': 'nicht angemeldet',
     'group.down': 'nicht gestartet',
     'status.several': '{0} Gruppen haben ein Problem:',
+    'send.to': 'Sendet an {0} in der Gruppe {1}',
+    'send.totopic': 'Sendet an das Thema {0} in der Gruppe {1}',
+    'send.down': 'Die Gruppe {0} ist nicht gestartet (viper up): es lässt sich nichts senden.',
+    'send.sent.via': 'An den Server der Gruppe {0} gegeben, auf {1} (nicht bestätigt: der Rechner kann weg sein).',
   });
 })();

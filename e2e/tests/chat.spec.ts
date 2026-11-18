@@ -16,7 +16,7 @@ test('without the key of the operator the chat says what to do, and offers no co
 });
 
 test('with the key the machines of the group are conversations, and one opens', async ({ page }) => {
-  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true });
+  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true, notStarted: true });
   await page.goto(ui.start);
   await expect(page.locator('#me')).toContainText('Operator operator logged in');
   await expect(page.locator('.group h2')).toContainText('dev');
@@ -230,7 +230,7 @@ test('keyboard: the arrow keys move in the list; narrow: the thread takes the pl
 });
 
 test('the page stays still: the list is not built again every few seconds, and the line at the top does not come and go', async ({ page }) => {
-  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true, history });
+  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true, history, notStarted: true });
   await page.goto(ui.start);
   const btn = page.locator('.conv-btn[data-key="dev/rechner__a"]');
   await btn.focus();
@@ -266,6 +266,23 @@ test('groups and their parts fold, and the choice is kept; pairs of few machines
   await expect(page.locator('button.fold', { hasText: 'dev' })).toHaveAttribute('aria-expanded', 'false');
   await page.locator('button.fold', { hasText: 'dev' }).click();
   await expect(page.locator('.conv-btn[data-key="dev/alle"]')).toBeVisible();
+});
+
+test('a group that is not started takes nothing: the field says where the text goes and why it cannot', async ({ page }) => {
+  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true, notStarted: true });
+  await page.goto(ui.start);
+  await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
+  await expect(page.locator('#target')).toContainText('The group dev is not started');
+  await expect(page.locator('#text')).toBeDisabled();
+  await expect(page.locator('#send')).toBeDisabled();
+});
+
+test('the field says to which machine in which group the text goes', async ({ page }) => {
+  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true });
+  await page.goto(ui.start);
+  await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
+  await expect(page.locator('#target')).toHaveText('Sends to a in the group dev');
+  await expect(page.locator('#text')).toBeEnabled(); // started: the field takes text
 });
 
 test('the notification is off, and a choice to turn it on is kept', async ({ browser, browserName }) => {
