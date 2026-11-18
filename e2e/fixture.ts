@@ -54,7 +54,8 @@ export async function startUI(extra: string[] = [], dockerSleep = 30, openBrowse
   }
   if (opts.operator && !opts.notStarted) { // the group has been started: the machines have an SSH configuration (to nothing: connecting fails, the group is "disturbed")
     fs.mkdirSync(path.join(home, '.ssh'), { recursive: true });
-    fs.writeFileSync(path.join(bin, 'ssh'), '#!/bin/sh\necho "ssh: connect to host failed" >&2\nexit 255\n', { mode: 0o755 }); // the server cannot be reached, at once
+    // the server cannot be reached, at once (Windows runs no shell script: a .cmd file there)
+    if (process.platform === 'win32') { fs.writeFileSync(path.join(bin, 'ssh.cmd'), '@echo ssh: connect to host failed 1>&2\r\n@exit /b 255\r\n'); } else { fs.writeFileSync(path.join(bin, 'ssh'), '#!/bin/sh\necho "ssh: connect to host failed" >&2\nexit 255\n', { mode: 0o755 }); }
     for (const m of ['a', 'b']) { fs.writeFileSync(path.join(home, '.ssh', `config_hetzner_e2e-${m}`), 'Host *\n  HostName 127.0.0.1\n  Port 1\n  ConnectTimeout 2\n'); }
   }
   for (const [key, records] of Object.entries(opts.history ?? {})) { // the history of the chat of the group dev: one file per conversation
