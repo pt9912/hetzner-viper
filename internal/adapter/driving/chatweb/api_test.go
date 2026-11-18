@@ -22,6 +22,7 @@ import (
 // fakeChat is the engine of the tests: it records what is asked and says what it is told.
 type fakeChat struct {
 	mu      sync.Mutex
+	store   port.Store
 	added   []port.Record
 	told    []driving.ChatEvent
 	ensured map[string]model.ChatGroup
@@ -266,7 +267,8 @@ func sendWorld(t *testing.T, readonly bool, b *fakeBackend) (*web.Server, http.H
 	off := chatweb.Group{Name: "other", Machines: []chatweb.Machine{{Name: "x"}}}
 	b.groups = []chatweb.Group{g, off}
 	fc := newFakeChat()
-	s, h := serve(t, *b, chatweb.Options{Engine: fc, Store: chatlogfile.Memory(0), Readonly: readonly})
+	fc.store = chatlogfile.Memory(0)
+	s, h := serve(t, *b, chatweb.Options{Engine: fc, Store: fc.store, Readonly: readonly})
 	c := login(t, h, s)
 	return s, h, map[string]string{"Cookie": c, "Content-Type": "application/json", "X-Viper-UI": "1", "Origin": "http://" + s.Host()}, fc
 }
@@ -333,7 +335,7 @@ func TestAMessageToAMachineWhoseAgentReadsItInTheSessionNeedsTheOK(t *testing.T)
 		if w.Code != 409 || !strings.Contains(w.Body.String(), `"push":["b"]`) || len(sent) != before {
 			t.Fatalf("%s: %d %s", body, w.Code, w.Body)
 		}
-		if w := send(h, s, "POST", "/api/chat/send", hdr, strings.Replace(body, "}", `,"ack":true}`, 1)); w.Code != 200 {
+		if w := send(h, s, "POST", "/api/chat/send", hdr, strings.Replace(body, "}", `,"ack":["b"]}`, 1)); w.Code != 200 {
 			t.Errorf("with the ok: %d %s", w.Code, w.Body)
 		}
 	}
@@ -357,8 +359,26 @@ func TestAQuestionReturnsItsIDAndTheEndOfTheWaitingIsTold(t *testing.T) {
 	if len(told) != 1 || told[0].Kind != "ask_end" || told[0].Record.Re != strings.Repeat("ab", 8) || !strings.Contains(told[0].Record.Text, "no answer") {
 		t.Errorf("%+v", told)
 	}
+	if w := send(h, s, "POST", "/api/chat/send", hdr, `{"group":"dev","kind":"reply","to":"a","re":"`+strings.Repeat("cd", 8)+`","text":"yes"}`); w.Code != 400 {
+		t.Errorf("an answer to a question that nobody asked: %d", w.Code)
+	}
+	if _, err := fc.store.Append("dev", []string{"rechner__a"}, port.Record{Dir: "in", From: "a", To: "operator", Type: "req", ID: strings.Repeat("cd", 8), Text: "may I?"}); err != nil {
+		t.Fatal(err)
+	}
 	w = send(h, s, "POST", "/api/chat/send", hdr, `{"group":"dev","kind":"reply","to":"a","re":"`+strings.Repeat("cd", 8)+`","text":"yes"}`)
 	if w.Code != 200 || sent[1].Kind != "reply" || fc.added[1].Type != "res" || fc.added[1].Re != strings.Repeat("cd", 8) {
+		t.Errorf("%d %s", w.Code, w.Body)
+	}
+}
+
+func TestAGrownSetOfAgentsNeedsTheOKAgainAndAnEncodedTextThatIsTooLongIsRefused(t *testing.T) {
+	var sent []chatweb.Outgoing
+	s, h, hdr, _ := sendWorld(t, false, &fakeBackend{sent: &sent})
+	if w := send(h, s, "POST", "/api/chat/send", hdr, `{"group":"dev","kind":"msg","to":"b","text":"x","ack":["zzz"]}`); w.Code != 409 {
+		t.Errorf("an ok for another machine: %d", w.Code)
+	}
+	long, _ := json.Marshal(strings.Repeat("\x01", 6000)) // 6 bytes each once encoded
+	if w := send(h, s, "POST", "/api/chat/send", hdr, `{"group":"dev","kind":"msg","to":"a","text":`+string(long)+`}`); w.Code != 400 || !strings.Contains(w.Body.String(), "encoded") {
 		t.Errorf("%d %s", w.Code, w.Body)
 	}
 }

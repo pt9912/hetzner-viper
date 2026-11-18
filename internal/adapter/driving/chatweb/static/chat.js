@@ -13,7 +13,9 @@
   let loading = false; // the thread is being loaded: what arrives meanwhile waits in pending
   let pending = [];
   const asking = {}; // questions of this page that wait for an answer: id -> true | the reason that none came
-  const acked = {}; // conversations whose agent reads the text in the session, and the person has said that is fine
+  const acked = {}; // by conversation: the machines whose agent reads the text in its session, which the person has said is fine
+  let asked = null; // { key, push }: the question that waits for the OK of the person
+  let sending = false;
   let replying = null; // { id, to, text }: the answer that is being written
 
   async function api(path, body) {
@@ -247,6 +249,8 @@
     pending = [];
     loading = true;
     $('msgs').textContent = '';
+    asked = null;
+    showComposer();
     renderList();
     $('empty').hidden = true;
     $('conv').hidden = false;
@@ -260,7 +264,6 @@
       thread = r.records;
     } catch (e) { banner(t('err.messages', e.message)); }
     loading = false;
-    showComposer();
     for (const rec of pending) { if (!thread.some((x) => x.n === rec.n)) { thread.push(rec); } }
     pending = [];
     paint();
@@ -311,7 +314,7 @@
     const n = bytes($('text').value);
     $('count').textContent = t('send.count', n, 16384);
     $('count').classList.toggle('over', n > 16384);
-    $('send').disabled = n === 0 || n > 16384;
+    $('send').disabled = sending || n === 0 || n > 16384;
   }
 
   function startReply(rec) {
@@ -327,38 +330,49 @@
     replying = null;
     $('replying').hidden = true;
     $('kind').hidden = !current || current.kind !== 'rechner';
+    $('wait').hidden = $('kind').hidden || $('kind').value !== 'ask';
   }
 
-  function request(ack) {
+  function request() {
     const body = { group: current.group, text: $('text').value };
     if (replying) { Object.assign(body, { kind: 'reply', to: replying.to, re: replying.id }); }
     else if (current.kind === 'thema') { Object.assign(body, { kind: 'topic', topic: current.name }); }
     else { Object.assign(body, { kind: $('kind').value, to: current.name, timeout: Number($('wait').value) }); }
-    if (ack || acked[current.group + '/' + current.key]) { body.ack = true; }
+    body.ack = acked[current.group + '/' + current.key] || [];
     return body;
   }
 
-  async function send(ack) {
-    if (!canWrite() || $('send').disabled) { return; }
+  async function send(ok) {
+    if (!canWrite() || $('send').disabled || sending) { return; }
     const mine = current;
-    const body = request(ack);
+    const ckey = mine.group + '/' + mine.key;
+    if (ok && asked && asked.key === ckey) { acked[ckey] = asked.push; }
+    const body = request();
+    sending = true;
     $('send').disabled = true;
     $('send-status').textContent = t('send.sending');
     try {
       const r = await api('/api/chat/send', body);
-      $('ack').hidden = true;
-      acked[mine.group + '/' + mine.key] = acked[mine.group + '/' + mine.key] || !!body.ack;
       if (body.kind === 'ask' && r.record.id) { asking[r.record.id] = true; }
-      onMessage(groupOf(mine.group), { record: r.record, keys: r.keys });
-      if (current === mine) { $('text').value = ''; saveDraft(); stopReply(); $('send-status').textContent = t('send.sent'); }
+      if (!r.warning) { onMessage(groupOf(mine.group), { record: r.record, keys: r.keys }); }
+      try { if (window.localStorage.getItem('viper-chat-draft/' + ckey) === body.text) { window.localStorage.removeItem('viper-chat-draft/' + ckey); } } catch (e) { /* not kept */ }
+      if (current === mine) {
+        $('ack').hidden = true;
+        asked = null;
+        if ($('text').value === body.text) { $('text').value = ''; } // what was typed meanwhile stays
+        stopReply();
+        $('send-status').textContent = r.warning || t('send.sent');
+      }
     } catch (e) {
-      if (e.push) {
+      if (current === mine && e.push) {
+        asked = { key: ckey, push: e.push };
         $('ack-text').textContent = t('send.push', e.push.join(', '));
         $('ack').hidden = false;
         $('ack-ok').focus();
         $('send-status').textContent = '';
-      } else { $('send-status').textContent = t('send.failed', e.message); }
+      } else if (current === mine) { $('send-status').textContent = t('send.failed', e.message); }
     }
+    sending = false;
     count();
     if (current === mine && $('ack').hidden) { $('text').focus(); }
   }

@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
@@ -67,14 +68,14 @@ const MaxText = 16384
 
 // SendRequest is what the page sends.
 type SendRequest struct {
-	Group   string `json:"group"`
-	Kind    string `json:"kind"`
-	To      string `json:"to"`
-	Topic   string `json:"topic"`
-	Text    string `json:"text"`
-	Re      string `json:"re"`
-	Timeout int    `json:"timeout"`
-	Ack     bool   `json:"ack"` // the person has read that the text lands in the session of an agent
+	Group   string   `json:"group"`
+	Kind    string   `json:"kind"`
+	To      string   `json:"to"`
+	Topic   string   `json:"topic"`
+	Text    string   `json:"text"`
+	Re      string   `json:"re"`
+	Timeout int      `json:"timeout"`
+	Ack     []string `json:"ack"` // the machines of which the person has read that the text lands in the session of their agent
 }
 
 // Options are the choices of the command line.
@@ -450,6 +451,9 @@ func (*handlers) check(g Group, req SendRequest) (Outgoing, string) {
 	if req.Kind == "reply" && !idPattern.MatchString(req.Re) {
 		return o, "re is the ID of a question"
 	}
+	if enc, _ := json.Marshal(req.Text); len(enc) > 30<<10 { // the server takes 32 KiB of the whole message; a control character is 6 bytes of it
+		return o, "the text is too long once it is encoded (control characters and quotes take more room)"
+	}
 	if req.Kind == "ask" {
 		o.Timeout = time.Duration(atoi(strconv.Itoa(req.Timeout), 30, 1, 120)) * time.Second
 	}
@@ -487,7 +491,11 @@ func (h *handlers) send(w http.ResponseWriter, r *http.Request) {
 		web.Fail(w, http.StatusBadRequest, bad)
 		return
 	}
-	if p := pushers(g, o); len(p) > 0 && !req.Ack {
+	if o.Kind == "reply" && !h.asked(g.Name, o) {
+		web.Fail(w, http.StatusBadRequest, "no open question of this machine with this ID")
+		return
+	}
+	if p := pushers(g, o); slices.ContainsFunc(p, func(m string) bool { return !slices.Contains(req.Ack, m) }) { // one that was not acknowledged
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "the text lands in the session of an agent", "push": p})
@@ -498,22 +506,15 @@ func (h *handlers) send(w http.ResponseWriter, r *http.Request) {
 		web.Fail(w, http.StatusTooManyRequests, "too many messages are on their way")
 		return
 	}
-	end := func() { h.inFlight.Add(-1) }
-	keys := keysOf(o)
-	var id string
-	var err error
-	if o.Kind == "ask" {
-		id, err = h.b.Send(r.Context(), g.Name, o, func(askID string, err error) { // the waiting is over: the answer, if any, came in the stream
-			end()
-			h.o.Engine.Tell(driving.ChatEvent{Group: g.Name, Kind: "ask_end", Keys: keys, Record: &port.Record{Re: askID, Text: errText(err)}})
-		})
-		if err != nil {
+	var once sync.Once
+	end := func() { once.Do(func() { h.inFlight.Add(-1) }) }
+	defer func() {
+		if o.Kind != "ask" { // a question frees its place when the waiting is over
 			end()
 		}
-	} else {
-		id, err = h.b.Send(r.Context(), g.Name, o, nil)
-		end()
-	}
+	}()
+	keys := keysOf(o)
+	id, err := h.dispatch(r.Context(), g.Name, o, keys, end)
 	if err != nil {
 		web.Fail(w, http.StatusBadGateway, err.Error())
 		return
@@ -524,8 +525,8 @@ func (h *handlers) send(w http.ResponseWriter, r *http.Request) {
 	}
 	rec := port.Record{From: g.OperatorName, To: o.To, Topic: o.Topic, Type: typ, Text: o.Text, ID: id, Re: o.Re}
 	kept, err := h.o.Engine.Add(g.Name, keys, rec)
-	if err != nil {
-		web.Fail(w, http.StatusInternalServerError, "sent, but not kept in the history: "+err.Error())
+	if err != nil { // it is out: the person is told, and does not send it again
+		web.Reply(w, map[string]any{"record": rec, "keys": keys, "warning": "sent, but not kept in the history: " + err.Error()})
 		return
 	}
 	web.Reply(w, map[string]any{"record": kept, "keys": keys})
@@ -536,4 +537,27 @@ func errText(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+// asked says whether the machine asked the question that is answered (it is in the history of its conversation).
+func (h *handlers) asked(group string, o Outgoing) bool {
+	recs, err := h.o.Store.Tail(group, model.ChatKey(model.ChatKindMachine, o.To), 500)
+	return err == nil && slices.ContainsFunc(recs, func(r port.Record) bool {
+		return r.Type == "req" && r.Dir == "in" && r.From == o.To && r.ID == o.Re
+	})
+}
+
+// dispatch gives the message to the backend. A question frees its place (end) when the waiting is over, and tells the pages then.
+func (h *handlers) dispatch(ctx context.Context, group string, o Outgoing, keys []string, end func()) (string, error) {
+	if o.Kind != "ask" {
+		return h.b.Send(ctx, group, o, nil)
+	}
+	id, err := h.b.Send(ctx, group, o, func(askID string, err error) { // the answer, if any, came in the stream
+		end()
+		h.o.Engine.Tell(driving.ChatEvent{Group: group, Kind: "ask_end", Keys: keys, Record: &port.Record{Re: askID, Text: errText(err)}})
+	})
+	if err != nil {
+		end()
+	}
+	return id, err
 }

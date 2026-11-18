@@ -225,6 +225,8 @@ func (c *chatBackend) Send(ctx context.Context, group string, o chatweb.Outgoing
 	if o.Kind == "ask" {
 		return c.ask(&oc, g, o, words, done) //nolint:contextcheck // the waiting goes on after the request of the page is over
 	}
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second) // a hung tunnel must not hold a place for ever
+	defer cancel()
 	sess, err := openOperator(ctx, &oc, g)
 	if err != nil {
 		return "", err
@@ -260,6 +262,8 @@ func (*chatBackend) ask(oc *options, g *natsGroup, o chatweb.Outgoing, words []s
 	go func() { // the lines of the command: the ID of the question is the first
 		defer close(scanned)
 		sc := bufio.NewScanner(pr)
+		sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
+		defer func() { _, _ = io.Copy(io.Discard, pr) }() // the command must never wait for a reader that has stopped
 		for sc.Scan() {
 			var l model.NATSLine
 			if json.Unmarshal(sc.Bytes(), &l) == nil && l.Event == "asked" {
