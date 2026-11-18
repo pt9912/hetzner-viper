@@ -381,11 +381,16 @@ func (s *Store) Delete(group, key string) error {
 		}
 	}
 	for _, k := range keys {
-		_ = s.st.remove(file(group, k))
-		_ = s.st.remove(older(group, k))
+		if err := s.st.remove(file(group, k)); err != nil {
+			return err // else the history is back after a restart, and the person was told it is gone
+		}
+		if err := s.st.remove(older(group, k)); err != nil {
+			return err
+		}
 		delete(g.conv, k)
 		delete(g.lines, k)
 		delete(g.read, k)
+		delete(g.tidy, k)
 	}
 	b, _ := json.Marshal(g.read)
 	_ = s.st.write(counterFile(group), []byte(fmt.Sprintf("%d\n", g.n))) // what was numbered stays numbered

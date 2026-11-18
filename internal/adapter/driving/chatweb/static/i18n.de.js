@@ -88,5 +88,6 @@
     'del.confirm.conv': 'Den Verlauf von {0} auf diesem Rechner löschen? NATS hebt nichts auf: er lässt sich nicht wieder holen.',
     'del.confirm.all': 'Den ganzen Verlauf der Gruppe {0} auf diesem Rechner löschen? NATS hebt nichts auf: er lässt sich nicht wieder holen.',
     'del.failed': 'Nicht gelöscht: {0}',
+    'nav.back': 'Zurück zur Liste',
   });
 })();

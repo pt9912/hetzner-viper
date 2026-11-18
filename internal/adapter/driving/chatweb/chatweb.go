@@ -635,7 +635,11 @@ func (h *handlers) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	if utf8.RuneCountInString(q) < 2 || len(q) > 200 {
+	if len(q) > 200 {
+		web.Fail(w, http.StatusBadRequest, "search for at most 200 bytes")
+		return
+	}
+	if utf8.RuneCountInString(q) < 2 {
 		web.Fail(w, http.StatusBadRequest, "search for at least 2 characters")
 		return
 	}

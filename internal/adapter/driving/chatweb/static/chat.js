@@ -112,7 +112,7 @@
 
   function unreadTotal() {
     let n = 0;
-    for (const L of Object.values(live)) { for (const c of Object.values(L.convs || {})) { if (c.key !== 'alle') { n += c.unread || 0; } } }
+    for (const L of Object.values(live)) { for (const c of Object.values(L.convs || {})) { if (c.key !== 'alle' && c.kind !== 'paar') { n += c.unread || 0; } } }
     return n;
   }
 
@@ -271,8 +271,8 @@
     if (kind === 'paar' || kind === 'alle') { parts.push(t('conv.readonly.pair')); } else if (state.readonly) { parts.push(t('conv.readonly')); }
     $('conv-sub').textContent = parts.join(' · ');
     $('filter').hidden = kind !== 'alle';
+    $('msgs').setAttribute('aria-live', kind === 'alle' ? 'off' : 'polite'); // a stream of everything is not read out line by line
     $('del').hidden = $('delall').hidden = state.readonly;
-    $('confirm').hidden = true;
   }
 
   async function select(g, kind, name) {
@@ -282,6 +282,8 @@
     loading = true;
     $('msgs').textContent = '';
     asked = null;
+    toDelete = null;
+    $('confirm').hidden = true;
     showComposer();
     renderList();
     $('empty').hidden = true;
@@ -597,7 +599,7 @@
       const b = el('button', 'conv-btn hit');
       b.type = 'button';
       const body = el('div');
-      body.appendChild(el('div', 'nm', (state.groups.length > 1 ? g.name + ' / ' : '') + (h.kind === 'thema' ? '#' : '') + h.name.split(' ').join(' · ') + ' · ' + day(h.record.t) + ' ' + hhmm(h.record.t)));
+      body.appendChild(el('div', 'nm', (state.groups.length > 1 ? g.name + ' / ' : '') + (h.kind === 'alle' ? t('conv.all') : (h.kind === 'thema' ? '#' : '') + h.name.split(' ').join(' · ')) + ' · ' + day(h.record.t) + ' ' + hhmm(h.record.t)));
       body.appendChild(el('div', 'pv', (h.record.from ? h.record.from + ': ' : '') + h.record.text));
       b.appendChild(el('span'));
       b.appendChild(body);
@@ -626,19 +628,24 @@
   async function doDelete() {
     if (!toDelete || !current) { return; }
     const group = current.group;
+    const conv = toDelete.conv;
+    const mine = current;
+    $('confirm-ok').disabled = true;
     try {
-      await api('/api/chat/delete', { group, conv: toDelete.conv });
+      await api('/api/chat/delete', { group, conv });
       $('confirm').hidden = true;
-      if (toDelete.conv === '' || toDelete.conv === current.key) { thread = []; paint(); }
       toDelete = null;
-      await loadListing(groupOf(group));
-    } catch (e) { $('confirm-text').textContent = t('del.failed', e.message); }
+      if (current === mine && (conv === '' || conv === current.key)) { thread = []; paint(); }
+      $('del').focus();
+    } catch (e) { $('confirm-text').textContent = t('del.failed', e.message); $('confirm-ok').disabled = false; return; }
+    $('confirm-ok').disabled = false;
+    try { await loadListing(groupOf(group)); search(); } catch (e) { banner(t('err.load', e.message)); }
   }
 
   $('del').addEventListener('click', () => askDelete(false));
   $('delall').addEventListener('click', () => askDelete(true));
   $('confirm-ok').addEventListener('click', doDelete);
-  $('confirm-x').addEventListener('click', () => { toDelete = null; $('confirm').hidden = true; });
+  $('confirm-x').addEventListener('click', () => { toDelete = null; $('confirm').hidden = true; $('del').focus(); });
 
   // The notification says only who wrote, never what; it is off until the person turns it on (the browser asks then).
   const notifyOn = () => $('notify').checked && typeof Notification !== 'undefined' && Notification.permission === 'granted';
@@ -662,6 +669,26 @@
 
   $('notify').addEventListener('change', setNotify);
   try { $('notify').checked = window.localStorage.getItem('viper-chat-notify') === '1' && typeof Notification !== 'undefined' && Notification.permission === 'granted'; } catch (e) { /* off */ }
+
+  // ---- keyboard and narrow width
+
+  // the list: arrow keys move between the entries, Home and End go to the first and the last
+  $('list-pane').addEventListener('keydown', (e) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key) || !e.target.classList.contains('conv-btn')) { return; }
+    const all = Array.from($('list-pane').querySelectorAll('.conv-btn'));
+    const i = all.indexOf(e.target);
+    const to = e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : Math.max(0, Math.min(all.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)));
+    e.preventDefault();
+    all[to].focus();
+  });
+  $('q').addEventListener('keydown', (e) => { if (e.key === 'Escape') { $('q').value = ''; search(); } });
+
+  // on a narrow screen the thread has the place of the list: Back gives it back, with the focus on the entry that was open
+  $('back').addEventListener('click', () => {
+    document.querySelector('.shell').classList.remove('reading');
+    const b = current && document.querySelector('.conv-btn[data-key="' + current.group + '/' + current.key + '"]');
+    if (b) { b.focus(); }
+  });
 
   // ---- the page
 

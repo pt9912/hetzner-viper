@@ -104,3 +104,5 @@ select { font: inherit; background: var(--bg); color: var(--fg); border: 1px sol
 .notify { font-size: .84rem; color: var(--muted); display: flex; gap: .3rem; align-items: center; }
 .conv-btn.hit { grid-template-columns: 0 1fr; gap: 0; }
 .ch .plain { font-size: .8rem; }
+.back { display: none; }
+@media (max-width: 900px) { .back { display: inline; } .msg { max-width: 95%; } .ch .plain { font-size: .75rem; } .top { flex-wrap: wrap; gap: .4rem .8rem; } }

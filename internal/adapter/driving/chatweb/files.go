@@ -1,6 +1,7 @@
 package chatweb
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -276,12 +277,7 @@ func (h *handlers) cached(r *http.Request, group, attID, sha string) (string, er
 		return "", err
 	}
 	dir := filepath.Join(root, "cache", key)
-	if p, ok := oneFile(dir); ok {
-		u.mu.Unlock()
-		_ = os.Chtimes(dir, time.Now(), time.Now())
-		return p, nil
-	}
-	if c := u.flight[key]; c != nil { // somebody fetches it already
+	if c := u.flight[key]; c != nil { // somebody fetches it already: its folder holds a part of the file until it is done
 		u.mu.Unlock()
 		select {
 		case <-c.done:
@@ -290,16 +286,38 @@ func (h *handlers) cached(r *http.Request, group, attID, sha string) (string, er
 			return "", r.Context().Err()
 		}
 	}
+	if p, ok := oneFile(dir); ok {
+		u.mu.Unlock()
+		_ = os.Chtimes(dir, time.Now(), time.Now())
+		return p, nil
+	}
 	c := &call{done: make(chan struct{})}
 	if u.flight == nil {
 		u.flight = map[string]*call{}
 	}
 	u.flight[key] = c
-	prune(filepath.Join(root, "cache"))
+	busy := map[string]bool{}
+	for k := range u.flight {
+		busy[k] = true
+	}
+	prune(filepath.Join(root, "cache"), busy)
 	err = os.MkdirAll(dir, 0o700)
 	u.mu.Unlock()
+	defer func() { // whatever happens, the ones that wait are let go
+		if p := recover(); p != nil {
+			c.err = errors.New("the fetch failed")
+			_ = os.RemoveAll(dir)
+		}
+		u.mu.Lock()
+		delete(u.flight, key)
+		u.mu.Unlock()
+		close(c.done)
+	}()
 	if err == nil {
-		if err = h.b.Fetch(r.Context(), group, attID, sha, dir); err == nil {
+		// the fetch belongs to all who wait for it, not to the one who asked first
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Minute)
+		defer cancel()
+		if err = h.b.Fetch(ctx, group, attID, sha, dir); err == nil {
 			var ok bool
 			if c.path, ok = oneFile(dir); !ok {
 				err = errors.New("the fetch gave no file")
@@ -310,23 +328,19 @@ func (h *handlers) cached(r *http.Request, group, attID, sha string) (string, er
 		}
 	}
 	c.err = err
-	u.mu.Lock()
-	delete(u.flight, key)
-	u.mu.Unlock()
-	close(c.done)
 	return c.path, c.err
 }
 
 func oneFile(dir string) (string, bool) {
 	es, err := os.ReadDir(dir)
-	if err != nil || len(es) != 1 || !es[0].Type().IsRegular() {
+	if err != nil || len(es) != 1 || !es[0].Type().IsRegular() || strings.HasSuffix(es[0].Name(), ".tmp") {
 		return "", false
 	}
 	return filepath.Join(dir, es[0].Name()), true
 }
 
 // prune takes what is too old, and then the oldest, out of the cache until it is under its budget.
-func prune(cache string) {
+func prune(cache string, busy map[string]bool) {
 	es, err := os.ReadDir(cache)
 	if err != nil {
 		return
@@ -339,6 +353,9 @@ func prune(cache string) {
 	var all []entry
 	var total int64
 	for _, e := range es {
+		if busy[e.Name()] { // being fetched: it looks old and empty
+			continue
+		}
 		dir := filepath.Join(cache, e.Name())
 		fi, err := e.Info()
 		if err != nil {

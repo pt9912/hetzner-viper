@@ -88,5 +88,6 @@
     'del.confirm.conv': 'Delete the history of {0} on this computer? NATS keeps nothing: it cannot be fetched again.',
     'del.confirm.all': 'Delete the whole history of the group {0} on this computer? NATS keeps nothing: it cannot be fetched again.',
     'del.failed': 'Not deleted: {0}',
+    'nav.back': 'Back to the list',
   });
 })();

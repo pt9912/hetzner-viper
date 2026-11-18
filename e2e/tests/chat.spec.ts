@@ -166,7 +166,7 @@ test('files: a card with a download, a file can be chosen and checked, a group w
 test('unread counts name the entry and the tab, search finds a part of a word and opens the conversation, history can be deleted', async ({ page }) => {
   ui = await startUI([], 0, false, { command: 'ui-chat', operator: true, history });
   await page.goto(ui.start);
-  await expect(page).toHaveTitle('(6) viper chat'); // 3 + 2 + 1: "all" is not counted twice
+  await expect(page).toHaveTitle('(4) viper chat'); // 3 + 1: "all" is not counted twice, and the pair is only watched
   await expect(page.locator('.conv-btn[data-key="dev/rechner__a"]')).toHaveAttribute('aria-label', /^a, not seen yet, 3 unread$/);
   await page.fill('#q', 'NOBODY'); // below two characters nothing is asked; this is a part of a word in any case
   await expect(page.locator('#results .hit')).toHaveCount(0);
@@ -198,6 +198,32 @@ test('unread counts name the entry and the tab, search finds a part of a word an
   await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
   await expect(page.locator('#del')).toBeHidden();
   await expect(page.locator('#delall')).toBeHidden();
+});
+
+test('keyboard: the arrow keys move in the list; narrow: the thread takes the place of the list and Back returns', async ({ browser }) => {
+  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true, history });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 800 } });
+  const page = await ctx.newPage();
+  await page.goto(ui.start);
+  await expect(page.locator('.conv-btn').first()).toBeVisible();
+  const first = page.locator('.conv-btn').first();
+  await first.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('.conv-btn').nth(1)).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(page.locator('.conv-btn').last()).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(first).toBeFocused();
+  await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
+  await expect(page.locator('#list-pane')).toBeHidden();
+  await expect(page.locator('#msgs article')).toHaveCount(3);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true); // no sideways scrolling
+  await page.locator('#back').click();
+  await expect(page.locator('#list-pane')).toBeVisible();
+  await expect(page.locator('.conv-btn[data-key="dev/rechner__a"]')).toBeFocused();
+  await page.locator('.conv-btn[data-key="dev/alle"]').click();
+  await expect(page.locator('#msgs')).toHaveAttribute('aria-live', 'off');
+  await ctx.close();
 });
 
 test('the notification is off, and a choice to turn it on is kept', async ({ browser }) => {
