@@ -1,7 +1,7 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.200  
-Software-Version: v0.34.2  
+Version: 1.201  
+Software-Version: v0.34.3  
 Stand: 18.11.2026  
 
 ## 1. Einleitung
@@ -89,12 +89,12 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 
 **Mit Homebrew** (Linux und macOS): `brew install pt9912/viper/viper`, dann `viper version` (Update: `brew upgrade viper`). Sonst von Hand:
 
-1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.34.2_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.34.2_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
+1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.34.3_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.34.3_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
 2. Prüfen Sie die Datei und machen Sie sie ausführbar:
    ```bash
-   grep viper_v0.34.2_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
-   chmod +x viper_v0.34.2_linux_amd64
-   mv viper_v0.34.2_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
+   grep viper_v0.34.3_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
+   chmod +x viper_v0.34.3_linux_amd64
+   mv viper_v0.34.3_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
    ```
 3. Prüfen Sie die Installation: `viper version`.
 
@@ -212,7 +212,7 @@ Sie können `viper` auch ohne Cloud-Konto ausprobieren und nutzen: Der Rechner i
 #### Vorgehen
 
 1. **Image beschaffen.** Diesen Schritt können Sie überspringen: Ohne `COMPOSE_IMAGE` bzw. `K8S_IMAGE` nimmt `viper` das veröffentlichte Image seiner Version, `ghcr.io/pt9912/viper-machine:<Version>`; Compose und ein k3d-Cluster laden es selbst. Für ein eigenes Image oder eine andere Version gehen Sie auf einem von zwei Wegen:
-   * **Laden** (schnell): `docker pull ghcr.io/pt9912/viper-machine:v0.34.2`, mit der Version, die `viper version` meldet. Bei Docker Compose können Sie das Laden `viper up` überlassen: Der Name in `COMPOSE_IMAGE` genügt. Das Image ist öffentlich und mehrere GB groß; das Image gibt es für **amd64 und arm64**, Docker wählt die passende Architektur. Der Name ist `ghcr.io/pt9912/viper-machine:v0.34.2`. Bei k3d (vorher `k3d cluster create viper`) lädt der Cluster das öffentliche Image beim ersten Start selbst, das dauert etwa eine halbe Minute; Sie müssen es nicht einspielen. **Jeder Knoten lädt es für sich**, auf dem ein Rechner läuft: Hat der Cluster mehrere Knoten, laden Sie es mehrmals aus dem Internet. Dann spielen Sie das geladene Image mit `k3d image import ghcr.io/pt9912/viper-machine:v0.34.2 -c viper` ein (kopiert es auf alle Knoten, ohne Download) oder nutzen eine gemeinsame Registry (unten).
+   * **Laden** (schnell): `docker pull ghcr.io/pt9912/viper-machine:v0.34.3`, mit der Version, die `viper version` meldet. Bei Docker Compose können Sie das Laden `viper up` überlassen: Der Name in `COMPOSE_IMAGE` genügt. Das Image ist öffentlich und mehrere GB groß; das Image gibt es für **amd64 und arm64**, Docker wählt die passende Architektur. Der Name ist `ghcr.io/pt9912/viper-machine:v0.34.3`. Bei k3d (vorher `k3d cluster create viper`) lädt der Cluster das öffentliche Image beim ersten Start selbst, das dauert etwa eine halbe Minute; Sie müssen es nicht einspielen. **Jeder Knoten lädt es für sich**, auf dem ein Rechner läuft: Hat der Cluster mehrere Knoten, laden Sie es mehrmals aus dem Internet. Dann spielen Sie das geladene Image mit `k3d image import ghcr.io/pt9912/viper-machine:v0.34.3 -c viper` ein (kopiert es auf alle Knoten, ohne Download) oder nutzen eine gemeinsame Registry (unten).
    * **Bauen:** `viper image build` (für k3d: erst `k3d cluster create viper`, dann `viper image build --k3d viper`). Das dauert beim ersten Mal einige Minuten. Die Ausgabe nennt den Namen des Images.
 2. **Einstellungen** in `machines/lokal.env.local` (die Zeile mit dem Image brauchen Sie nur für ein selbst gebautes oder anderes Image):
 
@@ -250,7 +250,7 @@ Löschen Sie Cluster oft oder haben Sie Cluster mit mehreren Knoten, lädt sonst
 PROVIDER=kubernetes
 DNS_PROVIDER=none
 SERVER_LOCATION=k3d-viper
-K8S_IMAGE=ghcr.io/pt9912/viper-machine:v0.34.2
+K8S_IMAGE=ghcr.io/pt9912/viper-machine:v0.34.3
 K3D_REGISTRY=viper-registry
 K3D_CLUSTER_CREATE=1
 K3D_AGENTS=2
@@ -488,7 +488,7 @@ Die Seiten laufen im Browser. **Prüfen** und die Aktionen schreiben wie am Term
 
 1. Starten Sie `viper ui-chat` im Verzeichnis mit den Einstellungen. Der Browser öffnet sich; wie bei `viper ui` steht die Adresse im Terminal, und `Strg-C` beendet den Chat. Es läuft immer nur ein `viper ui-chat`; ein zweiter Start nennt den Port des ersten.
 2. Links stehen die Gespräche der Gruppe: **Alle Meldungen**, die **Themen**, die **Rechner** (mit Lampe, sobald sie sich gemeldet haben) und **Zwischen Rechnern** (was zwei Rechner einander schreiben, nur zum Mitlesen; bei höchstens sechs Rechnern steht jedes Paar von Anfang an da, bei mehr nur die, zwischen denen etwas floss). Ein Klick auf den Namen der Gruppe oder auf einen dieser Titel klappt ihn ein und aus; die Wahl bleibt im Browser erhalten. Ein Klick öffnet das Gespräch; auf einem schmalen Bildschirm ersetzt es die Liste, und **Zurück zur Liste** bringt die Liste zurück. Mit den Pfeiltasten, **Pos1** und **Ende** gehen Sie durch die Liste.
-3. Schreiben Sie im Feld unten. **Strg+Enter** sendet, **Enter** macht eine neue Zeile. Bei einem Rechner wählen Sie **Nachricht** (kommt an, wenn der Rechner da ist; keine Antwort nötig) oder **Frage** (wartet 30, 60 oder 120 Sekunden auf die Antwort). An ein Thema geht ein Rundruf. Der Entwurf je Gespräch bleibt im Browser (im Klartext im Profil des Browsers), bis Sie senden oder das Feld leeren.
+3. Schreiben Sie im Feld unten; darüber steht, wohin der Text geht („Sendet an a in der Gruppe dev“). Ist die Gruppe nicht gestartet, ist das Feld gesperrt und sagt es. Nach dem Senden nennt die Zeile unter dem Feld den Server der Gruppe, der die Nachricht genommen hat (Rechner und Adresse). **Strg+Enter** sendet, **Enter** macht eine neue Zeile. Bei einem Rechner wählen Sie **Nachricht** (kommt an, wenn der Rechner da ist; keine Antwort nötig) oder **Frage** (wartet 30, 60 oder 120 Sekunden auf die Antwort). An ein Thema geht ein Rundruf. Der Entwurf je Gespräch bleibt im Browser (im Klartext im Profil des Browsers), bis Sie senden oder das Feld leeren.
 4. Antwortet ein Rechner auf ein Thema statt direkt an Sie, steht die Antwort im Gespräch dieses Themas. Der Schalter **Auch zeigen, was dieser Rechner auf Themen schreibt** (im Gespräch eines Rechners, standardmäßig aus, die Wahl bleibt im Browser) zeigt seine Meldungen auf allen Themen auch in seinem Gespräch, mit dem Thema als Marke (`#general`). Es sind nur seine eigenen Meldungen, nicht die anderer Rechner auf diesem Thema.
 5. Fragt ein Rechner Sie etwas, steht die Frage als **offen** im Gespräch. **Antworten** schreibt die Antwort an genau diese Frage.
 6. Eine **Datei** (PDF, ZIP oder Bild) hängen Sie mit **Datei anhängen**, durch Ablegen auf dem Verlauf oder mit **Strg+V** an. Eine Datei in einer Nachricht lädt der Link **Herunterladen** der Karte.
