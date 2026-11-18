@@ -565,6 +565,7 @@
     const b = $('banner');
     if ((b.textContent || '') !== (text || '')) {
       b.textContent = text || ''; // the same text again is not announced again
+      b.title = text || ''; // the bar shows one line: the whole text is here
       if (text) { console.warn('viper chat: ' + text); } // also in the console of the browser
     }
     if (b.hidden === !!text) { b.hidden = !text; }

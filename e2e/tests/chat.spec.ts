@@ -240,6 +240,11 @@ test('the page stays still: the list is not built again every few seconds, and t
   expect(await btn.evaluate((e) => (e as unknown as { mark?: number }).mark)).toBe(1); // the same element: nothing was built again
   await expect(btn).toBeFocused();
   expect((await page.locator('.shell').boundingBox())!.y).toBe(top);
+  await page.evaluate(() => { document.getElementById('banner')!.hidden = true; });
+  expect((await page.locator('.shell').boundingBox())!.y).toBe(top); // it goes: the page does not move
+  await page.evaluate(() => { const b = document.getElementById('banner')!; b.textContent = 'a message that is much longer than the bar can show, '.repeat(8); b.hidden = false; });
+  expect((await page.locator('.shell').boundingBox())!.y).toBe(top); // it comes, even a long one: the page does not move
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const lamp = page.locator('.group h2 .led');
   await expect(lamp).toHaveClass(/warn/);
 });
