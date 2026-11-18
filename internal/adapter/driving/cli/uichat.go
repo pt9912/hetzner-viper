@@ -4,17 +4,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driving/chatweb"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driving/web"
 	"github.com/pt9912/hetzner-viper/internal/filelock"
 	"github.com/pt9912/hetzner-viper/internal/model"
 	"github.com/pt9912/hetzner-viper/internal/natsmcp"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/chatlog"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/chatstream"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 )
 
 // nativeUIChat is viper ui-chat: the chat of docs/plan/ui-chat.md in the browser. Like viper ui it is a web server on 127.0.0.1
@@ -39,12 +44,70 @@ func nativeUIChat(o *options) error {
 	secrets := &secretValues{}
 	b := &uiBackend{o: o, env: env, secrets: secrets}
 	b.learnEnvironment()
+	store, err := o.host().Services.ChatStore(dir, o.keepDays, o.noHistory)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = store.Close() }()
+	cb := &chatBackend{b: b}
+	engine := o.host().Services.Chat(store, &chatConnector{o: o, env: env}, natsmcp.Clean, secrets.redact)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer func() { cancel(); engine.Stop() }()
+	go pruneLoop(ctx, store, cb)
 	cfg := web.Config{Version: o.version, Readonly: o.readonly, Clean: natsmcp.Clean, Redact: secrets.redact, LongestSecret: secrets.longest,
-		Chat: chatweb.New(&chatBackend{b: b}, chatweb.Options{Readonly: o.readonly, NoPairs: o.noPairs, Version: o.version})}
+		Chat: chatweb.New(cb, chatweb.Options{Readonly: o.readonly, NoPairs: o.noPairs, Version: o.version, Engine: engine, Store: store})}
 	return serveBrowser(o, cfg, "viper ui-chat", func(port string) {
 		_ = os.WriteFile(filepath.Join(dir, ".port"), []byte(port+"\n"), 0o600)
 	}, func() { _ = os.Remove(filepath.Join(dir, ".port")) })
 }
+
+// pruneLoop takes what is too old or too much out of the history of every group, now and then.
+func pruneLoop(ctx context.Context, store chatlog.Store, cb *chatBackend) {
+	for {
+		if gs, err := cb.Groups(ctx); err == nil {
+			for _, g := range gs {
+				_ = store.Prune(g.Name, time.Now())
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Hour):
+		}
+	}
+}
+
+// chatConnector opens the connection of the operator to a group, as viper nats does: an ssh tunnel to the server, and the stream
+// of watch --all --query through it.
+type chatConnector struct {
+	o   *options
+	env settings.Env
+}
+
+func (c *chatConnector) Connect(ctx context.Context, group string) (chatstream.Conn, error) { //nolint:ireturn // the contract of chatstream.Connector
+	oc := *c.o // loadNatsGroup writes the group into the options: a copy keeps the streams apart
+	g, err := loadNatsGroup(&oc, c.env, group)
+	if err != nil {
+		return nil, err
+	}
+	dead := make(chan struct{})
+	sess, err := openOperatorDead(ctx, &oc, g, dead)
+	if err != nil {
+		return nil, err
+	}
+	return &chatConn{sess: sess, dead: dead}, nil
+}
+
+type chatConn struct {
+	sess *operatorSession
+	dead chan struct{}
+}
+
+func (c *chatConn) Watch(ctx context.Context, stdout, stderr io.Writer) error {
+	return c.sess.remote(ctx, "", "", stdout, stderr, "viper-nats-mcp", "watch", "--all", "--query")
+}
+func (c *chatConn) Dead() <-chan struct{} { return c.dead }
+func (c *chatConn) Close()                { c.sess.close() }
 
 // runningPort says the port of the viper ui-chat that holds the lock, if it wrote it down.
 func runningPort(dir string) string {

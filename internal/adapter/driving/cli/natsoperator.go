@@ -183,6 +183,12 @@ type operatorSession struct {
 }
 
 func openOperator(ctx context.Context, o *options, g *natsGroup) (*operatorSession, error) {
+	return openOperatorDead(ctx, o, g, nil)
+}
+
+// openOperatorDead is openOperator for a caller that stays connected (the chat): dead, if not nil, is closed when the ssh process of
+// the tunnel has ended (a watch over it does not notice that: it tries again to a port nobody listens on).
+func openOperatorDead(ctx context.Context, o *options, g *natsGroup, dead chan struct{}) (*operatorSession, error) {
 	srv, err := g.find(ctx, o)
 	if err != nil {
 		return nil, err
@@ -190,7 +196,7 @@ func openOperator(ctx context.Context, o *options, g *natsGroup) (*operatorSessi
 	open := o.host().OpenTunnel
 	if open == nil {
 		open = func(ctx context.Context, via driving.NATSTarget, host string, port int) (string, func(), error) {
-			return sshTunnel(ctx, o, via, host, port)
+			return sshTunnel(ctx, o, via, host, port, dead)
 		}
 	}
 	addr, stopTunnel, err := open(ctx, srv.Machine.Target, srv.Host, srv.Port)
@@ -244,7 +250,7 @@ func (s *syncBuffer) String() string {
 }
 
 // sshTunnel forwards a free port of this computer to host:port as seen from the machine.
-func sshTunnel(ctx context.Context, o *options, via driving.NATSTarget, host string, port int) (string, func(), error) {
+func sshTunnel(ctx context.Context, o *options, via driving.NATSTarget, host string, port int, dead chan struct{}) (string, func(), error) {
 	st := o.host().StreamTool
 	if st == nil {
 		return "", nil, errors.New("viper nats cannot run programs here")
@@ -263,6 +269,9 @@ func sshTunnel(ctx context.Context, o *options, via driving.NATSTarget, host str
 		done <- st(tctx, "", io.Discard, &errs, "ssh", "-F", via.Config, "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes",
 			"-N", "-L", fmt.Sprintf("%s:%s:%d", local, host, port), via.Alias)
 		close(done)
+		if dead != nil {
+			close(dead) // ssh has ended, by itself or because the tunnel was closed
+		}
 	}()
 	deadline := time.Now().Add(20 * time.Second)
 	for {

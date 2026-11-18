@@ -6,6 +6,8 @@ import (
 	"io"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/chatlog"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/chatstream"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/runlog"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"github.com/pt9912/hetzner-viper/internal/port/driving"
@@ -42,6 +44,10 @@ type Services struct {
 	LaunchVSCode func(alias, workdir string) error
 	// LaunchTerminal opens a terminal window of the desktop with the title that runs the words (viper terminal).
 	LaunchTerminal func(title string, words []string) error
+	// ChatStore opens the history of the chat in the directory (memory: held in the process only, nothing written); Chat makes the
+	// engine that reads the NATS streams into it (viper ui-chat).
+	ChatStore func(dir string, keepDays int, memory bool) (chatlog.Store, error)
+	Chat      func(store chatlog.Store, cn chatstream.Connector, clean, redact func(string) string) driving.Chat
 }
 
 // Host is what the commands use of the outside world: the programs they run, the terminal and

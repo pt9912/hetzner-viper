@@ -22,10 +22,12 @@
   <nav class="list" id="list-pane" aria-label="Conversations" data-i18n-label="list.label">
     <div id="groups"></div>
   </nav>
-  <main id="main" tabindex="-1">
+  <main id="main" tabindex="0">
     <section id="empty" class="empty" hidden></section>
     <section id="conv" hidden>
-      <header class="ch"><div class="av" id="conv-av" aria-hidden="true"></div><div><h2 id="conv-name"></h2><p id="conv-sub" class="muted"></p></div></header>
+      <header class="ch"><div class="av" id="conv-av" aria-hidden="true"></div><div><h2 id="conv-name"></h2><p id="conv-sub" class="muted"></p></div>
+        <label class="sr" for="filter" data-i18n="filter.label">Show</label>
+        <select id="filter" class="filter" hidden><option value="all" data-i18n="filter.all">Everything</option><option value="msg" data-i18n="filter.msg">Messages</option><option value="req" data-i18n="filter.req">Questions</option><option value="res" data-i18n="filter.res">Answers</option></select></header>
       <div id="msgs" class="msgs" role="log" aria-live="polite" aria-label="Messages" data-i18n-label="msgs.label"><p id="conv-empty" class="muted" data-i18n="msgs.none">No messages yet.</p></div>
     </section>
   </main>

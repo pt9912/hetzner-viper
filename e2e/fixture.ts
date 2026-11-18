@@ -22,7 +22,7 @@ export interface UI {
 
 // startUI makes a directory of settings for PROVIDER=compose with a fake docker (it only prints and sleeps), and starts
 // viper ui on it. Nothing is made on any machine; every run of viper there ends at the fake.
-export async function startUI(extra: string[] = [], dockerSleep = 30, openBrowser = false, opts: { objects?: boolean; terminal?: boolean; command?: string; operator?: boolean } = {}): Promise<UI> {
+export async function startUI(extra: string[] = [], dockerSleep = 30, openBrowser = false, opts: { objects?: boolean; terminal?: boolean; command?: string; operator?: boolean; history?: Record<string, object[]> } = {}): Promise<UI> {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'viper-e2e-'));
   const home = path.join(root, 'home');
   const work = path.join(root, 'work');
@@ -51,6 +51,10 @@ export async function startUI(extra: string[] = [], dockerSleep = 30, openBrowse
   if (opts.operator) { // this computer has the key of the operator of the group dev
     fs.mkdirSync(path.join(stateDir, 'groups', 'dev'), { recursive: true });
     fs.writeFileSync(path.join(stateDir, 'groups', 'dev', 'operator.nk'), 'SUAJDIT7XUTZMBUYQONLPSPVRGJVC57XKGR3NPWD7HDWHTNHQUEPTOTCCE\n', { mode: 0o600 });
+  }
+  for (const [key, records] of Object.entries(opts.history ?? {})) { // the history of the chat of the group dev: one file per conversation
+    fs.mkdirSync(path.join(stateDir, 'chat', 'dev'), { recursive: true });
+    fs.writeFileSync(path.join(stateDir, 'chat', 'dev', key + '.jsonl'), records.map((r) => JSON.stringify(r)).join('\n') + '\n');
   }
   fs.writeFileSync(path.join(stateDir, 'events.log'), '2026-11-14T10:00:00+00:00 e2e-web   up   start \u001b[31mred ghp_e2esecretvalue123\n');
 

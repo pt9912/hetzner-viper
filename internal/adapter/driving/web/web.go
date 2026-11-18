@@ -141,8 +141,9 @@ type Config struct {
 type Chat struct {
 	// Site is the pages (index.html and what it loads).
 	Site fs.FS
-	// Handle adds the routes of the chat to the mux; they begin with /api/chat/.
-	Handle func(mux *http.ServeMux)
+	// Handle adds the routes of the chat to the mux; they begin with /api/chat/. done is closed when the server ends: an open stream
+	// must end then.
+	Handle func(mux *http.ServeMux, done <-chan struct{})
 	// Streams are the paths of event streams (they count against the limit of open streams, not against the requests); Octet the
 	// paths of POST requests that carry a file (content type application/octet-stream).
 	Streams, Octet []string
@@ -319,7 +320,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	if c := s.cfg.Chat; c != nil {
 		mux.Handle("GET /", siteOf(c.Site))
-		c.Handle(mux)
+		c.Handle(mux, s.quit)
 		return s.guard(mux)
 	}
 	mux.Handle("GET /", siteOf(pages()))

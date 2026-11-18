@@ -20,6 +20,7 @@ import (
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/aws"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/azure"
+	chatlogfile "github.com/pt9912/hetzner-viper/internal/adapter/driven/chatlog"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/cloudflare"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/ecb"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/editor"
@@ -35,11 +36,14 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/adapter/driven/terminal"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driving/cli"
 	"github.com/pt9912/hetzner-viper/internal/model"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/chatlog"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/chatstream"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/cloud"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/dns"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/runlog"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 	"github.com/pt9912/hetzner-viper/internal/port/driving"
+	"github.com/pt9912/hetzner-viper/internal/usecase/chat"
 	"github.com/pt9912/hetzner-viper/internal/usecase/check"
 	"github.com/pt9912/hetzner-viper/internal/usecase/find"
 	"github.com/pt9912/hetzner-viper/internal/usecase/preflight"
@@ -92,6 +96,8 @@ func Run(version string, args []string, stdin io.Reader, stdout, stderr io.Write
 			ShowLog:        runlogfile.Show,
 			LaunchVSCode:   vscode().Launch,
 			LaunchTerminal: terminalLauncher().Launch,
+			ChatStore:      chatStore,
+			Chat:           newChat,
 		},
 	})
 }
@@ -264,4 +270,21 @@ func withoutRunMark(env []string) []string {
 		}
 	}
 	return out
+}
+
+// chatStore is the history of viper ui-chat: files in the directory, or held in the process.
+func chatStore(dir string, keepDays int, memory bool) (chatlog.Store, error) { //nolint:ireturn // the history is what the port says
+	if memory {
+		return chatlogfile.Memory(keepDays), nil
+	}
+	s, err := chatlogfile.Open(dir, keepDays)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// newChat is the engine that reads the NATS streams of the groups into the history.
+func newChat(store chatlog.Store, cn chatstream.Connector, clean, redact func(string) string) driving.Chat { //nolint:ireturn // the driving port
+	return chat.New(chat.Options{Store: store, Connector: cn, Clean: clean, Redact: redact})
 }

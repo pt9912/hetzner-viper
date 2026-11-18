@@ -20,12 +20,68 @@ test('with the key the machines of the group are conversations, and one opens', 
   await page.goto(ui.start);
   await expect(page.locator('#me')).toContainText('Operator operator logged in');
   await expect(page.locator('.group h2')).toHaveText('dev');
-  await expect(page.locator('.conv-btn')).toHaveCount(2);
+  await expect(page.locator('.conv-btn')).toHaveCount(3);
   await page.getByRole('button', { name: 'a', exact: true }).click();
   await expect(page.locator('#conv-name')).toHaveText('a');
   await expect(page.locator('#conv-sub')).toContainText('Machine of the group dev');
   await expect(page.getByRole('button', { name: 'a', exact: true })).toHaveAttribute('aria-current', 'true');
   await expect(page.locator('#msgs')).toHaveAttribute('role', 'log');
+});
+
+// the history on disk: what the chat shows of conversations that were kept (no NATS server here)
+const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+const history = {
+  rechner__a: [
+    { n: 1, t: ago(30), dir: 'in', from: 'a', type: 'msg', text: 'build finished' },
+    { n: 2, t: ago(20), dir: 'in', from: 'a', type: 'msg', text: 'see:\n```sh\nmake test\n```' },
+    { n: 3, t: ago(10), dir: 'in', from: 'a', type: 'msg', text: '<img src=x onerror="window.pwned=1"> <b>bold</b> https://example.test/x' },
+  ],
+  paar__a__b: [
+    { n: 4, t: ago(9), dir: 'in', from: 'a', to: 'b', type: 'msg', text: 'hello b' },
+    { n: 5, t: ago(8), dir: 'in', from: 'b', to: 'a', type: 'msg', text: 'hello a' },
+  ],
+  thema__gone: [{ n: 6, t: ago(7), dir: 'in', from: 'b', topic: 'gone', type: 'msg', text: 'topic that no setting lists' }],
+  alle: [
+    { n: 1, t: ago(30), dir: 'in', from: 'a', type: 'msg', text: 'build finished' },
+    { n: 5, t: ago(8), dir: 'in', from: 'b', to: 'a', type: 'req', id: 'q1', text: 'a question' },
+    { n: 6, t: ago(7), dir: 'in', from: 'a', to: 'b', type: 'res', re: 'q1', text: 'an answer' },
+  ],
+};
+
+test('the history shows in the list with unread counts, and a conversation shows as a thread of text only', async ({ page }) => {
+  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true, history });
+  await page.goto(ui.start);
+  const a = page.locator('.conv-btn[data-key="dev/rechner__a"]');
+  await expect(a.locator('.badge')).toHaveText('3');
+  await expect(a.locator('.pv')).toContainText('<img src=x');
+  await expect(page.locator('.conv-btn[data-key="dev/thema__gone"] .nm')).toHaveText('gone'); // a topic that only the history knows
+  await expect(page.locator('.conv-btn[data-key="dev/paar__a__b"] .nm')).toHaveText('a b');
+  await a.click();
+  await expect(page.locator('#msgs article')).toHaveCount(3);
+  await expect(page.locator('#msgs pre.code')).toHaveText('make test');
+  await expect(page.locator('#msgs img, #msgs b, #msgs a')).toHaveCount(0); // text stays text: no markup, no link
+  await expect(page.locator('#msgs')).toContainText('<b>bold</b> https://example.test/x');
+  expect(await page.evaluate(() => (window as unknown as { pwned?: number }).pwned)).toBeUndefined();
+  await expect(a.locator('.badge')).toHaveCount(0); // seen
+  await page.reload(); // and kept
+  await expect(page.locator('.conv-btn[data-key="dev/rechner__a"] .badge')).toHaveCount(0);
+  await expect(page.locator('.conv-btn[data-key="dev/paar__a__b"] .badge')).toHaveText('2');
+});
+
+test('a pair is read only with the first machine on the left, and all messages can be filtered', async ({ page }) => {
+  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true, history });
+  await page.goto(ui.start);
+  await page.locator('.conv-btn[data-key="dev/paar__a__b"]').click();
+  await expect(page.locator('#conv-sub')).toContainText('Read only');
+  await expect(page.locator('#msgs article.l')).toContainText('hello b');
+  await expect(page.locator('#msgs article.r')).toContainText('hello a');
+  await page.locator('.conv-btn[data-key="dev/alle"]').click();
+  await expect(page.locator('#msgs article')).toHaveCount(3);
+  await page.selectOption('#filter', 'req');
+  await expect(page.locator('#msgs article')).toHaveCount(1);
+  await expect(page.locator('#msgs article')).toContainText('b → a');
+  await page.selectOption('#filter', 'res');
+  await expect(page.locator('#msgs article .tag')).toHaveText('answer');
 });
 
 test('the language can be changed and the texts follow', async ({ page }) => {
@@ -64,12 +120,13 @@ test('a second viper ui-chat says that one runs already, and with which port', a
 for (const scheme of ['light', 'dark'] as const) {
   for (const lang of ['en', 'de']) {
     test(`the chat has no accessibility violations (${scheme}, ${lang})`, async ({ browser }) => {
-      ui = await startUI([], 0, false, { command: 'ui-chat', operator: true });
+      ui = await startUI([], 0, false, { command: 'ui-chat', operator: true, history });
       const ctx = await browser.newContext({ colorScheme: scheme, locale: lang });
       const page = await ctx.newPage();
       await page.goto(ui.start);
-      await expect(page.locator('.conv-btn')).toHaveCount(2);
-      await page.locator('.conv-btn').first().click();
+      await expect(page.locator('.conv-btn')).toHaveCount(5);
+      await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
+      await expect(page.locator('#msgs article')).toHaveCount(3);
       const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice']).analyze();
       expect(result.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`), `${scheme} ${lang}`).toEqual([]);
       await ctx.close();

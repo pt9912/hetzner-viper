@@ -13,7 +13,7 @@ func chatServer(t *testing.T) (*web.Server, http.Handler) {
 	t.Helper()
 	cfg := web.Config{Version: "vtest", Chat: &web.Chat{
 		Site: fstest.MapFS{"index.html": {Data: []byte("<!doctype html><title>chat</title>")}},
-		Handle: func(mux *http.ServeMux) {
+		Handle: func(mux *http.ServeMux, _ <-chan struct{}) {
 			mux.HandleFunc("GET /api/chat/state", func(w http.ResponseWriter, r *http.Request) { web.Reply(w, map[string]string{"ok": "yes"}) })
 		},
 		Streams: []string{"/api/chat/events"},
