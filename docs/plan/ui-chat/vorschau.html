@@ -203,7 +203,7 @@ svg { display: block; }
       <div class="msgs">
         <div class="day">Heute</div>
         <div class="m mine"><div class="bub"><div class="who"><b>Sie (operator)</b><span>13:58</span><span class="chip req">Frage</span></div><div class="txt">Fasse den Stand der Migration kurz zusammen und lege den Bericht als PDF bei.</div></div></div>
-        <div class="m"><div class="av c2">w2</div><div class="bub"><div class="who"><b>w2</b><span>14:00</span><span class="chip ok">Antwort nach 2 min 12 s</span></div><div class="txt">Drei von vier Schritten sind durch. Offen ist die Umstellung der Konfiguration in <code>config/prod.yaml</code>.</div>
+        <div class="m"><div class="av c2">w2</div><div class="bub"><div class="who"><b>w2</b><span>13:58</span><span class="chip ok">Antwort nach 18 s</span></div><div class="txt">Drei von vier Schritten sind durch. Offen ist die Umstellung der Konfiguration in <code>config/prod.yaml</code>.</div>
           <div class="att"><div class="ic">PDF</div><div><div class="nm">migration-bericht.pdf</div><small>4 Seiten · 212 KB · sha256 9f2c…a41e</small></div><span class="btn">Herunterladen</span></div></div></div>
         <div class="sys warn">w2 liest Nachrichten von <b>operator</b> sofort in seiner Sitzung (NATS_MCP_PUSH_FROM). Ihr Text erscheint dort als Eingabe.</div>
         <div class="m mine"><div class="bub"><div class="who"><b>Sie (operator)</b><span>14:05</span></div><div class="txt">Danke. Mach die Umstellung, aber erst nach grünem Build auf w1.</div></div></div>
@@ -213,10 +213,10 @@ svg { display: block; }
         <div class="tools"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12l-8.5 8.5a5 5 0 0 1-7-7L14 5a3.3 3.3 0 0 1 4.7 4.7L10 18.4a1.7 1.7 0 0 1-2.4-2.4L15 8.6"/></svg>Datei<span class="seg"><span class="on">Nachricht</span><span>Frage, wartet 30 s</span></span><span class="sp"></span>0 von 16 384 Zeichen · Strg+Enter<span class="btn pri">Senden</span></div></div>
     </main>
     <aside class="side">
-      <div><h3>Angaben</h3><dl class="kv"><dt>Gruppe</dt><dd>bedrock-eu-guard-compose</dd><dt>Rolle</dt><dd>Client</dd><dt>Anbieter</dt><dd>compose</dd><dt>Zuletzt gesehen</dt><dd>vor 12 s</dd><dt>MCP-Server</dt><dd>v0.30.0</dd></dl></div>
+      <div><h3>Angaben</h3><dl class="kv"><dt>Gruppe</dt><dd>bedrock-eu-guard-compose</dd><dt>Rolle</dt><dd>Client</dd><dt>Anbieter</dt><dd>compose</dd><dt>Zuletzt gesehen</dt><dd>vor 12 s</dd><dt>Verlauf seit</dt><dd>13:21</dd></dl></div>
       <div><h3>Empfängt Themen</h3><div class="tags"><span>general</span><span>build</span></div></div>
       <div><h3>Dateien</h3><div class="kv"><dt>Größe höchstens</dt><dd>16 MiB</dd><dt>Erlaubt</dt><dd>PDF, Bild, ZIP</dd></div></div>
-      <div class="note">Nachrichten kommen als „operator“ an. Der Rechner kann antworten, muss es aber nicht.</div>
+      <div class="note">Nachrichten kommen als „operator“ an (der Name ist einstellbar). Der Rechner kann antworten, muss es aber nicht. Was Sie am Terminal senden, sehen Sie hier nicht.</div>
     </aside>
   </div>
 </div></div>
@@ -253,7 +253,7 @@ svg { display: block; }
         <div class="day">Heute</div>
         <div class="m"><div class="av c1">w1</div><div class="bub"><div class="who"><b>w1</b><span>13:30</span></div><div class="txt">Nightly ist durch: 1 842 Tests, 0 Fehler.</div></div></div>
         <div class="m"><div class="av c4">w3</div><div class="bub"><div class="who"><b>w3</b><span>13:44</span></div><div class="txt">Ich nehme den Cache-Umbau. Wer fasst <code>internal/cache</code> an, bitte melden.</div></div></div>
-        <div class="m mine"><div class="bub"><div class="who"><b>Sie (operator)</b><span>14:01</span><span class="chip">gesendet an 2</span></div><div class="txt">Heute bis 18 Uhr nur Fehlerkorrekturen. Neue Funktionen bleiben im Zweig.</div></div></div>
+        <div class="m mine"><div class="bub"><div class="who"><b>Sie (operator)</b><span>14:01</span><span class="chip">an 2 Rechner, die das Thema melden</span></div><div class="txt">Heute bis 18 Uhr nur Fehlerkorrekturen. Neue Funktionen bleiben im Zweig.</div></div></div>
         <div class="m"><div class="av c1">w1</div><div class="bub"><div class="who"><b>w1</b><span>14:06</span></div><div class="txt">Release-Branch ist eingefroren.</div></div></div>
         <div class="sys">Thema <span class="tag">#general</span>: Nachrichten, die vor Ihrem Start gesendet wurden, sind nicht zu sehen (NATS hebt sie nicht auf).</div>
       </div>
@@ -384,11 +384,11 @@ svg { display: block; }
         <div class="sys warn">Kein Rechner empfängt <span class="tag">#alerts</span>. Eine Nachricht hierhin käme bei niemandem an. Ein Rechner empfängt ein Thema, wenn es in <code>NATS_MCP_TOPICS</code> steht oder sein Agent es abonniert.</div>
       </div>
       <div class="comp"><div class="box">Rundruf an #alerts …</div>
-        <div class="tools"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12l-8.5 8.5a5 5 0 0 1-7-7L14 5a3.3 3.3 0 0 1 4.7 4.7L10 18.4a1.7 1.7 0 0 1-2.4-2.4L15 8.6"/></svg>Datei<span class="seg"><span class="on">Rundruf</span></span><span class="sp"></span><span style="color:var(--warn)">an 0 Rechner</span><span class="btn">Senden</span></div></div>
+        <div class="tools"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12l-8.5 8.5a5 5 0 0 1-7-7L14 5a3.3 3.3 0 0 1 4.7 4.7L10 18.4a1.7 1.7 0 0 1-2.4-2.4L15 8.6"/></svg>Datei<span class="seg"><span class="on">Rundruf</span></span><span class="sp"></span><span style="color:var(--warn)">an 0 Rechner, die das Thema melden</span><span class="btn">Senden</span></div></div>
     </main>
     <aside class="side">
       <div><h3>Thema alerts</h3><dl class="kv"><dt>Abonnenten</dt><dd>keine</dd><dt>Gesendet von</dt><dd>w2</dd><dt>Erste Meldung</dt><dd>11:48</dd></dl></div>
-      <div><h3>Wer es empfangen könnte</h3><div class="tags"><span>w1</span><span>w2</span><span>w3</span></div></div>
+      <div><h3>Rechner der Gruppe</h3><div class="tags"><span>w1</span><span>w2</span><span>w3</span></div></div>
       <div class="note">Das Thema steht in keiner Einstellung <code>NATS_MCP_TOPICS</code> der Gruppe. Es ist durch Meldungen im Verlauf entstanden.</div>
     </aside>
   </div>
@@ -433,8 +433,7 @@ svg { display: block; }
     <h2>Sie sind in dieser Gruppe nicht angemeldet</h2>
     <div>Gespräche mit den Rechnern von <b style="font-family:var(--mono)">bedrock-eu-guard-compose</b> brauchen einen eigenen Schlüssel, den „Operator“. Er gehört nur Ihnen und bleibt auf diesem Rechner.</div>
     <ol><li>Die Seite legt den Schlüssel an (<code>viper nats init</code>).</li><li>Der Server der Gruppe trägt ihn ein.</li><li>Danach sind alle Gespräche da.</li></ol>
-    <div style="display:flex;gap:10px"><span class="btn pri">Als Operator anmelden</span><span class="btn">Mit einer Frage an einen Rechner behelfen</span></div>
-    <div class="hint" style="color:var(--muted);font-size:.82rem">Ohne Schlüssel geht nur Senden über einen Rechner der Gruppe (ssh), ohne Mitlesen.</div>
+    <div style="display:flex;gap:10px;align-items:center"><span class="btn pri">Als Operator anmelden</span><span style="color:var(--muted);font-size:.84rem">Dauert einige Sekunden: Die Seite verbindet sich per ssh mit dem Server der Gruppe.</span></div>
   </div></main></div>
 </div></div>
 <div class="scroll"><div class="board" id="b5b" style="width:560px;height:520px;grid-template-rows:46px auto 1fr">
@@ -442,8 +441,8 @@ svg { display: block; }
   <div class="banner"><span><b>Der Server kennt Ihren Schlüssel nicht</b> („Authorization Violation“). Er stammt wohl aus einer früheren Gruppe.</span><span class="sp"></span><span class="btn bad">Abmelden</span><span class="btn pri">Neu anmelden</span></div>
   <div class="shell one" style="grid-row:auto"><main class="conv" style="display:grid"><div class="empty" style="max-width:440px">
     <h2>Keine Verbindung</h2>
-    <div>Zuletzt versucht um 14:12. Der Verlauf bis 14:09 ist auf diesem Rechner gespeichert und bleibt lesbar.</div>
-    <div class="sys warn" style="text-align:left">Am Terminal: <code>viper nats revoke bedrock-eu-guard-compose</code>, dann <code>viper nats init bedrock-eu-guard-compose</code>.</div>
+    <div>Zuletzt versucht um 14:12, nächster Versuch in 8 s. Der Verlauf bis 14:09 ist auf diesem Rechner gespeichert und bleibt lesbar.</div>
+    <div style="color:var(--muted);font-size:.84rem">„Neu anmelden“ macht, was am Terminal <code>viper nats revoke</code> und danach <code>viper nats init</code> tun.</div>
   </div></main></div>
 </div></div>
 </div>
