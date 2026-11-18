@@ -16,18 +16,27 @@
   <span class="sp"></span>
   <span id="me" class="me" role="status"></span>
   <label class="sr" for="lang" data-i18n="lang.label">Language</label>
+  <label class="notify"><input type="checkbox" id="notify"> <span data-i18n="notify.label">Notify me</span></label>
   <select id="lang"><option value="en">English</option><option value="de">Deutsch</option></select>
 </header>
 <div class="shell">
   <nav class="list" id="list-pane" aria-label="Conversations" data-i18n-label="list.label">
+    <form id="search" class="search" role="search">
+      <label class="sr" for="q" data-i18n="search.label">Search the history</label>
+      <input type="search" id="q" autocomplete="off" data-i18n-placeholder="search.placeholder" placeholder="Search the history">
+    </form>
+    <div id="results" hidden></div>
     <div id="groups"></div>
   </nav>
   <main id="main" tabindex="0">
     <section id="empty" class="empty" hidden></section>
     <section id="conv" hidden>
       <header class="ch"><div class="av" id="conv-av" aria-hidden="true"></div><div><h2 id="conv-name"></h2><p id="conv-sub" class="muted"></p></div>
+        <button type="button" id="del" class="plain" data-i18n="del.conv">Delete this history</button>
+        <button type="button" id="delall" class="plain" data-i18n="del.all">Delete the history of the group</button>
         <label class="sr" for="filter" data-i18n="filter.label">Show</label>
         <select id="filter" class="filter" hidden><option value="all" data-i18n="filter.all">Everything</option><option value="msg" data-i18n="filter.msg">Messages</option><option value="req" data-i18n="filter.req">Questions</option><option value="res" data-i18n="filter.res">Answers</option></select></header>
+      <div id="confirm" class="notice" role="alert" hidden><span id="confirm-text"></span> <button type="button" id="confirm-ok" data-i18n="del.ok">Delete</button> <button type="button" id="confirm-x" data-i18n="send.cancel">Cancel</button></div>
       <div id="msgs" class="msgs" role="log" aria-live="polite" aria-label="Messages" data-i18n-label="msgs.label"><p id="conv-empty" class="muted" data-i18n="msgs.none">No messages yet.</p></div>
       <form id="composer" class="composer" hidden>
         <div id="ack" class="notice" role="alert" hidden><span id="ack-text"></span> <button type="button" id="ack-ok" data-i18n="send.ack">Understood, send</button></div>

@@ -42,6 +42,7 @@
   const colourOf = (name) => colours[Array.from(name).reduce((a, c) => a + c.charCodeAt(0), 0) % colours.length];
   const keyOf = (kind, name) => (kind === 'alle' ? 'alle' : kind + '__' + name.split(' ').join('__'));
   const groupOf = (name) => state.groups.find((g) => g.name === name);
+  const ago = (s) => (s < 0 ? '' : s < 60 ? s + ' s' : s < 3600 ? Math.round(s / 60) + ' min' : Math.round(s / 3600) + ' h');
   const hhmm = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const day = (iso) => new Date(iso).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
 
@@ -53,7 +54,8 @@
   }
 
   function lamp(st) {
-    const led = el('span', 'led' + (st === 'here' ? '' : st === 'gone' ? ' off' : ' warn'));
+    if (st !== 'here' && st !== 'gone') { return document.createDocumentFragment(); } // never seen: no lamp
+    const led = el('span', 'led' + (st === 'here' ? '' : ' off'));
     led.setAttribute('aria-hidden', 'true');
     return led;
   }
@@ -78,6 +80,10 @@
       badge.setAttribute('aria-label', t('list.unread', c.unread));
       b.appendChild(badge);
     }
+    const words = [label];
+    if (kind === 'rechner') { words.push(t(PRESENCE[presence(g, name).state] || PRESENCE.unknown, ago(presence(g, name).seen_ago))); }
+    if (c.unread > 0) { words.push(t('list.unread', c.unread)); }
+    b.setAttribute('aria-label', words.join(', '));
     b.setAttribute('aria-current', String(!!current && current.group === g.name && current.key === key));
     b.addEventListener('click', () => select(g, kind, name));
     li.appendChild(b);
@@ -104,7 +110,15 @@
     return { topics: Array.from(topics).sort(), pairs: pairs.sort() };
   }
 
+  function unreadTotal() {
+    let n = 0;
+    for (const L of Object.values(live)) { for (const c of Object.values(L.convs || {})) { if (c.key !== 'alle') { n += c.unread || 0; } } }
+    return n;
+  }
+
   function renderList() {
+    const total = unreadTotal();
+    document.title = (total > 0 ? '(' + total + ') ' : '') + t('title');
     const root = $('groups');
     root.textContent = '';
     for (const g of state.groups) {
@@ -250,13 +264,15 @@
     if (kind === 'thema') { const i = topicInfo(g, name); if (i) { parts.push(i); } }
     if (kind === 'rechner') {
       const p = presence(g, name);
-      parts.push(t(PRESENCE[p.state] || PRESENCE.unknown, p.seen_ago));
+      parts.push(t(PRESENCE[p.state] || PRESENCE.unknown, ago(p.seen_ago)));
       const m = (g.machines || []).find((x) => x.name === name);
       if (m && m.push_from_operator) { parts.push(t('conv.push')); }
     }
     if (kind === 'paar' || kind === 'alle') { parts.push(t('conv.readonly.pair')); } else if (state.readonly) { parts.push(t('conv.readonly')); }
     $('conv-sub').textContent = parts.join(' · ');
     $('filter').hidden = kind !== 'alle';
+    $('del').hidden = $('delall').hidden = state.readonly;
+    $('confirm').hidden = true;
   }
 
   async function select(g, kind, name) {
@@ -349,7 +365,12 @@
 
   $('attach').addEventListener('click', () => $('picker').click());
   $('picker').addEventListener('change', () => { if ($('picker').files[0]) { setFile($('picker').files[0]); } $('picker').value = ''; });
-  $('chip-x').addEventListener('click', () => { picked = null; showFile(); });
+  function unpick() { // a file that was handed over and is not sent is given back to the server
+    if (picked && picked.id) { api('/api/chat/drop', { group: picked.group, id: picked.id }).catch(() => {}); }
+    picked = null;
+  }
+
+  $('chip-x').addEventListener('click', () => { unpick(); showFile(); });
   $('text').addEventListener('paste', (e) => {
     const f = e.clipboardData && e.clipboardData.files && e.clipboardData.files[0];
     if (f) { e.preventDefault(); setFile(f); }
@@ -374,7 +395,7 @@
     $('wait').hidden = true;
     $('ack').hidden = true;
     replying = null;
-    picked = null;
+    unpick();
     $('replying').hidden = true;
     $('send-status').textContent = '';
     showFile();
@@ -389,7 +410,7 @@
 
   function startReply(rec) {
     replying = { id: rec.id, to: rec.from, text: rec.text || '' };
-    picked = null;
+    unpick();
     showFile();
     $('replying-text').textContent = t('send.replying', rec.from, (rec.text || '').slice(0, 80));
     $('replying').hidden = false;
@@ -420,12 +441,13 @@
     const ckey = mine.group + '/' + mine.key;
     if (ok && asked && asked.key === ckey) { acked[ckey] = asked.push; }
     const body = request();
+    const file = picked && !replying ? picked : null; // the file of this message, whatever happens to the chip meanwhile
     sending = true;
     $('send').disabled = true;
     $('send-status').textContent = t('send.sending');
     try {
-      if (picked && !body.file) { picked.id = picked.id || await putFile(picked, mine.group); }
-      if (picked) { body.file = picked.id; }
+      if (file) { if (!file.id) { file.id = await putFile(file, mine.group); file.group = mine.group; }
+        body.file = file.id; }
       const r = await api('/api/chat/send', body);
       if (body.kind === 'ask' && r.record.id) { asking[r.record.id] = true; }
       if (!r.warning) { onMessage(groupOf(mine.group), { record: r.record, keys: r.keys }); }
@@ -435,8 +457,7 @@
         asked = null;
         if ($('text').value === body.text) { $('text').value = ''; } // what was typed meanwhile stays
         stopReply();
-        picked = null;
-        showFile();
+        if (picked === file) { picked = null; showFile(); }
         $('send-status').textContent = r.warning || t('send.sent');
       }
     } catch (e) {
@@ -447,7 +468,7 @@
         $('ack-ok').focus();
         $('send-status').textContent = '';
       } else {
-        if (picked) { delete picked.id; } // the server gave the file up
+        if (file) { delete file.id; } // the server gave the file up
         if (current === mine) { $('send-status').textContent = t('send.failed', e.message); }
       }
     }
@@ -490,6 +511,7 @@
     const rec = ev.record;
     const L = live[g.name];
     if (!rec || !L) { return; }
+    notify(g, ev);
     if (rec.type === 'res' && rec.re && rec.re in asking) { asking[rec.re] = false; }
     for (const key of ev.keys || []) {
       const c = L.convs[key] || { key, kind: key === 'alle' ? 'alle' : key.split('__')[0], name: key === 'alle' ? '' : key.split('__').slice(1).join(' '), unread: 0 };
@@ -547,6 +569,99 @@
       }
     } catch (e) { banner(t('err.load', e.message)); }
   }
+
+  // ---- search, deleting, notifications
+
+  let searchTimer = 0;
+  let searchSeq = 0;
+
+  async function search() {
+    const q = $('q').value.trim();
+    const box = $('results');
+    const mine = ++searchSeq;
+    if (Array.from(q).length < 2) { box.hidden = true; $('groups').hidden = false; return; }
+    const out = [];
+    for (const g of state.groups.filter((x) => x.operator)) {
+      try {
+        const r = await api('/api/chat/search?group=' + encodeURIComponent(g.name) + '&q=' + encodeURIComponent(q));
+        for (const h of r.hits) { out.push({ g, h }); }
+      } catch (e) { banner(t('err.load', e.message)); }
+    }
+    if (mine !== searchSeq) { return; }
+    out.sort((a, b) => b.h.record.t.localeCompare(a.h.record.t));
+    box.textContent = '';
+    box.appendChild(el('div', 'sec', t('search.count', out.length)));
+    const ul = el('ul');
+    for (const { g, h } of out) {
+      const li = el('li');
+      const b = el('button', 'conv-btn hit');
+      b.type = 'button';
+      const body = el('div');
+      body.appendChild(el('div', 'nm', (state.groups.length > 1 ? g.name + ' / ' : '') + (h.kind === 'thema' ? '#' : '') + h.name.split(' ').join(' · ') + ' · ' + day(h.record.t) + ' ' + hhmm(h.record.t)));
+      body.appendChild(el('div', 'pv', (h.record.from ? h.record.from + ': ' : '') + h.record.text));
+      b.appendChild(el('span'));
+      b.appendChild(body);
+      b.addEventListener('click', () => { $('q').value = ''; search(); select(g, h.kind, h.name); });
+      li.appendChild(b);
+      ul.appendChild(li);
+    }
+    box.appendChild(ul);
+    box.hidden = false;
+    $('groups').hidden = true;
+  }
+
+  $('q').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(search, 300); });
+  $('search').addEventListener('submit', (e) => { e.preventDefault(); clearTimeout(searchTimer); search(); });
+
+  let toDelete = null; // { conv, text }
+
+  function askDelete(all) {
+    if (!current || state.readonly) { return; }
+    toDelete = { conv: all ? '' : current.key };
+    $('confirm-text').textContent = all ? t('del.confirm.all', current.group) : t('del.confirm.conv', $('conv-name').textContent);
+    $('confirm').hidden = false;
+    $('confirm-x').focus();
+  }
+
+  async function doDelete() {
+    if (!toDelete || !current) { return; }
+    const group = current.group;
+    try {
+      await api('/api/chat/delete', { group, conv: toDelete.conv });
+      $('confirm').hidden = true;
+      if (toDelete.conv === '' || toDelete.conv === current.key) { thread = []; paint(); }
+      toDelete = null;
+      await loadListing(groupOf(group));
+    } catch (e) { $('confirm-text').textContent = t('del.failed', e.message); }
+  }
+
+  $('del').addEventListener('click', () => askDelete(false));
+  $('delall').addEventListener('click', () => askDelete(true));
+  $('confirm-ok').addEventListener('click', doDelete);
+  $('confirm-x').addEventListener('click', () => { toDelete = null; $('confirm').hidden = true; });
+
+  // The notification says only who wrote, never what; it is off until the person turns it on (the browser asks then).
+  const notifyOn = () => $('notify').checked && typeof Notification !== 'undefined' && Notification.permission === 'granted';
+
+  async function setNotify() {
+    if ($('notify').checked) {
+      if (typeof Notification === 'undefined') { $('notify').checked = false; banner(t('notify.none')); return; }
+      if (Notification.permission !== 'granted' && (await Notification.requestPermission()) !== 'granted') { $('notify').checked = false; banner(t('notify.denied')); return; }
+    }
+    try { window.localStorage.setItem('viper-chat-notify', $('notify').checked ? '1' : '0'); } catch (e) { /* not kept */ }
+  }
+
+  function notify(g, ev) {
+    const rec = ev.record;
+    const key = (ev.keys || [])[0];
+    if (!notifyOn() || rec.dir !== 'in' || !key || key === 'alle' || key.startsWith('paar__')) { return; }
+    const open = current && current.group === g.name && current.key === key;
+    if (open && document.visibilityState === 'visible') { return; }
+    try { new Notification(t('notify.text', rec.from || ''), { tag: g.name + '/' + key, silent: true }); } catch (e) { /* the browser refuses */ }
+  }
+
+  $('notify').addEventListener('change', setNotify);
+  try { $('notify').checked = window.localStorage.getItem('viper-chat-notify') === '1' && typeof Notification !== 'undefined' && Notification.permission === 'granted'; } catch (e) { /* off */ }
 
   // ---- the page
 

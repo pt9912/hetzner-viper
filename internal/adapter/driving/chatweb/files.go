@@ -3,6 +3,7 @@ package chatweb
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -45,7 +46,7 @@ type uploads struct {
 	files  map[string]*upload
 	seq    int
 	closed bool
-	fetch  sync.Mutex // one download at a time: the cache is not made twice
+	flight map[string]*call // the downloads that are being fetched
 }
 
 // root is the folder of the chat's files (made on first use, only for the user).
@@ -67,7 +68,7 @@ func (u *uploads) get(group, id string) *upload {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	f := u.files[id]
-	if f == nil || f.group != group || time.Since(f.at) > uploadLife {
+	if f == nil || f.group != group || f.typ == "" || time.Since(f.at) > uploadLife { // typ: the body has arrived and was looked at
 		return nil
 	}
 	return f
@@ -248,41 +249,72 @@ func (h *handlers) file(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = f.Close() }()
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if st, err := f.Stat(); err == nil {
+		w.Header().Set("Content-Length", strconv.FormatInt(st.Size(), 10)) // a download that breaks off is seen as one
+	}
 	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(cleanName(rec.AttName)))
 	_, _ = io.Copy(w, f)
 }
 
-// cached is the path of the fetched file, from the cache if it is there.
+// call is a download that is being fetched; the ones that ask for the same file meanwhile wait for it.
+type call struct {
+	done chan struct{}
+	path string
+	err  error
+}
+
+// cached is the path of the fetched file, from the cache if it is there. The same file is fetched once at a time, and a fetch does not
+// stop the others.
 func (h *handlers) cached(r *http.Request, group, attID, sha string) (string, error) {
-	h.files.fetch.Lock()
-	defer h.files.fetch.Unlock()
-	h.files.mu.Lock()
-	root, err := h.files.root()
-	h.files.mu.Unlock()
+	sum := sha256.Sum256([]byte(group + "/" + attID + "/" + sha))
+	key := hex.EncodeToString(sum[:16])
+	u := &h.files
+	u.mu.Lock()
+	root, err := u.root()
 	if err != nil {
+		u.mu.Unlock()
 		return "", err
 	}
-	cache := filepath.Join(root, "cache")
-	sum := sha256.Sum256([]byte(group + "/" + attID + "/" + sha))
-	dir := filepath.Join(cache, hex.EncodeToString(sum[:16]))
+	dir := filepath.Join(root, "cache", key)
 	if p, ok := oneFile(dir); ok {
+		u.mu.Unlock()
 		_ = os.Chtimes(dir, time.Now(), time.Now())
 		return p, nil
 	}
-	prune(cache)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
+	if c := u.flight[key]; c != nil { // somebody fetches it already
+		u.mu.Unlock()
+		select {
+		case <-c.done:
+			return c.path, c.err
+		case <-r.Context().Done():
+			return "", r.Context().Err()
+		}
 	}
-	if err := h.b.Fetch(r.Context(), group, attID, sha, dir); err != nil {
-		_ = os.RemoveAll(dir)
-		return "", err
+	c := &call{done: make(chan struct{})}
+	if u.flight == nil {
+		u.flight = map[string]*call{}
 	}
-	p, ok := oneFile(dir)
-	if !ok {
-		_ = os.RemoveAll(dir)
-		return "", errors.New("the fetch gave no file")
+	u.flight[key] = c
+	prune(filepath.Join(root, "cache"))
+	err = os.MkdirAll(dir, 0o700)
+	u.mu.Unlock()
+	if err == nil {
+		if err = h.b.Fetch(r.Context(), group, attID, sha, dir); err == nil {
+			var ok bool
+			if c.path, ok = oneFile(dir); !ok {
+				err = errors.New("the fetch gave no file")
+			}
+		}
+		if err != nil {
+			_ = os.RemoveAll(dir)
+		}
 	}
-	return p, nil
+	c.err = err
+	u.mu.Lock()
+	delete(u.flight, key)
+	u.mu.Unlock()
+	close(c.done)
+	return c.path, c.err
 }
 
 func oneFile(dir string) (string, bool) {
@@ -333,4 +365,21 @@ func prune(cache string) {
 		_ = os.RemoveAll(e.path)
 		total -= e.size
 	}
+}
+
+// drop is POST /api/chat/drop {group, id}: a file that waits and will not be sent (the person took it back).
+func (h *handlers) drop(w http.ResponseWriter, r *http.Request) {
+	var req struct{ Group, ID string }
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
+		web.Fail(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	h.files.mu.Lock()
+	f := h.files.files[req.ID]
+	mine := f != nil && f.group == req.Group
+	h.files.mu.Unlock()
+	if mine {
+		h.files.drop(req.ID)
+	}
+	web.Reply(w, map[string]bool{"ok": true})
 }

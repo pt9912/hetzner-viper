@@ -147,6 +147,9 @@ func New(b Backend, o Options) *web.Chat {
 			mux.HandleFunc("POST /api/chat/read", h.markRead)
 			mux.HandleFunc("POST /api/chat/send", h.send)
 			mux.HandleFunc("POST /api/chat/upload", h.upload)
+			mux.HandleFunc("POST /api/chat/drop", h.drop)
+			mux.HandleFunc("GET /api/chat/search", h.search)
+			mux.HandleFunc("POST /api/chat/delete", h.remove)
 			mux.HandleFunc("GET /api/chat/file", h.file)
 			go func() { <-done; h.files.close() }()
 			mux.HandleFunc("GET /api/chat/events", func(w http.ResponseWriter, r *http.Request) { h.events(w, r, done) })
@@ -611,4 +614,67 @@ func (h *handlers) dispatch(ctx context.Context, group string, o Outgoing, keys 
 		end()
 	}
 	return sent, err
+}
+
+// Hit is a message that has the word, and where it is.
+type Hit struct {
+	Key    string      `json:"key"`
+	Kind   string      `json:"kind"`
+	Name   string      `json:"name"`
+	Record port.Record `json:"record"`
+}
+
+// maxHits is how many hits a search gives.
+const maxHits = 200
+
+// search is GET /api/chat/search?group=dev&q=word: the history of the group, any case, a part of a word is enough, the newest first.
+// A message is found in its own conversation (not once more in "all").
+func (h *handlers) search(w http.ResponseWriter, r *http.Request) {
+	g, ok := h.group(w, r)
+	if !ok {
+		return
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if utf8.RuneCountInString(q) < 2 || len(q) > 200 {
+		web.Fail(w, http.StatusBadRequest, "search for at least 2 characters")
+		return
+	}
+	found, err := h.o.Store.Search(g.Name, q, maxHits)
+	if err != nil {
+		web.Fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	hits := make([]Hit, 0, len(found))
+	for _, f := range found {
+		rec := f.Record
+		rec.Text = cut(rec.Text, 300)
+		hits = append(hits, Hit{Key: f.Key, Kind: kindOf(f.Key), Name: nameOf(f.Key), Record: rec})
+	}
+	web.Reply(w, map[string]any{"hits": hits})
+}
+
+// remove is POST /api/chat/delete {group, conv}: the history of one conversation, or (conv "") of the whole group. Only here:
+// the others (NATS keeps nothing) are not touched. A page that only reads cannot.
+func (h *handlers) remove(w http.ResponseWriter, r *http.Request) {
+	if h.o.Readonly {
+		web.Fail(w, http.StatusForbidden, "this page only reads (--readonly)")
+		return
+	}
+	var req struct {
+		Group string `json:"group"`
+		Conv  string `json:"conv"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
+		web.Fail(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	g, ok := h.named(w, r, req.Group)
+	if !ok {
+		return
+	}
+	if err := h.o.Store.Delete(g.Name, req.Conv); err != nil {
+		web.Fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	web.Reply(w, map[string]bool{"ok": true})
 }

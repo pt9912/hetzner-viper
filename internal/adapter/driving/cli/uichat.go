@@ -234,7 +234,7 @@ func (c *chatBackend) Send(ctx context.Context, group string, o chatweb.Outgoing
 	if o.Kind == "ask" {
 		return c.ask(&oc, g, o, stdin, words, done) //nolint:contextcheck // the waiting goes on after the request of the page is over
 	}
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second) // a hung tunnel must not hold a place for ever
+	ctx, cancel := context.WithTimeout(ctx, sendTimeout(o)) // a hung tunnel must not hold a place for ever
 	defer cancel()
 	sess, err := openOperator(ctx, &oc, g)
 	if err != nil {
@@ -246,6 +246,17 @@ func (c *chatBackend) Send(ctx context.Context, group string, o chatweb.Outgoing
 		return chatweb.Sent{}, sendError(&stderr, err)
 	}
 	return sentLine(stdout.String()), nil
+}
+
+// sendTimeout is 60 seconds, and for a file 5 seconds more for each MiB (the file goes through ssh).
+func sendTimeout(o chatweb.Outgoing) time.Duration {
+	d := 60 * time.Second
+	if o.File != nil {
+		if st, err := os.Stat(o.File.Path); err == nil {
+			d += time.Duration(st.Size()>>20) * 5 * time.Second
+		}
+	}
+	return d
 }
 
 // sentLine reads the line "sent" of the command: the file as the server took it.
@@ -291,7 +302,7 @@ func sendError(stderr *bytes.Buffer, err error) error {
 
 // ask runs the question in the background and returns its ID as soon as the command has written it (event asked).
 func (*chatBackend) ask(oc *options, g *natsGroup, o chatweb.Outgoing, stdin string, words []string, done func(string, error)) (chatweb.Sent, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), o.Timeout+30*time.Second) // not the request of the page: the waiting goes on after it
+	ctx, cancel := context.WithTimeout(context.Background(), o.Timeout+sendTimeout(o)) // not the request of the page: the waiting goes on after it
 	sess, err := openOperator(ctx, oc, g)
 	if err != nil {
 		cancel()

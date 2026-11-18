@@ -21,10 +21,10 @@ test('with the key the machines of the group are conversations, and one opens', 
   await expect(page.locator('#me')).toContainText('Operator operator logged in');
   await expect(page.locator('.group h2')).toHaveText('dev');
   await expect(page.locator('.conv-btn')).toHaveCount(3);
-  await page.getByRole('button', { name: 'a', exact: true }).click();
+  await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
   await expect(page.locator('#conv-name')).toHaveText('a');
   await expect(page.locator('#conv-sub')).toContainText('Machine of the group dev');
-  await expect(page.getByRole('button', { name: 'a', exact: true })).toHaveAttribute('aria-current', 'true');
+  await expect(page.locator('.conv-btn[data-key="dev/rechner__a"]')).toHaveAttribute('aria-current', 'true');
   await expect(page.locator('#msgs')).toHaveAttribute('role', 'log');
 });
 
@@ -161,6 +161,59 @@ test('files: a card with a download, a file can be chosen and checked, a group w
   await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
   await expect(page.locator('#attach')).toBeDisabled();
   await expect(page.locator('#attach')).toHaveAttribute('title', /no object store/);
+});
+
+test('unread counts name the entry and the tab, search finds a part of a word and opens the conversation, history can be deleted', async ({ page }) => {
+  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true, history });
+  await page.goto(ui.start);
+  await expect(page).toHaveTitle('(6) viper chat'); // 3 + 2 + 1: "all" is not counted twice
+  await expect(page.locator('.conv-btn[data-key="dev/rechner__a"]')).toHaveAttribute('aria-label', /^a, not seen yet, 3 unread$/);
+  await page.fill('#q', 'NOBODY'); // below two characters nothing is asked; this is a part of a word in any case
+  await expect(page.locator('#results .hit')).toHaveCount(0);
+  await page.fill('#q', 'no setting');
+  await expect(page.locator('#results .hit')).toHaveCount(1);
+  await expect(page.locator('#results .hit .pv')).toContainText('b: topic that no setting lists');
+  await expect(page.locator('#groups')).toBeHidden();
+  await page.locator('#results .hit').click();
+  await expect(page.locator('#conv-name')).toHaveText('#gone');
+  await expect(page.locator('#results')).toBeHidden();
+  await expect(page.locator('#msgs article')).toHaveCount(1);
+  await page.locator('#del').click();
+  await expect(page.locator('#confirm')).toContainText('cannot be fetched again');
+  await page.locator('#confirm-x').click(); // cancelled: nothing happens
+  await expect(page.locator('#msgs article')).toHaveCount(1);
+  await page.locator('#del').click();
+  await page.locator('#confirm-ok').click();
+  await expect(page.locator('#msgs')).toContainText('No messages yet');
+  await page.reload();
+  await expect(page.locator('.conv-btn[data-key="dev/thema__gone"]')).toHaveCount(0); // it had only history
+  await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
+  await page.locator('#delall').click();
+  await page.locator('#confirm-ok').click();
+  await expect(page.locator('#msgs')).toContainText('No messages yet');
+  await expect(page.locator('.conv-btn[data-key="dev/paar__a__b"]')).toHaveCount(0);
+  await ui.stop();
+  ui = await startUI(['--readonly'], 0, false, { command: 'ui-chat', operator: true, history });
+  await page.goto(ui.start);
+  await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
+  await expect(page.locator('#del')).toBeHidden();
+  await expect(page.locator('#delall')).toBeHidden();
+});
+
+test('the notification is off, and a choice to turn it on is kept', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  await ctx.grantPermissions(['notifications']);
+  const page = await ctx.newPage();
+  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true });
+  await page.goto(ui.start);
+  await expect(page.locator('#notify')).not.toBeChecked();
+  await page.locator('#notify').check();
+  await page.reload();
+  await expect(page.locator('#notify')).toBeChecked();
+  await page.locator('#notify').uncheck();
+  await page.reload();
+  await expect(page.locator('#notify')).not.toBeChecked();
+  await ctx.close();
 });
 
 test('the language can be changed and the texts follow', async ({ page }) => {

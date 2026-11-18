@@ -170,3 +170,40 @@ func TestAFailedFetchIsSaidAndLeavesNothingInTheCache(t *testing.T) {
 		t.Errorf("a failure is not kept: %v", fetched)
 	}
 }
+
+func TestTheSameFileIsFetchedOnceEvenWhenAskedTogether(t *testing.T) {
+	var fetched []string
+	s, h, hdr, fc := fileWorld(t, &fakeBackend{fetched: &fetched}, false)
+	_, _ = fc.store.Append("dev", []string{"rechner__a"}, port.Record{Dir: "in", From: "a", Type: "msg", AttID: "obj7", AttSHA: strings.Repeat("c", 64), AttName: "a.pdf"})
+	done := make(chan int, 4)
+	for i := 0; i < 4; i++ {
+		go func() { done <- get(h, s, hdr["Cookie"], "/api/chat/file?group=dev&conv=rechner__a&n=1").Code }()
+	}
+	for i := 0; i < 4; i++ {
+		if code := <-done; code != 200 {
+			t.Errorf("%d", code)
+		}
+	}
+	if len(fetched) != 1 {
+		t.Errorf("fetched %d times", len(fetched))
+	}
+}
+
+func TestAFileThatIsNotYetThereCannotBeSentAndOneThatIsTakenBackIsGone(t *testing.T) {
+	var sent []chatweb.Outgoing
+	s, h, hdr, _ := fileWorld(t, &fakeBackend{sent: &sent}, false)
+	id := idOf(t, up(h, s, hdr, "group=dev&name=a.png", pngBytes()).Body.String())
+	if w := send(h, s, "POST", "/api/chat/drop", jsonHdr(hdr), `{"group":"plain","id":"`+id+`"}`); w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	if w := send(h, s, "POST", "/api/chat/send", jsonHdr(hdr), `{"group":"dev","kind":"msg","to":"a","text":"x","file":"`+id+`"}`); w.Code != 200 {
+		t.Errorf("a drop of another group changed nothing: %d", w.Code)
+	}
+	id = idOf(t, up(h, s, hdr, "group=dev&name=b.png", pngBytes()).Body.String())
+	if w := send(h, s, "POST", "/api/chat/drop", jsonHdr(hdr), `{"group":"dev","id":"`+id+`"}`); w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	if w := send(h, s, "POST", "/api/chat/send", jsonHdr(hdr), `{"group":"dev","kind":"msg","to":"a","text":"x","file":"`+id+`"}`); w.Code != http.StatusGone {
+		t.Errorf("taken back: %d", w.Code)
+	}
+}

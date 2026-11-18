@@ -99,3 +99,8 @@ select { font: inherit; background: var(--bg); color: var(--fg); border: 1px sol
 .plain:disabled { color: var(--muted); cursor: default; text-decoration: none; }
 .card { margin-top: .3rem; border: 1px solid var(--line); border-radius: 8px; padding: .3rem .6rem; background: var(--bg); }
 .card .dl { color: var(--accent); font-size: .88rem; }
+.search { padding: .5rem .9rem; }
+.search input { width: 100%; font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: .3rem .6rem; }
+.notify { font-size: .84rem; color: var(--muted); display: flex; gap: .3rem; align-items: center; }
+.conv-btn.hit { grid-template-columns: 0 1fr; gap: 0; }
+.ch .plain { font-size: .8rem; }

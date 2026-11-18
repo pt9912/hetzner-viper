@@ -390,3 +390,60 @@ func TestAnErrorOfTheSendingIsShownAndNothingIsKept(t *testing.T) {
 		t.Errorf("%d %s %+v", w.Code, w.Body, fc.added)
 	}
 }
+
+func TestSearchFindsAPartOfAWordInAnyCaseOnceAndTheNewestFirst(t *testing.T) {
+	s, h, c, _, st := api(t)
+	add(t, st, []string{"rechner__a", "alle"}, port.Record{Dir: "in", From: "a", Type: "msg", Text: "The Cache is EMPTY"})
+	add(t, st, []string{"thema__build", "alle"}, port.Record{Dir: "in", From: "b", Topic: "build", Type: "msg", Text: "cachet " + strings.Repeat("x", 400)})
+	add(t, st, []string{"rechner__b", "alle"}, port.Record{Dir: "in", From: "b", Type: "msg", Text: "nothing"})
+	w := get(h, s, c, "/api/chat/search?group=dev&q=ACH")
+	var out struct{ Hits []chatweb.Hit }
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil || len(out.Hits) != 2 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if out.Hits[0].Key != "thema__build" || out.Hits[0].Kind != "thema" || out.Hits[0].Name != "build" || len(out.Hits[0].Record.Text) > 310 || out.Hits[1].Key != "rechner__a" {
+		t.Errorf("%+v", out.Hits)
+	}
+	for _, q := range []string{"", "a", "%20%20", strings.Repeat("a", 201)} {
+		if w := get(h, s, c, "/api/chat/search?group=dev&q="+q); w.Code != 400 {
+			t.Errorf("%q: %d", q, w.Code)
+		}
+	}
+	if w := get(h, s, c, "/api/chat/search?group=nope&q=cache"); w.Code != 404 {
+		t.Errorf("%d", w.Code)
+	}
+}
+
+func TestADeleteRemovesOneConversationOrTheWholeHistoryAndNotWhenItOnlyReads(t *testing.T) {
+	s, h, c, _, st := api(t)
+	add(t, st, []string{"rechner__a", "alle"}, port.Record{Dir: "in", From: "a", Type: "msg", Text: "one"})
+	add(t, st, []string{"rechner__b", "alle"}, port.Record{Dir: "in", From: "b", Type: "msg", Text: "two"})
+	hdr := map[string]string{"Cookie": c, "Content-Type": "application/json", "X-Viper-UI": "1", "Origin": "http://" + s.Host()}
+	if w := send(h, s, "POST", "/api/chat/delete", hdr, `{"group":"dev","conv":"rechner__a"}`); w.Code != 200 {
+		t.Fatal(w.Code, w.Body)
+	}
+	if got, _ := st.Tail("dev", "rechner__a", 10); len(got) != 0 {
+		t.Errorf("not deleted: %v", got)
+	}
+	if got, _ := st.Tail("dev", "rechner__b", 10); len(got) != 1 {
+		t.Errorf("the other one is gone: %v", got)
+	}
+	for body, want := range map[string]int{`{"group":"dev","conv":"../x"}`: 400, `{"group":"nope","conv":""}`: 404, `x`: 400} {
+		if w := send(h, s, "POST", "/api/chat/delete", hdr, body); w.Code != want {
+			t.Errorf("%s: %d", body, w.Code)
+		}
+	}
+	if w := send(h, s, "POST", "/api/chat/delete", hdr, `{"group":"dev","conv":""}`); w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	if cs, _ := st.Conversations("dev"); len(cs) != 0 {
+		t.Errorf("everything: %v", cs)
+	}
+}
+
+func TestAChatThatOnlyReadsDeletesNothing(t *testing.T) {
+	s, h, hdr, _ := sendWorld(t, true, &fakeBackend{})
+	if w := send(h, s, "POST", "/api/chat/delete", hdr, `{"group":"dev","conv":""}`); w.Code != http.StatusForbidden {
+		t.Errorf("%d", w.Code)
+	}
+}
