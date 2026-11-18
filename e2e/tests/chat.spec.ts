@@ -333,6 +333,26 @@ test('a machine whose agent reads the text in its session: the first try asks, t
   await expect(page.locator('#ack')).toBeHidden();
 });
 
+test('a topic whose receivers read in their sessions: the second try carries the OK for every one of them and is not asked again', async ({ page }) => {
+  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true, push: true });
+  await page.goto(ui.start);
+  await page.locator('.conv-btn[data-key="dev/thema__general"]').click();
+  const sent: { status: number; ack: string[]; topic: string }[] = [];
+  page.on('response', async (r) => {
+    if (r.url().endsWith('/api/chat/send')) { sent.push({ status: r.status(), ack: JSON.parse(r.request().postData() ?? '{}').ack, topic: JSON.parse(r.request().postData() ?? '{}').topic }); }
+  });
+  await page.fill('#text', 'Hallo alle');
+  await page.press('#text', 'Control+Enter');
+  await expect(page.locator('#ack')).toBeVisible();
+  await expect(page.locator('#ack-text')).toContainText('a, b');
+  await page.locator('#ack-ok').click();
+  await expect(page.locator('#send-status')).toContainText('Not sent:'); // no server of NATS here
+  expect(sent.map((x) => x.status)).toEqual([409, 502]); // asked once, then it went out (and failed there)
+  expect(sent[1]).toMatchObject({ topic: 'general', ack: ['a', 'b'] });
+  expect(sent[0].ack).toEqual([]);
+  await expect(page.locator('#ack')).toBeHidden();
+});
+
 test('the notification is off, and a choice to turn it on is kept', async ({ browser, browserName }) => {
   test.skip(browserName === 'webkit', 'WebKit does not let a test grant the permission for notifications; without it the switch stays off, as it should');
   const ctx = await browser.newContext();
