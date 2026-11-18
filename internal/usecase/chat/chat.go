@@ -126,7 +126,7 @@ func (p *Presence) Update(l model.NATSLine, now time.Time) {
 		}
 		p.seen[l.From], p.bye[l.From] = now, false
 	case "topics":
-		p.topics[l.From] = strings.Fields(l.Text)
+		p.topics[l.From] = strings.Fields(l.Text)[:min(len(strings.Fields(l.Text)), 200)]
 	}
 }
 

@@ -4,7 +4,6 @@
 package chatlog
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -16,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
 	port "github.com/pt9912/hetzner-viper/internal/port/driven/chatlog"
@@ -56,6 +56,7 @@ type Store struct {
 type groupState struct {
 	n       int64
 	appends int
+	tidy    map[string]bool  // the file ends with a line end (looked at once)
 	lines   map[string]int64 // the lines of the current file of each conversation
 	conv    map[string]*port.Conversation
 	read    map[string]int64
@@ -103,15 +104,25 @@ func (s *Store) state(group string) *groupState {
 	if g != nil && g.loaded {
 		return g
 	}
-	g = &groupState{lines: map[string]int64{}, conv: map[string]*port.Conversation{}, read: map[string]int64{}}
+	g = &groupState{tidy: map[string]bool{}, lines: map[string]int64{}, conv: map[string]*port.Conversation{}, read: map[string]int64{}}
 	if b, err := s.st.read(counterFile(group)); err == nil {
 		_, _ = fmt.Sscan(strings.TrimSpace(string(b)), &g.n)
 	}
 	if b, err := s.st.read(readFile(group)); err == nil {
 		_ = json.Unmarshal(b, &g.read)
 	}
+	if g.read == nil {
+		g.read = map[string]int64{}
+	}
 	names, _ := s.st.list(group)
 	for _, name := range names {
+		if strings.HasSuffix(name, ".1.jsonl") { // the number does not go back when only the older file has the newest
+			recs, _ := s.parse(group + "/" + name)
+			for _, r := range recs {
+				g.n = max(g.n, r.N)
+			}
+			continue
+		}
 		key, ok := currentKey(name)
 		if !ok {
 			continue
@@ -144,12 +155,13 @@ func (s *Store) parse(name string) ([]port.Record, int64) {
 	}
 	var out []port.Record
 	var lines int64
-	sc := bufio.NewScanner(bytes.NewReader(b))
-	sc.Buffer(make([]byte, 0, 64<<10), maxLine+4096)
-	for sc.Scan() {
+	for _, line := range bytes.Split(b, []byte{'\n'}) { // no limit of a line: one long line must not hide the ones after it
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
 		lines++
 		var r port.Record
-		if json.Unmarshal(sc.Bytes(), &r) == nil && r.N > 0 {
+		if json.Unmarshal(line, &r) == nil && r.N > 0 {
 			out = append(out, r)
 		}
 	}
@@ -203,9 +215,7 @@ func (s *Store) Append(group string, keys []string, r port.Record) (port.Record,
 		r.T = time.Now().UTC()
 	}
 	r.T = r.T.UTC()
-	if len(r.Text) > maxLine {
-		r.Text = r.Text[:maxLine]
-	}
+	r = clipped(r)
 	line, err := json.Marshal(r)
 	if err != nil {
 		return r, err
@@ -230,15 +240,43 @@ func (s *Store) Append(group string, keys []string, r port.Record) (port.Record,
 	return r, nil
 }
 
+// clipped cuts every text of a record to a size: the sender of a line chooses all of them, and a record is one line of a file.
+func clipped(r port.Record) port.Record {
+	r.Text = clip(r.Text, maxLine)
+	r.From, r.To = clip(r.From, 128), clip(r.To, 128)
+	r.Topic, r.ID, r.Re = clip(r.Topic, 256), clip(r.ID, 256), clip(r.Re, 256)
+	r.AttID, r.AttType, r.AttName, r.AttSHA = clip(r.AttID, 256), clip(r.AttType, 256), clip(r.AttName, 256), clip(r.AttSHA, 256)
+	return r
+}
+
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
+}
+
 func (s *Store) appendTo(g *groupState, group, key string, line []byte) error {
 	name := file(group, key)
 	size, _, _ := s.st.stat(name)
 	if g.lines[key] >= s.rotation.lines || size >= s.rotation.bytes {
 		_ = s.st.remove(older(group, key))
-		if err := s.st.rename(name, older(group, key)); err != nil {
+		if err := s.st.rename(name, older(group, key)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 		g.lines[key] = 0
+		g.tidy[key] = true
+	}
+	if !g.tidy[key] { // a file that a crash left without the end of its last line: the next record must not grow into it
+		if b, err := s.st.read(name); err == nil && len(b) > 0 && b[len(b)-1] != '\n' {
+			if err := s.st.append(name, []byte{'\n'}); err != nil {
+				return err
+			}
+		}
+		g.tidy[key] = true
 	}
 	g.lines[key]++
 	return s.st.append(name, append(line, '\n'))
@@ -350,6 +388,7 @@ func (s *Store) Delete(group, key string) error {
 		delete(g.read, k)
 	}
 	b, _ := json.Marshal(g.read)
+	_ = s.st.write(counterFile(group), []byte(fmt.Sprintf("%d\n", g.n))) // what was numbered stays numbered
 	return s.st.write(readFile(group), b)
 }
 
@@ -366,9 +405,16 @@ func (s *Store) Search(group, word string, limit int) ([]port.Hit, error) {
 	defer s.mu.Unlock()
 	g := s.state(group)
 	var hits []port.Hit
+	seen := map[int64]bool{} // a record is in its conversation and in "alle": once
+	keys := make([]string, 0, len(g.conv))
 	for key := range g.conv {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool { return (keys[i] == "alle") != (keys[j] == "alle") && keys[j] == "alle" })
+	for _, key := range keys {
 		for _, r := range s.records(group, key, time.Now()) {
-			if strings.Contains(strings.ToLower(r.Text), word) {
+			if !seen[r.N] && strings.Contains(strings.ToLower(r.Text), word) {
+				seen[r.N] = true
 				hits = append(hits, port.Hit{Key: key, Record: r})
 			}
 		}
@@ -406,6 +452,7 @@ func (s *Store) Prune(group string, now time.Time) error {
 		}
 		if now.Sub(mod) > s.keep {
 			_ = s.st.remove(group + "/" + n)
+			delete(g.lines, strings.TrimSuffix(strings.TrimSuffix(n, ".jsonl"), ".1"))
 			continue
 		}
 		files = append(files, f{n, size, mod})
@@ -423,8 +470,10 @@ func (s *Store) Prune(group string, now time.Time) error {
 			break
 		}
 		_ = s.st.remove(group + "/" + x.name)
+		delete(g.lines, strings.TrimSuffix(strings.TrimSuffix(x.name, ".jsonl"), ".1"))
 		total -= x.size
 	}
+	_ = s.st.write(counterFile(group), []byte(fmt.Sprintf("%d\n", g.n)))
 	for key := range g.conv { // the list follows the files
 		s.summarize(g, key, group)
 	}
@@ -470,7 +519,11 @@ func (d dirStorage) write(name string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(d.path(name)), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(d.path(name), data, 0o600)
+	tmp := d.path(name) + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, d.path(name)) // a crash leaves the old file or the new one, not half of one
 }
 
 func (d dirStorage) rename(from, to string) error { return os.Rename(d.path(from), d.path(to)) }

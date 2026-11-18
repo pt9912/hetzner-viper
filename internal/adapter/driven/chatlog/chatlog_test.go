@@ -172,7 +172,7 @@ func TestDeleteAndSearch(t *testing.T) {
 	_, _ = s.Append("dev", []string{"rechner__w1", "alle"}, rec("w1", "The Cache is EMPTY"))
 	_, _ = s.Append("dev", []string{"rechner__w2", "alle"}, rec("w2", "nothing"))
 	hits, err := s.Search("dev", "cache", 10)
-	if err != nil || len(hits) != 2 { // the record is in two conversations
+	if err != nil || len(hits) != 1 { // the record is in two conversations and found once
 		t.Errorf("%v %v", hits, err)
 	}
 	if hits, _ := s.Search("dev", "cache", 1); len(hits) != 1 {
@@ -204,5 +204,54 @@ func TestALongTextIsCutAndANonRecordLineIsSkipped(t *testing.T) {
 	s2, _ := chatlog.Open(dir, 0)
 	if got, _ := s2.Tail("dev", "alle", 10); len(got) != 1 {
 		t.Errorf("%d records", len(got))
+	}
+}
+
+func TestLongFieldsAreCutAndALongLineDoesNotHideTheOnesAfterIt(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := chatlog.Open(dir, 0)
+	r := rec("w1", strings.Repeat("<", 32<<10))
+	r.ID, r.Re, r.AttType, r.AttName = strings.Repeat("i", 100<<10), strings.Repeat("r", 100<<10), strings.Repeat("t", 100<<10), strings.Repeat("n", 100<<10)
+	_, _ = s.Append("dev", []string{"rechner__w1"}, r)
+	_, _ = s.Append("dev", []string{"rechner__w1"}, rec("w1", "after"))
+	got, _ := s.Tail("dev", "rechner__w1", 10)
+	if len(got) != 2 || len(got[0].ID) != 256 || got[1].Text != "after" {
+		t.Errorf("%d records", len(got))
+	}
+}
+
+func TestACrashThatLeftHalfALineDoesNotSwallowTheNextRecord(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := chatlog.Open(dir, 0)
+	_, _ = s.Append("dev", []string{"rechner__w1"}, rec("w1", "one"))
+	_ = s.Close()
+	f, _ := os.OpenFile(filepath.Join(dir, "dev", "rechner__w1.jsonl"), os.O_APPEND|os.O_WRONLY, 0o600)
+	_, _ = f.WriteString(`{"n":2,"t":"2026-`)
+	_ = f.Close()
+	s, _ = chatlog.Open(dir, 0)
+	_, _ = s.Append("dev", []string{"rechner__w1"}, rec("w1", "three"))
+	got, _ := s.Tail("dev", "rechner__w1", 10)
+	if len(got) != 2 || got[1].Text != "three" {
+		t.Errorf("%+v", got)
+	}
+}
+
+func TestTheNumberDoesNotGoBackAfterADeleteOrWhenOnlyTheOlderFileHasTheNewest(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := chatlog.Open(dir, 0)
+	for i := 0; i < 3; i++ {
+		_, _ = s.Append("dev", []string{"rechner__w1"}, rec("w1", "x"))
+	}
+	_ = s.Delete("dev", "rechner__w1")
+	s, _ = chatlog.Open(dir, 0) // without Close: as after a crash
+	if r, _ := s.Append("dev", []string{"rechner__w1"}, rec("w1", "y")); r.N != 4 {
+		t.Errorf("the number went back: %d", r.N)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "dev", "read.json"), []byte("null"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, _ = chatlog.Open(dir, 0)
+	if err := s.MarkRead("dev", "rechner__w1", 4); err != nil { // a null in the file is no map: no panic
+		t.Error(err)
 	}
 }

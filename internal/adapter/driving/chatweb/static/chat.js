@@ -10,6 +10,8 @@
   let thread = []; // the records of the open conversation
   let filter = 'all';
   let readTimer = 0;
+  let loading = false; // the thread is being loaded: what arrives meanwhile waits in pending
+  let pending = [];
 
   async function api(path, body) {
     const opts = body === undefined
@@ -225,6 +227,9 @@
   async function select(g, kind, name) {
     current = { group: g.name, key: keyOf(kind, name), kind, name };
     thread = [];
+    pending = [];
+    loading = true;
+    $('msgs').textContent = '';
     renderList();
     $('empty').hidden = true;
     $('conv').hidden = false;
@@ -237,6 +242,9 @@
       if (current !== mine) { return; }
       thread = r.records;
     } catch (e) { banner(t('err.messages', e.message)); }
+    loading = false;
+    for (const rec of pending) { if (!thread.some((x) => x.n === rec.n)) { thread.push(rec); } }
+    pending = [];
     paint();
     markRead();
   }
@@ -282,12 +290,14 @@
     if (!rec || !L) { return; }
     for (const key of ev.keys || []) {
       const c = L.convs[key] || { key, kind: key === 'alle' ? 'alle' : key.split('__')[0], name: key === 'alle' ? '' : key.split('__').slice(1).join(' '), unread: 0 };
-      c.last = Object.assign({}, rec, { text: rec.text.length > 140 ? rec.text.slice(0, 140) + ' ...' : rec.text });
+      c.last = Object.assign({}, rec, { text: (rec.text || '').length > 140 ? rec.text.slice(0, 140) + ' ...' : (rec.text || '') });
       const open = current && current.group === g.name && current.key === key;
       if (!open && rec.dir === 'in') { c.unread = (c.unread || 0) + 1; }
       L.convs[key] = c;
     }
-    if (current && current.group === g.name && (ev.keys || []).includes(current.key) && !thread.some((x) => x.n === rec.n)) {
+    if (current && current.group === g.name && (ev.keys || []).includes(current.key) && loading) {
+      pending.push(rec);
+    } else if (current && current.group === g.name && (ev.keys || []).includes(current.key) && !thread.some((x) => x.n === rec.n)) {
       thread.push(rec);
       append(rec);
       markRead();
@@ -307,6 +317,7 @@
       showStatus(g);
     });
     es.addEventListener('message', (e) => onMessage(g, JSON.parse(e.data)));
+    es.addEventListener('resync', () => catchUp(g)); // the server could not give it all: ask by the numbers
     let seen = false;
     es.onopen = async () => { // after a break: what was missed comes by the numbers
       if (seen) { await catchUp(g); }
@@ -317,9 +328,14 @@
   async function catchUp(g) {
     try {
       await loadListing(g);
-      if (current && current.group === g.name && thread.length) {
-        const r = await api('/api/chat/messages?group=' + encodeURIComponent(g.name) + '&conv=' + encodeURIComponent(current.key) + '&after=' + thread[thread.length - 1].n + '&limit=500');
-        for (const rec of r.records) { thread.push(rec); append(rec); }
+      if (!current || current.group !== g.name || loading) { return; }
+      const mine = current;
+      for (;;) { // in pieces, until nothing is left
+        const from = thread.length ? thread[thread.length - 1].n : 0;
+        const r = await api('/api/chat/messages?group=' + encodeURIComponent(g.name) + '&conv=' + encodeURIComponent(mine.key) + '&after=' + from + '&limit=500');
+        if (current !== mine) { return; }
+        for (const rec of r.records) { if (!thread.some((x) => x.n === rec.n)) { thread.push(rec); append(rec); } }
+        if (r.records.length < 500) { break; }
       }
     } catch (e) { banner(t('err.load', e.message)); }
   }

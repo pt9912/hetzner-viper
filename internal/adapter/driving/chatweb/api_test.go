@@ -218,3 +218,28 @@ func TestTheStreamHasTheSnapshotAndTheEventsOfItsGroupOnly(t *testing.T) {
 		t.Error("the listening does not end with the page")
 	}
 }
+
+func TestTheParametersAreChecked(t *testing.T) {
+	s, h, c, _, st := api(t)
+	add(t, st, []string{"rechner__a"}, port.Record{Dir: "in", From: "a", Type: "msg", Text: "m"})
+	for _, p := range []string{"/api/chat/messages?group=dev", "/api/chat/messages?group=dev&conv=rechner__a&after=abc", "/api/chat/messages?group=dev&conv=rechner__a&after=-1"} {
+		if w := get(h, s, c, p); w.Code != 400 {
+			t.Errorf("%s: %d", p, w.Code)
+		}
+	}
+	if w := get(h, s, c, "/api/chat/messages?group=nope&conv=rechner__a"); w.Code != 404 {
+		t.Errorf("a group that is not here: %d", w.Code)
+	}
+	cookie := map[string]string{"Cookie": c, "Content-Type": "application/json", "X-Viper-UI": "1", "Origin": "http://" + s.Host()}
+	for body, want := range map[string]int{`{"group":"nope","conv":"rechner__a","n":1}`: 404, `{"group":"dev","conv":"","n":1}`: 400} {
+		if w := send(h, s, "POST", "/api/chat/read", cookie, body); w.Code != want {
+			t.Errorf("%s: %d", body, w.Code)
+		}
+	}
+	if w := send(h, s, "POST", "/api/chat/read", cookie, `{"group":"dev","conv":"rechner__a","n":999}`); w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	if n, _ := st.Read("dev", "rechner__a"); n != 1 { // not more than there is: what comes later stays unread
+		t.Errorf("read up to %d", n)
+	}
+}

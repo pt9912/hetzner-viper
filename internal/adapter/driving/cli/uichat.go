@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driving/chatweb"
@@ -124,9 +125,29 @@ func runningPort(dir string) string {
 }
 
 // chatBackend tells the chat of the NATS groups of this computer: from the settings, as viper nats reads them.
-type chatBackend struct{ b *uiBackend }
+type chatBackend struct {
+	b     *uiBackend
+	mu    sync.Mutex
+	at    time.Time
+	cache []chatweb.Group
+}
 
+// Groups are asked for by every request of the page; what the settings say is read again after a few seconds, not each time.
 func (c *chatBackend) Groups(ctx context.Context) ([]chatweb.Group, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.cache != nil && time.Since(c.at) < 3*time.Second {
+		return c.cache, nil
+	}
+	gs, err := c.load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c.cache, c.at = gs, time.Now()
+	return gs, nil
+}
+
+func (c *chatBackend) load(ctx context.Context) ([]chatweb.Group, error) {
 	ov, err := c.b.Overview(ctx)
 	if err != nil {
 		return nil, err
@@ -145,7 +166,8 @@ func (c *chatBackend) Groups(ctx context.Context) ([]chatweb.Group, error) {
 // group describes one NATS group: its machines, the topics of their settings, and the name of the operator.
 func (c *chatBackend) group(ng web.NATSGroup) (chatweb.Group, error) {
 	g := chatweb.Group{Name: ng.Name, Operator: ng.Operator, FileMax: ng.FileMax, OperatorName: model.DefaultNATSOperator}
-	loaded, err := loadNatsGroup(c.b.o, c.b.env, ng.Name)
+	oc := *c.b.o // loadNatsGroup writes the group into the options: a copy, as requests run at the same time
+	loaded, err := loadNatsGroup(&oc, c.b.env, ng.Name)
 	if err != nil {
 		return g, fmt.Errorf("%s: %w", ng.Name, err)
 	}

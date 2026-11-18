@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/model"
@@ -30,6 +31,7 @@ type Engine struct {
 	mu     sync.Mutex
 	base   context.Context //nolint:containedctx // the life of the engine: its runs end with Stop
 	stop   context.CancelFunc
+	wg     sync.WaitGroup
 	groups map[string]*run
 	subs   map[*Subscription]bool
 }
@@ -83,7 +85,8 @@ func (e *Engine) Ensure(name string, g Group) {
 		}
 	}
 	e.groups[name] = r
-	go e.loop(cctx, r)
+	e.wg.Add(1)
+	go func() { defer e.wg.Done(); e.loop(cctx, r) }()
 }
 
 // Retry makes a group that waits for a login (StatusAuth) try again.
@@ -103,9 +106,15 @@ func (e *Engine) Retry(name string) {
 func (e *Engine) Stop() {
 	e.stop()
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	for _, r := range e.groups {
 		r.cancel()
+	}
+	e.mu.Unlock()
+	done := make(chan struct{})
+	go func() { e.wg.Wait(); close(done) }() // the tunnels are closed before the program ends
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
 	}
 }
 
@@ -130,7 +139,11 @@ func (e *Engine) loop(ctx context.Context, r *run) {
 	wait := e.o.Wait
 	for ctx.Err() == nil {
 		e.setStatus(r, GroupStatus{Status: StatusConnecting})
+		began := time.Now()
 		reason, auth := e.once(ctx, r)
+		if time.Since(began) > 30*time.Second { // it ran for a while: the next break starts the waiting again
+			wait = e.o.Wait
+		}
 		if ctx.Err() != nil {
 			return
 		}
@@ -228,7 +241,9 @@ func (e *Engine) line(r *run, b []byte) {
 	}
 	now := e.o.Now()
 	e.mu.Lock()
-	r.pres.Update(l, now)
+	if r.g.Machines[l.From] { // presence of a name that is no machine of the group is not state
+		r.pres.Update(l, now)
+	}
 	route := Classify(r.g, l)
 	if route.Skip {
 		e.mu.Unlock()
@@ -246,7 +261,11 @@ func (e *Engine) line(r *run, b []byte) {
 		}
 	}
 	e.mu.Unlock()
-	rec := port.Record{T: now.UTC(), Dir: "in", From: l.From, To: l.To, Topic: l.Topic, Type: l.Type, ID: l.ID, Re: l.Re, Unknown: route.Unknown,
+	dir := "in"
+	if l.From == r.g.Operator { // the operator sent it (from another terminal): it is not for the operator
+		dir = "out"
+	}
+	rec := port.Record{T: now.UTC(), Dir: dir, From: l.From, To: l.To, Topic: l.Topic, Type: l.Type, ID: l.ID, Re: l.Re, Unknown: route.Unknown,
 		Text: e.o.Redact(e.o.Clean(l.Text)), AttID: l.AttID, AttType: l.AttType, AttName: e.o.Redact(e.o.Clean(l.AttName)), AttSize: l.AttSize, AttSHA: l.AttSHA}
 	kept, err := e.o.Store.Append(r.name, keys, rec)
 	if err != nil {
@@ -336,6 +355,7 @@ type Subscription struct {
 	C      chan Event
 	e      *Engine
 	closed bool
+	lost   atomic.Bool // an event did not fit: the page is told to ask again
 }
 
 // Subscribe returns the events from now on. Events that a slow page cannot take are dropped (it loads again from the numbers).
@@ -359,9 +379,17 @@ func (s *Subscription) Close() {
 
 func (*Engine) send(subs []*Subscription, ev Event) {
 	for _, s := range subs {
+		if s.lost.Load() { // a page that did not read has missed something: it is told as soon as there is room
+			select {
+			case s.C <- Event{Group: ev.Group, Kind: "resync"}:
+				s.lost.Store(false)
+			default:
+			}
+		}
 		select {
 		case s.C <- ev:
-		default: // a page that does not read: it asks again from its last number
+		default:
+			s.lost.Store(true)
 		}
 	}
 }

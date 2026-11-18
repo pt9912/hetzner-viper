@@ -246,3 +246,55 @@ func TestAMachineThatIsNoMachineOfTheGroupMakesNoConversation(t *testing.T) {
 		t.Errorf("%+v", cs)
 	}
 }
+
+func TestALineOfTheOperatorIsOutAndPresenceOfAStrangerIsNoState(t *testing.T) {
+	cn := &fakeConnector{}
+	e, _, sub := start(t, cn, nil)
+	c := cn.conn(0)
+	c.out <- `{"event":"message","from":"ghost","via":"presence","type":"presence","state":"up"}`
+	c.out <- `{"event":"message","from":"operator","to":"w1","via":"out","type":"msg","text":"from another terminal"}`
+	ev := next(t, sub, "message")
+	if ev.Record.Dir != "out" {
+		t.Errorf("dir %q", ev.Record.Dir)
+	}
+	if s := e.Snapshot("dev", nil); len(s.Machines) != 3 || s.Machines["w1"].State != "unknown" {
+		t.Errorf("%+v", s.Machines)
+	}
+}
+
+func TestAPageThatDoesNotReadIsToldToAskAgain(t *testing.T) {
+	cn := &fakeConnector{}
+	var tick atomic.Int64 // a clock that runs fast: the limit of lines per second does not get in the way
+	base := time.Now()
+	e := chat.New(chat.Options{Store: chatlog.Memory(0), Connector: cn, Wait: 20 * time.Millisecond, Now: func() time.Time { return base.Add(time.Duration(tick.Add(1)) * time.Second) }})
+	sub := e.Subscribe()
+	t.Cleanup(e.Stop)
+	e.Ensure("dev", grp())
+	c := cn.conn(0)
+	for i := 0; i < 300; i++ { // more than the page takes
+		c.out <- `{"event":"message","from":"w1","to":"operator","via":"out","type":"msg","text":"x"}`
+	}
+	deadline := time.After(5 * time.Second)
+	for len(sub.C) < cap(sub.C) {
+		select {
+		case <-deadline:
+			t.Fatal("the channel does not fill")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	time.Sleep(100 * time.Millisecond)
+	for len(sub.C) > 0 { // the page reads again
+		<-sub.C
+	}
+	c.out <- `{"event":"message","from":"w1","to":"operator","via":"out","type":"msg","text":"y"}`
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == "resync" {
+				return
+			}
+		case <-deadline:
+			t.Fatal("no resync")
+		}
+	}
+}

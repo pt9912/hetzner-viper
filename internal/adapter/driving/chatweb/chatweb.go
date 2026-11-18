@@ -120,12 +120,20 @@ func (h *handlers) groups(r *http.Request) ([]Group, error) {
 }
 
 func (h *handlers) group(w http.ResponseWriter, r *http.Request) (Group, bool) {
+	return h.named(w, r, r.URL.Query().Get("group"))
+}
+
+// named is the group of that name, if it is one of this computer; else the answer is given.
+func (h *handlers) named(w http.ResponseWriter, r *http.Request, name string) (Group, bool) {
+	if h.o.Store == nil {
+		web.Fail(w, http.StatusNotFound, "no history")
+		return Group{}, false
+	}
 	gs, err := h.groups(r)
 	if err != nil {
 		web.Fail(w, http.StatusInternalServerError, err.Error())
 		return Group{}, false
 	}
-	name := r.URL.Query().Get("group")
 	for _, g := range gs {
 		if g.Name == name {
 			return g, true
@@ -243,11 +251,20 @@ func (h *handlers) messages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := r.URL.Query().Get("conv")
+	if key == "" {
+		web.Fail(w, http.StatusBadRequest, "no conversation")
+		return
+	}
 	limit := atoi(r.URL.Query().Get("limit"), 100, 1, 500)
 	var recs []port.Record
 	var err error
 	if a := r.URL.Query().Get("after"); a != "" {
-		recs, err = h.o.Store.After(g.Name, key, int64(atoi(a, 0, 0, 1<<62)), limit)
+		n, perr := strconv.ParseInt(a, 10, 64)
+		if perr != nil || n < 0 {
+			web.Fail(w, http.StatusBadRequest, "after is a number")
+			return
+		}
+		recs, err = h.o.Store.After(g.Name, key, n, limit)
 	} else {
 		recs, err = h.o.Store.Tail(g.Name, key, limit)
 	}
@@ -280,7 +297,24 @@ func (h *handlers) markRead(w http.ResponseWriter, r *http.Request) {
 		web.Fail(w, http.StatusBadRequest, "bad request")
 		return
 	}
-	if err := h.o.Store.MarkRead(req.Group, req.Conv, req.N); err != nil {
+	g, ok := h.named(w, r, req.Group)
+	if !ok {
+		return
+	}
+	if req.Conv == "" {
+		web.Fail(w, http.StatusBadRequest, "no conversation")
+		return
+	}
+	last, err := h.o.Store.Tail(g.Name, req.Conv, 1)
+	if err != nil {
+		web.Fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if len(last) == 0 { // nothing to have read
+		web.Reply(w, map[string]bool{"ok": true})
+		return
+	}
+	if err := h.o.Store.MarkRead(g.Name, req.Conv, min(req.N, last[0].N)); err != nil { // not more than there is: new messages stay unread
 		web.Fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
