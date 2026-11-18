@@ -1,8 +1,8 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.196  
+Version: 1.197  
 Software-Version: v0.33.1  
-Stand: 17.11.2026  
+Stand: 18.11.2026  
 
 ## 1. Einleitung
 
@@ -473,6 +473,53 @@ Die Seiten laufen im Browser. **Prüfen** und die Aktionen schreiben wie am Term
 * Hat ein Rechner unlesbare Einstellungen, steht der Fehler in der Zeile und **Prüfen** ist aus. Ein Rechner, der in mehreren Gruppen steht, erscheint je Gruppe einmal; **Prüfen** prüft ihn in der Gruppe der Zeile.
 * Ist der Port belegt, bricht `viper ui` mit einer Meldung ab; wählen Sie mit `--port` einen anderen. Als `root` warnt `viper ui`: Starten Sie es als Ihr eigener Benutzer.
 * Eine Seite, die der Server verweigert (kein Cookie, fremder Name) oder nicht kennt, zeigt eine kurze Erklärung auf Englisch und Deutsch.
+
+### Mit den Rechnern einer NATS-Gruppe chatten (`viper ui-chat`)
+
+`viper ui-chat` startet auf Ihrem Rechner einen kleinen Webserver und öffnet den Browser mit einem Chat. Jeder Rechner einer NATS-Gruppe, jedes Thema und jedes Paar von Rechnern ist ein eigenes Gespräch; dazu kommt „Alle Meldungen“ der Gruppe. Sie schreiben als Operator der Gruppe, genau wie mit `viper nats send`, `broadcast` und `request`, nur mit einem Verlauf darüber.
+
+#### Voraussetzung
+
+* Eine NATS-Gruppe mit mindestens einem Rechner (siehe „Rechner über NATS verbinden“) und der Schlüssel des Operators auf diesem Rechner (`viper nats init GRUPPE`). Ohne ihn zeigt der Chat die Gruppe an und nennt diesen Befehl; Gespräche gibt es dann nicht.
+* Ein Verzeichnis mit Einstellungen wie für die Befehle (aktuelles Verzeichnis oder `--dir`), `ssh` zu dem Rechner, der den NATS-Server der Gruppe hält, und ein Browser auf demselben Computer.
+
+#### Vorgehen
+
+1. Starten Sie `viper ui-chat` im Verzeichnis mit den Einstellungen. Der Browser öffnet sich; wie bei `viper ui` steht die Adresse im Terminal, und `Strg-C` beendet den Chat. Es läuft immer nur ein `viper ui-chat`; ein zweiter Start nennt den Port des ersten.
+2. Links stehen die Gespräche der Gruppe: **Alle Meldungen**, die **Themen**, die **Rechner** (mit Lampe) und die **Paare** (was zwei Rechner einander schreiben, nur zum Mitlesen). Ein Klick öffnet das Gespräch; auf einem schmalen Bildschirm ersetzt es die Liste, und **Zurück zur Liste** bringt die Liste zurück. Mit den Pfeiltasten, **Pos1** und **Ende** gehen Sie durch die Liste.
+3. Schreiben Sie im Feld unten. **Strg+Enter** sendet, **Enter** macht eine neue Zeile. Bei einem Rechner wählen Sie **Nachricht** (kommt an, wenn der Rechner da ist; keine Antwort nötig) oder **Frage** (wartet 30, 60 oder 120 Sekunden auf die Antwort). An ein Thema geht ein Rundruf. Der Entwurf je Gespräch bleibt im Browser, solange die Seite offen ist.
+4. Fragt ein Rechner Sie etwas, steht die Frage als **offen** im Gespräch. **Antworten** schreibt die Antwort an genau diese Frage.
+5. Eine **Datei** (PDF, ZIP oder Bild) hängen Sie mit **Datei anhängen**, durch Ablegen auf dem Verlauf oder mit **Strg+V** an. Eine Datei in einer Nachricht lädt der Link **Herunterladen** der Karte.
+6. Das Feld **Verlauf durchsuchen** findet ein Teilwort (ab zwei Zeichen, höchstens 200 Treffer); ein Klick auf einen Treffer öffnet das Gespräch. **Diesen Verlauf löschen** und **Verlauf der Gruppe löschen** räumen auf diesem Rechner auf, nach einer Rückfrage.
+7. Der Schalter **Benachrichtigen** ist aus. Schalten Sie ihn ein, fragt der Browser nach der Erlaubnis. Die Benachrichtigung sagt nur „Neue Nachricht von w2“, nie den Inhalt.
+
+#### Optionen
+
+* `--dir VERZEICHNIS`: das Verzeichnis mit den Einstellungen (Standard: das aktuelle).
+* `--port N`: auf diesem Port lauschen (Standard: ein freier).
+* `--no-open`: den Browser nicht öffnen; das Terminal zeigt die Adresse mit dem Schlüssel (zehn Minuten gültig, einmal).
+* `--readonly`: nur ansehen. Der Strom läuft und der Verlauf wächst, aber Senden, Dateien hochladen und Löschen sind gesperrt.
+* `--no-pairs`: nicht zeigen, was zwei Rechner einander schreiben.
+* `--keep-days N`: wie lange der Verlauf bleibt (Standard: 90 Tage).
+* `--no-history`: nichts auf die Platte schreiben; der Verlauf gilt nur, solange der Chat läuft.
+
+#### Ergebnis
+
+Der Chat liest den Strom jeder Gruppe, deren Operator-Schlüssel hier liegt, und schreibt jede Meldung in den Verlauf auf diesem Rechner. Was Sie senden, geht über einen ssh-Tunnel zum NATS-Server der Gruppe, mit denselben Funktionen wie `viper nats`.
+
+#### Hinweise
+
+* **Was NATS nicht kann:** NATS hebt nichts auf. Eine Meldung kommt nur an, wenn der Empfänger in dem Moment verbunden ist; es gibt keine Lesebestätigung, kein Bearbeiten und kein Nachladen von Meldungen, die vor dem Start des Chats gesendet wurden. „Gesendet“ heißt nur „an den Server gegeben“, nicht „angekommen“.
+* **Eigene Nachrichten vom Terminal:** Nachrichten, die Sie mit `viper nats send` am Terminal oder auf der Seite NATS von `viper ui` senden, sieht der Chat nicht: die Verbindung hört sich nicht selbst. Was Sie im Chat senden, steht im Verlauf.
+* **Verlauf:** Er liegt im Zustandsverzeichnis unter `chat/GRUPPE/` (eine Datei je Gespräch, Rechte `0600`, Ordner `0700`), im Klartext neben dem Schlüssel des Operators, und geht mit einem Backup des Home-Verzeichnisses mit. Bekannte Zugangsdaten ersetzt `viper` durch `[hidden]`, bevor es etwas schreibt; ein Geheimnis ohne bekannten Namen kann im Verlauf stehen. Grenzen: höchstens 500 Gespräche je Gruppe, 5 000 Zeilen oder 10 MiB je Datei (zwei Dateien je Gespräch), 1 GiB je Gruppe und `--keep-days` Tage. Als Zeit steht die Ankunftszeit beim Chat; der Absender gibt keine Zeit mit.
+* **Namen:** Ein Gespräch eines Rechners oder ein Paar entsteht nur für Namen aus der Liste der Rechner der Gruppe. Meldungen unter einem anderen Namen stehen nur in „Alle Meldungen“, mit dem Vermerk „unbekannter Name“.
+* **Lampe:** Grün heißt, dass der Rechner in den letzten 90 Sekunden „ich bin da“ gesagt hat. Hohl heißt weg. Ohne Lampe hat der Chat noch nichts von ihm gehört; das kann ein Rechner ohne Sitzung oder mit einer älteren Fassung sein. Bei einem Thema steht „Niemand abonniert“ erst, wenn alle Rechner der Gruppe einmal gemeldet haben; die Zahl der Empfänger ist eine Schätzung aus ihren Meldungen.
+* **Rückfrage:** Liest der Agent eines Rechners Nachrichten des Operators sofort in seiner Sitzung (`NATS_MCP_PUSH_FROM` führt den Operator), fragt der Chat vor dem Senden „Verstanden, senden“, auch bei einem Rundruf an ein Thema, das so ein Rechner empfängt. Der Server verlangt das; es gilt je Rechner und Gespräch, solange die Seite offen ist. Themen, die ein Agent erst im Lauf der Sitzung abonniert, kennt der Chat nicht.
+* **Texte und Dateien:** Ein Text ist bis 16 384 Byte lang (auf dem Draht 32 KiB nach der JSON-Kodierung). Der Chat zeigt jeden Text als reinen Text; nur Zeilen zwischen drei Gravis erscheinen als Block, Links und Formatierung gibt es nicht. Eine Datei ist bis zur Grenze der Gruppe (`NATS_OBJECTS_FILE_MAX`), höchstens 64 MiB, groß; die Art folgt aus den ersten Bytes. Eine Gruppe ohne `NATS_OBJECTS=true` hat keine Dateien. Dateien zeigt der Chat nie selbst, sondern bietet sie nur zum Herunterladen an. Eine eigene Frage mit Datei hat keinen Download-Link.
+* **Fragen:** Die Antwort erscheint im Gespräch, auch wenn sie nach dem Ablauf der Wartezeit kommt; nach dem Ablauf steht „keine Antwort“ an der Frage.
+* **Anmelden und Abmelden** gibt es nur am Terminal: `viper nats init GRUPPE` und `viper nats revoke GRUPPE`. Kennt der Server den Schlüssel nicht, steht das als Hinweis oben; melden Sie sich neu an und laden Sie die Seite.
+* **Grenzen:** Der Chat nimmt höchstens 200 Zeilen je Sekunde (50 je Absender) an; der Rest wird verworfen und gezählt. Jedes Senden öffnet einen eigenen Tunnel und dauert deshalb mindestens einen Augenblick. Höchstens acht Sendungen sind zugleich unterwegs.
+* **Nur dieser Rechner:** Wie `viper ui` lauscht der Chat auf `127.0.0.1`, antwortet nur unter dieser Adresse und nimmt nur Anfragen mit seinem Cookie an. Er hat keine der Routen von `viper ui`: er startet und beendet keinen Rechner. Als `root` warnt er.
 
 ### Mit Claude Code arbeiten
 
