@@ -1,7 +1,7 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.199  
-Software-Version: v0.34.1  
+Version: 1.200  
+Software-Version: v0.34.2  
 Stand: 18.11.2026  
 
 ## 1. Einleitung
@@ -89,12 +89,12 @@ Login-Schlüssel, Firewall und Host-CA teilen sich alle Rechner.
 
 **Mit Homebrew** (Linux und macOS): `brew install pt9912/viper/viper`, dann `viper version` (Update: `brew upgrade viper`). Sonst von Hand:
 
-1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.34.1_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.34.1_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
+1. Laden Sie von der Release-Seite (`https://github.com/pt9912/hetzner-viper/releases`) die Datei für Ihr System, zum Beispiel `viper_v0.34.2_linux_amd64` (`linux` oder `darwin`; `amd64` oder `arm64`, bei Apple Silicon `arm64`; für Windows gibt es nur `viper_v0.34.2_windows_amd64.exe`, siehe Hinweis zu Windows unten), und `SHA256SUMS`.
 2. Prüfen Sie die Datei und machen Sie sie ausführbar:
    ```bash
-   grep viper_v0.34.1_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
-   chmod +x viper_v0.34.1_linux_amd64
-   mv viper_v0.34.1_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
+   grep viper_v0.34.2_linux_amd64 SHA256SUMS | sha256sum --check      # macOS: ... | shasum -a 256 --check
+   chmod +x viper_v0.34.2_linux_amd64
+   mv viper_v0.34.2_linux_amd64 ~/bin/viper            # ein Verzeichnis in Ihrem PATH
    ```
 3. Prüfen Sie die Installation: `viper version`.
 
@@ -212,7 +212,7 @@ Sie können `viper` auch ohne Cloud-Konto ausprobieren und nutzen: Der Rechner i
 #### Vorgehen
 
 1. **Image beschaffen.** Diesen Schritt können Sie überspringen: Ohne `COMPOSE_IMAGE` bzw. `K8S_IMAGE` nimmt `viper` das veröffentlichte Image seiner Version, `ghcr.io/pt9912/viper-machine:<Version>`; Compose und ein k3d-Cluster laden es selbst. Für ein eigenes Image oder eine andere Version gehen Sie auf einem von zwei Wegen:
-   * **Laden** (schnell): `docker pull ghcr.io/pt9912/viper-machine:v0.34.1`, mit der Version, die `viper version` meldet. Bei Docker Compose können Sie das Laden `viper up` überlassen: Der Name in `COMPOSE_IMAGE` genügt. Das Image ist öffentlich und mehrere GB groß; das Image gibt es für **amd64 und arm64**, Docker wählt die passende Architektur. Der Name ist `ghcr.io/pt9912/viper-machine:v0.34.1`. Bei k3d (vorher `k3d cluster create viper`) lädt der Cluster das öffentliche Image beim ersten Start selbst, das dauert etwa eine halbe Minute; Sie müssen es nicht einspielen. **Jeder Knoten lädt es für sich**, auf dem ein Rechner läuft: Hat der Cluster mehrere Knoten, laden Sie es mehrmals aus dem Internet. Dann spielen Sie das geladene Image mit `k3d image import ghcr.io/pt9912/viper-machine:v0.34.1 -c viper` ein (kopiert es auf alle Knoten, ohne Download) oder nutzen eine gemeinsame Registry (unten).
+   * **Laden** (schnell): `docker pull ghcr.io/pt9912/viper-machine:v0.34.2`, mit der Version, die `viper version` meldet. Bei Docker Compose können Sie das Laden `viper up` überlassen: Der Name in `COMPOSE_IMAGE` genügt. Das Image ist öffentlich und mehrere GB groß; das Image gibt es für **amd64 und arm64**, Docker wählt die passende Architektur. Der Name ist `ghcr.io/pt9912/viper-machine:v0.34.2`. Bei k3d (vorher `k3d cluster create viper`) lädt der Cluster das öffentliche Image beim ersten Start selbst, das dauert etwa eine halbe Minute; Sie müssen es nicht einspielen. **Jeder Knoten lädt es für sich**, auf dem ein Rechner läuft: Hat der Cluster mehrere Knoten, laden Sie es mehrmals aus dem Internet. Dann spielen Sie das geladene Image mit `k3d image import ghcr.io/pt9912/viper-machine:v0.34.2 -c viper` ein (kopiert es auf alle Knoten, ohne Download) oder nutzen eine gemeinsame Registry (unten).
    * **Bauen:** `viper image build` (für k3d: erst `k3d cluster create viper`, dann `viper image build --k3d viper`). Das dauert beim ersten Mal einige Minuten. Die Ausgabe nennt den Namen des Images.
 2. **Einstellungen** in `machines/lokal.env.local` (die Zeile mit dem Image brauchen Sie nur für ein selbst gebautes oder anderes Image):
 
@@ -250,7 +250,7 @@ Löschen Sie Cluster oft oder haben Sie Cluster mit mehreren Knoten, lädt sonst
 PROVIDER=kubernetes
 DNS_PROVIDER=none
 SERVER_LOCATION=k3d-viper
-K8S_IMAGE=ghcr.io/pt9912/viper-machine:v0.34.1
+K8S_IMAGE=ghcr.io/pt9912/viper-machine:v0.34.2
 K3D_REGISTRY=viper-registry
 K3D_CLUSTER_CREATE=1
 K3D_AGENTS=2
@@ -514,7 +514,7 @@ Der Chat läuft im Browser. Für jede Gruppe, deren Operator-Schlüssel auf dies
 * **Eigene Nachrichten vom Terminal:** Nachrichten, die Sie mit `viper nats send` am Terminal oder auf der Seite NATS von `viper ui` senden, sieht der Chat nicht: die Verbindung hört sich nicht selbst. Was Sie im Chat senden, steht im Verlauf.
 * **Verlauf:** Er liegt im Zustandsverzeichnis unter `chat/GRUPPE/` (eine Datei je Gespräch, Rechte `0600`, Ordner `0700`), im Klartext neben dem Schlüssel des Operators, und geht mit einem Backup des Home-Verzeichnisses mit. Bekannte Zugangsdaten ersetzt `viper` durch `[hidden]`, bevor es etwas schreibt; ein Geheimnis ohne bekannten Namen kann im Verlauf stehen. Grenzen: höchstens 500 Gespräche je Gruppe, 5 000 Zeilen oder 10 MiB je Datei (zwei Dateien je Gespräch), 1 GiB je Gruppe und `--keep-days` Tage. Als Zeit steht die Ankunftszeit beim Chat; der Absender gibt keine Zeit mit.
 * **Namen:** Ein Gespräch eines Rechners oder ein Paar entsteht nur für Namen aus der Liste der Rechner der Gruppe. Meldungen unter einem anderen Namen stehen nur in „Alle Meldungen“, mit dem Vermerk „unbekannter Name“.
-* **Lampe der Gruppe:** Sie ist grün, solange der Chat mit dem NATS-Server der Gruppe verbunden ist. Hohl und bernsteinfarben heißt, dass er verbindet oder die Gruppe nicht erreichbar ist (zum Beispiel weil sie nicht läuft); die Zeile oben nennt den Grund und wann der nächste Versuch kommt, und steht auch in der Konsole des Browsers. Hohl und grau heißt, dass hier kein Schlüssel des Operators liegt oder der Server ihn nicht kennt.
+* **Lampe der Gruppe:** Sie ist grün, solange der Chat mit dem NATS-Server der Gruppe verbunden ist. Hohl und bernsteinfarben heißt, dass er verbindet oder der Server nicht erreichbar ist; Hohl und grau heißt „nicht gestartet“ (kein Rechner der Gruppe läuft, `viper up` fehlt; der Chat versucht es weiter, und der Verlauf bleibt lesbar), „nicht angemeldet“ (kein Schlüssel des Operators hier) oder „Schlüssel unbekannt“. Eine Störung nennt eine Zeile in der Kopfleiste, für alle Gruppen zusammen, mit dem Grund und der Zeit bis zum nächsten Versuch; der volle Text steht im Tooltip der Zeile und in der Konsole des Browsers. Die Zeile verschiebt die Seite nicht.
 * **Lampe eines Rechners:** Grün heißt, dass der Rechner in den letzten 90 Sekunden „ich bin da“ gesagt hat. Hohl heißt weg: länger als 90 Sekunden still oder abgemeldet. Ohne Lampe hat der Chat noch nichts von ihm gehört; das kann ein Rechner ohne Sitzung oder mit einer älteren Fassung sein. Bei einem Thema steht „Niemand abonniert“ erst, wenn alle Rechner der Gruppe einmal gemeldet haben; die Zahl der Empfänger ist eine Schätzung aus ihren Meldungen.
 * **Rückfrage:** Liest der Agent eines Rechners Nachrichten des Operators sofort in seiner Sitzung (`NATS_MCP_PUSH_FROM` führt den Operator), fragt der Chat vor dem Senden „Verstanden, senden“, auch bei einem Rundruf an ein Thema, das so ein Rechner empfängt. Der Server verlangt das; es gilt je Rechner und Gespräch, solange die Seite offen ist. Themen, die ein Agent erst im Lauf der Sitzung abonniert, kennt der Chat nicht.
 * **Texte und Dateien:** Ein Text ist bis 16 384 Byte lang (auf dem Draht 32 KiB nach der JSON-Kodierung). Der Chat zeigt jeden Text als reinen Text; nur Zeilen zwischen drei Gravis erscheinen als Block, Links und Formatierung gibt es nicht. Eine Datei ist bis zur Grenze der Gruppe (`NATS_OBJECTS_FILE_MAX`), höchstens 64 MiB, groß; die Art folgt aus den ersten Bytes. Eine Gruppe ohne `NATS_OBJECTS=true` hat keine Dateien. Dateien zeigt der Chat nie selbst, sondern bietet sie nur zum Herunterladen an. Eine eigene Frage mit Datei hat keinen Download-Link.
