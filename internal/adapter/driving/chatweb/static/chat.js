@@ -169,7 +169,7 @@
     head.appendChild(el('time', '', hhmm(rec.t)));
     wrap.appendChild(head);
     if (rec.text) { wrap.appendChild(body(rec.text)); }
-    if (rec.att_name) { wrap.appendChild(el('div', 'att', t('msg.file', rec.att_name))); }
+    if (rec.att_name) { wrap.appendChild(card(rec)); }
     if (isOpen(rec)) {
       head.appendChild(el('span', 'tag warn', t('msg.open')));
       if (!state.readonly && current.kind === 'rechner') {
@@ -181,6 +181,22 @@
     }
     return wrap;
   }
+
+  // a file of a message: a card with a download (never shown in the page itself)
+  function card(rec) {
+    const box = el('div', 'card');
+    box.appendChild(el('div', 'nm', rec.att_name));
+    box.appendChild(el('div', 'pv', [rec.att_type, size(rec.att_size), rec.att_sha256 ? rec.att_sha256.slice(0, 12) : ''].filter(Boolean).join(' · ')));
+    if (rec.att_id && current) {
+      const a = el('a', 'dl', t('file.download'));
+      a.href = '/api/chat/file?group=' + encodeURIComponent(current.group) + '&conv=' + encodeURIComponent(current.key) + '&n=' + rec.n;
+      a.setAttribute('download', rec.att_name);
+      box.appendChild(a);
+    }
+    return box;
+  }
+
+  function size(n) { return !n ? '' : n >= 1048576 ? (n / 1048576).toFixed(1) + ' MiB' : Math.max(1, Math.round(n / 1024)) + ' KiB'; }
 
   // a question of a machine that nobody has answered yet (in what the page has)
   const isOpen = (rec) => rec.type === 'req' && rec.dir === 'in' && !!rec.id && !thread.some((x) => x.type === 'res' && x.re === rec.id);
@@ -293,6 +309,59 @@
     try { if ($('text').value) { window.localStorage.setItem(draftKey(), $('text').value); } else { window.localStorage.removeItem(draftKey()); } } catch (e) { /* not kept */ }
   }
 
+  // ---- files
+
+  let picked = null; // the file that goes with the next message
+
+  function fileLimit() {
+    const g = current && groupOf(current.group);
+    return g && g.file_max > 0 ? Math.min(g.file_max, 64 * 1048576) : 0;
+  }
+
+  function showFile() {
+    $('chip').hidden = !picked;
+    if (picked) { $('chip-text').textContent = picked.name + ' (' + size(picked.size) + ')'; }
+    const limit = fileLimit();
+    $('attach').disabled = !limit;
+    $('attach').title = limit ? t('file.limit', size(limit)) : t('file.nostore');
+    count();
+  }
+
+  function setFile(f) {
+    if (!canWrite() || replying) { return; }
+    const limit = fileLimit();
+    if (!limit) { $('send-status').textContent = t('file.nostore'); return; }
+    if (f.size < 1 || f.size > limit) { $('send-status').textContent = t('file.toobig', size(f.size), size(limit)); return; }
+    picked = f;
+    $('send-status').textContent = '';
+    showFile();
+  }
+
+  async function putFile(f, group) {
+    const res = await fetch('/api/chat/upload?group=' + encodeURIComponent(group) + '&name=' + encodeURIComponent(f.name), {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/octet-stream', 'X-Viper-UI': '1' }, body: f,
+    });
+    let data = {};
+    try { data = await res.json(); } catch (e) { data = {}; }
+    if (!res.ok) { throw new Error(data.error || ('HTTP ' + res.status)); }
+    return data.id;
+  }
+
+  $('attach').addEventListener('click', () => $('picker').click());
+  $('picker').addEventListener('change', () => { if ($('picker').files[0]) { setFile($('picker').files[0]); } $('picker').value = ''; });
+  $('chip-x').addEventListener('click', () => { picked = null; showFile(); });
+  $('text').addEventListener('paste', (e) => {
+    const f = e.clipboardData && e.clipboardData.files && e.clipboardData.files[0];
+    if (f) { e.preventDefault(); setFile(f); }
+  });
+  for (const id of ['msgs', 'composer']) {
+    $(id).addEventListener('dragover', (e) => { if (canWrite()) { e.preventDefault(); } });
+    $(id).addEventListener('drop', (e) => {
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f && canWrite()) { e.preventDefault(); setFile(f); }
+    });
+  }
+
   function showComposer() {
     const box = $('composer');
     box.hidden = !canWrite();
@@ -305,20 +374,23 @@
     $('wait').hidden = true;
     $('ack').hidden = true;
     replying = null;
+    picked = null;
     $('replying').hidden = true;
     $('send-status').textContent = '';
-    count();
+    showFile();
   }
 
   function count() {
     const n = bytes($('text').value);
     $('count').textContent = t('send.count', n, 16384);
     $('count').classList.toggle('over', n > 16384);
-    $('send').disabled = sending || n === 0 || n > 16384;
+    $('send').disabled = sending || (n === 0 && !picked) || n > 16384;
   }
 
   function startReply(rec) {
     replying = { id: rec.id, to: rec.from, text: rec.text || '' };
+    picked = null;
+    showFile();
     $('replying-text').textContent = t('send.replying', rec.from, (rec.text || '').slice(0, 80));
     $('replying').hidden = false;
     $('kind').hidden = true;
@@ -352,6 +424,8 @@
     $('send').disabled = true;
     $('send-status').textContent = t('send.sending');
     try {
+      if (picked && !body.file) { picked.id = picked.id || await putFile(picked, mine.group); }
+      if (picked) { body.file = picked.id; }
       const r = await api('/api/chat/send', body);
       if (body.kind === 'ask' && r.record.id) { asking[r.record.id] = true; }
       if (!r.warning) { onMessage(groupOf(mine.group), { record: r.record, keys: r.keys }); }
@@ -361,6 +435,8 @@
         asked = null;
         if ($('text').value === body.text) { $('text').value = ''; } // what was typed meanwhile stays
         stopReply();
+        picked = null;
+        showFile();
         $('send-status').textContent = r.warning || t('send.sent');
       }
     } catch (e) {
@@ -370,7 +446,10 @@
         $('ack').hidden = false;
         $('ack-ok').focus();
         $('send-status').textContent = '';
-      } else if (current === mine) { $('send-status').textContent = t('send.failed', e.message); }
+      } else {
+        if (picked) { delete picked.id; } // the server gave the file up
+        if (current === mine) { $('send-status').textContent = t('send.failed', e.message); }
+      }
     }
     sending = false;
     count();

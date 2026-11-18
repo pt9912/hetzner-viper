@@ -69,5 +69,11 @@
     'msg.noanswer': 'keine Antwort',
     'msg.open': 'offen',
     'msg.answer': 'Antworten',
+    'file.remove': 'Entfernen',
+    'file.attach': 'Datei anhängen',
+    'file.download': 'Herunterladen',
+    'file.limit': 'PDF, ZIP oder Bild, höchstens {0}',
+    'file.nostore': 'Diese Gruppe hat keinen Objektspeicher (NATS_OBJECTS=true): Dateien lassen sich nicht senden.',
+    'file.toobig': 'Die Datei hat {0}; die Gruppe nimmt höchstens {1}.',
   });
 })();

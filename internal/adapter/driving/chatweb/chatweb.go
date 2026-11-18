@@ -50,7 +50,21 @@ type Backend interface {
 	// Send sends what the operator wrote to the NATS server of the group, as viper nats does. For a question (Kind "ask") it returns when
 	// the question is out, with its ID; done is called when the waiting is over (an error if no answer came: the answer itself comes
 	// in the stream). For the others it returns when the message is handed to the server.
-	Send(ctx context.Context, group string, o Outgoing, done func(id string, err error)) (id string, err error)
+	Send(ctx context.Context, group string, o Outgoing, done func(id string, err error)) (Sent, error)
+	// Fetch puts the file of a message (the ID of its object and its checksum, as the message names them) into the folder.
+	Fetch(ctx context.Context, group, attID, sha, dir string) error
+}
+
+// Sent is what the sending knows of the message: the ID of a question, and the file as the server took it.
+type Sent struct {
+	ID                     string
+	AttID, AttType, AttSHA string
+	AttSize                int64
+}
+
+// FileRef is a file that goes with a message: where it is on this computer, and its name.
+type FileRef struct {
+	Name, Path string
 }
 
 // Outgoing is a message of the operator.
@@ -60,6 +74,7 @@ type Outgoing struct {
 	Topic   string
 	Text    string
 	Re      string        // reply: the ID of the question
+	File    *FileRef      // msg, topic, ask: a file with the text (or without)
 	Timeout time.Duration // ask
 }
 
@@ -75,7 +90,8 @@ type SendRequest struct {
 	Text    string   `json:"text"`
 	Re      string   `json:"re"`
 	Timeout int      `json:"timeout"`
-	Ack     []string `json:"ack"` // the machines of which the person has read that the text lands in the session of their agent
+	File    string   `json:"file"` // the ID that /api/chat/upload gave
+	Ack     []string `json:"ack"`  // the machines of which the person has read that the text lands in the session of their agent
 }
 
 // Options are the choices of the command line.
@@ -130,15 +146,20 @@ func New(b Backend, o Options) *web.Chat {
 			mux.HandleFunc("GET /api/chat/messages", h.messages)
 			mux.HandleFunc("POST /api/chat/read", h.markRead)
 			mux.HandleFunc("POST /api/chat/send", h.send)
+			mux.HandleFunc("POST /api/chat/upload", h.upload)
+			mux.HandleFunc("GET /api/chat/file", h.file)
+			go func() { <-done; h.files.close() }()
 			mux.HandleFunc("GET /api/chat/events", func(w http.ResponseWriter, r *http.Request) { h.events(w, r, done) })
 		},
 		Streams: []string{"/api/chat/events"},
+		Octet:   []string{"/api/chat/upload"},
 	}
 }
 
 type handlers struct {
 	b        Backend
 	o        Options
+	files    uploads
 	inFlight atomic.Int32 // sends and questions that are not over
 }
 
@@ -428,13 +449,8 @@ func pushers(g Group, o Outgoing) []string {
 // check says what is wrong with a message, or returns it ready.
 func (*handlers) check(g Group, req SendRequest) (Outgoing, string) {
 	o := Outgoing{Kind: req.Kind, To: req.To, Topic: req.Topic, Text: req.Text, Re: req.Re}
-	switch {
-	case len(req.Text) == 0 || strings.TrimSpace(req.Text) == "":
-		return o, "the text is empty"
-	case len(req.Text) > MaxText:
-		return o, fmt.Sprintf("the text has %d bytes, the most is %d", len(req.Text), MaxText)
-	case !utf8.ValidString(req.Text):
-		return o, "the text is not valid UTF-8"
+	if bad := checkText(req); bad != "" {
+		return o, bad
 	}
 	if req.Kind == "topic" {
 		if err := model.CheckNATSName("topic", req.Topic); err != nil {
@@ -451,13 +467,28 @@ func (*handlers) check(g Group, req SendRequest) (Outgoing, string) {
 	if req.Kind == "reply" && !idPattern.MatchString(req.Re) {
 		return o, "re is the ID of a question"
 	}
-	if enc, _ := json.Marshal(req.Text); len(enc) > 30<<10 { // the server takes 32 KiB of the whole message; a control character is 6 bytes of it
-		return o, "the text is too long once it is encoded (control characters and quotes take more room)"
-	}
 	if req.Kind == "ask" {
 		o.Timeout = time.Duration(atoi(strconv.Itoa(req.Timeout), 30, 1, 120)) * time.Second
 	}
 	return o, ""
+}
+
+// checkText says what is wrong with the text of a message.
+func checkText(req SendRequest) string {
+	switch {
+	case (len(req.Text) == 0 || strings.TrimSpace(req.Text) == "") && req.File == "":
+		return "the text is empty"
+	case req.File != "" && req.Kind == "reply":
+		return "an answer takes no file"
+	case len(req.Text) > MaxText:
+		return fmt.Sprintf("the text has %d bytes, the most is %d", len(req.Text), MaxText)
+	case !utf8.ValidString(req.Text):
+		return "the text is not valid UTF-8"
+	}
+	if enc, _ := json.Marshal(req.Text); len(enc) > 30<<10 { // the server takes 32 KiB of the whole message; a control character is 6 bytes of it
+		return "the text is too long once it is encoded (control characters and quotes take more room)"
+	}
+	return ""
 }
 
 // keysOf are the conversations a message of the operator belongs to.
@@ -468,38 +499,55 @@ func keysOf(o Outgoing) []string {
 	return []string{model.ChatKey(model.ChatKindMachine, o.To), model.ChatKindAll}
 }
 
-func (h *handlers) send(w http.ResponseWriter, r *http.Request) {
+// prepare reads and checks a request to send; when something is wrong the answer is given and ok is false.
+func (h *handlers) prepare(w http.ResponseWriter, r *http.Request) (g Group, o Outgoing, up *upload, req SendRequest, ok bool) {
 	if h.o.Readonly {
 		web.Fail(w, http.StatusForbidden, "this page only reads (--readonly)")
-		return
+		return g, o, nil, req, false
 	}
-	var req SendRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 128<<10)).Decode(&req); err != nil {
 		web.Fail(w, http.StatusBadRequest, "bad request")
-		return
+		return g, o, nil, req, false
 	}
-	g, ok := h.named(w, r, req.Group)
-	if !ok {
-		return
+	if g, ok = h.named(w, r, req.Group); !ok {
+		return g, o, nil, req, false
 	}
 	if !g.Operator || h.o.Engine == nil {
 		web.Fail(w, http.StatusConflict, "you are not logged in in this group")
-		return
+		return g, o, nil, req, false
 	}
 	o, bad := h.check(g, req)
 	if bad != "" {
 		web.Fail(w, http.StatusBadRequest, bad)
-		return
+		return g, o, nil, req, false
+	}
+	if req.File != "" {
+		if up = h.files.get(g.Name, req.File); up == nil {
+			web.Fail(w, http.StatusGone, "the file is gone: choose it again")
+			return g, o, nil, req, false
+		}
+		o.File = &FileRef{Name: up.name, Path: up.path}
 	}
 	if o.Kind == "reply" && !h.asked(g.Name, o) {
 		web.Fail(w, http.StatusBadRequest, "no open question of this machine with this ID")
-		return
+		return g, o, nil, req, false
 	}
 	if p := pushers(g, o); slices.ContainsFunc(p, func(m string) bool { return !slices.Contains(req.Ack, m) }) { // one that was not acknowledged
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": "the text lands in the session of an agent", "push": p})
+		return g, o, nil, req, false
+	}
+	return g, o, up, req, true
+}
+
+func (h *handlers) send(w http.ResponseWriter, r *http.Request) {
+	g, o, up, req, ok := h.prepare(w, r)
+	if !ok {
 		return
+	}
+	if up != nil {
+		defer h.files.drop(req.File) // from here on the file goes: a refusal before this (the question of the agent) keeps it
 	}
 	if h.inFlight.Add(1) > maxInFlight {
 		h.inFlight.Add(-1)
@@ -514,7 +562,7 @@ func (h *handlers) send(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	keys := keysOf(o)
-	id, err := h.dispatch(r.Context(), g.Name, o, keys, end)
+	sent, err := h.dispatch(r.Context(), g.Name, o, keys, end)
 	if err != nil {
 		web.Fail(w, http.StatusBadGateway, err.Error())
 		return
@@ -523,7 +571,10 @@ func (h *handlers) send(w http.ResponseWriter, r *http.Request) {
 	if typ == "" {
 		typ = "msg"
 	}
-	rec := port.Record{From: g.OperatorName, To: o.To, Topic: o.Topic, Type: typ, Text: o.Text, ID: id, Re: o.Re}
+	rec := port.Record{From: g.OperatorName, To: o.To, Topic: o.Topic, Type: typ, Text: o.Text, ID: sent.ID, Re: o.Re}
+	if up != nil {
+		rec.AttName, rec.AttType, rec.AttSize, rec.AttID, rec.AttSHA = up.name, up.typ, up.size, sent.AttID, sent.AttSHA
+	}
 	kept, err := h.o.Engine.Add(g.Name, keys, rec)
 	if err != nil { // it is out: the person is told, and does not send it again
 		web.Reply(w, map[string]any{"record": rec, "keys": keys, "warning": "sent, but not kept in the history: " + err.Error()})
@@ -548,16 +599,16 @@ func (h *handlers) asked(group string, o Outgoing) bool {
 }
 
 // dispatch gives the message to the backend. A question frees its place (end) when the waiting is over, and tells the pages then.
-func (h *handlers) dispatch(ctx context.Context, group string, o Outgoing, keys []string, end func()) (string, error) {
+func (h *handlers) dispatch(ctx context.Context, group string, o Outgoing, keys []string, end func()) (Sent, error) {
 	if o.Kind != "ask" {
 		return h.b.Send(ctx, group, o, nil)
 	}
-	id, err := h.b.Send(ctx, group, o, func(askID string, err error) { // the answer, if any, came in the stream
+	sent, err := h.b.Send(ctx, group, o, func(askID string, err error) { // the answer, if any, came in the stream
 		end()
 		h.o.Engine.Tell(driving.ChatEvent{Group: group, Kind: "ask_end", Keys: keys, Record: &port.Record{Re: askID, Text: errText(err)}})
 	})
 	if err != nil {
 		end()
 	}
-	return id, err
+	return sent, err
 }

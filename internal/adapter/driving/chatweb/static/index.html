@@ -34,7 +34,10 @@
         <div id="replying" class="notice" hidden><span id="replying-text"></span> <button type="button" id="replying-x" data-i18n="send.cancel">Cancel</button></div>
         <label class="sr" for="text" data-i18n="send.label">Your message</label>
         <textarea id="text" rows="3" spellcheck="false" data-i18n-placeholder="send.placeholder" placeholder="Write a message (Ctrl+Enter sends)"></textarea>
+        <div id="chip" class="chip" hidden><span id="chip-text"></span> <button type="button" id="chip-x" data-i18n="file.remove">Remove</button></div>
         <div class="row">
+          <button type="button" id="attach" class="plain" data-i18n="file.attach">Attach file</button>
+          <input type="file" id="picker" class="sr" tabindex="-1" aria-hidden="true">
           <label class="sr" for="kind" data-i18n="send.kind">Kind</label>
           <select id="kind"><option value="msg" data-i18n="send.msg">Message</option><option value="ask" data-i18n="send.ask">Question</option></select>
           <label class="sr" for="wait" data-i18n="send.wait">How long to wait for the answer</label>

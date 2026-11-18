@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -16,24 +18,37 @@ import (
 )
 
 type fakeBackend struct {
-	groups  []chatweb.Group
-	err     error
-	sendErr error
-	sent    *[]chatweb.Outgoing // what Send was given
-	id      string              // the ID of a question
-	done    *func(string, error)
+	groups        []chatweb.Group
+	err           error
+	sendErr       error
+	sent          *[]chatweb.Outgoing // what Send was given
+	id            string              // the ID of a question
+	done          *func(string, error)
+	attID, attSHA string
+	fetched       *[]string
+	fetchErr      error
 }
 
 func (f fakeBackend) Groups(context.Context) ([]chatweb.Group, error) { return f.groups, f.err }
 
-func (f fakeBackend) Send(_ context.Context, _ string, o chatweb.Outgoing, done func(string, error)) (string, error) {
+func (f fakeBackend) Send(_ context.Context, _ string, o chatweb.Outgoing, done func(string, error)) (chatweb.Sent, error) {
 	if f.sent != nil {
 		*f.sent = append(*f.sent, o)
 	}
 	if f.done != nil {
 		*f.done = done
 	}
-	return f.id, f.sendErr
+	return chatweb.Sent{ID: f.id, AttID: f.attID, AttSHA: f.attSHA}, f.sendErr
+}
+
+func (f fakeBackend) Fetch(_ context.Context, _, id, sha, dir string) error {
+	if f.fetched != nil {
+		*f.fetched = append(*f.fetched, id+" "+sha)
+	}
+	if f.fetchErr != nil {
+		return f.fetchErr
+	}
+	return os.WriteFile(filepath.Join(dir, "fetched.bin"), []byte("the file"), 0o600)
 }
 
 func serve(t *testing.T, b chatweb.Backend, o chatweb.Options) (*web.Server, http.Handler) {

@@ -134,7 +134,8 @@ func TestTheChatAsksAndTheWaitingEndsWithTheAnswerOrWithoutOne(t *testing.T) {
 		err error
 	}
 	done := make(chan result, 1)
-	id, err := b.Send(context.Background(), "dev", chatweb.Outgoing{Kind: "ask", To: "beta", Text: "ping", Timeout: 20 * time.Second}, func(id string, err error) { done <- result{id, err} })
+	sent, err := b.Send(context.Background(), "dev", chatweb.Outgoing{Kind: "ask", To: "beta", Text: "ping", Timeout: 20 * time.Second}, func(id string, err error) { done <- result{id, err} })
+	id := sent.ID
 	if err != nil || len(id) < 16 {
 		t.Fatalf("%q %v", id, err)
 	}

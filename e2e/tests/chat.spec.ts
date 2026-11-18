@@ -133,6 +133,36 @@ test('an open question of a machine can be answered, and a chat that only reads 
   await expect(page.getByRole('button', { name: 'Answer', exact: true })).toHaveCount(0);
 });
 
+test('files: a card with a download, a file can be chosen and checked, a group without an object store says why', async ({ page }) => {
+  const withFile = { rechner__a: [{ n: 1, t: ago(5), dir: 'in', from: 'a', type: 'msg', text: 'the report', att_id: 'obj1', att_type: 'pdf', att_name: 'report.pdf', att_size: 2048, att_sha256: 'ab'.repeat(32) }] };
+  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true, history: withFile });
+  await page.goto(ui.start);
+  await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
+  await expect(page.locator('.card .nm')).toHaveText('report.pdf');
+  await expect(page.locator('.card .pv')).toContainText('pdf · 2 KiB · abababababab');
+  const link = page.locator('.card a.dl');
+  await expect(link).toHaveAttribute('href', '/api/chat/file?group=dev&conv=rechner__a&n=1');
+  await expect(link).toHaveAttribute('download', 'report.pdf');
+  await expect(page.locator('#attach')).toBeEnabled();
+  await page.setInputFiles('#picker', { name: 'pic.png', mimeType: 'image/png', buffer: Buffer.from('89504e470d0a1a0a' + '07'.repeat(50), 'hex') });
+  await expect(page.locator('#chip-text')).toContainText('pic.png');
+  await expect(page.locator('#send')).toBeEnabled(); // a file alone is a message
+  await page.press('#text', 'Control+Enter'); // no server of NATS: the file was looked at and taken, the sending fails and says so
+  await expect(page.locator('#send-status')).toContainText('Not sent:');
+  await expect(page.locator('#chip')).toBeVisible();
+  await page.locator('#chip-x').click();
+  await expect(page.locator('#chip')).toBeHidden();
+  await page.setInputFiles('#picker', { name: 'big.zip', mimeType: 'application/zip', buffer: Buffer.alloc(9 << 20) });
+  await expect(page.locator('#send-status')).toContainText('the group takes at most');
+  await expect(page.locator('#chip')).toBeHidden();
+  await ui.stop();
+  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true, objects: false });
+  await page.goto(ui.start);
+  await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
+  await expect(page.locator('#attach')).toBeDisabled();
+  await expect(page.locator('#attach')).toHaveAttribute('title', /no object store/);
+});
+
 test('the language can be changed and the texts follow', async ({ page }) => {
   ui = await startUI([], 0, false, { command: 'ui-chat' });
   await page.goto(ui.start);

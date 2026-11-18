@@ -69,5 +69,11 @@
     'msg.noanswer': 'no answer',
     'msg.open': 'open',
     'msg.answer': 'Answer',
+    'file.remove': 'Remove',
+    'file.attach': 'Attach file',
+    'file.download': 'Download',
+    'file.limit': 'PDF, ZIP or image, at most {0}',
+    'file.nostore': 'This group has no object store (NATS_OBJECTS=true): files cannot be sent.',
+    'file.toobig': 'The file has {0}; the group takes at most {1}.',
   });
 })();
