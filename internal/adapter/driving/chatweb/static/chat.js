@@ -536,6 +536,7 @@
     const mine = current;
     const ckey = mine.group + '/' + mine.key;
     if (ok && asked && asked.key === ckey) { acked[ckey] = asked.push; }
+    if (ok) { $('ack').hidden = true; asked = null; } // the question is answered: the line goes, whatever the sending says
     const body = request();
     const file = picked && !replying ? picked : null; // the file of this message, whatever happens to the chip meanwhile
     sending = true;

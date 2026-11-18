@@ -22,7 +22,7 @@ export interface UI {
 
 // startUI makes a directory of settings for PROVIDER=compose with a fake docker (it only prints and sleeps), and starts
 // viper ui on it. Nothing is made on any machine; every run of viper there ends at the fake.
-export async function startUI(extra: string[] = [], dockerSleep = 30, openBrowser = false, opts: { objects?: boolean; terminal?: boolean; command?: string; operator?: boolean; history?: Record<string, object[]>; notStarted?: boolean } = {}): Promise<UI> {
+export async function startUI(extra: string[] = [], dockerSleep = 30, openBrowser = false, opts: { objects?: boolean; terminal?: boolean; command?: string; operator?: boolean; history?: Record<string, object[]>; notStarted?: boolean; push?: boolean } = {}): Promise<UI> {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'viper-e2e-'));
   const home = path.join(root, 'home');
   const work = path.join(root, 'work');
@@ -31,7 +31,7 @@ export async function startUI(extra: string[] = [], dockerSleep = 30, openBrowse
   fs.writeFileSync(path.join(work, '.env.local'), 'PROVIDER=compose\nSERVER_PREFIX=e2e\nSERVER_LOCATION=default\nCOMPOSE_IMAGE=e2efake:1\nDNS_PROVIDER=none\nVIPER_GH_TOKEN=ghp_e2esecretvalue123\n', { mode: 0o600 });
   fs.writeFileSync(path.join(work, 'machines', 'web.env.local'), '');
   for (const m of ['a', 'b']) { fs.writeFileSync(path.join(work, 'machines', m + '.env.local'), 'NATS_ENABLED=true\nNATS_GROUP=dev\nNATS_MCP=true\n'); }
-  fs.writeFileSync(path.join(work, 'groups', 'dev.env'), `GROUP_MACHINES=a,b\n${opts.objects === false ? '' : 'NATS_OBJECTS=true\n'}`);
+  fs.writeFileSync(path.join(work, 'groups', 'dev.env'), `GROUP_MACHINES=a,b\n${opts.objects === false ? '' : 'NATS_OBJECTS=true\n'}${opts.push ? 'NATS_MCP_PUSH_FROM=operator\n' : ''}`);
   // the fake docker only says that it was called and then waits (a run that is cancelled has something to cancel)
   if (win) {
     fs.writeFileSync(path.join(bin, 'docker.cmd'), `@echo off\r\necho fake docker %* token=ghp_e2esecretvalue123 1>&2\r\n${dockerSleep > 0 ? `ping -n ${dockerSleep + 1} 127.0.0.1 >nul\r\n` : ''}exit /b 0\r\n`);

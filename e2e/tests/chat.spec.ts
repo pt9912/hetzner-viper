@@ -312,6 +312,27 @@ test('what a machine writes on a topic can be shown in its conversation, with th
   await expect(page.locator('#msgs article')).toHaveCount(2); // both writers on the topic itself
 });
 
+test('a machine whose agent reads the text in its session: the first try asks, the second carries the OK', async ({ page }) => {
+  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true, push: true });
+  await page.goto(ui.start);
+  await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
+  const bodies: { ack: string[]; text: string; group: string; to: string }[] = [];
+  page.on('request', (r) => { if (r.url().endsWith('/api/chat/send')) { bodies.push(JSON.parse(r.postData() ?? '{}')); } });
+  await page.fill('#text', 'Hallo');
+  await page.press('#text', 'Control+Enter');
+  await expect(page.locator('#ack')).toBeVisible(); // the question, with the machines and the group
+  await expect(page.locator('#ack-text')).toContainText('a');
+  await expect(page.locator('#ack-text')).toContainText('(dev)');
+  await expect(page.locator('#text')).toHaveValue('Hallo'); // nothing was sent, the text stays
+  expect(bodies).toHaveLength(1);
+  expect(bodies[0].ack).toEqual([]);
+  await page.locator('#ack-ok').click();
+  await expect(page.locator('#send-status')).toContainText('Not sent:'); // no server of NATS here: the second try went out, and failed there
+  expect(bodies).toHaveLength(2);
+  expect(bodies[1]).toMatchObject({ group: 'dev', to: 'a', text: 'Hallo', ack: ['a'] });
+  await expect(page.locator('#ack')).toBeHidden();
+});
+
 test('the notification is off, and a choice to turn it on is kept', async ({ browser, browserName }) => {
   test.skip(browserName === 'webkit', 'WebKit does not let a test grant the permission for notifications; without it the switch stays off, as it should');
   const ctx = await browser.newContext();
