@@ -2,7 +2,7 @@
 
 **Ziel:** `viper ui-chat` öffnet im Browser einen Chat im Stil von Microsoft Teams: links alle Gespräche, in der Mitte der Verlauf, unten das Eingabefeld. Jede Verbindung, die `viper` in einer NATS-Gruppe sieht, ist ein eigenes Gespräch: ein Rechner (Sie und er), **jedes Thema** der Gruppe, **jedes Paar von Rechnern** (w1 ↔ w2, mitgelesen) und „Alle Meldungen“ der Gruppe. Man schreibt Nachrichten, stellt Fragen und tauscht Dateien, ohne am Terminal `viper nats send` zu tippen.
 
-**Stand:** Entwurf (18.11.2026), noch nicht geprüft. Die Bilder in §6 sind eine **Vorschau zum Beurteilen** (HTML in [`ui-chat/vorschau.html`](ui-chat/vorschau.html)); gebaut ist nichts. Gehört zu [`nats.md`](nats.md) (die Gruppen), [`nats-cli.md`](nats-cli.md) (`viper nats`) und [`ui.md`](ui.md) (Sicherheit und Aufbau der Oberfläche). *[V]* heißt: im Code gelesen; *[?]* ist eine Vermutung, die vor dem Bauen zu prüfen ist.
+**Stand:** Entwurf (18.11.2026); die Entscheidungen in §9 sind getroffen (Vorschläge übernommen), die Prüfung läuft (§10). Die Bilder in §6 sind eine **Vorschau zum Beurteilen** (HTML in [`ui-chat/vorschau.html`](ui-chat/vorschau.html)); gebaut ist nichts. Gehört zu [`nats.md`](nats.md) (die Gruppen), [`nats-cli.md`](nats-cli.md) (`viper nats`) und [`ui.md`](ui.md) (Sicherheit und Aufbau der Oberfläche). *[V]* heißt: im Code gelesen; *[?]* ist eine Vermutung, die vor dem Bauen zu prüfen ist.
 
 ## 1 Ausgangslage
 
@@ -35,7 +35,7 @@
                                           Abgleich:         Antwort ↔ Frage über "re" und "id"
 ```
 
-* **Ein neuer Unterbefehl `viper ui-chat`** (`--port`, `--no-open`, `--readonly`), in `internal/adapter/driving/cli`. Er startet denselben Webserver wie `viper ui`, aber mit **anderen Seiten und einer anderen Programmschnittstelle** (`/api/chat/…`): Schlüssel, Cookie, Host- und Origin-Prüfung, CSP, Ströme und Läufe sind dieselben Bausteine *[V, zu prüfen: `web.Config` bekommt ein Feld für die Seiten und einen Handler; §9 Frage 1]*. Der Chat hat **kein** Formular für Einstellungen, Läufe auf Rechnern oder Befehle.
+* **Ein neuer Unterbefehl `viper ui-chat`** (`--port`, `--no-open`, `--readonly`), in `internal/adapter/driving/cli`. Er startet denselben Webserver wie `viper ui`, aber mit **anderen Seiten und einer anderen Programmschnittstelle** (`/api/chat/…`): Schlüssel, Cookie, Host- und Origin-Prüfung, CSP, Ströme und Läufe sind dieselben Bausteine *[V, zu prüfen: `web.Config` bekommt ein Feld für die Seiten und einen Handler; §9 Punkt 1]*. Der Chat hat **kein** Formular für Einstellungen, Läufe auf Rechnern oder Befehle.
 * **Strom:** Für jede **verbundene** Gruppe läuft **ein** `viper nats listen G --all --json` als Lauf des Servers (kein Lauf je Tab). Seine Zeilen gehen durch dieselbe Reinigung und Schwärzung wie jeder Lauf, werden **einem Gespräch zugeordnet** und im Verlauf abgelegt; die Seite bekommt sie über SSE. Reißt der Strom ab (Tunnel, Server neu gestartet), verbindet der Server sich wieder (Wartezeit wächst bis 30 s) und sagt es im Kopf der Seite (Bild 5).
 * **Zuordnung** *[V, aus den Feldern der Zeile]*: `via=out` mit `to=operator` oder `from=operator` → Gespräch des Rechners (`from`/`to`); `via=out` zwischen **zwei Rechnern** (nur mit `--all`) → das **Paar** (der Schlüssel des Paares sind die beiden Namen, sortiert: `w1`, `w2`, gleich in beiden Richtungen; Fragen und Antworten über `id` und `re`); `via=pub` → Thema `topic` (jedes, auch ohne Abonnent); `via=presence`/`topics` → Anwesenheit und Themenlisten, keine Nachricht (§4.4). Alles erscheint zusätzlich in „Alle Meldungen“.
 * **Die Liste der Themen** besteht aus den Themen in `NATS_MCP_TOPICS` der Rechner (`viper nats topics`), den Themen, die Rechner als abonniert melden (`via=topics`), und den Themen, die im Strom vorkommen. Ein Thema ohne Abonnent trägt die Marke „niemand abonniert“ (Bild 3c).
@@ -101,7 +101,7 @@ Wie in [`ui.md` §3](ui.md), dazu:
 | Der Text einer Nachricht geht **nie** in eine Befehlszeile, Namen kommen aus der Liste, `--name=wert`, kein Name mit `-` am Anfang | Einschleusen von Optionen |
 | Verlauf mit `0600` in einem Ordner `0700`; keine Datei außerhalb von `chat/`; Dateinamen nur aus geprüften Namen | Lesen durch andere, Pfade aus Fremdtext |
 | Rückfrage vor der ersten Nachricht an einen Rechner mit `NATS_MCP_PUSH_FROM` auf den Operator | Text, der ungewollt als Eingabe in einer Sitzung eines Agenten landet |
-| Die Gespräche zwischen Rechnern sind klar als **mitgelesen** gekennzeichnet, nur lesen, ohne Eingabefeld; `--no-pairs` schaltet sie ab (§9 Frage 10) | das Gefühl, privat zu sein, und das Lesen von Nachrichten, die nicht für den Operator bestimmt sind (erlaubt, weil jeder Rechner der Gruppe es darf, aber sichtbar) |
+| Die Gespräche zwischen Rechnern sind klar als **mitgelesen** gekennzeichnet, nur lesen, ohne Eingabefeld; `--no-pairs` schaltet sie ab (§9 Punkt 10) | das Gefühl, privat zu sein, und das Lesen von Nachrichten, die nicht für den Operator bestimmt sind (erlaubt, weil jeder Rechner der Gruppe es darf, aber sichtbar) |
 | `viper ui-chat` als `root` warnt; mit `--readonly` nur Ansehen | versehentliches Senden |
 
 **Kein TLS auf dem Port, kein Speichern von Schlüsseln im Browser** (wie bei `viper ui`). Der Verlauf kann Geheimnisse enthalten, die kein bekannter Name tragen: Er liegt nur lokal, hat Grenzen und lässt sich löschen; das Handbuch sagt es.
@@ -154,7 +154,7 @@ Die Bilder zeigen die Oberfläche mit Beispielen (Gruppe `bedrock-eu-guard-compo
 | 3 | **Senden:** Nachricht, Rundruf, Frage; Zustand „wird gesendet“, Fehler; die Rückfrage bei `NATS_MCP_PUSH_FROM` | e2e mit dem **echten `viper`** und einem Fake-`ssh` (die Befehlszeile ist die richtige und kennt keine falsche Option; Lehre aus v0.26.0) |
 | 4 | **Dateien:** Senden (Ablegen, Strg+V, Prüfung), Herunterladen | Tests der Grenzen, Download-Kopfzeilen, Bild 4 |
 | 5 | **Anwesenheit, Ungelesenes, Suche, Benachrichtigung** | Tabellentests, e2e |
-| 6 | **Feinschliff:** schmale Breite, Tastatur, Sprache, Größe der Seiten (Grenze §9 Frage 8) | axe, Tastaturtest, Größentest |
+| 6 | **Feinschliff:** schmale Breite, Tastatur, Sprache, Größe der Seiten (Grenze §9 Punkt 8) | axe, Tastaturtest, Größentest |
 | 7 | **Handbuch** (Kapitel zum Chat, Befehlstabelle, die Grenzen von NATS), README, Hilfe, Plan-Stand | Durchsicht, unabhängige Prüfung |
 
 Nach jedem Meilenstein: unabhängige Prüfung, wie bei `viper ui`. Der Chat braucht **keine** neuen Rechte auf den Rechnern: alles läuft über die Befehle, die es gibt.
@@ -167,21 +167,21 @@ Nach jedem Meilenstein: unabhängige Prüfung, wie bei `viper ui`. Der Chat brau
 * **Gespräche mit Rechnern ohne NATS-Gruppe** (etwa per ssh): kein Chat. Die Seite zeigt sie nicht; ein Hinweis nennt den Weg (`viper ui`, die Seite „Befehl“).
 * **Rechner ändern, starten, löschen:** das bleibt `viper ui`.
 
-## 9 Entscheidungen und offene Fragen
+## 9 Entscheidungen
 
-Mit Vorschlag; jede ist vor dem Bauen zu beantworten.
+Der Benutzer hat am 18.11.2026 **alle Vorschläge übernommen**. Was jetzt gilt:
 
-1. **Eigener Unterbefehl mit eigenem Port** (Vorschlag, wie gewünscht: `viper ui-chat`, derselbe Webserver mit anderen Seiten) **oder** ein Reiter in `viper ui`? Der Unterbefehl hält die Seite klein und die Rechte getrennt (`--readonly`), kostet ein zweites Fenster.
-2. **Verlauf auf der Platte** (Vorschlag, mit Grenzen und Löschen) **oder** nur im Speicher, solange der Chat läuft (nichts Fremdes auf der Platte, aber nach einem Neustart alles weg)?
-3. **Operator Pflicht** (Vorschlag) **oder** auch Senden über einen Rechner der Gruppe (ssh) ohne Schlüssel, ohne Mitlesen und ohne Verlauf?
-4. **Formatierung:** nur Code-Blöcke, keine Links (Vorschlag) **oder** auch Fettschrift, Listen und Links (mit Anzeige der Adresse und ohne automatisches Öffnen)?
-5. **Benachrichtigung des Browsers:** aus, einschaltbar (Vorschlag), ohne Inhalt der Nachricht.
-6. **Name:** `viper ui-chat` (Wunsch) **oder** `viper chat`?
-7. **Frage:** Wartezeit 30 s, einstellbar bis 600 s (Vorschlag); eine spätere Antwort erscheint trotzdem im Gespräch.
-8. **Größe der Seiten:** eigene Grenze von 175 KB für den Start (wie `viper ui`), Texte je Sprache nachgeladen (Vorschlag).
-9. **Gemeinsame Gruppen:** Mehrere NATS-Gruppen in einem Fenster (Vorschlag: ja, jede mit eigenem Strom, höchstens vier zugleich) **oder** eine Gruppe je Start (`viper ui-chat GRUPPE`)?
-10. **Paare** (Rechner ↔ Rechner): standardmäßig **sichtbar** (Vorschlag; jeder Rechner der Gruppe darf sie lesen) mit der Option `--no-pairs`, die sie abschaltet, **oder** standardmäßig aus und mit `--pairs` einzuschalten?
-11. **Verlauf beim Abmelden** (`viper nats revoke`): löschen (Vorschlag: nein, aber fragen) oder behalten?
+1. **Eigener Unterbefehl `viper ui-chat` mit eigenem Port** (derselbe Webserver mit anderen Seiten); kein Reiter in `viper ui`.
+2. **Verlauf auf der Platte**, mit den Grenzen und dem Löschen aus §3.1.
+3. **Operator ist Pflicht** (Anmelden auf der Seite); kein Senden über einen Rechner ohne Schlüssel.
+4. **Formatierung:** nur Code-Blöcke, keine Links.
+5. **Benachrichtigung des Browsers:** aus, einschaltbar, ohne Inhalt der Nachricht.
+6. **Name:** `viper ui-chat`.
+7. **Frage:** Wartezeit 30 s, einstellbar bis 600 s; eine spätere Antwort erscheint trotzdem im Gespräch.
+8. **Größe der Seiten:** eigene Grenze von 175 KB für den Start, Texte je Sprache nachgeladen (wie bei `viper ui`).
+9. **Mehrere Gruppen** in einem Fenster, jede mit eigenem Strom, höchstens vier zugleich.
+10. **Paare** (Rechner ↔ Rechner) standardmäßig **sichtbar**; `--no-pairs` schaltet sie ab.
+11. **Verlauf beim Abmelden** (`viper nats revoke`): wird **behalten**, die Seite fragt, ob er gelöscht werden soll.
 
 ## 10 Prüfung
 
