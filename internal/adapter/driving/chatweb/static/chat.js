@@ -12,6 +12,9 @@
   let readTimer = 0;
   let loading = false; // the thread is being loaded: what arrives meanwhile waits in pending
   let pending = [];
+  const asking = {}; // questions of this page that wait for an answer: id -> true | the reason that none came
+  const acked = {}; // conversations whose agent reads the text in the session, and the person has said that is fine
+  let replying = null; // { id, to, text }: the answer that is being written
 
   async function api(path, body) {
     const opts = body === undefined
@@ -20,7 +23,7 @@
     const res = await fetch(path, opts);
     let data = {};
     try { data = await res.json(); } catch (e) { data = {}; }
-    if (!res.ok) { throw new Error(data.error || ('HTTP ' + res.status)); }
+    if (!res.ok) { const err = new Error(data.error || ('HTTP ' + res.status)); if (res.status === 409 && data.push) { err.push = data.push; } throw err; }
     return data;
   }
 
@@ -157,14 +160,28 @@
     const w = who(rec);
     if (w) { head.appendChild(el('span', 'who', w)); }
     if (rec.type === 'req') { head.appendChild(el('span', 'tag', t('msg.req'))); }
+    if (rec.type === 'req' && rec.dir === 'out' && asking[rec.id] === true) { head.appendChild(el('span', 'tag warn', t('msg.waiting'))); }
+    if (rec.type === 'req' && rec.dir === 'out' && typeof asking[rec.id] === 'string') { head.appendChild(el('span', 'tag warn', asking[rec.id] || t('msg.noanswer'))); }
     if (rec.type === 'res') { head.appendChild(el('span', 'tag', t('msg.res'))); }
     if (rec.unknown) { head.appendChild(el('span', 'tag warn', t('msg.unknown'))); }
     head.appendChild(el('time', '', hhmm(rec.t)));
     wrap.appendChild(head);
     if (rec.text) { wrap.appendChild(body(rec.text)); }
     if (rec.att_name) { wrap.appendChild(el('div', 'att', t('msg.file', rec.att_name))); }
+    if (isOpen(rec)) {
+      head.appendChild(el('span', 'tag warn', t('msg.open')));
+      if (!state.readonly && current.kind === 'rechner') {
+        const b = el('button', 'link', t('msg.answer'));
+        b.type = 'button';
+        b.addEventListener('click', () => startReply(rec));
+        wrap.appendChild(b);
+      }
+    }
     return wrap;
   }
+
+  // a question of a machine that nobody has answered yet (in what the page has)
+  const isOpen = (rec) => rec.type === 'req' && rec.dir === 'in' && !!rec.id && !thread.some((x) => x.type === 'res' && x.re === rec.id);
 
   const shown = (rec) => filter === 'all' || current.kind !== 'alle' || rec.type === filter;
 
@@ -243,6 +260,7 @@
       thread = r.records;
     } catch (e) { banner(t('err.messages', e.message)); }
     loading = false;
+    showComposer();
     for (const rec of pending) { if (!thread.some((x) => x.n === rec.n)) { thread.push(rec); } }
     pending = [];
     paint();
@@ -260,6 +278,97 @@
       api('/api/chat/read', { group: current.group, conv: current.key, n }).catch(() => {});
     }, 400);
   }
+
+  // ---- writing
+
+  const draftKey = () => 'viper-chat-draft/' + current.group + '/' + current.key;
+  const canWrite = () => !!current && !state.readonly && (current.kind === 'rechner' || current.kind === 'thema');
+  const bytes = (text) => new TextEncoder().encode(text).length;
+
+  function saveDraft() {
+    if (!current) { return; }
+    try { if ($('text').value) { window.localStorage.setItem(draftKey(), $('text').value); } else { window.localStorage.removeItem(draftKey()); } } catch (e) { /* not kept */ }
+  }
+
+  function showComposer() {
+    const box = $('composer');
+    box.hidden = !canWrite();
+    if (box.hidden) { return; }
+    let draft = '';
+    try { draft = window.localStorage.getItem(draftKey()) || ''; } catch (e) { draft = ''; }
+    $('text').value = draft;
+    $('kind').hidden = current.kind !== 'rechner';
+    $('kind').value = 'msg';
+    $('wait').hidden = true;
+    $('ack').hidden = true;
+    replying = null;
+    $('replying').hidden = true;
+    $('send-status').textContent = '';
+    count();
+  }
+
+  function count() {
+    const n = bytes($('text').value);
+    $('count').textContent = t('send.count', n, 16384);
+    $('count').classList.toggle('over', n > 16384);
+    $('send').disabled = n === 0 || n > 16384;
+  }
+
+  function startReply(rec) {
+    replying = { id: rec.id, to: rec.from, text: rec.text || '' };
+    $('replying-text').textContent = t('send.replying', rec.from, (rec.text || '').slice(0, 80));
+    $('replying').hidden = false;
+    $('kind').hidden = true;
+    $('wait').hidden = true;
+    $('text').focus();
+  }
+
+  function stopReply() {
+    replying = null;
+    $('replying').hidden = true;
+    $('kind').hidden = !current || current.kind !== 'rechner';
+  }
+
+  function request(ack) {
+    const body = { group: current.group, text: $('text').value };
+    if (replying) { Object.assign(body, { kind: 'reply', to: replying.to, re: replying.id }); }
+    else if (current.kind === 'thema') { Object.assign(body, { kind: 'topic', topic: current.name }); }
+    else { Object.assign(body, { kind: $('kind').value, to: current.name, timeout: Number($('wait').value) }); }
+    if (ack || acked[current.group + '/' + current.key]) { body.ack = true; }
+    return body;
+  }
+
+  async function send(ack) {
+    if (!canWrite() || $('send').disabled) { return; }
+    const mine = current;
+    const body = request(ack);
+    $('send').disabled = true;
+    $('send-status').textContent = t('send.sending');
+    try {
+      const r = await api('/api/chat/send', body);
+      $('ack').hidden = true;
+      acked[mine.group + '/' + mine.key] = acked[mine.group + '/' + mine.key] || !!body.ack;
+      if (body.kind === 'ask' && r.record.id) { asking[r.record.id] = true; }
+      onMessage(groupOf(mine.group), { record: r.record, keys: r.keys });
+      if (current === mine) { $('text').value = ''; saveDraft(); stopReply(); $('send-status').textContent = t('send.sent'); }
+    } catch (e) {
+      if (e.push) {
+        $('ack-text').textContent = t('send.push', e.push.join(', '));
+        $('ack').hidden = false;
+        $('ack-ok').focus();
+        $('send-status').textContent = '';
+      } else { $('send-status').textContent = t('send.failed', e.message); }
+    }
+    count();
+    if (current === mine && $('ack').hidden) { $('text').focus(); }
+  }
+
+  $('composer').addEventListener('submit', (e) => { e.preventDefault(); send(false); });
+  $('ack-ok').addEventListener('click', () => send(true));
+  $('replying-x').addEventListener('click', stopReply);
+  $('text').addEventListener('input', () => { count(); saveDraft(); });
+  $('text').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(false); } });
+  $('kind').addEventListener('change', () => { $('wait').hidden = $('kind').value !== 'ask'; });
 
   // ---- what happens in the groups
 
@@ -288,6 +397,7 @@
     const rec = ev.record;
     const L = live[g.name];
     if (!rec || !L) { return; }
+    if (rec.type === 'res' && rec.re && rec.re in asking) { asking[rec.re] = false; }
     for (const key of ev.keys || []) {
       const c = L.convs[key] || { key, kind: key === 'alle' ? 'alle' : key.split('__')[0], name: key === 'alle' ? '' : key.split('__').slice(1).join(' '), unread: 0 };
       c.last = Object.assign({}, rec, { text: (rec.text || '').length > 140 ? rec.text.slice(0, 140) + ' ...' : (rec.text || '') });
@@ -299,7 +409,7 @@
       pending.push(rec);
     } else if (current && current.group === g.name && (ev.keys || []).includes(current.key) && !thread.some((x) => x.n === rec.n)) {
       thread.push(rec);
-      append(rec);
+      if (rec.type === 'res') { paint(); } else { append(rec); } // an answer closes a question that is above
       markRead();
     }
     renderList();
@@ -317,6 +427,11 @@
       showStatus(g);
     });
     es.addEventListener('message', (e) => onMessage(g, JSON.parse(e.data)));
+    es.addEventListener('ask_end', (e) => {
+      const ev = JSON.parse(e.data);
+      if (ev.record && asking[ev.record.re] === true) { asking[ev.record.re] = ev.record.text ? ev.record.text : false; }
+      if (current && current.group === g.name) { paint(); }
+    });
     es.addEventListener('resync', () => catchUp(g)); // the server could not give it all: ask by the numbers
     let seen = false;
     es.onopen = async () => { // after a break: what was missed comes by the numbers

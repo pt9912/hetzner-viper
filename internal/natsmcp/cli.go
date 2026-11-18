@@ -28,7 +28,7 @@ type Line = model.NATSLine
 // IsCLICommand tells whether the first argument names a subcommand: watch, send, broadcast or request.
 func IsCLICommand(name string) bool {
 	switch name {
-	case "watch", "send", "broadcast", "request", "fetch":
+	case "watch", "send", "broadcast", "request", "reply", "fetch":
 		return true
 	}
 	return false
@@ -37,6 +37,7 @@ func IsCLICommand(name string) bool {
 // cliArgs are the options of the subcommands.
 type cliArgs struct {
 	to, topic string
+	re        string // reply: the ID of the request that is answered
 	timeout   time.Duration
 	forTime   time.Duration
 	query     bool
@@ -58,6 +59,9 @@ func cliFlags(fs *flag.FlagSet, name string, a *cliArgs) {
 		fs.DurationVar(&a.timeout, "timeout", 30*time.Second, "how long to wait for the answer")
 		fs.BoolVar(&a.attach, "attach", false, "standard input holds a file after the text")
 		fs.BoolVar(&a.announce, "announce", false, "write the ID of the request (event asked) before waiting; only for programs that know the event")
+	case "reply":
+		fs.StringVar(&a.to, "to", "", "the machine that asked")
+		fs.StringVar(&a.re, "re", "", "the ID of its request")
 	case "broadcast":
 		fs.StringVar(&a.topic, "topic", "", "the topic")
 		fs.BoolVar(&a.attach, "attach", false, "standard input holds a file after the text")
@@ -83,19 +87,27 @@ func parseCLIArgs(name string, args []string, stderr io.Writer) (cliArgs, error)
 	if fs.NArg() > 0 {
 		return a, fmt.Errorf("unexpected argument %q", fs.Arg(0))
 	}
-	if (name == "send" || name == "request") && a.to == "" {
-		return a, errors.New("--to is needed")
+	return a, checkCLIArgs(name, a)
+}
+
+// checkCLIArgs says what an option lacks.
+func checkCLIArgs(name string, a cliArgs) error {
+	if (name == "send" || name == "request" || name == "reply") && a.to == "" {
+		return errors.New("--to is needed")
+	}
+	if name == "reply" && a.re == "" {
+		return errors.New("--re is needed")
 	}
 	if name == "broadcast" && a.topic == "" {
-		return a, errors.New("--topic is needed")
+		return errors.New("--topic is needed")
 	}
 	if name == "fetch" && (a.id == "" || a.sha == "" || a.out == "") {
-		return a, errors.New("--id, --sha256 and --out are needed")
+		return errors.New("--id, --sha256 and --out are needed")
 	}
 	if a.forTime < 0 {
-		return a, errors.New("--for must not be negative")
+		return errors.New("--for must not be negative")
 	}
-	return a, nil
+	return nil
 }
 
 // connectOnce connects, without presence and without the topics of mcp.env, and waits for the connection.
@@ -197,6 +209,8 @@ func runCLI(ctx context.Context, cfg Config, name string, a cliArgs, text string
 		err = s.sendMessage(a.to, text, att)
 	case "broadcast":
 		err = s.broadcastMessage(a.topic, text, att)
+	case "reply":
+		err = s.replyTo(a.to, a.re, text)
 	case "request":
 		var e Envelope
 		var onID func(string)

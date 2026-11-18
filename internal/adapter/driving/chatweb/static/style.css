@@ -82,3 +82,15 @@ select { font: inherit; background: var(--bg); color: var(--fg); border: 1px sol
 .tx p { margin: .2rem 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .code { margin: .3rem 0; padding: .5rem .7rem; background: var(--bg); border: 1px solid var(--hair); border-radius: 6px; overflow-x: auto; font: .84rem/1.45 var(--mono); }
 .att { margin-top: .2rem; font-size: .84rem; color: var(--muted); }
+.composer { position: sticky; bottom: 0; background: var(--panel); border-top: 1px solid var(--line); padding: .6rem 1.1rem; display: grid; gap: .4rem; }
+.composer textarea { font: .92rem/1.45 var(--mono); background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: .5rem .6rem; resize: vertical; width: 100%; }
+.composer .row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+.composer .row .muted { font-size: .8rem; }
+.composer .row .muted:last-of-type { margin-right: auto; }
+.over { color: var(--bad); font-weight: 700; }
+.primary { background: var(--accent-fill); color: var(--on-accent); border: 0; border-radius: 8px; padding: .4rem 1.1rem; font: inherit; font-weight: 600; cursor: pointer; margin-left: auto; }
+.primary:disabled { opacity: .5; cursor: default; }
+.notice { background: var(--warn-bg); color: var(--warn); border: 1px dashed var(--warn); border-radius: 8px; padding: .4rem .7rem; font-size: .88rem; }
+.notice button, .link { font: inherit; background: none; border: 0; color: var(--accent); text-decoration: underline; cursor: pointer; padding: 0 .3rem; }
+.link { display: block; margin-top: .2rem; }
+[hidden] { display: none !important; }

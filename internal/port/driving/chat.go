@@ -24,6 +24,10 @@ type Chat interface {
 	Snapshot(name string, topics []string) model.ChatSnapshot
 	// Listen returns the events from now on, and the function that ends the listening.
 	Listen() (events <-chan ChatEvent, closeFn func())
+	// Add keeps a message of the operator in the history (the stream does not bring it back) and tells the pages.
+	Add(name string, keys []string, rec port.Record) (port.Record, error)
+	// Tell gives an event to the pages.
+	Tell(ev ChatEvent)
 	// Stop ends the reading of all groups.
 	Stop()
 }

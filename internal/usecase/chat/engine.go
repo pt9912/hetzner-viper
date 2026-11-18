@@ -89,6 +89,34 @@ func (e *Engine) Ensure(name string, g Group) {
 	go func() { defer e.wg.Done(); e.loop(cctx, r) }()
 }
 
+// Add keeps what the operator sent (it does not come back in the stream: the connection does not hear itself) and tells the pages.
+func (e *Engine) Add(name string, keys []string, rec port.Record) (port.Record, error) {
+	rec.Dir = "out"
+	rec.Text = e.o.Redact(e.o.Clean(rec.Text))
+	kept, err := e.o.Store.Append(name, keys, rec)
+	if err != nil {
+		return kept, err
+	}
+	e.mu.Lock()
+	if r := e.groups[name]; r != nil {
+		for _, k := range keys {
+			r.known[k] = true
+		}
+	}
+	subs := e.snapshotSubs()
+	e.mu.Unlock()
+	e.send(subs, Event{Group: name, Kind: "message", Keys: keys, Record: &kept})
+	return kept, nil
+}
+
+// Tell gives an event to the pages (the end of a wait for an answer, for one).
+func (e *Engine) Tell(ev Event) {
+	e.mu.Lock()
+	subs := e.snapshotSubs()
+	e.mu.Unlock()
+	e.send(subs, ev)
+}
+
 // Retry makes a group that waits for a login (StatusAuth) try again.
 func (e *Engine) Retry(name string) {
 	e.mu.Lock()

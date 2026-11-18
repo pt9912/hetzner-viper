@@ -8,10 +8,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driving/web"
 	"github.com/pt9912/hetzner-viper/internal/model"
@@ -42,6 +46,35 @@ type Group struct {
 type Backend interface {
 	// Groups are the NATS groups of this computer.
 	Groups(ctx context.Context) ([]Group, error)
+	// Send sends what the operator wrote to the NATS server of the group, as viper nats does. For a question (Kind "ask") it returns when
+	// the question is out, with its ID; done is called when the waiting is over (an error if no answer came: the answer itself comes
+	// in the stream). For the others it returns when the message is handed to the server.
+	Send(ctx context.Context, group string, o Outgoing, done func(id string, err error)) (id string, err error)
+}
+
+// Outgoing is a message of the operator.
+type Outgoing struct {
+	Kind    string // msg (to a machine), topic, ask (a question to a machine), reply (to the question of a machine)
+	To      string
+	Topic   string
+	Text    string
+	Re      string        // reply: the ID of the question
+	Timeout time.Duration // ask
+}
+
+// MaxText is the longest text of a message, in bytes.
+const MaxText = 16384
+
+// SendRequest is what the page sends.
+type SendRequest struct {
+	Group   string `json:"group"`
+	Kind    string `json:"kind"`
+	To      string `json:"to"`
+	Topic   string `json:"topic"`
+	Text    string `json:"text"`
+	Re      string `json:"re"`
+	Timeout int    `json:"timeout"`
+	Ack     bool   `json:"ack"` // the person has read that the text lands in the session of an agent
 }
 
 // Options are the choices of the command line.
@@ -95,6 +128,7 @@ func New(b Backend, o Options) *web.Chat {
 			mux.HandleFunc("GET /api/chat/conversations", h.conversations)
 			mux.HandleFunc("GET /api/chat/messages", h.messages)
 			mux.HandleFunc("POST /api/chat/read", h.markRead)
+			mux.HandleFunc("POST /api/chat/send", h.send)
 			mux.HandleFunc("GET /api/chat/events", func(w http.ResponseWriter, r *http.Request) { h.events(w, r, done) })
 		},
 		Streams: []string{"/api/chat/events"},
@@ -102,9 +136,14 @@ func New(b Backend, o Options) *web.Chat {
 }
 
 type handlers struct {
-	b Backend
-	o Options
+	b        Backend
+	o        Options
+	inFlight atomic.Int32 // sends and questions that are not over
 }
+
+const maxInFlight = 8
+
+var idPattern = regexp.MustCompile(`^[a-f0-9]{16,64}$`)
 
 func (h *handlers) groups(r *http.Request) ([]Group, error) {
 	gs, err := h.b.Groups(r.Context())
@@ -368,4 +407,133 @@ func (h *handlers) events(w http.ResponseWriter, r *http.Request, done <-chan st
 			return
 		}
 	}
+}
+
+// pushers are the machines whose agent gets the text pushed into its session: for a machine that one, for a topic every machine that
+// receives the topic and lists the operator in NATS_MCP_PUSH_FROM.
+func pushers(g Group, o Outgoing) []string {
+	var out []string
+	for _, m := range g.Machines {
+		if !m.PushFromOperator {
+			continue
+		}
+		if o.Kind == "topic" && slices.Contains(m.Topics, o.Topic) || o.Kind != "topic" && m.Name == o.To {
+			out = append(out, m.Name)
+		}
+	}
+	return out
+}
+
+// check says what is wrong with a message, or returns it ready.
+func (*handlers) check(g Group, req SendRequest) (Outgoing, string) {
+	o := Outgoing{Kind: req.Kind, To: req.To, Topic: req.Topic, Text: req.Text, Re: req.Re}
+	switch {
+	case len(req.Text) == 0 || strings.TrimSpace(req.Text) == "":
+		return o, "the text is empty"
+	case len(req.Text) > MaxText:
+		return o, fmt.Sprintf("the text has %d bytes, the most is %d", len(req.Text), MaxText)
+	case !utf8.ValidString(req.Text):
+		return o, "the text is not valid UTF-8"
+	}
+	if req.Kind == "topic" {
+		if err := model.CheckNATSName("topic", req.Topic); err != nil {
+			return o, err.Error()
+		}
+		return o, ""
+	}
+	if req.Kind != "msg" && req.Kind != "ask" && req.Kind != "reply" {
+		return o, "kind is msg, topic, ask or reply"
+	}
+	if !slices.ContainsFunc(g.Machines, func(m Machine) bool { return m.Name == req.To }) {
+		return o, "no such machine in the group"
+	}
+	if req.Kind == "reply" && !idPattern.MatchString(req.Re) {
+		return o, "re is the ID of a question"
+	}
+	if req.Kind == "ask" {
+		o.Timeout = time.Duration(atoi(strconv.Itoa(req.Timeout), 30, 1, 120)) * time.Second
+	}
+	return o, ""
+}
+
+// keysOf are the conversations a message of the operator belongs to.
+func keysOf(o Outgoing) []string {
+	if o.Kind == "topic" {
+		return []string{model.ChatKey(model.ChatKindTopic, o.Topic), model.ChatKindAll}
+	}
+	return []string{model.ChatKey(model.ChatKindMachine, o.To), model.ChatKindAll}
+}
+
+func (h *handlers) send(w http.ResponseWriter, r *http.Request) {
+	if h.o.Readonly {
+		web.Fail(w, http.StatusForbidden, "this page only reads (--readonly)")
+		return
+	}
+	var req SendRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 128<<10)).Decode(&req); err != nil {
+		web.Fail(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	g, ok := h.named(w, r, req.Group)
+	if !ok {
+		return
+	}
+	if !g.Operator || h.o.Engine == nil {
+		web.Fail(w, http.StatusConflict, "you are not logged in in this group")
+		return
+	}
+	o, bad := h.check(g, req)
+	if bad != "" {
+		web.Fail(w, http.StatusBadRequest, bad)
+		return
+	}
+	if p := pushers(g, o); len(p) > 0 && !req.Ack {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "the text lands in the session of an agent", "push": p})
+		return
+	}
+	if h.inFlight.Add(1) > maxInFlight {
+		h.inFlight.Add(-1)
+		web.Fail(w, http.StatusTooManyRequests, "too many messages are on their way")
+		return
+	}
+	end := func() { h.inFlight.Add(-1) }
+	keys := keysOf(o)
+	var id string
+	var err error
+	if o.Kind == "ask" {
+		id, err = h.b.Send(r.Context(), g.Name, o, func(askID string, err error) { // the waiting is over: the answer, if any, came in the stream
+			end()
+			h.o.Engine.Tell(driving.ChatEvent{Group: g.Name, Kind: "ask_end", Keys: keys, Record: &port.Record{Re: askID, Text: errText(err)}})
+		})
+		if err != nil {
+			end()
+		}
+	} else {
+		id, err = h.b.Send(r.Context(), g.Name, o, nil)
+		end()
+	}
+	if err != nil {
+		web.Fail(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	typ := map[string]string{"ask": "req", "reply": "res"}[o.Kind]
+	if typ == "" {
+		typ = "msg"
+	}
+	rec := port.Record{From: g.OperatorName, To: o.To, Topic: o.Topic, Type: typ, Text: o.Text, ID: id, Re: o.Re}
+	kept, err := h.o.Engine.Add(g.Name, keys, rec)
+	if err != nil {
+		web.Fail(w, http.StatusInternalServerError, "sent, but not kept in the history: "+err.Error())
+		return
+	}
+	web.Reply(w, map[string]any{"record": kept, "keys": keys})
+}
+
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

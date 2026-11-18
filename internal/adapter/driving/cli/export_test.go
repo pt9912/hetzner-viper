@@ -8,7 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pt9912/hetzner-viper/internal/adapter/driving/chatweb"
 	"github.com/pt9912/hetzner-viper/internal/adapter/driving/web"
+	"github.com/pt9912/hetzner-viper/internal/port/driven/chatstream"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
 )
 
@@ -254,3 +256,13 @@ func TerminalWords(exe, machine, group, dir string) []string {
 
 // TerminalHere runs viper terminal --here.
 func TerminalHere(p *Opts, env settings.Env) error { return terminalHere(p.options(), env) }
+
+// ChatBackend and ChatConnector are the parts of viper ui-chat that speak to a NATS group.
+func ChatBackend(p *Opts, env settings.Env) chatweb.Backend { //nolint:ireturn // the contract of the chat
+	return &chatBackend{b: &uiBackend{o: p.options(), env: env, secrets: &secretValues{}}}
+}
+
+// ChatConnector is the connection of the stream.
+func ChatConnector(p *Opts, env settings.Env) chatstream.Connector { //nolint:ireturn // the contract of the chat
+	return &chatConnector{o: p.options(), env: env}
+}

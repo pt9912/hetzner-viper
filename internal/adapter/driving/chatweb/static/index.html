@@ -29,6 +29,21 @@
         <label class="sr" for="filter" data-i18n="filter.label">Show</label>
         <select id="filter" class="filter" hidden><option value="all" data-i18n="filter.all">Everything</option><option value="msg" data-i18n="filter.msg">Messages</option><option value="req" data-i18n="filter.req">Questions</option><option value="res" data-i18n="filter.res">Answers</option></select></header>
       <div id="msgs" class="msgs" role="log" aria-live="polite" aria-label="Messages" data-i18n-label="msgs.label"><p id="conv-empty" class="muted" data-i18n="msgs.none">No messages yet.</p></div>
+      <form id="composer" class="composer" hidden>
+        <div id="ack" class="notice" role="alert" hidden><span id="ack-text"></span> <button type="button" id="ack-ok" data-i18n="send.ack">Understood, send</button></div>
+        <div id="replying" class="notice" hidden><span id="replying-text"></span> <button type="button" id="replying-x" data-i18n="send.cancel">Cancel</button></div>
+        <label class="sr" for="text" data-i18n="send.label">Your message</label>
+        <textarea id="text" rows="3" spellcheck="false" data-i18n-placeholder="send.placeholder" placeholder="Write a message (Ctrl+Enter sends)"></textarea>
+        <div class="row">
+          <label class="sr" for="kind" data-i18n="send.kind">Kind</label>
+          <select id="kind"><option value="msg" data-i18n="send.msg">Message</option><option value="ask" data-i18n="send.ask">Question</option></select>
+          <label class="sr" for="wait" data-i18n="send.wait">How long to wait for the answer</label>
+          <select id="wait" hidden><option value="30">30 s</option><option value="60">60 s</option><option value="120">120 s</option></select>
+          <span id="count" class="muted"></span>
+          <span id="send-status" class="muted" role="status"></span>
+          <button type="submit" id="send" class="primary" data-i18n="send.go">Send</button>
+        </div>
+      </form>
     </section>
   </main>
 </div>

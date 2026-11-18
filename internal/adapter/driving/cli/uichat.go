@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -192,4 +195,127 @@ func (c *chatBackend) group(ng web.NATSGroup) (chatweb.Group, error) {
 	}
 	sort.Strings(g.Topics)
 	return g, nil
+}
+
+// Send speaks as the operator, as viper nats does: an ssh tunnel to the server and the subcommand of viper-nats-mcp in this program.
+// The text goes in as the input of the subcommand, never into a command line. A question is asked in the background: the answer
+// comes in the stream, and done tells that the waiting is over.
+func (c *chatBackend) Send(ctx context.Context, group string, o chatweb.Outgoing, done func(id string, err error)) (string, error) {
+	oc := *c.b.o
+	g, err := loadNatsGroup(&oc, c.b.env, group)
+	if err != nil {
+		return "", err
+	}
+	if _, ok := g.ms[o.To]; o.Kind != "topic" && !ok { // the subcommand takes any name; the machines of the group are the chat's to check
+		return "", fmt.Errorf("%q is no machine of the group %s", o.To, group)
+	}
+	words := []string{"viper-nats-mcp"}
+	switch o.Kind {
+	case "msg":
+		words = append(words, "send", "--to", o.To)
+	case "topic":
+		words = append(words, "broadcast", "--topic", o.Topic)
+	case "reply":
+		words = append(words, "reply", "--to", o.To, "--re", o.Re)
+	case "ask":
+		words = append(words, "request", "--to", o.To, "--timeout", strconv.Itoa(int(o.Timeout.Seconds()))+"s", "--announce")
+	default:
+		return "", fmt.Errorf("unknown kind %q", o.Kind)
+	}
+	if o.Kind == "ask" {
+		return c.ask(&oc, g, o, words, done) //nolint:contextcheck // the waiting goes on after the request of the page is over
+	}
+	sess, err := openOperator(ctx, &oc, g)
+	if err != nil {
+		return "", err
+	}
+	defer sess.close()
+	var stdout, stderr bytes.Buffer
+	if err := sess.remote(ctx, "", o.Text, &stdout, &stderr, words...); err != nil {
+		return "", sendError(&stderr, err)
+	}
+	return "", nil
+}
+
+// sendError is what the command said on stderr, or the error.
+func sendError(stderr *bytes.Buffer, err error) error {
+	if s := strings.TrimSpace(stderr.String()); s != "" {
+		lines := strings.Split(s, "\n")
+		return errors.New(natsmcp.Clean(lines[len(lines)-1]))
+	}
+	return err
+}
+
+// ask runs the question in the background and returns its ID as soon as the command has written it (event asked).
+func (*chatBackend) ask(oc *options, g *natsGroup, o chatweb.Outgoing, words []string, done func(string, error)) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), o.Timeout+30*time.Second) // not the request of the page: the waiting goes on after it
+	sess, err := openOperator(ctx, oc, g)
+	if err != nil {
+		cancel()
+		return "", err
+	}
+	pr, pw := io.Pipe()
+	ids := make(chan string, 1)
+	scanned := make(chan struct{})
+	go func() { // the lines of the command: the ID of the question is the first
+		defer close(scanned)
+		sc := bufio.NewScanner(pr)
+		for sc.Scan() {
+			var l model.NATSLine
+			if json.Unmarshal(sc.Bytes(), &l) == nil && l.Event == "asked" {
+				select {
+				case ids <- l.ID:
+				default:
+				}
+			}
+		}
+	}()
+	var stderr bytes.Buffer
+	var mu sync.Mutex
+	var id string
+	finished := make(chan error, 1)
+	go func() {
+		err := sess.remote(ctx, "", o.Text, pw, &lockedBuffer{b: &stderr, mu: &mu}, words...)
+		_ = pw.Close()
+		sess.close()
+		cancel()
+		if err != nil {
+			mu.Lock()
+			err = sendError(&stderr, err)
+			mu.Unlock()
+		}
+		finished <- err
+	}()
+	select {
+	case id = <-ids:
+		go func() {
+			err := <-finished
+			done(id, err)
+		}()
+		return id, nil
+	case err := <-finished:
+		<-scanned // the command ended: what it wrote is read
+		select {
+		case id = <-ids: // asked and over at once
+			go func() { done(id, err) }()
+			return id, nil
+		default:
+		}
+		if err == nil {
+			err = errors.New("the question was not sent")
+		}
+		return "", err
+	}
+}
+
+// lockedBuffer is a buffer that the command and this function use at the same time.
+type lockedBuffer struct {
+	b  *bytes.Buffer
+	mu *sync.Mutex
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
 }

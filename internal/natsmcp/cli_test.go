@@ -330,3 +330,41 @@ func TestRequestAnnounceWritesTheIDBeforeTheAnswerAndOnlyWhenAsked(t *testing.T)
 		t.Errorf("without --announce there is only the answer: %v", lines)
 	}
 }
+
+func TestTheReplySubcommandAnswersTheRequestOfAMachineAndRefusesWhatIsNoRequestID(t *testing.T) {
+	x := newTrio(t, nil)
+	got := make(chan string, 1)
+	go func() {
+		e, err := x.b.svc.Ask(context.Background(), "a", "are you there?", 10*time.Second)
+		if err != nil {
+			got <- err.Error()
+			return
+		}
+		got <- e.Text
+	}()
+	var id string
+	eventually(t, "a has the request", func() bool {
+		for _, e := range x.a.svc.Inbox().Since(0) {
+			if e.Kind == "req" {
+				id = e.ID
+			}
+		}
+		return id != ""
+	})
+	if lines, errs, code := runCLI(t, x.a, "reply", "yes, here", "--to", "b", "--re", id); code != 0 || len(lines) != 1 || lines[0].Event != "sent" {
+		t.Fatalf("%v %q %d", lines, errs, code)
+	}
+	select {
+	case s := <-got:
+		if s != "yes, here" {
+			t.Errorf("the answer is %q", s)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("b got no answer")
+	}
+	for _, args := range [][]string{{"--to", "b"}, {"--to", "b", "--re", "not-an-id"}, {"--re", id}, {"--to", "a", "--re", id}} {
+		if _, _, code := runCLI(t, x.a, "reply", "x", args...); code == 0 {
+			t.Errorf("reply %v was accepted", args)
+		}
+	}
+}

@@ -16,11 +16,25 @@ import (
 )
 
 type fakeBackend struct {
-	groups []chatweb.Group
-	err    error
+	groups  []chatweb.Group
+	err     error
+	sendErr error
+	sent    *[]chatweb.Outgoing // what Send was given
+	id      string              // the ID of a question
+	done    *func(string, error)
 }
 
 func (f fakeBackend) Groups(context.Context) ([]chatweb.Group, error) { return f.groups, f.err }
+
+func (f fakeBackend) Send(_ context.Context, _ string, o chatweb.Outgoing, done func(string, error)) (string, error) {
+	if f.sent != nil {
+		*f.sent = append(*f.sent, o)
+	}
+	if f.done != nil {
+		*f.done = done
+	}
+	return f.id, f.sendErr
+}
 
 func serve(t *testing.T, b chatweb.Backend, o chatweb.Options) (*web.Server, http.Handler) {
 	t.Helper()

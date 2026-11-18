@@ -84,6 +84,55 @@ test('a pair is read only with the first machine on the left, and all messages c
   await expect(page.locator('#msgs article .tag')).toHaveText('answer');
 });
 
+test('writing: the field is where one can write, counts bytes, keeps a draft, and an error is said', async ({ page }) => {
+  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true, history });
+  await page.goto(ui.start);
+  await page.locator('.conv-btn[data-key="dev/alle"]').click();
+  await expect(page.locator('#composer')).toBeHidden();
+  await page.locator('.conv-btn[data-key="dev/paar__a__b"]').click();
+  await expect(page.locator('#composer')).toBeHidden();
+  await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
+  await expect(page.locator('#composer')).toBeVisible();
+  await expect(page.locator('#send')).toBeDisabled(); // nothing to send
+  await page.fill('#text', 'äö');
+  await expect(page.locator('#count')).toHaveText('4 of 16384 bytes');
+  await expect(page.locator('#send')).toBeEnabled();
+  await page.fill('#text', 'x'.repeat(16385));
+  await expect(page.locator('#send')).toBeDisabled();
+  await expect(page.locator('#count')).toHaveClass(/over/);
+  await page.fill('#text', 'a draft');
+  await page.locator('.conv-btn[data-key="dev/thema__gone"]').click();
+  await expect(page.locator('#text')).toHaveValue('');
+  await expect(page.locator('#kind')).toBeHidden(); // a topic knows only the broadcast
+  await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
+  await expect(page.locator('#text')).toHaveValue('a draft');
+  await page.selectOption('#kind', 'ask');
+  await expect(page.locator('#wait')).toBeVisible();
+  await page.press('#text', 'Control+Enter'); // there is no server of NATS here: the reason is said, the text stays
+  await expect(page.locator('#send-status')).toContainText('Not sent:');
+  await expect(page.locator('#text')).toHaveValue('a draft');
+});
+
+test('an open question of a machine can be answered, and a chat that only reads has no field', async ({ page }) => {
+  const open = { rechner__a: [{ n: 1, t: ago(5), dir: 'in', from: 'a', to: 'operator', type: 'req', id: 'ab'.repeat(8), text: 'may I deploy?' }] };
+  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true, history: open });
+  await page.goto(ui.start);
+  await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
+  await expect(page.locator('#msgs article .tag.warn')).toHaveText('open');
+  await page.getByRole('button', { name: 'Answer', exact: true }).click();
+  await expect(page.locator('#replying-text')).toContainText('may I deploy?');
+  await expect(page.locator('#kind')).toBeHidden();
+  await page.locator('#replying-x').click();
+  await expect(page.locator('#replying')).toBeHidden();
+  await ui.stop();
+  ui = await startUI(['--readonly'], 0, false, { command: 'ui-chat', operator: true, history: open });
+  await page.goto(ui.start);
+  await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
+  await expect(page.locator('#msgs article')).toHaveCount(1);
+  await expect(page.locator('#composer')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Answer', exact: true })).toHaveCount(0);
+});
+
 test('the language can be changed and the texts follow', async ({ page }) => {
   ui = await startUI([], 0, false, { command: 'ui-chat' });
   await page.goto(ui.start);

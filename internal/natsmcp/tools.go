@@ -184,6 +184,20 @@ func (s *Service) sendMessage(to, text string, att *Attachment) error {
 	return s.publish(s.cfg.Names.Out(to), Envelope{V: 1, Kind: "msg", Text: text, Att: att})
 }
 
+// replyTo answers the request of a machine (its ID is re): the same answer that a machine gives, for the operator, who has no inbox.
+func (s *Service) replyTo(to, re, text string) error {
+	if err := s.checkPeer(to); err != nil {
+		return err
+	}
+	if !idRe.MatchString(re) {
+		return errors.New("--re is the ID of a request")
+	}
+	if err := s.checkText(text); err != nil {
+		return err
+	}
+	return s.publish(s.cfg.Names.Out(to), Envelope{V: 1, Kind: "res", Re: re, Text: text})
+}
+
 // BroadcastText sends a message to a topic; the checks are those of the tool broadcast.
 func (s *Service) BroadcastText(topic, text string) error {
 	return s.broadcastMessage(topic, text, nil)

@@ -3,6 +3,7 @@ package chatweb_test
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -21,6 +22,8 @@ import (
 // fakeChat is the engine of the tests: it records what is asked and says what it is told.
 type fakeChat struct {
 	mu      sync.Mutex
+	added   []port.Record
+	told    []driving.ChatEvent
 	ensured map[string]model.ChatGroup
 	events  chan driving.ChatEvent
 	stopped chan struct{}
@@ -44,6 +47,18 @@ func (f *fakeChat) Listen() (events <-chan driving.ChatEvent, closeFn func()) {
 	return f.events, func() { close(f.stopped) }
 }
 func (*fakeChat) Stop() {}
+func (f *fakeChat) Add(_ string, _ []string, r port.Record) (port.Record, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r.N = int64(len(f.added) + 1)
+	f.added = append(f.added, r)
+	return r, nil
+}
+func (f *fakeChat) Tell(ev driving.ChatEvent) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.told = append(f.told, ev)
+}
 
 func api(t *testing.T) (*web.Server, http.Handler, string, *fakeChat, *chatlogfile.Store) {
 	t.Helper()
@@ -241,5 +256,117 @@ func TestTheParametersAreChecked(t *testing.T) {
 	}
 	if n, _ := st.Read("dev", "rechner__a"); n != 1 { // not more than there is: what comes later stays unread
 		t.Errorf("read up to %d", n)
+	}
+}
+
+func sendWorld(t *testing.T, readonly bool, b *fakeBackend) (*web.Server, http.Handler, map[string]string, *fakeChat) {
+	t.Helper()
+	g := chatweb.Group{Name: "dev", Operator: true, OperatorName: "operator", Topics: []string{"build"},
+		Machines: []chatweb.Machine{{Name: "a"}, {Name: "b", Topics: []string{"build"}, PushFromOperator: true}}}
+	off := chatweb.Group{Name: "other", Machines: []chatweb.Machine{{Name: "x"}}}
+	b.groups = []chatweb.Group{g, off}
+	fc := newFakeChat()
+	s, h := serve(t, *b, chatweb.Options{Engine: fc, Store: chatlogfile.Memory(0), Readonly: readonly})
+	c := login(t, h, s)
+	return s, h, map[string]string{"Cookie": c, "Content-Type": "application/json", "X-Viper-UI": "1", "Origin": "http://" + s.Host()}, fc
+}
+
+func TestAMessageIsSentKeptAndShownInItsConversationsAndInAll(t *testing.T) {
+	var sent []chatweb.Outgoing
+	s, h, hdr, fc := sendWorld(t, false, &fakeBackend{sent: &sent})
+	w := send(h, s, "POST", "/api/chat/send", hdr, `{"group":"dev","kind":"msg","to":"a","text":"hello a"}`)
+	if w.Code != 200 || len(sent) != 1 || sent[0].To != "a" || sent[0].Text != "hello a" {
+		t.Fatalf("%d %s %+v", w.Code, w.Body, sent)
+	}
+	r := fc.added[0]
+	if r.From != "operator" || r.To != "a" || r.Type != "msg" || r.Text != "hello a" {
+		t.Errorf("%+v", r)
+	}
+	w = send(h, s, "POST", "/api/chat/send", hdr, `{"group":"dev","kind":"topic","topic":"quiet","text":"to all"}`)
+	if w.Code != 200 || sent[1].Kind != "topic" || fc.added[1].Topic != "quiet" {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+}
+
+func TestWhatIsWrongWithAMessageIsRefusedBeforeAnythingIsSent(t *testing.T) {
+	var sent []chatweb.Outgoing
+	s, h, hdr, _ := sendWorld(t, false, &fakeBackend{sent: &sent})
+	for body, want := range map[string]int{
+		`{"group":"dev","kind":"msg","to":"a","text":""}`:                                   400,
+		`{"group":"dev","kind":"msg","to":"a","text":"   \n"}`:                              400,
+		`{"group":"dev","kind":"msg","to":"zzz","text":"x"}`:                                400,
+		`{"group":"dev","kind":"msg","to":"dev","text":"x"}`:                                400,
+		`{"group":"dev","kind":"topic","topic":"A.b","text":"x"}`:                           400,
+		`{"group":"dev","kind":"shout","to":"a","text":"x"}`:                                400,
+		`{"group":"dev","kind":"reply","to":"a","re":"nope","text":"x"}`:                    400,
+		`{"group":"dev","kind":"msg","to":"a","text":"` + strings.Repeat("x", 16385) + `"}`: 400,
+		`{"group":"nope","kind":"msg","to":"a","text":"x"}`:                                 404,
+		`{"group":"other","kind":"msg","to":"x","text":"x"}`:                                409, // not logged in there
+		`not json`: 400,
+	} {
+		if w := send(h, s, "POST", "/api/chat/send", hdr, body); w.Code != want {
+			t.Errorf("%.60s: %d %s", body, w.Code, w.Body)
+		}
+	}
+	if len(sent) != 0 {
+		t.Errorf("sent: %+v", sent)
+	}
+	if w := send(h, s, "POST", "/api/chat/send", map[string]string{"Cookie": hdr["Cookie"]}, `{}`); w.Code != http.StatusForbidden {
+		t.Errorf("without the guard: %d", w.Code)
+	}
+}
+
+func TestTheChatThatOnlyReadsSendsNothing(t *testing.T) {
+	var sent []chatweb.Outgoing
+	s, h, hdr, _ := sendWorld(t, true, &fakeBackend{sent: &sent})
+	if w := send(h, s, "POST", "/api/chat/send", hdr, `{"group":"dev","kind":"msg","to":"a","text":"x"}`); w.Code != 403 || len(sent) != 0 {
+		t.Errorf("%d %+v", w.Code, sent)
+	}
+}
+
+func TestAMessageToAMachineWhoseAgentReadsItInTheSessionNeedsTheOK(t *testing.T) {
+	var sent []chatweb.Outgoing
+	s, h, hdr, _ := sendWorld(t, false, &fakeBackend{sent: &sent})
+	for _, body := range []string{`{"group":"dev","kind":"msg","to":"b","text":"x"}`, `{"group":"dev","kind":"topic","topic":"build","text":"x"}`} {
+		before := len(sent)
+		w := send(h, s, "POST", "/api/chat/send", hdr, body)
+		if w.Code != 409 || !strings.Contains(w.Body.String(), `"push":["b"]`) || len(sent) != before {
+			t.Fatalf("%s: %d %s", body, w.Code, w.Body)
+		}
+		if w := send(h, s, "POST", "/api/chat/send", hdr, strings.Replace(body, "}", `,"ack":true}`, 1)); w.Code != 200 {
+			t.Errorf("with the ok: %d %s", w.Code, w.Body)
+		}
+	}
+	if len(sent) != 2 {
+		t.Errorf("%+v", sent)
+	}
+}
+
+func TestAQuestionReturnsItsIDAndTheEndOfTheWaitingIsTold(t *testing.T) {
+	var sent []chatweb.Outgoing
+	var done func(string, error)
+	s, h, hdr, fc := sendWorld(t, false, &fakeBackend{sent: &sent, id: strings.Repeat("ab", 8), done: &done})
+	w := send(h, s, "POST", "/api/chat/send", hdr, `{"group":"dev","kind":"ask","to":"a","text":"ping","timeout":500}`)
+	if w.Code != 200 || sent[0].Timeout != 120*time.Second || fc.added[0].Type != "req" || fc.added[0].ID != strings.Repeat("ab", 8) {
+		t.Fatalf("%d %s %+v %+v", w.Code, w.Body, sent, fc.added)
+	}
+	done(strings.Repeat("ab", 8), errors.New("no answer from a within 30 seconds"))
+	fc.mu.Lock()
+	told := append([]driving.ChatEvent(nil), fc.told...)
+	fc.mu.Unlock()
+	if len(told) != 1 || told[0].Kind != "ask_end" || told[0].Record.Re != strings.Repeat("ab", 8) || !strings.Contains(told[0].Record.Text, "no answer") {
+		t.Errorf("%+v", told)
+	}
+	w = send(h, s, "POST", "/api/chat/send", hdr, `{"group":"dev","kind":"reply","to":"a","re":"`+strings.Repeat("cd", 8)+`","text":"yes"}`)
+	if w.Code != 200 || sent[1].Kind != "reply" || fc.added[1].Type != "res" || fc.added[1].Re != strings.Repeat("cd", 8) {
+		t.Errorf("%d %s", w.Code, w.Body)
+	}
+}
+
+func TestAnErrorOfTheSendingIsShownAndNothingIsKept(t *testing.T) {
+	s, h, hdr, fc := sendWorld(t, false, &fakeBackend{sendErr: errors.New("not connected to the NATS server")})
+	w := send(h, s, "POST", "/api/chat/send", hdr, `{"group":"dev","kind":"msg","to":"a","text":"x"}`)
+	if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "not connected") || len(fc.added) != 0 {
+		t.Errorf("%d %s %+v", w.Code, w.Body, fc.added)
 	}
 }
