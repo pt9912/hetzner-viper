@@ -226,7 +226,8 @@ test('keyboard: the arrow keys move in the list; narrow: the thread takes the pl
   await ctx.close();
 });
 
-test('the notification is off, and a choice to turn it on is kept', async ({ browser }) => {
+test('the notification is off, and a choice to turn it on is kept', async ({ browser, browserName }) => {
+  test.skip(browserName === 'webkit', 'WebKit does not let a test grant the permission for notifications; without it the switch stays off, as it should');
   const ctx = await browser.newContext();
   await ctx.grantPermissions(['notifications']);
   const page = await ctx.newPage();
