@@ -10,6 +10,12 @@
   let thread = []; // the records of the open conversation
   let filter = 'all';
   let readTimer = 0;
+  // the topics of a machine in its conversation: the machine may answer on a topic and not to the operator (off until the person turns it on)
+  let withTopics = false;
+  try { withTopics = window.localStorage.getItem('viper-chat-with-topics') === '1'; } catch (e) { /* off */ }
+  const topicsParam = (conv) => (withTopics && conv.kind === 'rechner' ? '&topics=1' : '');
+  // a message that belongs to the open conversation: it is in it, or (with the topics) the open machine wrote it on a topic
+  const inOpen = (rec, keys) => !!current && ((keys || []).includes(current.key) || (withTopics && current.kind === 'rechner' && rec.dir === 'in' && rec.from === current.name && (keys || []).some((k) => k.startsWith('thema__'))));
   let loading = false; // the thread is being loaded: what arrives meanwhile waits in pending
   let pending = [];
   const asking = {}; // questions of this page that wait for an answer: id -> true | the reason that none came
@@ -248,6 +254,7 @@
     const head = el('div', 'meta');
     const w = who(rec);
     if (w) { head.appendChild(el('span', 'who', w)); }
+    if (current.kind === 'rechner' && rec.topic) { head.appendChild(el('span', 'tag', '#' + rec.topic)); } // it was written on a topic
     if (rec.type === 'req') { head.appendChild(el('span', 'tag', t('msg.req'))); }
     if (rec.type === 'req' && rec.dir === 'out' && asking[rec.id] === true) { head.appendChild(el('span', 'tag warn', t('msg.waiting'))); }
     if (rec.type === 'req' && rec.dir === 'out' && typeof asking[rec.id] === 'string') { head.appendChild(el('span', 'tag warn', asking[rec.id] || t('msg.noanswer'))); }
@@ -276,7 +283,7 @@
     box.appendChild(el('div', 'pv', [rec.att_type, size(rec.att_size), rec.att_sha256 ? rec.att_sha256.slice(0, 12) : ''].filter(Boolean).join(' · ')));
     if (rec.att_id && current) {
       const a = el('a', 'dl', t('file.download'));
-      a.href = '/api/chat/file?group=' + encodeURIComponent(current.group) + '&conv=' + encodeURIComponent(current.key) + '&n=' + rec.n;
+      a.href = '/api/chat/file?group=' + encodeURIComponent(current.group) + '&conv=' + encodeURIComponent(current.kind === 'rechner' && rec.topic ? 'thema__' + rec.topic : current.key) + '&n=' + rec.n;
       a.setAttribute('download', rec.att_name);
       box.appendChild(a);
     }
@@ -344,6 +351,8 @@
     if (kind === 'paar' || kind === 'alle') { parts.push(t('conv.readonly.pair')); } else if (state.readonly) { parts.push(t('conv.readonly')); }
     $('conv-sub').textContent = parts.join(' · ');
     $('filter').hidden = kind !== 'alle';
+    $('topicsw').hidden = kind !== 'rechner';
+    $('withtopics').checked = withTopics;
     $('msgs').setAttribute('aria-live', kind === 'alle' ? 'off' : 'polite'); // a stream of everything is not read out line by line
     $('del').hidden = $('delall').hidden = state.readonly;
   }
@@ -366,7 +375,7 @@
     $('main').focus();
     const mine = current;
     try {
-      const r = await api('/api/chat/messages?group=' + encodeURIComponent(g.name) + '&conv=' + encodeURIComponent(mine.key) + '&limit=200');
+      const r = await api('/api/chat/messages?group=' + encodeURIComponent(g.name) + '&conv=' + encodeURIComponent(mine.key) + topicsParam(mine) + '&limit=200');
       if (current !== mine) { return; }
       thread = r.records;
     } catch (e) { banner(t('err.messages', e.message)); }
@@ -619,9 +628,9 @@
       if (!open && rec.dir === 'in') { c.unread = (c.unread || 0) + 1; }
       L.convs[key] = c;
     }
-    if (current && current.group === g.name && (ev.keys || []).includes(current.key) && loading) {
+    if (current && current.group === g.name && inOpen(rec, ev.keys) && loading) {
       pending.push(rec);
-    } else if (current && current.group === g.name && (ev.keys || []).includes(current.key) && !thread.some((x) => x.n === rec.n)) {
+    } else if (current && current.group === g.name && inOpen(rec, ev.keys) && !thread.some((x) => x.n === rec.n)) {
       thread.push(rec);
       if (rec.type === 'res') { paint(); } else { append(rec); } // an answer closes a question that is above
       markRead();
@@ -669,7 +678,7 @@
       const mine = current;
       for (;;) { // in pieces, until nothing is left
         const from = thread.length ? thread[thread.length - 1].n : 0;
-        const r = await api('/api/chat/messages?group=' + encodeURIComponent(g.name) + '&conv=' + encodeURIComponent(mine.key) + '&after=' + from + '&limit=500');
+        const r = await api('/api/chat/messages?group=' + encodeURIComponent(g.name) + '&conv=' + encodeURIComponent(mine.key) + topicsParam(mine) + '&after=' + from + '&limit=500');
         if (current !== mine) { return; }
         for (const rec of r.records) { if (!thread.some((x) => x.n === rec.n)) { thread.push(rec); append(rec); } }
         if (r.records.length < 500) { break; }
@@ -774,6 +783,12 @@
 
   $('notify').addEventListener('change', setNotify);
   try { $('notify').checked = window.localStorage.getItem('viper-chat-notify') === '1' && typeof Notification !== 'undefined' && Notification.permission === 'granted'; } catch (e) { /* off */ }
+
+  $('withtopics').addEventListener('change', () => {
+    withTopics = $('withtopics').checked;
+    try { window.localStorage.setItem('viper-chat-with-topics', withTopics ? '1' : '0'); } catch (e) { /* not kept */ }
+    if (current) { const g = groupOf(current.group); select(g, current.kind, current.name); } // the thread is read again
+  });
 
   // ---- keyboard and narrow width
 

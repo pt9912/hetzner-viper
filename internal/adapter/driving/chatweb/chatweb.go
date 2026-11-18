@@ -321,17 +321,18 @@ func (h *handlers) messages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit := atoi(r.URL.Query().Get("limit"), 100, 1, 500)
-	var recs []port.Record
-	var err error
+	after := int64(-1)
 	if a := r.URL.Query().Get("after"); a != "" {
 		n, perr := strconv.ParseInt(a, 10, 64)
 		if perr != nil || n < 0 {
 			web.Fail(w, http.StatusBadRequest, "after is a number")
 			return
 		}
-		recs, err = h.o.Store.After(g.Name, key, n, limit)
-	} else {
-		recs, err = h.o.Store.Tail(g.Name, key, limit)
+		after = n
+	}
+	recs, err := h.read(g.Name, key, after, limit)
+	if err == nil && r.URL.Query().Get("topics") == "1" && strings.HasPrefix(key, model.ChatKindMachine+"__") {
+		recs, err = h.withTopics(g.Name, strings.TrimPrefix(key, model.ChatKindMachine+"__"), recs, after, limit)
 	}
 	if err != nil {
 		web.Fail(w, http.StatusBadRequest, err.Error())
@@ -342,6 +343,45 @@ func (h *handlers) messages(w http.ResponseWriter, r *http.Request) {
 	}
 	read, _ := h.o.Store.Read(g.Name, key)
 	web.Reply(w, map[string]any{"records": recs, "read": read})
+}
+
+// read is the last limit records of a conversation, or (after >= 0) the ones after a number.
+func (h *handlers) read(group, key string, after int64, limit int) ([]port.Record, error) {
+	if after >= 0 {
+		return h.o.Store.After(group, key, after, limit)
+	}
+	return h.o.Store.Tail(group, key, limit)
+}
+
+// withTopics adds what the machine wrote on topics to the records of its conversation (a machine may answer on a topic, not to the
+// operator): from every topic conversation of the group the records of this machine, by their numbers.
+func (h *handlers) withTopics(group, machine string, recs []port.Record, after int64, limit int) ([]port.Record, error) {
+	cs, err := h.o.Store.Conversations(group)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range cs {
+		if !strings.HasPrefix(c.Key, model.ChatKindTopic+"__") {
+			continue
+		}
+		more, err := h.read(group, c.Key, after, limit)
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range more {
+			if m.From == machine && m.Dir == "in" {
+				recs = append(recs, m)
+			}
+		}
+	}
+	sort.Slice(recs, func(i, j int) bool { return recs[i].N < recs[j].N })
+	if len(recs) > limit {
+		if after >= 0 {
+			return recs[:limit], nil // the oldest of what is newer than the number
+		}
+		return recs[len(recs)-limit:], nil
+	}
+	return recs, nil
 }
 
 func atoi(s string, def, lo, hi int) int {

@@ -447,3 +447,43 @@ func TestAChatThatOnlyReadsDeletesNothing(t *testing.T) {
 		t.Errorf("%d", w.Code)
 	}
 }
+
+func TestWhatAMachineWritesOnTopicsCanBeShownInItsConversation(t *testing.T) {
+	s, h, c, _, st := api(t)
+	add(t, st, []string{"rechner__a", "alle"}, port.Record{Dir: "in", From: "a", Type: "msg", Text: "direct"})                         // 1
+	add(t, st, []string{"thema__build", "alle"}, port.Record{Dir: "in", From: "a", Topic: "build", Type: "msg", Text: "a on build"})   // 2
+	add(t, st, []string{"thema__build", "alle"}, port.Record{Dir: "in", From: "b", Topic: "build", Type: "msg", Text: "b on build"})   // 3
+	add(t, st, []string{"thema__quiet", "alle"}, port.Record{Dir: "out", From: "operator", Topic: "quiet", Type: "msg", Text: "mine"}) // 4
+	add(t, st, []string{"thema__quiet", "alle"}, port.Record{Dir: "in", From: "a", Topic: "quiet", Type: "msg", Text: "a on quiet"})   // 5
+	ns := func(q string) []int64 {
+		w := get(h, s, c, "/api/chat/messages?group=dev&conv=rechner__a"+q)
+		var out struct{ Records []port.Record }
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil {
+			t.Fatalf("%s: %d %s", q, w.Code, w.Body)
+		}
+		var n []int64
+		for _, r := range out.Records {
+			n = append(n, r.N)
+		}
+		return n
+	}
+	eq := func(got []int64, want ...int64) {
+		t.Helper()
+		if len(got) != len(want) {
+			t.Fatalf("%v, want %v", got, want)
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				t.Fatalf("%v, want %v", got, want)
+			}
+		}
+	}
+	eq(ns(""), 1)                          // as before
+	eq(ns("&topics=1"), 1, 2, 5)           // its own words on topics, by the order of arrival; not those of b, not those of the operator
+	eq(ns("&topics=1&after=1"), 2, 5)      // what is newer than a number
+	eq(ns("&topics=1&limit=2"), 2, 5)      // the last ones
+	eq(ns("&topics=1&after=1&limit=1"), 2) // the oldest of the newer
+	if w := get(h, s, c, "/api/chat/messages?group=dev&conv=thema__build&topics=1"); w.Code != 200 || strings.Contains(w.Body.String(), "a on quiet") {
+		t.Errorf("a topic conversation takes no more: %d %s", w.Code, w.Body)
+	}
+}

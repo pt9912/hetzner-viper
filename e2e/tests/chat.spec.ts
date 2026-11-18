@@ -285,6 +285,33 @@ test('the field says to which machine in which group the text goes', async ({ pa
   await expect(page.locator('#text')).toBeEnabled(); // started: the field takes text
 });
 
+test('what a machine writes on a topic can be shown in its conversation, with the topic as a mark', async ({ page }) => {
+  const h = {
+    rechner__a: [{ n: 1, t: ago(9), dir: 'in', from: 'a', type: 'msg', text: 'direct to the operator' }],
+    thema__general: [
+      { n: 2, t: ago(8), dir: 'in', from: 'a', topic: 'general', type: 'msg', text: 'a on a topic' },
+      { n: 3, t: ago(7), dir: 'in', from: 'b', topic: 'general', type: 'msg', text: 'b on a topic' },
+    ],
+  };
+  ui = await startUI([], 0, false, { command: 'ui-chat', operator: true, history: h });
+  await page.goto(ui.start);
+  await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
+  await expect(page.locator('#msgs article')).toHaveCount(1);
+  await expect(page.locator('#withtopics')).not.toBeChecked(); // off
+  await page.locator('#withtopics').check();
+  await expect(page.locator('#msgs article')).toHaveCount(2); // a's own words on the topic, not those of b
+  await expect(page.locator('#msgs article').nth(1)).toContainText('a on a topic');
+  await expect(page.locator('#msgs article').nth(1).locator('.tag')).toHaveText('#general');
+  await expect(page.locator('#msgs')).not.toContainText('b on a topic');
+  await page.reload(); // kept
+  await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
+  await expect(page.locator('#withtopics')).toBeChecked();
+  await expect(page.locator('#msgs article')).toHaveCount(2);
+  await page.locator('.conv-btn[data-key="dev/thema__general"]').click();
+  await expect(page.locator('#withtopics')).toBeHidden(); // only in the conversation of a machine
+  await expect(page.locator('#msgs article')).toHaveCount(2); // both writers on the topic itself
+});
+
 test('the notification is off, and a choice to turn it on is kept', async ({ browser, browserName }) => {
   test.skip(browserName === 'webkit', 'WebKit does not let a test grant the permission for notifications; without it the switch stays off, as it should');
   const ctx = await browser.newContext();
