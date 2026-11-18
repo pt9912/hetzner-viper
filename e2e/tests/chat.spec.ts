@@ -20,8 +20,9 @@ test('with the key the machines of the group are conversations, and one opens', 
   await page.goto(ui.start);
   await expect(page.locator('#me')).toContainText('Operator operator logged in');
   await expect(page.locator('.group h2')).toContainText('dev');
-  await expect(page.locator('.group h2 .led')).toHaveClass(/warn/); // no server runs: the group is not green
-  await expect(page.locator('.group h2')).toContainText('not reachable');
+  await expect(page.locator('.group h2 .led')).toHaveClass(/off/); // nothing runs: the group is not green
+  await expect(page.locator('.group h2')).toContainText('not started');
+  await expect(page.locator('#banner')).toBeHidden(); // a group that is not started is a state, not a disturbance
   await expect(page.locator('.conv-btn')).toHaveCount(4); // all, two machines and their pair
   await page.locator('.conv-btn[data-key="dev/rechner__a"]').click();
   await expect(page.locator('#conv-name')).toHaveText('a');
@@ -234,7 +235,6 @@ test('the page stays still: the list is not built again every few seconds, and t
   const btn = page.locator('.conv-btn[data-key="dev/rechner__a"]');
   await btn.focus();
   await btn.evaluate((e) => { (e as unknown as { mark: number }).mark = 1; });
-  await expect(page.locator('#banner')).toBeVisible(); // no server runs: the line says so, and stays
   const top = (await page.locator('.shell').boundingBox())!.y;
   await page.waitForTimeout(11_000); // two snapshots of the server
   expect(await btn.evaluate((e) => (e as unknown as { mark?: number }).mark)).toBe(1); // the same element: nothing was built again
@@ -245,8 +245,7 @@ test('the page stays still: the list is not built again every few seconds, and t
   await page.evaluate(() => { const b = document.getElementById('banner')!; b.textContent = 'a message that is much longer than the bar can show, '.repeat(8); b.hidden = false; });
   expect((await page.locator('.shell').boundingBox())!.y).toBe(top); // it comes, even a long one: the page does not move
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  const lamp = page.locator('.group h2 .led');
-  await expect(lamp).toHaveClass(/warn/);
+  await expect(page.locator('.group h2 .led')).toHaveClass(/off/);
 });
 
 test('groups and their parts fold, and the choice is kept; pairs of few machines are there before they write', async ({ page }) => {

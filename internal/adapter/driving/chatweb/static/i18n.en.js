@@ -97,5 +97,7 @@
     'group.disturbed': 'not reachable',
     'group.auth': 'key not known',
     'group.nokey': 'not logged in',
+    'group.down': 'not started',
+    'status.several': '{0} groups have a problem:',
   });
 })();

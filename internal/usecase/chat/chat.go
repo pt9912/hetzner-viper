@@ -45,11 +45,15 @@ const (
 	StatusConnecting = model.ChatStatusConnecting
 	StatusConnected  = model.ChatStatusConnected
 	StatusDisturbed  = model.ChatStatusDisturbed
+	StatusDown       = model.ChatStatusDown
 	StatusAuth       = model.ChatStatusAuth
 )
 
 // ErrAuth is the reason of a connection that does not come up because the server does not know the key.
 var ErrAuth = chatstream.ErrAuth
+
+// ErrNotRunning is the reason of a connection to a group that is not running.
+var ErrNotRunning = chatstream.ErrNotRunning
 
 // Key is the name of a conversation.
 func Key(kind string, names ...string) string { return model.ChatKey(kind, names...) }

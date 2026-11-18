@@ -298,3 +298,17 @@ func TestAPageThatDoesNotReadIsToldToAskAgain(t *testing.T) {
 		}
 	}
 }
+
+func TestAGroupThatIsNotRunningIsDownNotDisturbedAndIsTriedAgain(t *testing.T) {
+	cn := &fakeConnector{errs: []error{fmt.Errorf("%w: no machine of the group has an SSH config: run viper up first", chat.ErrNotRunning)}}
+	e, _, sub := start(t, cn, nil)
+	ev := waitStatus(t, sub, chat.StatusDown)
+	if ev.Status.Reason == "" || strings.Contains(ev.Status.Status, "disturbed") {
+		t.Errorf("%+v", ev.Status)
+	}
+	if got := e.Snapshot("dev", nil).Status.Status; got != chat.StatusDown && got != chat.StatusConnecting && got != chat.StatusConnected {
+		t.Errorf("status %s", got)
+	}
+	cn.conn(0).out <- `{"event":"ready","me":"operator","group":"dev"}` // the next try finds it up
+	waitStatus(t, sub, chat.StatusConnected)
+}

@@ -97,6 +97,9 @@ func (c *chatConnector) Connect(ctx context.Context, group string) (chatstream.C
 	dead := make(chan struct{})
 	sess, err := openOperatorDead(ctx, &oc, g, dead)
 	if err != nil {
+		if strings.Contains(err.Error(), "run viper up first") { // no machine of the group has been started
+			return nil, fmt.Errorf("%w: %v", chatstream.ErrNotRunning, err)
+		}
 		return nil, err
 	}
 	return &chatConn{sess: sess, dead: dead}, nil

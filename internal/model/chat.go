@@ -40,6 +40,7 @@ const (
 	ChatStatusConnecting = "connecting"
 	ChatStatusConnected  = "connected"
 	ChatStatusDisturbed  = "disturbed"
+	ChatStatusDown       = "down" // the group is not running: nothing to connect to
 	ChatStatusAuth       = "auth" // the key is not known: no new try until the person logs in again
 )
 

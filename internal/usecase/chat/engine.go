@@ -168,7 +168,7 @@ func (e *Engine) loop(ctx context.Context, r *run) {
 	for ctx.Err() == nil {
 		e.setStatus(r, GroupStatus{Status: StatusConnecting})
 		began := time.Now()
-		reason, auth := e.once(ctx, r)
+		reason, auth, down := e.once(ctx, r)
 		if time.Since(began) > 30*time.Second { // it ran for a while: the next break starts the waiting again
 			wait = e.o.Wait
 		}
@@ -185,7 +185,11 @@ func (e *Engine) loop(ctx context.Context, r *run) {
 				return
 			}
 		}
-		e.setStatus(r, GroupStatus{Status: StatusDisturbed, Reason: reason, RetryIn: int(wait.Seconds())})
+		status := StatusDisturbed
+		if down {
+			status = StatusDown // not running: a state, not a disturbance
+		}
+		e.setStatus(r, GroupStatus{Status: status, Reason: reason, RetryIn: int(wait.Seconds())})
 		if !sleep(ctx, wait) {
 			return
 		}
@@ -194,14 +198,14 @@ func (e *Engine) loop(ctx context.Context, r *run) {
 }
 
 // once connects and reads until the connection ends; it says why, and whether the server did not know the key.
-func (e *Engine) once(ctx context.Context, r *run) (reason string, auth bool) {
+func (e *Engine) once(ctx context.Context, r *run) (reason string, auth, down bool) {
 	conn, err := e.o.Connector.Connect(ctx, r.name)
 	if err != nil {
-		return err.Error(), errors.Is(err, ErrAuth)
+		return err.Error(), errors.Is(err, ErrAuth), errors.Is(err, ErrNotRunning)
 	}
 	auth, reason = e.watch(ctx, r, conn)
 	conn.Close()
-	return reason, auth
+	return reason, auth, false
 }
 
 func sleep(ctx context.Context, d time.Duration) bool {

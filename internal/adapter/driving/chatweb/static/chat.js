@@ -38,7 +38,7 @@
 
   const CONV = { rechner: 'conv.machine', thema: 'conv.topic', paar: 'conv.pair', alle: 'conv.stream' };
   const PRESENCE = { here: 'presence.here', gone: 'presence.gone', unknown: 'presence.unknown' };
-  const GROUP_WORD = { connected: 'group.connected', connecting: 'group.connecting', disturbed: 'group.disturbed', auth: 'group.auth', nokey: 'group.nokey' };
+  const GROUP_WORD = { connected: 'group.connected', connecting: 'group.connecting', disturbed: 'group.disturbed', down: 'group.down', auth: 'group.auth', nokey: 'group.nokey' };
   const PRESENCE_SHORT = { here: 'presence.short.here', gone: 'presence.short.gone', unknown: 'presence.unknown' };
   const colours = ['c1', 'c2', 'c3', 'c4', 'c5'];
   const colourOf = (name) => colours[Array.from(name).reduce((a, c) => a + c.charCodeAt(0), 0) % colours.length];
@@ -571,12 +571,18 @@
     if (b.hidden === !!text) { b.hidden = !text; }
   }
 
-  function showStatus(g) {
-    const s = live[g.name] && live[g.name].snapshot && live[g.name].snapshot.status;
-    if (s && s.status === 'connecting') { return; } // a new try is on its way: the line stays as it is, it does not blink
-    if (!s || s.status === 'connected') { banner(s && s.dropped ? t('status.dropped', g.name, s.dropped) : ''); return; }
-    if (s.status === 'auth') { banner(t('status.auth', g.name, 'viper nats init ' + g.name)); return; }
-    banner(t('status.disturbed', g.name, s.reason || '', s.retry_in || 0));
+  // One line for all groups, from all of them: it does not change with the group that spoke last. A group that is not running is a state
+  // (its lamp says so), not a disturbance.
+  function showStatus() {
+    const bad = [];
+    let dropped = '';
+    for (const g of state.groups.filter((x) => x.operator)) {
+      const s = live[g.name] && live[g.name].snapshot && live[g.name].snapshot.status;
+      if (!s || s.status === 'connecting' || s.status === 'down') { continue; }
+      if (s.status === 'auth') { bad.push(t('status.auth', g.name, 'viper nats init ' + g.name)); } else if (s.status === 'disturbed') { bad.push(t('status.disturbed', g.name, s.reason || '', s.retry_in || 0)); } else if (s.dropped) { dropped = t('status.dropped', g.name, s.dropped); }
+    }
+    if (state.groups.some((g) => g.operator && groupState(g) === 'connecting') && !bad.length) { return; } // a try is on its way: the line stays as it is
+    banner(bad.length === 1 ? bad[0] : bad.length > 1 ? t('status.several', bad.length) + ' ' + bad.join(' ') : dropped);
   }
 
   async function loadListing(g) {
@@ -585,7 +591,7 @@
     for (const c of r.conversations) { convs[c.key] = c; }
     live[g.name] = Object.assign(live[g.name] || {}, { snapshot: r.snapshot, convs });
     renderList();
-    showStatus(g);
+    showStatus();
   }
 
   function onMessage(g, ev) {
@@ -619,14 +625,14 @@
     es.addEventListener('snapshot', (e) => {
       const before = listSignature(L.snapshot);
       L.snapshot = JSON.parse(e.data);
-      showStatus(g);
+      showStatus();
       if (listSignature(L.snapshot) !== before) { renderList(); } // the list is not built again every five seconds
       header();
     });
     es.addEventListener('status', (e) => {
       const ev = JSON.parse(e.data);
       L.snapshot = Object.assign(L.snapshot || { machines: {}, topics: {} }, { status: ev.status });
-      showStatus(g);
+      showStatus();
       lampOf(g); // only the lamp of the group, not the whole list
     });
     es.addEventListener('message', (e) => onMessage(g, JSON.parse(e.data)));

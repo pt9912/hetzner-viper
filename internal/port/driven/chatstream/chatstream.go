@@ -24,3 +24,7 @@ type Connector interface {
 
 // ErrAuth is the reason of a connection that does not come up because the server does not know the key.
 var ErrAuth = errors.New("the server does not know the key of the operator (Authorization Violation)")
+
+// ErrNotRunning is the reason of a connection that does not come up because the group is not running (no machine has been started with
+// viper up): that is a state, not a disturbance.
+var ErrNotRunning = errors.New("the group is not running (viper up starts it)")

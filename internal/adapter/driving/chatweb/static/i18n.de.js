@@ -97,5 +97,7 @@
     'group.disturbed': 'nicht erreichbar',
     'group.auth': 'Schlüssel unbekannt',
     'group.nokey': 'nicht angemeldet',
+    'group.down': 'nicht gestartet',
+    'status.several': '{0} Gruppen haben ein Problem:',
   });
 })();
