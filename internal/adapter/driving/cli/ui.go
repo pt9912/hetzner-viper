@@ -61,7 +61,7 @@ func serveBrowser(o *options, cfg web.Config, name string, onPort func(port stri
 		defer onEnd()
 	}
 	if os.Geteuid() == 0 {
-		fmt.Fprintf(h.Stderr, "%s: warning: you are root; the pages can run viper checks as root. Start it as your own user.\n", name)
+		fmt.Fprintf(h.Stderr, "%s: warning: you are root. Start it as your own user.\n", name)
 	}
 	ctx, stop := notifyContext(context.Background())
 	defer stop()
