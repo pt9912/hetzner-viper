@@ -2,7 +2,7 @@
 
 **Ziel:** `viper ui-chat` öffnet im Browser einen Chat im Stil von Microsoft Teams: links alle Gespräche, in der Mitte der Verlauf, unten das Eingabefeld. Jede Verbindung, die `viper` in einer NATS-Gruppe sieht, ist ein eigenes Gespräch: ein Rechner (Sie und er), **jedes Thema** der Gruppe, **jedes Paar von Rechnern** (w1 ↔ w2, mitgelesen) und „Alle Meldungen“ der Gruppe. Man schreibt Nachrichten, stellt Fragen und tauscht Dateien, ohne am Terminal `viper nats send` zu tippen.
 
-**Stand:** Entwurf (18.11.2026); die Entscheidungen in §9 sind getroffen (Vorschläge übernommen); der Plan wurde einmal unabhängig gegen den Code und ein gebautes Programm geprüft, die Funde sind eingearbeitet (§10); eine zweite Prüfung ist eingearbeitet (§10.1); Meilenstein 0 (Verifikation) läuft. Die Bilder in §6 sind eine **Vorschau zum Beurteilen** (HTML in [`ui-chat/vorschau.html`](ui-chat/vorschau.html)); gebaut ist nichts. Gehört zu [`nats.md`](nats.md) (die Gruppen), [`nats-cli.md`](nats-cli.md) (`viper nats`) und [`ui.md`](ui.md) (Sicherheit und Aufbau der Oberfläche). *[V]* heißt: im Code gelesen; *[?]* ist eine Vermutung, die vor dem Bauen zu prüfen ist.
+**Stand:** Entwurf (18.11.2026); die Entscheidungen in §9 sind getroffen (Vorschläge übernommen); der Plan wurde einmal unabhängig gegen den Code und ein gebautes Programm geprüft, die Funde sind eingearbeitet (§10); eine zweite Prüfung ist eingearbeitet (§10.1); Meilenstein 0 (Verifikation) ist gemacht (§7.1). Die Bilder in §6 sind eine **Vorschau zum Beurteilen** (HTML in [`ui-chat/vorschau.html`](ui-chat/vorschau.html)); gebaut ist nichts. Gehört zu [`nats.md`](nats.md) (die Gruppen), [`nats-cli.md`](nats-cli.md) (`viper nats`) und [`ui.md`](ui.md) (Sicherheit und Aufbau der Oberfläche). *[V]* heißt: im Code gelesen; *[?]* ist eine Vermutung, die vor dem Bauen zu prüfen ist.
 
 ## 1 Ausgangslage
 
@@ -183,7 +183,7 @@ Die Bilder zeigen die Oberfläche mit Beispielen (Gruppe `bedrock-eu-guard-compo
 
 | | Inhalt | Prüfung |
 |---|---|---|
-| 0 | **Verifikation** (zum Teil mit der Prüfung am 18.11.2026 beantwortet: Felder der Zeilen, alle Themen, Paare, Fälschung, Dedupe; ein Versuch mit `viper-nats-mcp` und einem eigenen Server). **Offen:** Durchsatz je Sekunde; ein **toter Tunnel** unter ssh und der Wächter; Wiederverbinden ohne Doppelte; `asked`-Ereignis von `request` (kleine Änderung, mit Test); Verhalten unter Windows und macOS (Tunnel als Kindprozess, Sperrdatei); zwei `viper ui-chat` | echte Gruppe (`compose`, lokal), Messung, Ergebnis in diesen Plan |
+| 0 | **Verifikation** (gemacht, Ergebnisse in §7.1) | Messungen am 18.11.2026 mit einem eingebetteten NATS-Server (Rechte des Operators), einem Tunnel als TCP-Proxy und einem echten `sshd` als Benutzer |
 | 1 | **Gerüst:** `viper ui-chat`, `web.Config.Site` und die Haken (§3.3), eigene Seiten und eigene Tests (`fs.FS`), Sperrdatei, Operator-Zustand (Bild 5), Liste der Gespräche aus `Overview.NATS` und `topics` | Go-Tests der Schnittstelle, Browser-Test (Liste, Leerzustand), axe hell/dunkel/de/en |
 | 2 | **Verlauf und Strom:** Anwendungsfall `chat` (Zuordnung inklusive **Paar** und **alle Themen**, Frage und Antwort), Port `chat.Store` und Datei, Strom je Gruppe, Wiederverbinden, Lesen in Seite (Bild 1 bis 3 ohne Senden) | Tabellentests der Zuordnung mit echten Zeilen (**Dedupe** der Antwort, späte Antwort mit `asked`, Reihenfolge verschiedener Absender, Neustart des Stroms, Zeilen über 4096 Byte und 32 KiB, Flut, Schwärzung eines Geheimnisses mit `&` und `"`, Namenskollision der Paare, `--readonly` mit Strom, **toter Tunnel**, Neustart nach „Authorization Violation“), Tests des Verlaufs (Grenzen, Rechte, Löschen), e2e mit einem **Fake**, der Zeilen liefert |
 | 3 | **Senden:** Nachricht, Rundruf, Frage; Zustand „wird gesendet“, Fehler; die Rückfrage bei `NATS_MCP_PUSH_FROM` | e2e mit dem **echten `viper`** und einem Fake-`ssh` (die Befehlszeile ist die richtige und kennt keine falsche Option; Lehre aus v0.26.0) |
@@ -193,6 +193,19 @@ Die Bilder zeigen die Oberfläche mit Beispielen (Gruppe `bedrock-eu-guard-compo
 | 7 | **Handbuch** (Kapitel zum Chat als **Ist-Zustand**, keine Chronik; Befehlstabelle neben `viper ui`; die Grenzen von NATS; „eigene Nachrichten vom Terminal sind unsichtbar“), README, Hilfe (`cli.go`, `help.go`), Plan-Stand | Durchsicht, unabhängige Prüfung |
 
 Nach jedem Meilenstein: unabhängige Prüfung, wie bei `viper ui`. Der Chat braucht **keine** neuen Rechte auf den Rechnern: alles läuft über die Befehle, die es gibt.
+
+### 7.1 Ergebnisse von Meilenstein 0 (18.11.2026)
+
+Gemessen mit `natsmcp.RunCLI("watch", "--all")` im Programm (Go-Test, eingebetteter NATS-Server mit den echten Rechten, Absender als Rechner `a`), und mit einem echten `sshd` und `ssh -N -L` (Benutzerrechte, Port 22731, `ServerAliveInterval 2`, `ServerAliveCountMax 3`).
+
+| Frage | Ergebnis |
+|---|---|
+| **Durchsatz des Stroms** | 5 000 Meldungen auf einem Thema, **keine verloren**: bei 100 Byte Nutzlast 82 700/s im Strom (gesendet 525 000/s), bei 2 000 Byte 21 200/s, bei 15 000 Byte **3 800/s**. Die Grenze von 200 Zeilen/s (50 je Absender) liegt **weit unter** dem, was der Strom schafft: sie schützt Verlauf, Platte und Browser, nicht die NATS-Verbindung. |
+| **stderr von `watch`** | Jede Themenmeldung schreibt eine Zeile auf stderr („topic message from a: topic=t1 bytes=34“); der Chat muss stderr **lesen und begrenzen** (er liest sie ohnehin für den Wächter). |
+| **Wiederverbinden ohne Doppelte** | Verbindung 1,5 s unterbrochen: **wieder da nach etwa 2,2 s** (die feste Wartezeit von NATS ist 2 s); 100 verschiedene Meldungen angekommen, **0 doppelt**; die 50 Meldungen **während** der Lücke sind weg (NATS ohne JetStream liefert nichts nach). Der Plan nennt die Lücke (§3.1). |
+| **Toter Tunnel, echter `ssh`** | **Der Server stirbt** (Prozess der Sitzung getötet): `ssh` endet nach **0,1 s** („Connection to 127.0.0.1 closed by remote host“). **Der Server friert ein** (kein Netz): `ssh` endet nach **7 s** („Timeout, server 127.0.0.1 not responding“), bei `viper` mit 15 s mal 4 also nach **etwa 75 s**; **der lokale Port bleibt bis dahin offen** (die Verbindung von `watch` hängt). Erkennbar ist beides **am Ende des `ssh`-Prozesses**. Dafür muss `sshTunnel` den Kanal `done` nach außen geben (heute liest ihn niemand nach dem Start): **kleine Änderung** in Meilenstein 1. |
+| **Späte Antwort** | `request --timeout 1s --announce` schreibt `asked` mit der `id` und bricht nach 1 s mit „no answer“ ab; die Antwort nach 2,5 s kommt als Zeile `res` mit `re` im Strom (Prüfer: 5,8 s nach dem Ablauf). Gebaut und getestet: **`request --announce`** (`asked`, nur mit der Option; ohne sie unverändert, ein Test prüft beides). |
+| **Offen** | Windows und macOS (Tunnel als Kindprozess, Sperrdatei, Pfad des Zustands) und zwei gleichzeitige `viper ui-chat` (braucht `TryLock`, Meilenstein 1): nur auf den Systemen selbst zu prüfen, nicht hier. |
 
 ## 8 Nicht Teil dieses Plans
 

@@ -287,7 +287,7 @@ type Group struct {
 // NATSLine is one line of the output of the subcommands of viper-nats-mcp (watch, send, broadcast,
 // request): one JSON object per event.
 type NATSLine struct {
-	Event string `json:"event"`           // ready, message, sent, answer
+	Event string `json:"event"`           // ready, message, sent, answer, asked (request --announce)
 	Me    string `json:"me,omitempty"`    // ready: this machine
 	Group string `json:"group,omitempty"` // ready
 	From  string `json:"from,omitempty"`  // message, answer: the sender, as the subject proves it

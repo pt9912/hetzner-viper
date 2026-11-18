@@ -300,3 +300,33 @@ func TestAnUnknownKeyIsNamedAndTheWayOutIsSaid(t *testing.T) {
 		t.Errorf("a refused connection is no unknown key")
 	}
 }
+
+// request --announce writes the ID of the request before it waits (event asked): the answer, also a late one, is matched by it. Without
+// the option nothing changes: a reader that does not know the event would refuse it.
+func TestRequestAnnounceWritesTheIDBeforeTheAnswerAndOnlyWhenAsked(t *testing.T) {
+	x := newTrio(t, nil)
+	answer := func() {
+		for i := 0; i < 200; i++ {
+			for _, e := range x.b.svc.Inbox().Since(0) {
+				if e.Kind == "req" && !e.Replied {
+					_, _ = call(t, x.b.svc, "reply", map[string]any{"handle": e.Handle, "text": "pong"})
+					return
+				}
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	go answer()
+	lines, errs, code := runCLI(t, x.a, "request", "ping", "--to", "b", "--timeout", "10s", "--announce")
+	if code != 0 || len(lines) != 2 || lines[0].Event != "asked" || lines[1].Event != "answer" {
+		t.Fatalf("%v %q %d", lines, errs, code)
+	}
+	if lines[0].To != "b" || len(lines[0].ID) < 16 || lines[1].Re != lines[0].ID {
+		t.Errorf("the ID of the request is the one the answer belongs to: %+v", lines)
+	}
+	go answer()
+	lines, _, code = runCLI(t, x.a, "request", "ping again", "--to", "b", "--timeout", "10s")
+	if code != 0 || len(lines) != 1 || lines[0].Event != "answer" {
+		t.Errorf("without --announce there is only the answer: %v", lines)
+	}
+}

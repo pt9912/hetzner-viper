@@ -42,6 +42,7 @@ type cliArgs struct {
 	query     bool
 	all       bool
 	attach    bool   // send, broadcast, request: standard input holds a file after the text (AttachFrame)
+	announce  bool   // request: write the ID of the request (event asked) before waiting, so that a late answer can be matched
 	id, sha   string // fetch: the object and the checksum from the message
 	out       string // fetch: the folder
 }
@@ -56,6 +57,7 @@ func cliFlags(fs *flag.FlagSet, name string, a *cliArgs) {
 		fs.StringVar(&a.to, "to", "", "the machine")
 		fs.DurationVar(&a.timeout, "timeout", 30*time.Second, "how long to wait for the answer")
 		fs.BoolVar(&a.attach, "attach", false, "standard input holds a file after the text")
+		fs.BoolVar(&a.announce, "announce", false, "write the ID of the request (event asked) before waiting; only for programs that know the event")
 	case "broadcast":
 		fs.StringVar(&a.topic, "topic", "", "the topic")
 		fs.BoolVar(&a.attach, "attach", false, "standard input holds a file after the text")
@@ -196,7 +198,11 @@ func runCLI(ctx context.Context, cfg Config, name string, a cliArgs, text string
 		err = s.broadcastMessage(a.topic, text, att)
 	case "request":
 		var e Envelope
-		if e, err = s.askWith(ctx, a.to, text, att, a.timeout); err == nil {
+		var onID func(string)
+		if a.announce { // not by default: a reader that does not know the event refuses it
+			onID = func(id string) { _ = writeLine(stdout, Line{Event: "asked", To: a.to, ID: id}) }
+		}
+		if e, err = s.askAnnounced(ctx, a.to, text, att, a.timeout, onID); err == nil {
 			_ = writeLine(stdout, Line{Event: "answer", From: a.to, Re: e.Re, Text: Clean(e.Text)})
 		}
 		return s.settle(err)

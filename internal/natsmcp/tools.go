@@ -259,6 +259,12 @@ func (s *Service) Ask(ctx context.Context, to, text string, timeout time.Duratio
 
 // askWith is Ask for a request that has a file with it (att may be nil, then the text is needed).
 func (s *Service) askWith(ctx context.Context, to, text string, att *Attachment, timeout time.Duration) (Envelope, error) {
+	return s.askAnnounced(ctx, to, text, att, timeout, nil)
+}
+
+// askAnnounced is askWith that tells the ID of the request (chosen here) to onID before it waits for the answer, if onID is not nil.
+// An answer that comes after the time is over is found by that ID.
+func (s *Service) askAnnounced(ctx context.Context, to, text string, att *Attachment, timeout time.Duration, onID func(id string)) (Envelope, error) {
 	if err := s.checkPeer(to); err != nil {
 		return Envelope{}, err
 	}
@@ -280,6 +286,9 @@ func (s *Service) askWith(ctx context.Context, to, text string, att *Attachment,
 		delete(s.waiters, id)
 		s.mu.Unlock()
 	}()
+	if onID != nil {
+		onID(id)
+	}
 	if err := s.publish(s.cfg.Names.Out(to), Envelope{V: 1, Kind: "req", ID: id, Text: text, Att: att}); err != nil {
 		return Envelope{}, err
 	}
