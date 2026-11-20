@@ -341,7 +341,7 @@ func TestPrintConfigWritesTheEntryForClaudeCodeAndWhatIsMissing(t *testing.T) {
 	}
 	got := out.String()
 	abs, _ := filepath.Abs(dir)
-	for _, want := range []string{"claude mcp add nats-dev -- ", "--via-viper dev", "--viper ", "--dir " + abs, "--push-from 'beta, gamma'", "--files ", `"mcpServers"`, `"nats-dev"`,
+	for _, want := range []string{"claude mcp add nats-dev -- ", "--via-viper dev", "--viper ", "--dir ", abs, "--push-from ", "beta, gamma", "--files ", `"mcpServers"`, `"nats-dev"`,
 		"--dangerously-load-development-channels server:nats-dev", "no key for local: run viper nats init dev --name local", "viper mcp-binary --host --out", "local is in NATS_MCP_PUSH_FROM of alpha, beta, gamma"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the output lacks %q:\n%s", want, got)
