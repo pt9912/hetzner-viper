@@ -337,6 +337,7 @@ func natsOperatorChecks(r *report, c *model.Machine, list string, members []mode
 	if hasKey {
 		localKey, _ = natsserver.PublicKeyOf(string(seed))
 	}
+	natsEntryClash(r, c, list, operator, members)
 	switch {
 	case registered && hasKey && localKey == registeredKey:
 		r.ok("operator %s is registered at the server, with the key on this computer", operator)
@@ -346,6 +347,20 @@ func natsOperatorChecks(r *report, c *model.Machine, list string, members []mode
 		r.info("operator %s is registered at the server; this computer has no key for it (viper nats init %s makes one)", operator, group)
 	case hasKey:
 		r.warn("this computer has a key for the operator %s, but the server does not know it (left over from an earlier group): viper nats revoke %s, then viper nats init %s", operator, group, group)
+	}
+}
+
+// natsEntryClash warns when a machine has the name of a further operator entry (viper nats init --name): the server refuses
+// both under one name, so viper up of that machine would fail.
+func natsEntryClash(r *report, c *model.Machine, list, operator string, members []model.GroupMember) {
+	machines := map[string]bool{}
+	for _, m := range members {
+		machines[strings.TrimPrefix(m.Server.Name, c.ServerPrefix+"-")] = true
+	}
+	for _, e := range strings.Split(list, ",") {
+		if name, _, _ := strings.Cut(e, ":"); name != "" && name != operator && machines[name] {
+			r.warn("the machine %s has the name of an identity registered at the server (viper nats init --name): rename one of them", name)
+		}
 	}
 }
 
@@ -448,7 +463,7 @@ func natsMCPPushMembers(r *report, c *model.Machine, members []model.GroupMember
 		in[strings.TrimPrefix(m.Server.Name, c.ServerPrefix+"-")] = true
 	}
 	for _, p := range c.NATS.MCPPushFrom {
-		if !in[p] && p != c.NATS.Operator {
+		if !in[p] && p != c.NATS.Operator && !model.HasIdentityKey(c.StateDir, c.NATS.Group, c.NATS.Operator, p) {
 			r.warn("NATS_MCP_PUSH_FROM names %s, which is no machine of the group %s", p, c.NATS.Group)
 		}
 	}

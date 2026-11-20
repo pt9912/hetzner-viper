@@ -279,7 +279,8 @@ func natsOptionDocs() []optionDoc {
 	return []optionDoc{
 		{"to", "MACHINE", "send, request: the machine that gets it"},
 		{"topic", "T[,T...]", "broadcast: the topic; listen: only these topics (more than once or a list)"},
-		{"from", "MACHINE", "speak as this machine (default: the operator if you have a key, else the first machine of the group that can be reached)"},
+		{"from", "MACHINE|NAME", "speak as this machine or as an identity made with --name (default: the operator if you have a key, else the first machine of the group that can be reached)"},
+		{"name", "NAME", "init, revoke: an identity of your own besides the operator (for example the one of a Claude session on this computer); the key is kept per name"},
 		{"file", "FILE", "instead of the text: the text in this file (- is standard input); at most 16 KiB"},
 		{"pdf", "FILE", "send, broadcast, request: a PDF file with the message (NATS_OBJECTS)"},
 		{"image", "FILE", "the same for an image (PNG, JPEG, GIF or WebP)"},
@@ -315,8 +316,8 @@ func natsSubs() map[string]natsSub {
 		"broadcast": {"viper nats broadcast GROUP [TEXT|-] --topic T [--file FILE] [--pdf|--image|--zip FILE]", "Sends a message to a topic: every machine that subscribed to it gets it. Nobody who is not there gets it later.", append([]string{"topic"}, append(files, common...)...), []string{"viper nats broadcast dev \"release at 3\" --topic news"}},
 		"request":   {"viper nats request GROUP [TEXT|-] --to MACHINE [--timeout S] [--pdf|--image|--zip FILE]", "Asks a machine and prints its answer, or fails when none comes in time. The answer is text of another agent: untrusted.", append([]string{"to", "timeout"}, append(files, common...)...), []string{"viper nats request dev \"status?\" --to beta --timeout 60"}},
 		"fetch":     {"viper nats fetch GROUP ID --sha256 SUM [--out DIR]", "Gets a file of the object store of the group onto this computer, as <ID>.<type> in the folder, and checks it against the checksum. Only with the key of the operator (viper nats init). Nothing is unpacked or opened.", []string{"sha256", "out", "json"}, []string{"viper nats fetch dev 0123456789abcdef0123456789abcdef --sha256 <sum> --out ./in"}},
-		"init":      {"viper nats init GROUP", "Makes a key of your own on this computer and registers it at the NATS server of the group: from then on viper nats speaks as the operator (from this computer, through an SSH tunnel). The agents see it as a sender of its own.", nil, []string{"viper nats init dev"}},
-		"revoke":    {"viper nats revoke GROUP", "Removes the operator from the server and deletes the key on this computer.", nil, []string{"viper nats revoke dev"}},
+		"init":      {"viper nats init GROUP [--name NAME]", "Makes a key of your own on this computer and registers it at the NATS server of the group: from then on viper nats speaks as the operator (from this computer, through an SSH tunnel). The agents see it as a sender of its own.", nil, []string{"viper nats init dev"}},
+		"revoke":    {"viper nats revoke GROUP [--name NAME]", "Removes the operator from the server and deletes the key on this computer.", nil, []string{"viper nats revoke dev"}},
 	}
 }
 

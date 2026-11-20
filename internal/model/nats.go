@@ -30,6 +30,38 @@ func OperatorKeyFile(stateDir, group string) string {
 	return path
 }
 
+// IdentityKeyFile is where the seed of a further identity of a NATS group (viper nats init --name) is kept:
+// <state>/groups/<group>/identities/<name>.nk. A folder of its own, so a name never meets operator.nk or settings-dir.
+func IdentityKeyFile(stateDir, group, name string) string {
+	return filepath.Join(stateDir, "groups", group, "identities", name+".nk")
+}
+
+// SettingsDirFile is the file that says which settings folder a NATS group was set up from (written by viper nats init):
+// <state>/groups/<group>/settings-dir. It lets a program started from another folder find the group.
+func SettingsDirFile(stateDir, group string) string {
+	return filepath.Join(stateDir, "groups", group, "settings-dir")
+}
+
+// HasIdentityKey tells whether this computer has the key of the identity name in the group (the operator or a further one).
+func HasIdentityKey(stateDir, group, operator, name string) bool {
+	path := IdentityKeyFile(stateDir, group, name)
+	if name == operator {
+		path = OperatorKeyFile(stateDir, group)
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// IdentityNames are the names of the further identities that have a key on this computer, sorted.
+func IdentityNames(stateDir, group string) []string {
+	files, _ := filepath.Glob(filepath.Join(stateDir, "groups", group, "identities", "*.nk"))
+	var out []string
+	for _, f := range files {
+		out = append(out, strings.TrimSuffix(filepath.Base(f), ".nk"))
+	}
+	return out
+}
+
 // NATSRole is what a machine does in its NATS group.
 type NATSRole string
 

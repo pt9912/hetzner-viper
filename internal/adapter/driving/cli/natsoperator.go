@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +31,10 @@ type natsGroup struct {
 	order    []string
 	ms       map[string]natsMachine
 	operator string // the name the operator sends under
+	// stateDir is where the keys of this computer are; it is the same for every machine of the group
+	stateDir string
+	// me is the identity that speaks: the operator, or a further one made with viper nats init --name
+	me string
 }
 
 func loadNatsGroup(o *options, env settings.Env, group string) (*natsGroup, error) {
@@ -51,6 +56,7 @@ func loadNatsGroup(o *options, env settings.Env, group string) (*natsGroup, erro
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
 		ng.ms[name] = natsMachine{name, c}
+		ng.stateDir = c.StateDir
 		if c.NATS.Enabled && ng.operator == "" {
 			ng.operator = c.NATS.Operator
 		}
@@ -63,30 +69,60 @@ func loadNatsGroup(o *options, env settings.Env, group string) (*natsGroup, erro
 			return nil, fmt.Errorf("the machine %s has the name of the operator (NATS_OPERATOR_NAME): rename one of them", name)
 		}
 	}
+	ng.me = ng.operator
 	return ng, nil
+}
+
+// useIdentity makes name the identity that speaks (--name, --from); an unknown or empty name keeps the operator.
+func (g *natsGroup) useIdentity(name string) {
+	if name != "" {
+		g.me = name
+	}
+}
+
+// identityName checks the name of a further identity: a usable name that no machine, the operator or the admin entry has.
+func (g *natsGroup) identityName(name string) error {
+	if err := model.CheckNATSName("identity", name); err != nil {
+		return err
+	}
+	if _, ok := g.ms[name]; ok || slices.Contains(g.order, name) {
+		return fmt.Errorf("%s is a machine of the group %s: an identity needs a name of its own", name, g.name)
+	}
+	if name == g.operator || name == model.NATSAdminName {
+		return fmt.Errorf("%s is taken (the operator or the entry that makes the object store)", name)
+	}
+	return nil
 }
 
 // objectsFileMax is the largest file the group takes (NATS_OBJECTS_FILE_MAX); 0 when it has no object store. The setting is that of
 // the group file, so any machine says the same.
 func (g *natsGroup) objectsFileMax() int64 {
 	for _, name := range g.order {
-		if n := g.ms[name].cfg.NATS; n.Objects {
-			return n.ObjectsFileMax
+		if m, ok := g.ms[name]; ok && m.cfg.NATS.Objects {
+			return m.cfg.NATS.ObjectsFileMax
 		}
 	}
 	return 0
 }
 
-// keyFile is where the seed of the operator of the group is.
+// keyFile is where the seed of the identity that speaks is: that of the operator, or of a further one.
 func (g *natsGroup) keyFile() string {
-	return model.OperatorKeyFile(g.ms[g.order[0]].cfg.StateDir, g.name)
+	return g.keyOf(g.me)
+}
+
+// keyOf is where the seed of the identity name is.
+func (g *natsGroup) keyOf(name string) string {
+	if name == g.operator || name == "" {
+		return model.OperatorKeyFile(g.stateDir, g.name)
+	}
+	return model.IdentityKeyFile(g.stateDir, g.name, name)
 }
 
 // targets are the machines that can be reached (they have run viper up).
 func (g *natsGroup) targets() []driving.NATSMachine {
 	var out []driving.NATSMachine
 	for _, name := range g.order {
-		if m := g.ms[name]; exists(m.cfg.SSHConfig) {
+		if m, ok := g.ms[name]; ok && exists(m.cfg.SSHConfig) {
 			out = append(out, driving.NATSMachine{Name: name, Target: driving.NATSTarget{Config: m.cfg.SSHConfig, Alias: m.cfg.SSHAlias}})
 		}
 	}
@@ -110,6 +146,12 @@ func runNatsInit(ctx context.Context, o *options, env settings.Env, group string
 	g, err := loadNatsGroup(o, env, group)
 	if err != nil {
 		return err
+	}
+	if o.name != "" {
+		if err := g.identityName(o.name); err != nil {
+			return err
+		}
+		g.useIdentity(o.name)
 	}
 	ctx, stop := notifyContext(ctx)
 	defer stop()
@@ -135,13 +177,38 @@ func runNatsInit(ctx context.Context, o *options, env settings.Env, group string
 	if err != nil {
 		return fmt.Errorf("%s: %w", g.keyFile(), err)
 	}
-	if err := o.host().Services.NATSOp.Register(ctx, group, srv, g.operator, pub); err != nil {
+	if err := o.host().Services.NATSOp.Register(ctx, group, srv, g.me, pub); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "The operator %s is registered at the NATS server %s (group %s).\n", g.operator, srv.Machine.Name, group)
-	fmt.Fprintf(stdout, "Its key: %s. viper nats now sends as %s unless --from names a machine.\n", g.keyFile(), g.operator)
-	fmt.Fprintf(stdout, "The agents see %s as the sender; it can read everything in the group. Remove it with viper nats revoke %s.\n", g.operator, group)
+	if err := rememberSettingsDir(o, g); err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "%s is registered at the NATS server %s (group %s).\n", g.me, srv.Machine.Name, group)
+	if g.me == g.operator {
+		fmt.Fprintf(stdout, "Its key: %s. viper nats now sends as %s unless --from names a machine.\n", g.keyFile(), g.operator)
+	} else {
+		fmt.Fprintf(stdout, "Its key: %s. viper nats sends as %s with --from %s.\n", g.keyFile(), g.me, g.me)
+	}
+	fmt.Fprintf(stdout, "The agents see %s as the sender; it can read everything in the group. Remove it with viper nats revoke %s%s.\n", g.me, group, nameFlag(g))
 	return nil
+}
+
+// nameFlag is the --name option that revokes the identity that spoke, or nothing for the operator.
+func nameFlag(g *natsGroup) string {
+	if g.me == g.operator {
+		return ""
+	}
+	return " --name " + g.me
+}
+
+// rememberSettingsDir writes where the settings of the group are, next to the keys, so a program started from another folder
+// (viper nats tunnel, viper-nats-mcp --via-viper) finds the group.
+func rememberSettingsDir(o *options, g *natsGroup) error {
+	abs, err := filepath.Abs(settingsDir(o))
+	if err != nil {
+		return err
+	}
+	return writePrivate(model.SettingsDirFile(g.stateDir, g.name), abs+"\n")
 }
 
 // runNatsRevoke removes the operator from the server and the key from this computer.
@@ -150,6 +217,12 @@ func runNatsRevoke(ctx context.Context, o *options, env settings.Env, group stri
 	if err != nil {
 		return err
 	}
+	if o.name != "" {
+		if err := g.identityName(o.name); err != nil {
+			return err
+		}
+		g.useIdentity(o.name)
+	}
 	ctx, stop := notifyContext(ctx)
 	defer stop()
 	if srv, err := g.find(ctx, o); err != nil {
@@ -157,14 +230,23 @@ func runNatsRevoke(ctx context.Context, o *options, env settings.Env, group stri
 			return err
 		}
 		return fmt.Errorf("the key was kept because the server could not be reached (%w): run viper nats revoke again when it is up", err)
-	} else if err := o.host().Services.NATSOp.Revoke(ctx, group, srv, g.operator); err != nil {
+	} else if err := o.host().Services.NATSOp.Revoke(ctx, group, srv, g.me); err != nil {
 		return err
 	}
 	if err := os.Remove(g.keyFile()); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	fmt.Fprintf(stdout, "The operator %s is removed from the group %s and its key is deleted.\n", g.operator, group)
+	forgetSettingsDir(g)
+	fmt.Fprintf(stdout, "%s is removed from the group %s and its key is deleted.\n", g.me, group)
 	return nil
+}
+
+// forgetSettingsDir deletes the pointer to the settings when the last key of the group is gone.
+func forgetSettingsDir(g *natsGroup) {
+	if exists(model.OperatorKeyFile(g.stateDir, g.name)) || len(model.IdentityNames(g.stateDir, g.name)) > 0 {
+		return
+	}
+	_ = os.Remove(model.SettingsDirFile(g.stateDir, g.name))
 }
 
 // writePrivate writes a file that only the user can read, in a directory that only the user can enter.
@@ -205,7 +287,7 @@ func openOperatorDead(ctx context.Context, o *options, g *natsGroup, dead chan s
 	if err != nil {
 		return nil, fmt.Errorf("the ssh tunnel to the NATS server: %w", err)
 	}
-	cfg := natsmcp.Config{URL: "tls://" + addr, SeedFile: g.keyFile(), Names: natsmcp.Names{Group: g.name, Me: g.operator},
+	cfg := natsmcp.Config{URL: "tls://" + addr, SeedFile: g.keyFile(), Names: natsmcp.Names{Group: g.name, Me: g.me},
 		MaxText: natsmcp.DefaultMaxText, TLSServerName: srv.Host, ObjectsFileMax: g.objectsFileMax()}
 	dir, err := os.MkdirTemp("", "viper-nats-")
 	if err != nil {

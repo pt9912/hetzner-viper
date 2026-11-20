@@ -147,6 +147,9 @@ func TestTheOperatorSendsFromThisComputerAndTheMachineSeesTheOperator(t *testing
 	if err := cli.RunCommand("nats", &cli.Opts{Host: h, Dir: dir, Args: []string{"init", "dev"}}); err != nil {
 		t.Fatal(err)
 	}
+	if err := cli.RunCommand("nats", &cli.Opts{Host: h, Dir: dir, Args: []string{"init", "dev"}, Name: "local"}); err != nil {
+		t.Fatal(err)
+	}
 	// the server, with the operator as registered, and the machine beta as an agent would be
 	tmp := t.TempDir()
 	betaID, _ := natsserver.NewIdentity()
@@ -155,7 +158,8 @@ func TestTheOperatorSendsFromThisComputerAndTheMachineSeesTheOperator(t *testing
 		t.Fatal(err)
 	}
 	block, err := natsserver.AuthorizationBlock("dev", []natsserver.Client{
-		{Machine: "beta", PublicKey: betaID.PublicKey}, {Machine: "operator", PublicKey: op.registered["operator"], Operator: true}}, false)
+		{Machine: "beta", PublicKey: betaID.PublicKey}, {Machine: "operator", PublicKey: op.registered["operator"], Operator: true},
+		{Machine: "local", PublicKey: op.registered["local"], Operator: true}}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,6 +220,20 @@ func TestTheOperatorSendsFromThisComputerAndTheMachineSeesTheOperator(t *testing
 	if !strings.Contains(got, "operator") || !strings.Contains(got, "hello from the operator") {
 		t.Fatalf("beta got %q", got)
 	}
+
+	// the identity made with --name sends under its own name, with its own key
+	out.Reset()
+	errb.Reset()
+	err = cli.RunCommand("nats", &cli.Opts{Host: h, Dir: dir, Args: []string{"send", "dev", "hello from local"}, To: "beta", From: "local"})
+	if err != nil || !strings.Contains(errb.String(), "Sender: local") || !strings.Contains(out.String(), "sent as local to beta") {
+		t.Fatalf("%v\nstdout %s\nstderr %s", err, out.String(), errb.String())
+	}
+	for !strings.Contains(inbox(), "hello from local") && time.Now().Before(deadline.Add(5*time.Second)) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if got := inbox(); !strings.Contains(got, "hello from local") {
+		t.Fatalf("beta got %q", got)
+	}
 }
 
 func TestDownOfAGroupSaysThatTheOperatorKeyIsLeft(t *testing.T) {
@@ -241,5 +259,98 @@ func TestDownOfAGroupSaysThatTheOperatorKeyIsLeft(t *testing.T) {
 	}
 	if out := run(); !strings.Contains(out, "key of the operator") || !strings.Contains(out, key) {
 		t.Errorf("a key that is left is named:\n%s", out)
+	}
+}
+
+// identityRun runs viper nats SUB dev [options] against op.
+func identityRun(t *testing.T, dir string, env settings.Env, op *fakeOp, sub string, p cli.Opts) (string, error) {
+	t.Helper()
+	_, h := fakeTools(t)
+	h.Env = func() (settings.Env, error) { return env, nil }
+	h.Services.NATSOp = op
+	var out strings.Builder
+	h.Stdout = &out
+	p.Host, p.Dir, p.Args = h, dir, []string{sub, "dev"}
+	err := cli.RunCommand("nats", &p)
+	return out.String(), err
+}
+
+func TestInitWithANameMakesAnIdentityBesidesTheOperator(t *testing.T) {
+	dir, env := natsGroup(t, "")
+	op := &fakeOp{registered: map[string]string{}}
+	if _, err := identityRun(t, dir, env, op, "init", cli.Opts{}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := identityRun(t, dir, env, op, "init", cli.Opts{Name: "local"})
+	if err != nil || !strings.Contains(out, "local is registered") || !strings.Contains(out, "revoke dev --name local") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	opKey := operatorKey(t, dir, env)
+	idKey := filepath.Join(filepath.Dir(opKey), "identities", "local.nk")
+	if st, err := os.Stat(idKey); err != nil || (runtime.GOOS != "windows" && st.Mode().Perm() != 0o600) {
+		t.Fatalf("the key of the identity: %v %v", st, err)
+	}
+	opSeed, _ := os.ReadFile(opKey)
+	idSeed, _ := os.ReadFile(idKey)
+	if string(opSeed) == string(idSeed) {
+		t.Error("both names have one key")
+	}
+	pub, _ := natsserver.PublicKeyOf(string(idSeed))
+	if len(op.registered) != 2 || op.registered["local"] != pub {
+		t.Errorf("registered: %v", op.registered)
+	}
+	// the pointer to the settings is written once and names the folder init ran in
+	ptr, err := os.ReadFile(filepath.Join(filepath.Dir(opKey), "settings-dir"))
+	abs, _ := filepath.Abs(dir)
+	if err != nil || strings.TrimSpace(string(ptr)) != abs {
+		t.Errorf("settings-dir: %q %v (want %s)", ptr, err, abs)
+	}
+	// revoking the identity keeps the operator and the pointer
+	if _, err := identityRun(t, dir, env, op, "revoke", cli.Opts{Name: "local"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(idKey); !os.IsNotExist(err) {
+		t.Errorf("the key of the identity stays: %v", err)
+	}
+	if _, err := os.Stat(opKey); err != nil {
+		t.Errorf("the operator lost its key: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(opKey), "settings-dir")); err != nil {
+		t.Errorf("the pointer went while the operator is still there: %v", err)
+	}
+	if len(op.revoked) != 1 || op.revoked[0] != "local" {
+		t.Errorf("revoked %v", op.revoked)
+	}
+	// the last name goes: the pointer goes with it
+	if _, err := identityRun(t, dir, env, op, "revoke", cli.Opts{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(opKey), "settings-dir")); !os.IsNotExist(err) {
+		t.Errorf("the pointer stays after the last key: %v", err)
+	}
+}
+
+func TestAnIdentityNameThatIsTakenOrNotUsableIsRefusedBeforeAnythingIsMade(t *testing.T) {
+	dir, env := natsGroup(t, "")
+	op := &fakeOp{registered: map[string]string{}}
+	for name, want := range map[string]string{"alpha": "machine", "operator": "taken", "viper-admin": "taken", "Bad Name": "lowercase"} {
+		_, err := identityRun(t, dir, env, op, "init", cli.Opts{Name: name})
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: %v (want %q)", name, err, want)
+		}
+	}
+	if len(op.registered) != 0 {
+		t.Errorf("registered %v", op.registered)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(operatorKey(t, dir, env)), "identities")); !os.IsNotExist(err) {
+		t.Errorf("a key was made: %v", err)
+	}
+}
+
+func TestOptionNameIsOnlyForInitAndRevoke(t *testing.T) {
+	dir, env := natsGroup(t, "")
+	_, err := identityRun(t, dir, env, &fakeOp{registered: map[string]string{}}, "peers", cli.Opts{Name: "local"})
+	if err == nil || !strings.Contains(err.Error(), "name") {
+		t.Errorf("peers does not take --name: %v", err)
 	}
 }

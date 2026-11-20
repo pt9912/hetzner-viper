@@ -156,3 +156,27 @@ func TestStateDirMovesTheOldDirectory(t *testing.T) {
 		t.Error("an old directory next to a new one is left alone")
 	}
 }
+
+func TestIdentityKeysLiveInTheirOwnFolder(t *testing.T) {
+	dir := t.TempDir()
+	if got, want := model.IdentityKeyFile(dir, "dev", "local"), filepath.Join(dir, "groups", "dev", "identities", "local.nk"); got != want {
+		t.Errorf("%s, want %s", got, want)
+	}
+	if model.HasIdentityKey(dir, "dev", "operator", "local") || len(model.IdentityNames(dir, "dev")) != 0 {
+		t.Error("no key yet")
+	}
+	for _, p := range []string{model.IdentityKeyFile(dir, "dev", "local"), model.OperatorKeyFile(dir, "dev")} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("SU\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !model.HasIdentityKey(dir, "dev", "operator", "local") || !model.HasIdentityKey(dir, "dev", "operator", "operator") || model.HasIdentityKey(dir, "dev", "operator", "other") {
+		t.Error("the keys are there")
+	}
+	if names := model.IdentityNames(dir, "dev"); len(names) != 1 || names[0] != "local" {
+		t.Errorf("%v", names)
+	}
+}

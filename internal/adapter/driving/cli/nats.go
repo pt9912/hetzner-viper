@@ -106,10 +106,10 @@ func checkNatsOptions(o *options, sub string) error {
 		"peers":     {"timeout", "query"},
 		"topics":    {"timeout", "query"},
 		"listen":    {"topic", "all", "no-presence"},
-		"init":      {},
-		"revoke":    {},
+		"init":      {"name"},
+		"revoke":    {"name"},
 	}[sub]
-	given := map[string]bool{"to": o.to != "", "topic": o.topic != "", "timeout": o.timeout != 0, "query": o.query, "all": o.all, "no-presence": o.noPresence, "file": o.file != "", "pdf": o.pdf != "", "image": o.image != "", "zip": o.zip != "", "sha256": o.sha256 != "", "out": o.out != ""}
+	given := map[string]bool{"to": o.to != "", "topic": o.topic != "", "timeout": o.timeout != 0, "query": o.query, "all": o.all, "no-presence": o.noPresence, "file": o.file != "", "pdf": o.pdf != "", "image": o.image != "", "zip": o.zip != "", "sha256": o.sha256 != "", "out": o.out != "", "name": o.name != ""}
 	for opt, set := range given {
 		if set && !slices.Contains(use, opt) {
 			return fmt.Errorf("viper nats %s: --%s is not used by this subcommand\n%s\nviper nats %s --help describes its options", sub, opt, usageLine("nats"), sub)
@@ -188,7 +188,16 @@ func natsPrepare(o *options, g *natsGroup, args *natsArgs) (asOperator bool, err
 			return false, err
 		}
 	}
+	if _, isMachine := g.ms[o.from]; o.from != "" && !isMachine && o.from != g.operator && exists(g.keyOf(o.from)) {
+		g.useIdentity(o.from) // an identity made with viper nats init --name
+		return finishPrepare(args, true)
+	}
 	asOperator = o.from == g.operator || (o.from == "" && exists(g.keyFile()))
+	return finishPrepare(args, asOperator)
+}
+
+// finishPrepare refuses what only an identity with a key can do.
+func finishPrepare(args *natsArgs, asOperator bool) (bool, error) {
 	if args.cmd.Name == "fetch" && !asOperator {
 		return false, fmt.Errorf("viper nats fetch needs the key of the operator of the group (viper nats init %s): it puts the file on this computer", args.group)
 	}
@@ -239,15 +248,23 @@ func runNats(ctx context.Context, o *options, env settings.Env, in io.Reader, st
 // runNatsAsOperator speaks under the name of the operator, from this computer.
 func runNatsAsOperator(ctx context.Context, o *options, g *natsGroup, c driving.NATSCommand, stdout, stderr io.Writer) error {
 	if _, err := os.Stat(g.keyFile()); err != nil {
-		return fmt.Errorf("the operator %s has no key here (%s): run viper nats init %s", g.operator, g.keyFile(), g.name)
+		return fmt.Errorf("%s has no key here (%s): run viper nats init %s%s", g.me, g.keyFile(), g.name, nameFlag(g))
 	}
 	sess, err := openOperator(ctx, o, g)
 	if err != nil {
 		return err
 	}
 	defer sess.close()
-	fmt.Fprintf(stderr, "Sender: %s (the operator of the group %s, from this computer)\n", g.operator, g.name)
-	return natsRun(ctx, o, c, g.operator, sess.remote, stdout, stderr)
+	fmt.Fprintf(stderr, "Sender: %s (%s of the group %s, from this computer)\n", g.me, operatorWord(g), g.name)
+	return natsRun(ctx, o, c, g.me, sess.remote, stdout, stderr)
+}
+
+// operatorWord says what the sender is: the operator, or an identity of its own.
+func operatorWord(g *natsGroup) string {
+	if g.me == g.operator {
+		return "the operator"
+	}
+	return "an identity"
 }
 
 // natsSender is the machine that speaks: --from, else the first usable one that is not the receiver.

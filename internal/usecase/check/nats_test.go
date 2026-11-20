@@ -370,6 +370,47 @@ func TestAPushSourceThatIsNoMachineOfTheGroupIsWarnedAbout(t *testing.T) {
 	}
 }
 
+func TestAPushSourceWithAKeyOnThisComputerIsAnIdentityAndNotWarnedAbout(t *testing.T) {
+	st := healthyClient + "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=/home/builder/.viper-nats/viper-nats-mcp\nmcp_allowed=peers,inbox,topics\nmcp_push=local\n"
+	n := newNATSFixture(t, "NATS_ENABLED=true\nNATS_GROUP=dev\nNATS_MCP=true\nNATS_MCP_PUSH_FROM=local\nNATS_MCP_AUTOALLOW=read\n", model.NATSClient, st)
+	n.c.StateDir = t.TempDir()
+	out, _ := n.run()
+	if sec := natsSection(out); !strings.Contains(sec, "WARN  NATS_MCP_PUSH_FROM names local") {
+		t.Errorf("no key yet:\n%s", sec)
+	}
+	key := model.IdentityKeyFile(n.c.StateDir, "dev", "local")
+	if err := os.MkdirAll(filepath.Dir(key), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(key, []byte("SU\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, _ = n.run()
+	if sec := natsSection(out); strings.Contains(sec, "NATS_MCP_PUSH_FROM names") {
+		t.Errorf("an identity of this computer:\n%s", sec)
+	}
+}
+
+func TestAMachineWithTheNameOfARegisteredIdentityIsWarnedAbout(t *testing.T) {
+	st := strings.Replace(healthyServer, "alpha,web", "beta,web", 1)
+	n := newNATSFixture(t, "", model.NATSServer, st)
+	n.c.StateDir = t.TempDir()
+	id, err := natsserver.NewIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	n.status = st + "operators=local:" + id.PublicKey + "\n"
+	out, _ := n.run()
+	if sec := natsSection(out); strings.Contains(sec, "has the name of an identity") {
+		t.Errorf("no clash:\n%s", sec)
+	}
+	n.status = st + "operators=beta:" + id.PublicKey + "\n"
+	out, _ = n.run()
+	if sec := natsSection(out); !strings.Contains(sec, "WARN  the machine beta has the name of an identity registered at the server") {
+		t.Errorf("a clash:\n%s", sec)
+	}
+}
+
 func TestTheDefaultTopicsOfTheMCPServerAreCompared(t *testing.T) {
 	base := healthyClient + "mcp_bin=ok\nmcp_version=viper-nats-mcp v1\nmcp_claude=/home/builder/.viper-nats/viper-nats-mcp\nmcp_allowed=peers,inbox,topics\nmcp_push=alpha\n"
 	cfg := mcpOn + "NATS_MCP_TOPICS=build,alerts\n"

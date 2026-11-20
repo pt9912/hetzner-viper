@@ -2,7 +2,7 @@
 
 **Ziel:** Eine Claude-Code-Sitzung auf dem **eigenen Rechner** (Laptop, Entwicklungsumgebung) soll mit den Sitzungen auf den Rechnern einer NATS-Gruppe reden können: wer ist da, Nachricht senden, fragen und die Antwort bekommen, auf Fragen der Rechner antworten, Rundrufe, Dateien. Dafür läuft der vorhandene MCP-Server `viper-nats-mcp` auch auf dem eigenen Rechner. **`viper` stellt ihn bereit** (eingebettet, für das eigene System) **und öffnet den Tunnel** zum Server der Gruppe, mit dem Schlüssel, den `viper nats` und der Chat schon benutzen. Auf den Rechnern ändert sich am Dienst nichts. Die Rechner verhalten sich dann für die lokale Sitzung **wie Subagenten**: Sie bekommen Aufträge und weitere Nachrichten, und ihre Antworten und Meldungen kommen **von selbst** in der lokalen Sitzung an (Push über den Channel des vorhandenen Dienstes, §4.4).
 
-**Stand:** Entwurf (20.11.2026), eine unabhängige Prüfung ist eingearbeitet (§10.1); die Aufteilung in §4 (Weg C) ist danach geändert und in einer zweiten Prüfung (§10.2) bewertet; deren Funde sind eingearbeitet. Die Entscheidungen in §8 sind **getroffen** (Vorschläge übernommen, 20.11.2026), bis auf die Aufteilung (§8.10). **Meilenstein 0 läuft:** die Messungen in §7.1 sind gemacht; offen sind zwei Dinge, die nur du von Hand prüfen kannst. Gebaut ist noch nichts vom Befehl.
+**Stand:** Entwurf (20.11.2026), eine unabhängige Prüfung ist eingearbeitet (§10.1); die Aufteilung in §4 (Weg C) ist danach geändert und in einer zweiten Prüfung (§10.2) bewertet; deren Funde sind eingearbeitet. Die Entscheidungen in §8 sind **getroffen** (Vorschläge übernommen, 20.11.2026), auch die Aufteilung (§8.10, bestätigt am 20.11.2026). **Meilenstein 0 läuft:** die Messungen in §7.1 sind gemacht; offen sind zwei Dinge, die nur du von Hand prüfen kannst. Gebaut ist noch nichts vom Befehl.
 
 *[V]* heißt: im Code gelesen oder gemessen; *[?]* ist eine Vermutung, die zu prüfen ist.
 
@@ -31,7 +31,7 @@ Gehört zu [`nats-mcp.md`](nats-mcp.md) (der Dienst und seine Werkzeuge), [`nats
 
 ## 3 Identitäten mit Namen (gemeinsam mit dem A2A-Plan)
 
-* Neu: `viper nats init GRUPPE --name NAME` trägt einen **weiteren** Eintrag der Art „Operator“ (gleiche Rechte, eigener Name) ein. Der Schlüssel liegt in `groups/<gruppe>/<name>.nk` (`0600`); ohne `--name` bleibt alles wie heute (`operator`, `operator.nk`). `viper nats revoke GRUPPE --name NAME` entfernt ihn. **`init` schreibt außerdem neben den Schlüssel eine Datei `groups/<gruppe>/settings-dir` (`0600`) mit dem absoluten Pfad des Verzeichnisses mit den Einstellungen**, in dem es aufgerufen wurde: das ist der Weg, auf dem `viper nats tunnel` und `--via-viper` die Gruppe später finden (§4.1.2). `revoke` löscht die Datei, wenn der letzte Name der Gruppe geht.
+* Neu: `viper nats init GRUPPE --name NAME` trägt einen **weiteren** Eintrag der Art „Operator“ (gleiche Rechte, eigener Name) ein. Der Schlüssel liegt in `groups/<gruppe>/identities/<name>.nk` (`0600`; ein eigener Ordner, damit ein Name nie mit `operator.nk` oder `settings-dir` zusammenfällt); ohne `--name` bleibt alles wie heute (`operator`, `operator.nk`). `viper nats revoke GRUPPE --name NAME` entfernt ihn. **`init` schreibt außerdem neben den Schlüssel eine Datei `groups/<gruppe>/settings-dir` (`0600`) mit dem absoluten Pfad des Verzeichnisses mit den Einstellungen**, in dem es aufgerufen wurde: das ist der Weg, auf dem `viper nats tunnel` und `--via-viper` die Gruppe später finden (§4.1.2). `revoke` löscht die Datei, wenn der letzte Name der Gruppe geht.
 * **Schreibweise:** `--name NAME` benennt die **Identität** (`init`, `revoke`, `tunnel`). `--from NAME` bleibt der **Absender** bei `send`, `request` und den anderen (heute: ein Rechner; künftig auch eine solche Identität). Das Handbuch nennt den Unterschied.
 * **Prüfungen:** `NAME` ist `CheckNATSName`-gültig, **nicht der Name eines Rechners der Gruppe** (`init` prüft gegen `g.ms`; der Server lehnt gleiche Namen ebenfalls ab) und nicht `NATS_OPERATOR_NAME`. Fügt jemand **später** einen Rechner mit diesem Namen hinzu, scheitert erst `viper up`. Darum warnt `viper check`, wenn ein Rechnername einem eingetragenen Operator-Namen gleicht (`Find().Operators`, das heute niemand liest).
 * **Nebenwirkung auf `viper check`** *[V]*: `viper check` warnt heute für jeden Namen in `NATS_MCP_PUSH_FROM`, der weder Rechner noch `NATS_OPERATOR_NAME` ist (`natschecks.go`); `local` löste eine Dauerwarnung aus. Die Prüfung kennt künftig die eingetragenen Operator-Namen.
@@ -154,7 +154,7 @@ Die lokale Sitzung liest Nachrichten von Agenten, die nicht dir gehören müssen
 
 ### 5.4 Schlüssel, Name und Protokoll
 
-* Der Schlüssel liegt mit `0600` im Zustandsverzeichnis, neben `operator.nk`. `viper nats revoke --name` löscht ihn und trägt den Namen aus dem Server aus.
+* Der Schlüssel liegt mit `0600` im Zustandsverzeichnis, im Ordner `identities/` neben `operator.nk`. `viper nats revoke --name` löscht ihn und trägt den Namen aus dem Server aus.
 * **Ein Name, mehrere Sitzungen:** Alle Sitzungen mit demselben Namen teilen die Identität. Jede bekommt eine Kopie der Nachrichten an den Namen und der Anwesenheit; die **`bye` einer Sitzung** lässt `local` bei den Rechnern „weg“ erscheinen, bis die nächste Anwesenheitsmeldung (30 Sekunden) kommt. Zwei Prozesse schreiben in dieselbe Protokolldatei; jede Zeile trägt darum die Prozesskennung. Das Handbuch sagt es; wer getrennte Gespräche braucht, nimmt einen Namen je Sitzung (`--name`, §8.6).
 * Das Protokoll enthält keine Texte der Nachrichten, nur Absender, Art und Größe (`nats-mcp.md` §4.1).
 
@@ -216,7 +216,7 @@ Gemessen mit eingebettetem NATS-Server und einem echten `sshd` als Benutzer (Lin
 
 ## 8 Entscheidungen (getroffen am 20.11.2026: alle Vorschläge übernommen)
 
-Nur zwei hängen noch an dir: 8.2 (ob der Channel eine untätige Sitzung weckt, von dir zu prüfen, §7.1) und 8.10 (die Aufteilung ist nach dem Gespräch vom 20.11.2026 auf Weg C umgestellt und braucht dein Ja).
+Nur eins hängt noch an dir: 8.2 (ob der Channel eine untätige Sitzung weckt, von dir zu prüfen, §7.1). Die Aufteilung (8.10, Weg C) ist am 20.11.2026 bestätigt.
 
 1. **Name der lokalen Sitzung:**
    * **A (Vorschlag):** eigener Name, Standard `local`, mit `--name` änderbar. Der Operator-Name bleibt dem Menschen (Chat, `viper nats`) vorbehalten.
