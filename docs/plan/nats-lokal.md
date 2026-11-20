@@ -2,7 +2,7 @@
 
 **Ziel:** Eine Claude-Code-Sitzung auf dem **eigenen Rechner** (Laptop, Entwicklungsumgebung) soll mit den Sitzungen auf den Rechnern einer NATS-Gruppe reden können: wer ist da, Nachricht senden, fragen und die Antwort bekommen, auf Fragen der Rechner antworten, Rundrufe, Dateien. Dafür soll der vorhandene MCP-Dienst (`viper-nats-mcp`) **im Programm `viper`** laufen, mit dem Tunnel und dem Schlüssel, die `viper nats` und der Chat schon benutzen. Auf den Rechnern ändert sich am Dienst nichts. Die Rechner verhalten sich dann für die lokale Sitzung **wie Subagenten**: Sie bekommen Aufträge und weitere Nachrichten (`send`, `request`), und ihre Antworten und Meldungen kommen **von selbst** in der lokalen Sitzung an (Push über den Channel des vorhandenen MCP-Dienstes, §4.4).
 
-**Stand:** Entwurf (20.11.2026), eine unabhängige Prüfung ist eingearbeitet (§10.1). Gebaut ist nichts. Die Entscheidungen in §8 sind **offen**, zu jeder gibt es einen Vorschlag. *[V]* heißt: im Code gelesen; *[?]* ist eine Vermutung, die in Meilenstein 0 zu prüfen ist.
+**Stand:** Entwurf (20.11.2026), eine unabhängige Prüfung ist eingearbeitet (§10.1). Die Entscheidungen in §8 sind **getroffen** (alle Vorschläge übernommen, 20.11.2026). **Meilenstein 0 läuft:** die Messungen in §7.1 sind gemacht; offen sind zwei Dinge, die nur du von Hand prüfen kannst (§7.1). Gebaut ist noch nichts vom Befehl. *[V]* heißt: im Code gelesen; *[?]* ist eine Vermutung, die in Meilenstein 0 zu prüfen ist.
 
 Gehört zu [`nats-mcp.md`](nats-mcp.md) (der Dienst und seine Werkzeuge), [`nats-cli.md`](nats-cli.md) (`viper nats`, der Operator) und [`ui-chat.md`](ui-chat.md) (Tunnel und Strom vom eigenen Rechner). Hängt mit [`a2a.md`](a2a.md) über die **Identitäten mit Namen** zusammen (§3): beide Pläne brauchen sie, sie werden nur einmal gebaut.
 
@@ -138,7 +138,7 @@ Die lokale Sitzung liest Nachrichten von Agenten, die nicht dir gehören müssen
 
 | | Inhalt | Prüfung |
 |---|---|---|
-| 0 | **Verifikation:** ein zweiter Eintrag der Art „Operator“ im Server; der Dienst mit Operator-Schlüssel, Tunnel-Adresse und `TLSServerName` verbindet, sendet, fragt und bekommt die Antwort (Test mit eingebettetem Server und den Feldern aus §4.1); `stdout` bleibt rein; Neustart des Tunnels auf demselben Port mit einem echten `sshd` (nur **Linux**); **von dir von Hand:** Claude Code startet den Eintrag und zeigt die Werkzeuge, und ein Push aus einem Rechner (`--push-from`, Channel-Schalter) erscheint in der Sitzung und **weckt eine untätige Sitzung** (§4.4) | Messungen im Plan, Entscheidung zu §8.3 |
+| 0 | **Verifikation** (gemacht am 20.11.2026, Ergebnisse §7.1; offen sind zwei Prüfungen von Hand): ein zweiter Eintrag der Art „Operator“ im Server; der Dienst mit Operator-Schlüssel, Tunnel-Adresse und `TLSServerName` verbindet, sendet, fragt und bekommt die Antwort (Test mit eingebettetem Server und den Feldern aus §4.1); `stdout` bleibt rein; Neustart des Tunnels auf demselben Port mit einem echten `sshd` (nur **Linux**); **von dir von Hand:** Claude Code startet den Eintrag und zeigt die Werkzeuge, und ein Push aus einem Rechner (`--push-from`, Channel-Schalter) erscheint in der Sitzung und **weckt eine untätige Sitzung** (§4.4) | Messungen im Plan, Entscheidung zu §8.3 |
 | 1 | **Identitäten mit Namen:** `init|revoke --name`, Schlüsseldatei je Name, alle Stellen aus §3, `viper check`, der Absturz bei fremden Rechnern in `order` | Go-Tests (Namen, Schlüssel, Kollision mit Rechnernamen, zwei Einträge), Test mit eingebettetem Server |
 | 2 | **`viper nats mcp` mit Stufe 1:** Vorprüfung des Eintrags, Tunnel, `Config`, Start, Ende, `--yes` bei `PUSH_FROM`, `--push-from` mit Channel-Name, `--print-config` (absoluter `--dir`, Name `nats-GRUPPE`, Channel-Schalter), Protokolldatei, `SendPerMin`, `instructions` für den Laptop | Test mit eingebettetem Server (`newChatWorld`, `Host.OpenTunnel` als Haken): MCP über Rohre (`initialize`, `tools/call` für `peers`, `send`, `request` mit einem Rechner als Dienst, `inbox`), **Push eines Rechners aus `--push-from` als Channel-Ereignis, keines von anderen**, `delegate` mit einem Rechner als Dienst, der bestätigt und das Ergebnis mit `send` schickt (und einer, der nicht bestätigt), Prüfung auf reines Protokoll, Rückfrage, widerrufener Schlüssel meldet klar |
 | 3 | **Stufe 2 (Neuverbinden):** gleicher Port, `Find` bei jedem Neustart, eigener Rückgabewert bei Stufe 1 | Test mit einem echten `sshd` (**nur unter Linux**; auf macOS und Windows übersprungen, dort läuft nur die Logik mit dem Haken) |
@@ -147,7 +147,26 @@ Die lokale Sitzung liest Nachrichten von Agenten, die nicht dir gehören müssen
 
 Der Befehl wird **erst nach Meilenstein 3** ausgeliefert (ein Laptop schläft). Jeder Meilenstein endet mit grüner CI auf Linux, macOS und Windows (der Test mit dem echten `sshd` nur unter Linux) und einer unabhängigen Prüfung.
 
-## 8 Entscheidungen (offen, mit Vorschlägen)
+### 7.1 Ergebnisse Meilenstein 0 (20.11.2026)
+
+Gemessen mit eingebettetem NATS-Server und einem echten `sshd` als Benutzer (Linux). Die Tests bleiben als Regressionstests im Repository (`internal/adapter/driving/cli/mcplocal_test.go`, `tunnel_sshd_test.go`).
+
+| Frage | Ergebnis |
+|---|---|
+| Trägt der Server einen zweiten Eintrag der Art „Operator“ (Name `local`) neben `operator`? | **Ja.** Der Eintrag verbindet mit seinem Schlüssel und sendet; `AuthorizationBlock` nimmt beide, kein Umbau in `natsserver`. |
+| Läuft der MCP-Dienst mit dem Schlüssel dieses Eintrags (`natsmcp.Run` über Rohre)? | **Ja.** `initialize`, `send`, `request`, `reply`, `inbox` laufen; die Antwort eines Rechners kommt als Ergebnis von `request` zurück. |
+| Steht auf der Ausgabe nur Protokoll? | **Ja** (der Test liest jede Zeile als JSON; Notizen wären ein Fehler). Der Weg des künftigen Befehls (`loadNatsGroup`, Tunnel) schreibt ohnehin nichts auf `stdout`. |
+| Wird eine **späte Antwort** (`res`) verworfen, wenn kein `request` mehr wartet? | **Ja, bestätigt:** nach einer Wartezeit von 1 Sekunde kommt die Antwort des Rechners nicht in den Posteingang. Eine gewöhnliche Nachricht (`send`) mit dem Ergebnis wird **behalten**. Damit trägt der Auftrag in zwei Schritten (§4.4.1). |
+| Kommt Push nur von den Rechnern aus `--push-from`? | **Ja.** Eine Nachricht von `beta` (genannt) erscheint als Ereignis `notifications/claude/channel`; eine von `gamma` (nicht genannt) liegt im Posteingang, ohne Ereignis. |
+| Verbindet sich ein NATS-Client durch einen Tunnel wieder, der auf **demselben Port** neu gestartet wird (`ssh -N -L`)? | **Ja, etwa 250 ms** nach dem Neustart des Tunnels (der Client merkt den Tod sofort, der Port ist nach dem Beenden von ssh gleich wieder frei, ein Neustart braucht rund 150 ms). Stufe 2 (§4.3) ist damit machbar. **Gemessen ist ein beendeter ssh-Prozess**; das Aufwachen aus dem Schlaf (ssh lebt, die Verbindung ist tot) erkennt ssh erst nach `ServerAliveInterval × (Count+1)`, etwa 75 Sekunden (Messung in `ui-chat.md` §7.1). |
+
+**Offen, von dir von Hand zu prüfen:**
+1. **Startet Claude Code den Eintrag und zeigt die Werkzeuge?** (`claude mcp add nats-GRUPPE -- …`; das gibt es erst nach Meilenstein 2, hier geht es um die Annahme, dass ein MCP-Eintrag mit einem Programm wie `viper` und dem Argument `nats mcp` startet.)
+2. **Weckt ein Channel-Ereignis eine untätige Sitzung?** Das ist die Annahme von §4.4. Prüfung: eine Sitzung mit dem Channel-Schalter und einem Rechner in `--push-from`; die Sitzung untätig lassen und vom Rechner eine Nachricht schicken. Erscheint sie und beginnt die Sitzung einen Zug, ist §4.4 vollständig; erscheint sie erst bei der nächsten Eingabe, wirkt es weniger wie ein Subagent, und die Ergänzungen aus §9 (Relay, Hook) werden wichtiger.
+
+## 8 Entscheidungen (getroffen am 20.11.2026: alle Vorschläge übernommen)
+
+Nur zwei hängen noch an einer Messung: 8.2 (ob der Channel eine untätige Sitzung weckt, von dir zu prüfen, §7.1) und 8.3 (Tunnel: gemessen, §7.1).
 
 1. **Name der lokalen Sitzung:**
    * **A (Vorschlag):** eigener Name, Standard `local`, mit `--name` änderbar. Der Operator-Name bleibt dem Menschen (Chat, `viper nats`) vorbehalten.

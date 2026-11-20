@@ -28,6 +28,8 @@ type chatWorld struct {
 	env   settings.Env
 	beta  *natsmcp.Service
 	gamma *natsmcp.Service
+	// a second entry of the kind operator, with the name local: its key file and the address of the server
+	localSeed, url string
 }
 
 func newChatWorld(t *testing.T) *chatWorld {
@@ -51,7 +53,13 @@ func newChatWorld(t *testing.T) *chatWorld {
 	if err := os.WriteFile(gseed, []byte(gid.Seed+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	lid, _ := natsserver.NewIdentity()
+	lseed := filepath.Join(tmp, "local.nk")
+	if err := os.WriteFile(lseed, []byte(lid.Seed+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	block, err := natsserver.AuthorizationBlock("dev", []natsserver.Client{
+		{Machine: "local", PublicKey: lid.PublicKey, Operator: true},
 		{Machine: "beta", PublicKey: id.PublicKey}, {Machine: "gamma", PublicKey: gid.PublicKey}, {Machine: "operator", PublicKey: op.registered["operator"], Operator: true}}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -90,7 +98,7 @@ func newChatWorld(t *testing.T) *chatWorld {
 	h.OpenTunnel = func(context.Context, driving.NATSTarget, string, int) (string, func(), error) {
 		return strings.TrimPrefix(srv.ClientURL(), "nats://"), func() {}, nil
 	}
-	return &chatWorld{opts: &cli.Opts{Host: h, Dir: dir}, env: env, beta: beta, gamma: gamma}
+	return &chatWorld{opts: &cli.Opts{Host: h, Dir: dir}, env: env, beta: beta, gamma: gamma, localSeed: lseed, url: srv.ClientURL()}
 }
 
 func (w *chatWorld) tool(t *testing.T, name, args string) string {
