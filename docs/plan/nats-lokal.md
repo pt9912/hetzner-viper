@@ -72,6 +72,26 @@ Der vorhandene Dienst kann das schon *[V: `nats-mcp.md` §3, „Push“; auf den
 * **Grenzen im Dienst:** höchstens 10 Pushes je Minute (`PushPerMin`), danach nur Posteingang; der Text ist bereinigt; jeder Push nennt `from`, `kind`, `id`, `ts`, `topic` (vom Dienst gesetzt, nicht vom Absender).
 * *[?: ob ein Channel-Ereignis eine **untätige** Sitzung zu einem neuen Zug weckt oder nur beim nächsten Zug erscheint, ist nicht geprüft. Das prüfst du in Meilenstein 0 von Hand; davon hängt ab, wie „subagentenhaft“ es wirkt.]*
 
+#### 4.4.1 Ein Auftrag in zwei Schritten (Bestätigung und Ergebnis)
+
+NATS bestätigt keine Zustellung (`sent` heißt nur „an den Server gegeben“), und eine **späte `res` wird vom Dienst verworfen**, wenn kein `request` mehr wartet (`onOut`: „answer … to no open request“). Darum trennt der Auftrag die beiden Dinge:
+
+1. **Auftrag und Bestätigung:** Die lokale Sitzung schickt den Auftrag als `request` (höchstens 120 Sekunden Wartezeit, Standard 30). Der Rechner antwortet **sofort** mit `reply` und **nur einem Satz** („angenommen, das Ergebnis kommt mit `send`“). Kommt diese Antwort, **hat der Agent dort den Auftrag gelesen**: das ist die Zustellbestätigung, die NATS selbst nicht gibt. Kommt sie nicht, ist es **nicht bestätigt** (Sitzung beendet, Agent beschäftigt, Rechner nicht verbunden), und die lokale Sitzung weiß es sofort statt nie.
+2. **Ergebnis und Rückfragen:** Wenn der Rechner fertig ist, schickt er das Ergebnis mit **`send` an den Namen der lokalen Sitzung**, nicht mit `reply`. Eine gewöhnliche Nachricht geht nie verloren: sie liegt im Posteingang oder erscheint als Push, wenn der Rechner in `--push-from` steht. Rückfragen laufen genauso, mit `send` in beide Richtungen.
+
+**Wo die Verabredung steht:** nicht in `viper-nats-mcp` auf den Rechnern (dort ändert sich nichts), sondern **im Text des Auftrags**. Dafür gibt es in der lokalen Betriebsart ein weiteres Werkzeug **`delegate`**: `delegate(to, text, timeout_seconds)` baut den Text aus einem festen Vorspann und dem Auftrag und sendet ihn als `request`:
+
+```
+[Auftrag von <name>]
+Bestätige den Empfang sofort mit reply, in einem Satz.
+Schicke das Ergebnis, wenn du fertig bist, mit send an <name>.
+Rückfragen schickst du ebenfalls mit send an <name>.
+
+<Auftrag>
+```
+
+`delegate` gibt die Bestätigung zurück („angenommen von w3: …“) oder „**nicht bestätigt**“ mit der Wartezeit. Der Vorspann ist **Text einer anderen Sitzung** und gilt für den Agenten dort wie jeder fremde Text: er kann ihn befolgen oder nicht, und ein Rechner, der den Absender nicht in `NATS_MCP_PUSH_FROM` führt, sieht ihn nur, wenn er `inbox` abfragt. Der Plan verspricht nicht, dass jeder Agent der Verabredung folgt.
+
 Trägt der Channel nicht (andere Anmeldung, Admin-Sperre, nicht interaktiv, ein untätiger Agent wird nicht geweckt), gibt es **später** zwei Ergänzungen, die hier nicht gebaut werden (§9): ein **Relay**, das Nachrichten in den Socket der Sitzung wirft (Nachrichten zwischen Sitzungen), und einen **Hook** mit Spool.
 
 ## 5 Sicherheitsmodell
@@ -111,6 +131,7 @@ Die lokale Sitzung liest Nachrichten von Agenten, die nicht dir gehören müssen
 | `internal/adapter/driven/settingsfile`, `internal/usecase/check` | die Namenprüfung gilt für jeden Operator-Namen; `viper check` kennt die eingetragenen Namen und warnt bei gleichem Namen eines Rechners (§3) |
 | `internal/adapter/driving/cli` | `viper nats init|revoke --name`, `viper nats mcp`, `--print-config`; `natsGroup` kennt den gewählten Namen; die Stellen aus §3; `openOperatorDead` gibt `cfg` heraus; `sshTunnel` nimmt einen gewünschten Port; Hilfe; **nicht** in der Seite NATS der Oberfläche |
 | `internal/natsmcp` | `DefaultConfig(names, seedFile)`, von `LoadConfig` mitbenutzt; `Config.AttachRoot` (Anhänge unterhalb eines Ordners); `Config.SendPerMin`; eine zweite Fassung der `instructions` für den Laptop |
+| `internal/natsmcp` (lokale Betriebsart) | das Werkzeug `delegate` (Vorspann, `request`, Ergebnis „bestätigt“ oder „nicht bestätigt“); Auftrag und Vorspann zusammen höchstens 16 KiB |
 | Handbuch, README, Hilfe | Kapitel „Mit einer lokalen Claude-Sitzung in der Gruppe sprechen“ (Ist-Zustand), Befehlstabelle |
 
 ## 7 Meilensteine
@@ -119,7 +140,7 @@ Die lokale Sitzung liest Nachrichten von Agenten, die nicht dir gehören müssen
 |---|---|---|
 | 0 | **Verifikation:** ein zweiter Eintrag der Art „Operator“ im Server; der Dienst mit Operator-Schlüssel, Tunnel-Adresse und `TLSServerName` verbindet, sendet, fragt und bekommt die Antwort (Test mit eingebettetem Server und den Feldern aus §4.1); `stdout` bleibt rein; Neustart des Tunnels auf demselben Port mit einem echten `sshd` (nur **Linux**); **von dir von Hand:** Claude Code startet den Eintrag und zeigt die Werkzeuge, und ein Push aus einem Rechner (`--push-from`, Channel-Schalter) erscheint in der Sitzung und **weckt eine untätige Sitzung** (§4.4) | Messungen im Plan, Entscheidung zu §8.3 |
 | 1 | **Identitäten mit Namen:** `init|revoke --name`, Schlüsseldatei je Name, alle Stellen aus §3, `viper check`, der Absturz bei fremden Rechnern in `order` | Go-Tests (Namen, Schlüssel, Kollision mit Rechnernamen, zwei Einträge), Test mit eingebettetem Server |
-| 2 | **`viper nats mcp` mit Stufe 1:** Vorprüfung des Eintrags, Tunnel, `Config`, Start, Ende, `--yes` bei `PUSH_FROM`, `--push-from` mit Channel-Name, `--print-config` (absoluter `--dir`, Name `nats-GRUPPE`, Channel-Schalter), Protokolldatei, `SendPerMin`, `instructions` für den Laptop | Test mit eingebettetem Server (`newChatWorld`, `Host.OpenTunnel` als Haken): MCP über Rohre (`initialize`, `tools/call` für `peers`, `send`, `request` mit einem Rechner als Dienst, `inbox`), **Push eines Rechners aus `--push-from` als Channel-Ereignis, keines von anderen**, Prüfung auf reines Protokoll, Rückfrage, widerrufener Schlüssel meldet klar |
+| 2 | **`viper nats mcp` mit Stufe 1:** Vorprüfung des Eintrags, Tunnel, `Config`, Start, Ende, `--yes` bei `PUSH_FROM`, `--push-from` mit Channel-Name, `--print-config` (absoluter `--dir`, Name `nats-GRUPPE`, Channel-Schalter), Protokolldatei, `SendPerMin`, `instructions` für den Laptop | Test mit eingebettetem Server (`newChatWorld`, `Host.OpenTunnel` als Haken): MCP über Rohre (`initialize`, `tools/call` für `peers`, `send`, `request` mit einem Rechner als Dienst, `inbox`), **Push eines Rechners aus `--push-from` als Channel-Ereignis, keines von anderen**, `delegate` mit einem Rechner als Dienst, der bestätigt und das Ergebnis mit `send` schickt (und einer, der nicht bestätigt), Prüfung auf reines Protokoll, Rückfrage, widerrufener Schlüssel meldet klar |
 | 3 | **Stufe 2 (Neuverbinden):** gleicher Port, `Find` bei jedem Neustart, eigener Rückgabewert bei Stufe 1 | Test mit einem echten `sshd` (**nur unter Linux**; auf macOS und Windows übersprungen, dort läuft nur die Logik mit dem Haken) |
 | 4 | **Dateien:** `--files`, `AttachRoot`, Grenzen von `fetch` | Tests der Grenzen (`..`, Verknüpfungen, fremde Art, ohne `--files`) |
 | 5 | **Handbuch, README, Hilfe**; Plan-Stand | Durchsicht, unabhängige Prüfung |
@@ -132,14 +153,15 @@ Der Befehl wird **erst nach Meilenstein 3** ausgeliefert (ein Laptop schläft). 
    * **A (Vorschlag):** eigener Name, Standard `local`, mit `--name` änderbar. Der Operator-Name bleibt dem Menschen (Chat, `viper nats`) vorbehalten.
    * B: der Operator-Name. Weniger zu bauen, aber ein Agent erbte das Vertrauen aus `NATS_MCP_PUSH_FROM=operator`.
    * C: ein Name je Sitzung (zufällig). Verlangte eine Anmeldung am Server **je Start** (ssh), also unbrauchbar.
-2. **Zustellung in die Sitzung:** **Vorschlag: der vorhandene Push über den Channel** mit `--push-from` für ausdrücklich genannte Rechner (Standard leer), `request` für Frage und Antwort; kein Relay und kein Hook im ersten Wurf (§4.4, §9). Gegenargument: Der Channel ist eine Vorschau und braucht den Schalter; trägt er nicht, kommen die Ergänzungen aus §9.
+2. **Zustellung in die Sitzung:** **Vorschlag: der vorhandene Push über den Channel** mit `--push-from` für ausdrücklich genannte Rechner (Standard leer); **Aufträge in zwei Schritten** (§4.4.1: `request` und `reply` als Bestätigung, das Ergebnis mit `send`), kurze Fragen mit `request`; kein Relay und kein Hook im ersten Wurf (§4.4, §9). Gegenargument: Der Channel ist eine Vorschau und braucht den Schalter; trägt er nicht, kommen die Ergänzungen aus §9.
 3. **Tunnel stirbt:** **Vorschlag: Stufe 2 (Neuverbinden) vor dem ersten Release**, weil ein Laptop schläft; Stufe 1 ist nur der Zwischenschritt. Hält die Messung in Meilenstein 0 den gleichen Port nicht aus, wird ein neuer Port gewählt und der Dienst neu aufgebaut.
 4. **Anhänge:** **Vorschlag: aus, nur mit `--files ORDNER`.** Das schützt vor Versehen, nicht vor einem Angreifer (§5.3).
 5. **Eine Gruppe je Eintrag:** **Vorschlag: ja.** Mehrere Gruppen sind mehrere Einträge in Claude Code (`nats-GRUPPE`).
 6. **Mehrere lokale Sitzungen:** **Vorschlag:** das Handbuch sagt es (§5.4); wer getrennte Gespräche braucht, nimmt `--name` je Sitzung (`viper nats init GRUPPE --name local-b`).
 7. **Hilfsbefehl `--print-config`:** **Vorschlag: ja** (Befehl, JSON, absoluter `--dir`, Channel-Name), **ohne** `--yes`.
 8. **Relay und Hook als Ergänzung:** **Vorschlag: später und nur, wenn der Channel nicht trägt** (Meilenstein 0 entscheidet). Sie sind in §9 beschrieben, nicht geplant.
-9. **Grenze beim Senden:** **Vorschlag: 20 je Minute** im lokalen Betrieb (`Config.SendPerMin`), einstellbar mit `--send-per-min`.
+9. **Auftrag in zwei Schritten (`delegate`):** **Vorschlag: ja**, als Werkzeug der lokalen Betriebsart. Alternative: nur im Handbuch beschreiben und den Text dem Agenten überlassen; dann fehlt die einheitliche Bestätigung „bestätigt / nicht bestätigt“.
+10. **Grenze beim Senden:** **Vorschlag: 20 je Minute** im lokalen Betrieb (`Config.SendPerMin`), einstellbar mit `--send-per-min`.
 
 ## 9 Bewusst nicht enthalten
 
@@ -180,6 +202,7 @@ Eine unabhängige Prüfung gegen den Code ist eingearbeitet:
 | Es gibt keine Grenze beim Senden: `SendPerMin` | §5.3, §10 |
 | Namenskollisionen: `init` prüft gegen `g.ms`, `viper check` warnt, `Find().Operators` | §3 |
 | Der Dienst meldet bei fremdem Schlüssel keinen Fehler: Vorprüfung vor dem Start | §4.1 |
+| Eine späte `res` wird vom Dienst verworfen: lange Aufgaben nicht als `request`/`res`, sondern Auftrag mit Bestätigung und Ergebnis per `send` | §4.4.1 |
 | Rückfrage der Anwender (20.11.2026): Die Rechner sollen wie Subagenten wirken; **Push über den vorhandenen Channel ist der Hauptweg**, Relay und Hook sind Ergänzungen | §4.4, §9, §8.2 |
 | Stufe 2 (Neuverbinden) vor dem Release; der Port wird heute mit `Listen(:0)` gewählt | §4.3, §7, §8.3 |
 | Liste der Stellen mit `operator.nk` und der Flags; `mcp` nicht in der Seite NATS der Oberfläche; `--name` und `--from` | §3, §6 |
@@ -190,6 +213,7 @@ Eine unabhängige Prüfung gegen den Code ist eingearbeitet:
 
 * `viper nats init GRUPPE --name local` und `viper nats mcp GRUPPE` laufen auf Linux, macOS und Windows; `claude mcp add nats-GRUPPE -- viper nats mcp GRUPPE --dir …` zeigt die Werkzeuge.
 * Eine lokale Sitzung sieht mit `peers` die Rechner, sendet mit `send`, fragt mit `request` und bekommt die Antwort, beantwortet die Frage eines Rechners mit `reply` und findet Eingehendes in `inbox`; nach einem Schlaf des Rechners (Tunnel neu) geht das weiter.
+* `delegate` an einen Rechner, der bestätigt, gibt die Bestätigung zurück; an einen, der es nicht tut, nach der Wartezeit „nicht bestätigt"; das Ergebnis, das der Rechner später mit `send` schickt, geht **nicht** verloren (Posteingang oder Push).
 * Ohne `--push-from` wird nichts in die lokale Sitzung geschoben; mit `--push-from w3` erscheint ein Text von `w3` von selbst in der Sitzung (Channel-Ereignis), ein Text eines anderen Rechners nicht; ohne `--files` geht keine Datei hinaus; mit einem Rechner, der den Namen in `PUSH_FROM` führt, startet der Befehl nur mit `--yes`; mehr als `SendPerMin` Sendungen in einer Minute scheitern.
 * `stdout` enthält nur Protokoll (getestet); ein unbekannter oder widerrufener Schlüssel wird beim Start klar gemeldet.
 * Am Dienst auf den Rechnern ändert sich nichts; `viper check` warnt nicht mehr für den Namen der lokalen Sitzung.
