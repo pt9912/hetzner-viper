@@ -38,10 +38,11 @@ func (s Service) Find(ctx context.Context, machines []driving.NATSMachine) (driv
 		if !strings.Contains(ca, "BEGIN CERTIFICATE") {
 			return driving.NATSServerInfo{}, fmt.Errorf("%s: the server has no certificate", m.Name)
 		}
-		info := driving.NATSServerInfo{Machine: m, Host: end.Host, Port: end.Port, CA: ca}
+		info := driving.NATSServerInfo{Machine: m, Host: end.Host, Port: end.Port, CA: ca, OperatorKeys: map[string]string{}}
 		for _, c := range clients {
 			if c.Operator {
 				info.Operators = append(info.Operators, c.Machine)
+				info.OperatorKeys[c.Machine] = c.PublicKey
 			}
 		}
 		return info, nil

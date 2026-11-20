@@ -28,6 +28,12 @@ type Config struct {
 	ObjectsFileMax int64
 	// AttachDir is the folder fetch puts the files of attachments into.
 	AttachDir string
+	// AttachRoot is the folder the files of attachments must lie in (--files of --via-viper); empty: the home folder (the machines).
+	AttachRoot string
+	// SendPerMin limits what the agent sends and asks: send, request, delegate, broadcast and reply together, per minute. 0: no limit.
+	SendPerMin int
+	// Local is the session of a user on their own computer (--via-viper): other instructions for the agent and the tool delegate.
+	Local bool
 	// Version is the version of this program, announced to the group (caps). Empty or not a version: nothing is announced.
 	Version string
 
@@ -50,6 +56,13 @@ const (
 	DefaultPushPerMin = 10
 	DefaultInboxMax   = 200
 )
+
+// DefaultConfig is the configuration with the limits of the defaults: a program that builds a Config by hand (--via-viper) needs them, too:
+// with 0 the inbox drops every entry, the push says "too many" at once, and fetch writes into the current folder.
+func DefaultConfig(names Names, seedFile string) Config {
+	return Config{SeedFile: seedFile, Names: names, PushFrom: map[string]bool{}, MaxText: DefaultMaxText, PushPerMin: DefaultPushPerMin,
+		InboxMax: DefaultInboxMax, InboxPerMan: DefaultInboxMax / 4}
+}
 
 func parseEnvFile(path string) (map[string]string, error) {
 	f, err := os.Open(path)
@@ -90,9 +103,8 @@ func LoadConfig(dir string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	c := Config{URL: conn["NATS_URL"], CAFile: conn["NATS_CA_FILE"], SeedFile: conn["NATS_NKEY_SEED_FILE"], Names: names,
-		PushFrom: map[string]bool{}, MaxText: DefaultMaxText, PushPerMin: DefaultPushPerMin,
-		InboxMax: DefaultInboxMax, InboxPerMan: DefaultInboxMax / 4, LogFile: filepath.Join(dir, "mcp.log")}
+	c := DefaultConfig(names, conn["NATS_NKEY_SEED_FILE"])
+	c.URL, c.CAFile, c.LogFile = conn["NATS_URL"], conn["NATS_CA_FILE"], filepath.Join(dir, "mcp.log")
 	if c.URL == "" || c.SeedFile == "" {
 		return Config{}, errors.New("connection.env needs NATS_URL and NATS_NKEY_SEED_FILE")
 	}

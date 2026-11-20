@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -683,6 +684,44 @@ func TestMCPBinaryWritesTheProgramOfTheArchitectureAndRefusesATerminal(t *testin
 		t.Errorf("a terminal must not get the bytes: %v %q", err, out.String())
 	}
 	if _, o, err := cli.Parse([]string{"mcp-binary", "--arch", "arm64"}); err != nil || o.Arch != "arm64" {
+		t.Errorf("%v %+v", err, o)
+	}
+}
+
+func TestMCPBinaryHostWritesTheProgramOfThisComputerToStdoutOrAFile(t *testing.T) {
+	_, h := fakeTools(t)
+	h.Services.MCPHost = func() ([]byte, error) { return []byte("MZ-host"), nil }
+	var out bytes.Buffer
+	h.Stdout = &out
+	if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h, HostBin: true}); err != nil || out.String() != "MZ-host" {
+		t.Errorf("%v %q", err, out.String())
+	}
+	file := filepath.Join(t.TempDir(), "bin", "viper-nats-mcp")
+	for i := 0; i < 2; i++ { // the second time replaces the file
+		if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h, HostBin: true, Out: file}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st, err := os.Stat(file)
+	if err != nil || st.Size() != 7 || (runtime.GOOS != "windows" && st.Mode().Perm()&0o100 == 0) {
+		t.Errorf("%v %v", st, err)
+	}
+	if _, err := os.Stat(file + ".new"); !os.IsNotExist(err) {
+		t.Errorf("a temporary file is left: %v", err)
+	}
+	if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h, HostBin: true, Arch: "arm64"}); err == nil || !strings.Contains(err.Error(), "exclude") {
+		t.Errorf("%v", err)
+	}
+	h.IsTerminal = func() bool { return true }
+	out.Reset()
+	if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h, HostBin: true}); err == nil || out.Len() != 0 {
+		t.Errorf("a terminal must not get the bytes: %v", err)
+	}
+	h.Services.MCPHost = func() ([]byte, error) { return nil, errors.New("this viper was built without the NATS MCP server") }
+	if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h, HostBin: true}); err == nil || !strings.Contains(err.Error(), "built without") {
+		t.Errorf("%v", err)
+	}
+	if _, o, err := cli.Parse([]string{"mcp-binary", "--host", "--out", "x"}); err != nil || !o.HostBin || o.Out != "x" {
 		t.Errorf("%v %+v", err, o)
 	}
 }

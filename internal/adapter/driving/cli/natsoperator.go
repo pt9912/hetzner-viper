@@ -273,38 +273,13 @@ func openOperator(ctx context.Context, o *options, g *natsGroup) (*operatorSessi
 // openOperatorDead is openOperator for a caller that stays connected (the chat): dead, if not nil, is closed when the ssh process of
 // the tunnel has ended (a watch over it does not notice that: it tries again to a port nobody listens on).
 func openOperatorDead(ctx context.Context, o *options, g *natsGroup, dead chan struct{}) (*operatorSession, error) {
-	srv, err := g.find(ctx, o)
+	t, err := openTunnel(ctx, o, g, dead, 0)
 	if err != nil {
 		return nil, err
 	}
-	open := o.host().OpenTunnel
-	if open == nil {
-		open = func(ctx context.Context, via driving.NATSTarget, host string, port int) (string, func(), error) {
-			return sshTunnel(ctx, o, via, host, port, dead)
-		}
-	}
-	addr, stopTunnel, err := open(ctx, srv.Machine.Target, srv.Host, srv.Port)
-	if err != nil {
-		return nil, fmt.Errorf("the ssh tunnel to the NATS server: %w", err)
-	}
-	cfg := natsmcp.Config{URL: "tls://" + addr, SeedFile: g.keyFile(), Names: natsmcp.Names{Group: g.name, Me: g.me},
-		MaxText: natsmcp.DefaultMaxText, TLSServerName: srv.Host, ObjectsFileMax: g.objectsFileMax()}
-	dir, err := os.MkdirTemp("", "viper-nats-")
-	if err != nil {
-		stopTunnel()
-		return nil, err
-	}
-	stop := func() { stopTunnel(); _ = os.RemoveAll(dir) }
-	if srv.CA != "" { // the certificate is read fresh each time: it expires, and a new group has a new one
-		cfg.CAFile = filepath.Join(dir, "ca.pem")
-		if err := os.WriteFile(cfg.CAFile, []byte(srv.CA), 0o600); err != nil {
-			stop()
-			return nil, err
-		}
-	} else {
-		cfg.URL, cfg.TLSServerName = "nats://"+addr, ""
-	}
-	return &operatorSession{close: stop, server: fmt.Sprintf("%s (%s:%d)", srv.Machine.Name, srv.Host, srv.Port), remote: func(ctx context.Context, _, stdin string, stdout, stderr io.Writer, words ...string) error {
+	cfg := natsmcp.Config{URL: t.url, SeedFile: g.keyFile(), Names: natsmcp.Names{Group: g.name, Me: g.me},
+		MaxText: natsmcp.DefaultMaxText, TLSServerName: t.serverName, CAFile: t.caFile, ObjectsFileMax: g.objectsFileMax()}
+	return &operatorSession{close: t.stop, server: t.server, remote: func(ctx context.Context, _, stdin string, stdout, stderr io.Writer, words ...string) error {
 		if len(words) < 2 {
 			return errors.New("no subcommand")
 		}
@@ -313,6 +288,52 @@ func openOperatorDead(ctx context.Context, o *options, g *natsGroup, dead chan s
 		}
 		return nil
 	}}, nil
+}
+
+// tunnel is an open ssh tunnel to the NATS server of a group, with what a client needs to connect through it.
+type tunnel struct {
+	url        string // tls://127.0.0.1:PORT, or nats:// when the server has no certificate
+	caFile     string // the certificate of the server (empty without TLS)
+	serverName string // the name in that certificate
+	server     string // which server: the machine that holds it, and its address in the group
+	stop       func() // closes the tunnel and deletes the certificate file
+}
+
+// openTunnel finds the server of the group and opens an ssh tunnel to it; the certificate is written to a folder of its own. port, if
+// not 0, is the port on this computer (a restart of the tunnel uses the port of the one before, which a client reconnects to).
+func openTunnel(ctx context.Context, o *options, g *natsGroup, dead chan struct{}, port int) (*tunnel, error) {
+	srv, err := g.find(ctx, o)
+	if err != nil {
+		return nil, err
+	}
+	open := o.host().OpenTunnel
+	if open == nil {
+		open = func(ctx context.Context, via driving.NATSTarget, host string, remote int) (string, func(), error) {
+			return sshTunnel(ctx, o, via, host, remote, port, dead)
+		}
+	}
+	addr, stopTunnel, err := open(ctx, srv.Machine.Target, srv.Host, srv.Port)
+	if err != nil {
+		return nil, fmt.Errorf("the ssh tunnel to the NATS server: %w", err)
+	}
+	dir, err := os.MkdirTemp("", "viper-nats-")
+	if err != nil {
+		stopTunnel()
+		return nil, err
+	}
+	t := &tunnel{url: "tls://" + addr, serverName: srv.Host, server: fmt.Sprintf("%s (%s:%d)", srv.Machine.Name, srv.Host, srv.Port),
+		stop: func() { stopTunnel(); _ = os.RemoveAll(dir) }}
+	if srv.CA == "" {
+		t.url, t.serverName = "nats://"+addr, ""
+		return t, nil
+	}
+	// the certificate is read fresh each time: it expires, and a new group has a new one
+	t.caFile = filepath.Join(dir, "ca.pem")
+	if err := os.WriteFile(t.caFile, []byte(srv.CA), 0o600); err != nil {
+		t.stop()
+		return nil, err
+	}
+	return t, nil
 }
 
 // syncBuffer collects what the tunnel says on stderr, from another goroutine.
@@ -334,18 +355,16 @@ func (s *syncBuffer) String() string {
 }
 
 // sshTunnel forwards a free port of this computer to host:port as seen from the machine.
-func sshTunnel(ctx context.Context, o *options, via driving.NATSTarget, host string, port int, dead chan struct{}) (string, func(), error) {
+// With want not 0 that port is taken (it must be free); the answer then names a leftover ssh.
+func sshTunnel(ctx context.Context, o *options, via driving.NATSTarget, host string, port, want int, dead chan struct{}) (string, func(), error) {
 	st := o.host().StreamTool
 	if st == nil {
 		return "", nil, errors.New("viper nats cannot run programs here")
 	}
-	var lc net.ListenConfig
-	l, err := lc.Listen(ctx, "tcp", "127.0.0.1:0")
+	local, err := freeAddress(ctx, want)
 	if err != nil {
 		return "", nil, err
 	}
-	local := l.Addr().String()
-	_ = l.Close() // ssh binds it next; the gap is short and a clash makes ssh fail (ExitOnForwardFailure)
 	tctx, cancel := context.WithCancel(ctx)
 	var errs syncBuffer
 	done := make(chan error, 1)
@@ -380,4 +399,19 @@ func sshTunnel(ctx context.Context, o *options, via driving.NATSTarget, host str
 			return "", nil, fmt.Errorf("the tunnel did not come up: %s", errs.String())
 		}
 	}
+}
+
+// freeAddress is 127.0.0.1:port for a port that is free now: the wanted one (an error that names a leftover ssh if it is taken), or any.
+func freeAddress(ctx context.Context, want int) (string, error) {
+	var lc net.ListenConfig
+	l, err := lc.Listen(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", want))
+	if err != nil {
+		if want != 0 {
+			return "", fmt.Errorf("the port %d is taken (an ssh left over from before?): %w", want, err)
+		}
+		return "", err
+	}
+	local := l.Addr().String()
+	_ = l.Close() // ssh binds it next; the gap is short and a clash makes ssh fail (ExitOnForwardFailure)
+	return local, nil
 }

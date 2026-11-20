@@ -21,12 +21,11 @@ type mcpRig struct {
 	in    *io.PipeWriter
 	lines chan map[string]any
 	id    int
+	diag  func() string // what to say when the server does not come up
 }
 
 func startLocalMCP(t *testing.T, w *chatWorld, pushFrom ...string) *mcpRig {
 	t.Helper()
-	inR, inW := io.Pipe()
-	outR, outW := io.Pipe()
 	push := map[string]bool{}
 	for _, p := range pushFrom {
 		push[p] = true
@@ -34,10 +33,20 @@ func startLocalMCP(t *testing.T, w *chatWorld, pushFrom ...string) *mcpRig {
 	cfg := natsmcp.Config{URL: w.url, SeedFile: w.localSeed, Names: natsmcp.Names{Group: "dev", Me: "local"}, PushFrom: push,
 		MaxText: natsmcp.DefaultMaxText, PushPerMin: natsmcp.DefaultPushPerMin, InboxMax: natsmcp.DefaultInboxMax, InboxPerMan: natsmcp.DefaultInboxMax / 4,
 		AttachDir: t.TempDir()}
+	return startRig(t, nil, func(ctx context.Context, in io.Reader, out io.Writer) {
+		_ = natsmcp.Run(ctx, cfg, "test", in, out, quietLog{})
+	})
+}
+
+// startRig runs an MCP server (run) on pipes and speaks to it: the protocol handshake is done when it returns.
+func startRig(t *testing.T, diag func() string, run func(ctx context.Context, in io.Reader, out io.Writer)) *mcpRig {
+	t.Helper()
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { _ = natsmcp.Run(ctx, cfg, "test", inR, outW, quietLog{}); _ = outW.Close(); close(done) }()
-	r := &mcpRig{t: t, in: inW, lines: make(chan map[string]any, 256)}
+	go func() { run(ctx, inR, outW); _ = outW.Close(); close(done) }()
+	r := &mcpRig{t: t, in: inW, lines: make(chan map[string]any, 256), diag: diag}
 	go func() {
 		rd := bufio.NewReader(outR)
 		for {
@@ -63,8 +72,19 @@ func startLocalMCP(t *testing.T, w *chatWorld, pushFrom ...string) *mcpRig {
 
 func (r *mcpRig) send(line string) {
 	r.t.Helper()
-	if _, err := io.WriteString(r.in, line+"\n"); err != nil {
-		r.t.Fatal(err)
+	wrote := make(chan error, 1)
+	go func() { _, err := io.WriteString(r.in, line+"\n"); wrote <- err }()
+	select {
+	case err := <-wrote:
+		if err != nil {
+			r.t.Fatal(err)
+		}
+	case <-time.After(20 * time.Second): // the server reads nothing: it did not come up
+		extra := ""
+		if r.diag != nil {
+			extra = "\n" + r.diag()
+		}
+		r.t.Fatalf("the server does not read its input%s", extra)
 	}
 }
 

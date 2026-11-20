@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"runtime"
 )
 
 //go:embed all:bin
@@ -24,6 +25,26 @@ func Architectures() []string { return []string{"amd64", "arm64"} }
 // FileName is the name of the binary of an architecture, in the directory bin and in the release
 // scripts.
 func FileName(goarch string) string { return "viper-nats-mcp_linux_" + goarch }
+
+// HostFileName is the name of the binary for the system goos/goarch (a Linux server, or the computer viper runs on): the file
+// of a Windows program ends in .exe.
+func HostFileName(goos, goarch string) string {
+	name := "viper-nats-mcp_" + goos + "_" + goarch
+	if goos == "windows" {
+		name += ".exe"
+	}
+	return name
+}
+
+// Host returns the viper-nats-mcp binary for the system this viper runs on (it is the same build as the one that is written to
+// the servers). A viper built without it (plain go build) returns ErrNotIncluded.
+func Host() ([]byte, error) {
+	b, err := files.ReadFile("bin/" + HostFileName(runtime.GOOS, runtime.GOARCH))
+	if err != nil || len(b) == 0 {
+		return nil, ErrNotIncluded
+	}
+	return b, nil
+}
 
 // Binary returns the viper-nats-mcp binary for a Linux server of that architecture ("amd64" or
 // "arm64"). An empty file counts as not included.

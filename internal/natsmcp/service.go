@@ -47,6 +47,7 @@ type Service struct {
 	waiters    map[string]*waiter
 	topics     map[string]*nats.Subscription
 	pushed     map[string][]time.Time
+	sendTimes  []time.Time // when the tools that write to others were called in the last minute
 	errs       int
 	drops      int       // lines logged about messages of other machines
 	lastAnswer time.Time // of the last presence query that was answered

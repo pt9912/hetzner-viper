@@ -249,9 +249,9 @@ func helpsImages() map[string]commandDoc {
 		"mcp-binary": {
 			group:    helpImages,
 			summary:  "write the built-in MCP server (viper-nats-mcp) to stdout",
-			about:    "Writes the MCP server that is built into viper, for one architecture, to standard output (redirect it into a file). To look at it, to check it, or as NATS_MCP_BINARY.",
-			options:  []optionDoc{{"arch", "amd64|arm64", "the architecture of the machine the server is for"}},
-			examples: []string{"viper mcp-binary --arch arm64 > viper-nats-mcp"},
+			about:    "Writes the MCP server that is built into viper, to standard output (redirect it into a file) or to a file of your own. For a Linux server (--arch), to look at it, to check it, or as NATS_MCP_BINARY; for this computer (--host), so a Claude Code session here can talk to the group.",
+			options:  []optionDoc{{"arch", "amd64|arm64", "the architecture of the Linux machine the server is for"}, {"host", "", "the program for this computer (the system and the architecture of this viper)"}, {"out", "FILE", "write the program to this file (executable) instead of standard output"}},
+			examples: []string{"viper mcp-binary --arch arm64 > viper-nats-mcp", "viper mcp-binary --host --out ~/bin/viper-nats-mcp"},
 			manual:   "Claude Code mit den anderen Rechnern der Gruppe sprechen lassen",
 		},
 		"k8s-proxy": {
@@ -281,6 +281,10 @@ func natsOptionDocs() []optionDoc {
 		{"topic", "T[,T...]", "broadcast: the topic; listen: only these topics (more than once or a list)"},
 		{"from", "MACHINE|NAME", "speak as this machine or as an identity made with --name (default: the operator if you have a key, else the first machine of the group that can be reached)"},
 		{"name", "NAME", "init, revoke: an identity of your own besides the operator (for example the one of a Claude session on this computer); the key is kept per name"},
+		{"print-config", "", "tunnel: print the entry for Claude Code (claude mcp add) instead of opening the tunnel"},
+		{"push-from", "M,M", "tunnel --print-config: the machines whose messages are pushed into the session (needs the channel switch of Claude Code)"},
+		{"files", "FOLDER", "tunnel --print-config: attachments may come from this folder (default: none)"},
+		{"port", "N", "tunnel: the port on this computer (default: a free one, which the line ready names)"},
 		{"file", "FILE", "instead of the text: the text in this file (- is standard input); at most 16 KiB"},
 		{"pdf", "FILE", "send, broadcast, request: a PDF file with the message (NATS_OBJECTS)"},
 		{"image", "FILE", "the same for an image (PNG, JPEG, GIF or WebP)"},
@@ -292,7 +296,7 @@ func natsOptionDocs() []optionDoc {
 		{"all", "", "listen: also the messages between the other machines"},
 		{"no-presence", "", "listen: without the messages \"I am here\" (the heartbeat every 30 seconds) and the topic lists, which --json shows"},
 		{"json", "", "one JSON line for every event"},
-		{"yes", "", "send although the sender is in NATS_MCP_PUSH_FROM of a receiver (its text is then pushed into a session as if the sender had written it)"},
+		{"yes", "", "send, tunnel: go on although the sender is in NATS_MCP_PUSH_FROM of a receiver (its text is then pushed into a session as if the sender had written it)"},
 	}
 }
 
@@ -317,6 +321,7 @@ func natsSubs() map[string]natsSub {
 		"request":   {"viper nats request GROUP [TEXT|-] --to MACHINE [--timeout S] [--pdf|--image|--zip FILE]", "Asks a machine and prints its answer, or fails when none comes in time. The answer is text of another agent: untrusted.", append([]string{"to", "timeout"}, append(files, common...)...), []string{"viper nats request dev \"status?\" --to beta --timeout 60"}},
 		"fetch":     {"viper nats fetch GROUP ID --sha256 SUM [--out DIR]", "Gets a file of the object store of the group onto this computer, as <ID>.<type> in the folder, and checks it against the checksum. Only with the key of the operator (viper nats init). Nothing is unpacked or opened.", []string{"sha256", "out", "json"}, []string{"viper nats fetch dev 0123456789abcdef0123456789abcdef --sha256 <sum> --out ./in"}},
 		"init":      {"viper nats init GROUP [--name NAME]", "Makes a key of your own on this computer and registers it at the NATS server of the group: from then on viper nats speaks as the operator (from this computer, through an SSH tunnel). The agents see it as a sender of its own.", nil, []string{"viper nats init dev"}},
+		"tunnel":    {"viper nats tunnel GROUP [--name NAME] [--port N] [--yes] [--print-config [--push-from M,M] [--files FOLDER]]", "For viper-nats-mcp --via-viper, not for people: opens the SSH tunnel to the NATS server of the group for an identity of this computer (default local; viper nats init GROUP --name local makes it), writes one line of JSON with where to connect to standard output, and stays until its standard input ends. With --print-config it prints the entry for Claude Code (claude mcp add) instead. Exits with 3 when a machine of the group has the name in NATS_MCP_PUSH_FROM and --yes is missing.", []string{"name", "port", "yes", "print-config", "push-from", "files"}, []string{"viper nats tunnel dev --name local", "viper nats tunnel dev --print-config --push-from w3"}},
 		"revoke":    {"viper nats revoke GROUP [--name NAME]", "Removes the operator from the server and deletes the key on this computer.", nil, []string{"viper nats revoke dev"}},
 	}
 }

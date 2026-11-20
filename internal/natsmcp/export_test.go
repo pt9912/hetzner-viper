@@ -51,3 +51,6 @@ const (
 
 // AuthHint is authHint for the tests.
 func AuthHint(lastError, group string) string { return authHint(lastError, group) }
+
+// ChildEnv exports childEnv.
+func ChildEnv(environ []string) []string { return childEnv(environ) }

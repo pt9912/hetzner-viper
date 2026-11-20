@@ -26,6 +26,9 @@ type options struct {
 	sha256, out                 string // viper nats fetch
 	timeout                     time.Duration
 	query, asJSON, yes, all     bool
+	printConfig                 bool // viper nats tunnel: print the entry for Claude Code
+	pushFrom, files             string
+	hostBin                     bool // viper mcp-binary: the program for this computer
 	noPresence                  bool // viper nats listen: without the messages "I am here" and the topic lists
 	// set by the group commands for the run of one machine, not by the command line
 	onServerCreated           func()
@@ -73,7 +76,7 @@ var errHelp = errors.New("help")
 // isValueFlag reports whether the option takes a value.
 func isValueFlag(n string) bool {
 	switch n {
-	case "repo", "cmd", "dir", "group", "in-group", "parallel", "cpu", "ram", "disk", "arch", "location", "provider", "vat", "to", "topic", "from", "name", "file", "pdf", "image", "zip", "sha256", "out", "timeout", "tag", "k3d", "port", "keep-days":
+	case "repo", "cmd", "dir", "group", "in-group", "parallel", "cpu", "ram", "disk", "arch", "location", "provider", "vat", "to", "topic", "from", "name", "push-from", "files", "file", "pdf", "image", "zip", "sha256", "out", "timeout", "tag", "k3d", "port", "keep-days":
 		return true
 	}
 	return false
@@ -93,11 +96,11 @@ func commands() map[string]command {
 		"dns":          {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeDNS},
 		"find":         {usage: "[--cpu N] [--ram GB] [--disk GB] [--arch x86|arm] [--location L] [--provider P] [--vat PERCENT]", machine: noMachine, flags: []string{"cpu", "ram", "disk", "arch", "location", "provider", "vat"}, run: nativeFind},
 		"log":          {usage: "[<machine> [--in-group G]] [--full]", machine: maybeMachine, flags: []string{"full", "in-group"}, run: nativeLog},
-		"nats":         {usage: "peers|topics|listen|send|broadcast|request|fetch|init|revoke GROUP [TEXT|-|--file FILE|ID] [--pdf FILE|--image FILE|--zip FILE] [--sha256 HEX --out DIR] [--from MACHINE|NAME] [--name NAME] [--to MACHINE] [--topic T[,T...]] [--timeout S] [--query] [--all] [--no-presence] [--json] [--yes]", machine: restArgs, flags: []string{"to", "topic", "from", "name", "file", "pdf", "image", "zip", "sha256", "out", "timeout", "query", "all", "json", "yes", "no-presence"}, run: nativeNats},
+		"nats":         {usage: "peers|topics|listen|send|broadcast|request|fetch|init|revoke|tunnel GROUP [TEXT|-|--file FILE|ID] [--pdf FILE|--image FILE|--zip FILE] [--sha256 HEX --out DIR] [--from MACHINE|NAME] [--name NAME] [--print-config [--push-from M,M] [--files DIR]] [--to MACHINE] [--topic T[,T...]] [--timeout S] [--query] [--all] [--no-presence] [--json] [--yes]", machine: restArgs, flags: []string{"to", "topic", "from", "name", "file", "pdf", "image", "zip", "sha256", "out", "timeout", "query", "all", "json", "yes", "no-presence", "port", "print-config", "push-from", "files"}, run: nativeNats},
 		"image":        {usage: "build [--tag NAME:TAG] [--k3d CLUSTER]", machine: restArgs, flags: []string{"tag", "k3d"}, run: nativeImage},
 		"k8s-proxy":    {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeK8sProxy},
 		"docker-proxy": {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeDockerProxy},
-		"mcp-binary":   {usage: "--arch amd64|arm64", machine: noMachine, flags: []string{"arch"}, run: nativeMCPBinary},
+		"mcp-binary":   {usage: "--arch amd64|arm64 | --host [--out FILE]", machine: noMachine, flags: []string{"arch", "host", "out"}, run: nativeMCPBinary},
 		"ui-chat":      {usage: "[--port N] [--no-open] [--readonly] [--no-pairs] [--keep-days N] [--no-history]", machine: noMachine, flags: []string{"port", "no-open", "readonly", "no-pairs", "keep-days", "no-history"}, run: nativeUIChat},
 		"ui":           {usage: "[--port N] [--no-open] [--readonly|--edit]", machine: noMachine, flags: []string{"port", "no-open", "readonly", "edit"}, run: nativeUI},
 		"version":      {usage: "", machine: noMachine},
@@ -266,7 +269,7 @@ func switches(o *options) map[string]*bool {
 	return map[string]*bool{
 		"force": &o.force, "full": &o.full, "no-open": &o.noOpen, "readonly": &o.readonly, "edit": &o.edit, "no-code": &o.noCode,
 		"tmux": &o.tmux, "here": &o.here, "no-pairs": &o.noPairs, "no-history": &o.noHistory, "query": &o.query, "all": &o.all,
-		"no-presence": &o.noPresence, "json": &o.asJSON, "yes": &o.yes,
+		"no-presence": &o.noPresence, "print-config": &o.printConfig, "host": &o.hostBin, "json": &o.asJSON, "yes": &o.yes,
 	}
 }
 
@@ -323,7 +326,7 @@ func setValue(o *options, name, flag, v string) error {
 		return setVAT(o, name, v)
 	case "group", "in-group":
 		return setGroup(o, name, flag, v)
-	case "to", "topic", "from", "name", "file", "pdf", "image", "zip", "sha256", "out", "timeout", "tag", "k3d":
+	case "to", "topic", "from", "name", "push-from", "files", "file", "pdf", "image", "zip", "sha256", "out", "timeout", "tag", "k3d":
 		return setNatsValue(o, name, flag, v)
 	case "port", "parallel", "keep-days":
 		return setCount(o, name, flag, v)
@@ -369,8 +372,6 @@ func setNatsValue(o *options, name, flag, v string) error {
 		o.topic = v
 	case "from":
 		o.from = v
-	case "name":
-		o.name = v
 	case "file":
 		o.file = v
 	case "pdf":
@@ -387,6 +388,21 @@ func setNatsValue(o *options, name, flag, v string) error {
 		o.tag = v
 	case "k3d":
 		o.k3d = v
+	default:
+		return setNamedValue(o, name, flag, v)
+	}
+	return nil
+}
+
+// setNamedValue stores --name, --push-from and --files of viper nats tunnel and the identities.
+func setNamedValue(o *options, name, flag, v string) error {
+	switch flag {
+	case "name":
+		o.name = v
+	case "push-from":
+		o.pushFrom = v
+	case "files":
+		o.files = v
 	default:
 		return setTimeout(o, name, v)
 	}

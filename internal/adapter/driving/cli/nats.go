@@ -59,7 +59,7 @@ func parseNatsArgs(o *options, stdin io.Reader) (natsArgs, error) {
 		if err := fetchWords(o, rest, usage, &c); err != nil {
 			return natsArgs{}, err
 		}
-	case "init", "revoke", "peers", "topics", "listen":
+	case "init", "revoke", "tunnel", "peers", "topics", "listen":
 		if len(rest) > 0 {
 			return natsArgs{}, fmt.Errorf("viper nats %s takes no text: %q\n%s", sub, rest[0], usage)
 		}
@@ -108,8 +108,9 @@ func checkNatsOptions(o *options, sub string) error {
 		"listen":    {"topic", "all", "no-presence"},
 		"init":      {"name"},
 		"revoke":    {"name"},
+		"tunnel":    {"name", "port", "print-config", "push-from", "files"},
 	}[sub]
-	given := map[string]bool{"to": o.to != "", "topic": o.topic != "", "timeout": o.timeout != 0, "query": o.query, "all": o.all, "no-presence": o.noPresence, "file": o.file != "", "pdf": o.pdf != "", "image": o.image != "", "zip": o.zip != "", "sha256": o.sha256 != "", "out": o.out != "", "name": o.name != ""}
+	given := map[string]bool{"to": o.to != "", "topic": o.topic != "", "timeout": o.timeout != 0, "query": o.query, "all": o.all, "no-presence": o.noPresence, "file": o.file != "", "pdf": o.pdf != "", "image": o.image != "", "zip": o.zip != "", "sha256": o.sha256 != "", "out": o.out != "", "name": o.name != "", "port": o.port != 0, "print-config": o.printConfig, "push-from": o.pushFrom != "", "files": o.files != ""}
 	for opt, set := range given {
 		if set && !slices.Contains(use, opt) {
 			return fmt.Errorf("viper nats %s: --%s is not used by this subcommand\n%s\nviper nats %s --help describes its options", sub, opt, usageLine("nats"), sub)
@@ -204,16 +205,26 @@ func finishPrepare(args *natsArgs, asOperator bool) (bool, error) {
 	return asOperator, nil
 }
 
+// runNatsKeyCommand runs init, revoke and tunnel: the commands that are about the key and the tunnel, not about messages.
+func runNatsKeyCommand(ctx context.Context, o *options, env settings.Env, sub, group string, in io.Reader, stdout, stderr io.Writer) (bool, error) {
+	switch sub {
+	case "init":
+		return true, runNatsInit(ctx, o, env, group, stdout)
+	case "revoke":
+		return true, runNatsRevoke(ctx, o, env, group, stdout)
+	case "tunnel":
+		return true, runNatsTunnelCmd(ctx, o, env, group, in, stdout, stderr)
+	}
+	return false, nil
+}
+
 func runNats(ctx context.Context, o *options, env settings.Env, in io.Reader, stdout, stderr io.Writer) error {
 	args, err := parseNatsArgs(o, in)
 	if err != nil {
 		return err
 	}
-	switch args.cmd.Name {
-	case "init":
-		return runNatsInit(ctx, o, env, args.group, stdout)
-	case "revoke":
-		return runNatsRevoke(ctx, o, env, args.group, stdout)
+	if handled, err := runNatsKeyCommand(ctx, o, env, args.cmd.Name, args.group, in, stdout, stderr); handled {
+		return err
 	}
 	g, err := loadNatsGroup(o, env, args.group)
 	if err != nil {

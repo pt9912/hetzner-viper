@@ -38,7 +38,7 @@ func TestEverySubcommandOfNatsHasAHelpWithOptionsThatExist(t *testing.T) {
 		nats[o] = true
 	}
 	subs := cli.NatsSubNames()
-	if len(subs) != 9 {
+	if len(subs) != 10 {
 		t.Errorf("%v", subs)
 	}
 	for _, sub := range subs {

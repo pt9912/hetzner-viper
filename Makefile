@@ -8,8 +8,11 @@ PLATFORMS ?= linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
 LDFLAGS    = -s -w -X main.version=$(VERSION)
 # viper-nats-mcp is built into viper (internal/mcpbin/bin) for the Linux servers: same bytes in every build
 MCPDIR     = internal/mcpbin/bin
+# The programs for macOS and Windows are built into the viper of that system only: make dist writes one for each target and removes
+# it again (the file of an earlier target would otherwise get into the next one); the Linux files stay.
+MCPOTHER   = $(MCPDIR)/viper-nats-mcp_darwin_* $(MCPDIR)/viper-nats-mcp_windows_*
 
-.PHONY: help build mcp dist dist-docker test vet fmt lint gates check image image-test
+.PHONY: help build mcp mcp-host dist dist-docker test vet fmt lint gates check image image-test
 
 # The gates in the order of a serial run (not guaranteed under make -j). The fragments in tools/mk/
 # put themselves in front (GATE_CHECKS := <target> $(GATE_CHECKS)), before gates is defined below.
@@ -29,7 +32,12 @@ mcp: ## viper-nats-mcp for the Linux servers (amd64, arm64) into internal/mcpbin
 	done
 	@echo "built $(MCPDIR)/viper-nats-mcp_linux_{amd64,arm64} ($(VERSION))"
 
-build: mcp ## viper binary for this computer into dist/ (with the NATS MCP server inside)
+mcp-host: ## viper-nats-mcp for GOOS/GOARCH (this computer unless set) into internal/mcpbin/bin: the program viper mcp-binary --host writes
+	@mkdir -p $(MCPDIR)
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=$(VERSION)" \
+	  -o "$(MCPDIR)/viper-nats-mcp_$(GOOS)_$(GOARCH)$(EXT)" ./cmd/viper-nats-mcp
+
+build: mcp mcp-host ## viper binary for GOOS/GOARCH (this computer) into dist/ (with the NATS MCP server inside)
 	@mkdir -p dist
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -trimpath -ldflags "$(LDFLAGS)" -o "dist/viper$(EXT)" ./cmd/viper
 	@echo "built dist/viper$(EXT) ($(VERSION), $(GOOS)/$(GOARCH))"
@@ -40,9 +48,15 @@ dist: mcp ## all release binaries and SHA256SUMS into dist/ (make dist VERSION=v
 	@set -eu; for t in $(PLATFORMS); do \
 	  os=$${t%/*}; arch=$${t#*/}; ext=""; [ "$$os" = windows ] && ext=".exe"; \
 	  echo "building $$t"; \
+	  rm -f $(MCPOTHER); \
+	  if [ "$$os" != linux ]; then \
+	    CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=$(VERSION)" \
+	      -o "$(MCPDIR)/viper-nats-mcp_$${os}_$${arch}$$ext" ./cmd/viper-nats-mcp; \
+	  fi; \
 	  CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "$(LDFLAGS)" \
 	    -o "dist/viper_$(VERSION)_$${os}_$${arch}$$ext" ./cmd/viper; \
 	done; \
+	rm -f $(MCPOTHER); \
 	cd dist && sha256sum viper_* > SHA256SUMS
 	@ls dist
 
@@ -57,7 +71,7 @@ dist-docker: ## like dist, but built by the Dockerfile (needs only Docker, no Go
 	DOCKER_BUILDKIT=1 docker build --progress=plain --target dist --build-arg VERSION=$(VERSION) --output type=local,dest=dist .
 	@ls dist
 
-test: mcp ## all tests (VIPER_REQUIRE_TOOLS=1: a missing tool fails; VIPER_REQUIRE_MCP=1: the built-in MCP server must be there)
+test: mcp mcp-host ## all tests (VIPER_REQUIRE_TOOLS=1: a missing tool fails; VIPER_REQUIRE_MCP=1: the built-in MCP server must be there)
 	VIPER_REQUIRE_TOOLS=1 VIPER_REQUIRE_MCP=1 go test -race ./...
 
 vet: ## go vet

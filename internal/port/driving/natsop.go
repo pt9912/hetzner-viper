@@ -19,6 +19,8 @@ type NATSServerInfo struct {
 	CA      string // the certificate, PEM; the clients trust exactly this one
 	// Operators are the operator entries the server has.
 	Operators []string
+	// OperatorKeys are their public keys by name.
+	OperatorKeys map[string]string
 }
 
 // NATSOperator is the identity of the person who runs viper in a NATS group (docs/plan/nats-cli.md,

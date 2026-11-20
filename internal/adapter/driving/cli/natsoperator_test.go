@@ -26,13 +26,19 @@ type fakeOp struct {
 	revoked    []string
 	findErr    error
 	taken      map[string]bool // names of machines
+	ca         string          // the certificate of the server
 }
 
 func (f *fakeOp) Find(_ context.Context, ms []driving.NATSMachine) (driving.NATSServerInfo, error) {
 	if f.findErr != nil {
 		return driving.NATSServerInfo{}, f.findErr
 	}
-	return driving.NATSServerInfo{Machine: ms[0], Host: "10.0.0.2", Port: 4222}, nil
+	info := driving.NATSServerInfo{Machine: ms[0], Host: "10.0.0.2", Port: 4222, CA: f.ca, OperatorKeys: map[string]string{}}
+	for name, key := range f.registered {
+		info.Operators = append(info.Operators, name)
+		info.OperatorKeys[name] = key
+	}
+	return info, nil
 }
 
 func (f *fakeOp) Register(_ context.Context, _ string, _ driving.NATSServerInfo, name, pub string) error {

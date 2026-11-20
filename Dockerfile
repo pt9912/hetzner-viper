@@ -28,6 +28,10 @@ ARG GOOS=linux
 ARG GOARCH=amd64
 COPY --from=mcp /mcp/ internal/mcpbin/bin/
 RUN ext=""; if [ "$GOOS" = windows ]; then ext=".exe"; fi; \
+    if [ "$GOOS" != linux ]; then \
+      CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=${VERSION}" \
+        -o "internal/mcpbin/bin/viper-nats-mcp_${GOOS}_${GOARCH}${ext}" ./cmd/viper-nats-mcp; \
+    fi; \
     CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "/out/viper${ext}" ./cmd/viper
 
 FROM scratch AS binary
@@ -43,6 +47,11 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     for target in ${PLATFORMS}; do \
       os=${target%/*}; arch=${target#*/}; ext=""; \
       if [ "$os" = windows ]; then ext=".exe"; fi; \
+      rm -f internal/mcpbin/bin/viper-nats-mcp_darwin_* internal/mcpbin/bin/viper-nats-mcp_windows_*; \
+      if [ "$os" != linux ]; then \
+        CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=${VERSION}" \
+          -o "internal/mcpbin/bin/viper-nats-mcp_${os}_${arch}${ext}" ./cmd/viper-nats-mcp; \
+      fi; \
       CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
         -o "/out/viper_${VERSION}_${os}_${arch}${ext}" ./cmd/viper; \
     done; \

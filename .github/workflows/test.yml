@@ -27,7 +27,13 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+      # the MCP server for this system, which viper embeds (viper mcp-binary --host); the test insists that it is there
+      - run: go build -trimpath -buildvcs=false -ldflags "-s -w" -o internal/mcpbin/bin/viper-nats-mcp_windows_amd64.exe ./cmd/viper-nats-mcp
+        env:
+          CGO_ENABLED: "0"
       - run: go test ./...
+        env:
+          VIPER_REQUIRE_MCP_HOST: "1"
 
   # The tests of the interface on macOS (signals, process groups, the programs of the system). The other packages have Unix tests
   # that were written for Linux (bash 5, GNU tools) and are not run here.
@@ -39,4 +45,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - run: go test ./internal/adapter/driving/... ./internal/model/...
+      - run: make mcp-host
+      - run: go test ./internal/adapter/driving/... ./internal/model/... ./internal/mcpbin/...
+        env:
+          VIPER_REQUIRE_MCP_HOST: "1"

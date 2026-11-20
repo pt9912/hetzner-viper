@@ -3,8 +3,11 @@ package mcpbin_test
 import (
 	"bytes"
 	"debug/elf"
+	"debug/macho"
+	"debug/pe"
 	"errors"
 	"os"
+	"runtime"
 	"testing"
 
 	"github.com/pt9912/hetzner-viper/internal/mcpbin"
@@ -57,5 +60,52 @@ func TestTheBinariesAreStaticLinuxProgramsOfTheRightArchitecture(t *testing.T) {
 		if libs, _ := f.ImportedLibraries(); len(libs) > 0 {
 			t.Errorf("%s: needs %v", arch, libs)
 		}
+	}
+}
+
+func TestTheFileNameOfASystemEndsInExeForWindows(t *testing.T) {
+	for _, c := range [][3]string{{"linux", "amd64", "viper-nats-mcp_linux_amd64"}, {"darwin", "arm64", "viper-nats-mcp_darwin_arm64"}, {"windows", "amd64", "viper-nats-mcp_windows_amd64.exe"}} {
+		if got := mcpbin.HostFileName(c[0], c[1]); got != c[2] {
+			t.Errorf("%s/%s: %s", c[0], c[1], got)
+		}
+	}
+	if mcpbin.HostFileName("linux", "arm64") != mcpbin.FileName("arm64") {
+		t.Error("a Linux file has one name in both functions")
+	}
+}
+
+// The program for this computer is of the format and the CPU of this computer (make mcp-host; VIPER_REQUIRE_MCP_HOST=1 insists on it where only the program of this system is built).
+func TestTheProgramOfThisComputerIsOfItsFormatAndCPU(t *testing.T) {
+	b, err := mcpbin.Host()
+	if errors.Is(err, mcpbin.ErrNotIncluded) {
+		if os.Getenv("VIPER_REQUIRE_MCP") == "1" || os.Getenv("VIPER_REQUIRE_MCP_HOST") == "1" {
+			t.Fatalf("%s/%s: not included, but VIPER_REQUIRE_MCP(_HOST)=1 (run make mcp-host)", runtime.GOOS, runtime.GOARCH)
+		}
+		t.Skip("not included in this build")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	switch runtime.GOOS {
+	case "linux":
+		f, err := elf.NewFile(bytes.NewReader(b))
+		want := map[string]elf.Machine{"amd64": elf.EM_X86_64, "arm64": elf.EM_AARCH64}[runtime.GOARCH]
+		if err != nil || f.Machine != want {
+			t.Errorf("ELF: %v %v", err, f)
+		}
+	case "darwin":
+		f, err := macho.NewFile(bytes.NewReader(b))
+		want := map[string]macho.Cpu{"amd64": macho.CpuAmd64, "arm64": macho.CpuArm64}[runtime.GOARCH]
+		if err != nil || f.Cpu != want {
+			t.Errorf("Mach-O: %v %v", err, f)
+		}
+	case "windows":
+		f, err := pe.NewFile(bytes.NewReader(b))
+		want := map[string]uint16{"amd64": pe.IMAGE_FILE_MACHINE_AMD64, "arm64": pe.IMAGE_FILE_MACHINE_ARM64}[runtime.GOARCH]
+		if err != nil || f.Machine != want {
+			t.Errorf("PE: %v %v", err, f)
+		}
+	default:
+		t.Skip("no check for this system")
 	}
 }

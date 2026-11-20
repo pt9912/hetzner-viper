@@ -18,6 +18,9 @@ func Main(version string, args []string, stdin io.Reader, stdout, stderr io.Writ
 		fmt.Fprintln(stdout, "viper-nats-mcp", version)
 		return 0
 	}
+	if len(args) > 0 && args[0] == "--via-viper" { // before LoadConfig: there is no connection.env on a computer of a user
+		return ViaViperMain(version, args[1:], stdin, stdout, stderr)
+	}
 	dir := os.Getenv("VIPER_NATS_DIR")
 	if dir == "" {
 		home, err := os.UserHomeDir()
