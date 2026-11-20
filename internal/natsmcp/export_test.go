@@ -54,3 +54,13 @@ func AuthHint(lastError, group string) string { return authHint(lastError, group
 
 // ChildEnv exports childEnv.
 func ChildEnv(environ []string) []string { return childEnv(environ) }
+
+// CertificateChanged exports certificateChanged for two files.
+func CertificateChanged(oldCA, newCA string) bool {
+	return certificateChanged(Ready{CAFile: oldCA}, Ready{CAFile: newCA})
+}
+
+// ReadAttachmentFile exports readAttachmentFile.
+func (s *Service) ReadAttachmentFile(path string) ([]byte, string, error) {
+	return s.readAttachmentFile(path)
+}

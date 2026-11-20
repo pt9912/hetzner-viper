@@ -36,6 +36,8 @@ type ViaOptions struct {
 	PushFrom   []string
 	Yes        bool
 	SendPerMin int
+	// RestartWait is the first pause before the tunnel is started again; it doubles with each try (--restart-wait, for tests).
+	RestartWait time.Duration
 }
 
 // DefaultViaSendPerMin is the limit of what the agent of this mode sends and asks per minute.
@@ -52,7 +54,7 @@ const maxReadyLine = 4096
 
 // ParseViaArgs reads the words after --via-viper.
 func ParseViaArgs(args []string) (ViaOptions, error) {
-	o := ViaOptions{Name: "local", SendPerMin: DefaultViaSendPerMin}
+	o := ViaOptions{Name: "local", SendPerMin: DefaultViaSendPerMin, RestartWait: time.Second}
 	var rest []string
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -68,7 +70,7 @@ func ParseViaArgs(args []string) (ViaOptions, error) {
 		switch a {
 		case "--yes":
 			o.Yes = true
-		case "--viper", "--name", "--dir", "--files", "--push-from", "--send-per-min":
+		case "--viper", "--name", "--dir", "--files", "--push-from", "--send-per-min", "--restart-wait":
 			if v, err = value(); err == nil {
 				err = o.set(a, v)
 			}
@@ -100,29 +102,47 @@ func (o *ViaOptions) set(flag, v string) error {
 	case "--name":
 		o.Name = v
 	case "--dir", "--files":
-		if !filepath.IsAbs(v) {
-			return fmt.Errorf("%s needs an absolute path: %q", flag, v)
-		}
-		if flag == "--dir" {
-			o.Dir = v
-		} else {
-			o.Files = v
-		}
+		return o.setFolder(flag, v)
 	case "--push-from":
-		for _, m := range strings.Split(v, ",") {
-			if m = strings.TrimSpace(m); m != "" {
-				if !ValidName(m) {
-					return fmt.Errorf("--push-from: %q is not a machine name", m)
-				}
-				o.PushFrom = append(o.PushFrom, m)
-			}
+		return o.setPushFrom(v)
+	case "--restart-wait":
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 {
+			return fmt.Errorf("--restart-wait needs a duration such as 1s: %q", v)
 		}
+		o.RestartWait = d
 	case "--send-per-min":
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 {
 			return fmt.Errorf("--send-per-min needs a number, 0 for no limit: %q", v)
 		}
 		o.SendPerMin = n
+	}
+	return nil
+}
+
+// setFolder stores --dir or --files: an absolute path.
+func (o *ViaOptions) setFolder(flag, v string) error {
+	if !filepath.IsAbs(v) {
+		return fmt.Errorf("%s needs an absolute path: %q", flag, v)
+	}
+	if flag == "--dir" {
+		o.Dir = v
+	} else {
+		o.Files = v
+	}
+	return nil
+}
+
+// setPushFrom stores --push-from: machine names with commas.
+func (o *ViaOptions) setPushFrom(v string) error {
+	for _, m := range strings.Split(v, ",") {
+		if m = strings.TrimSpace(m); m != "" {
+			if !ValidName(m) {
+				return fmt.Errorf("--push-from: %q is not a machine name", m)
+			}
+			o.PushFrom = append(o.PushFrom, m)
+		}
 	}
 	return nil
 }
@@ -428,6 +448,126 @@ func viaConfig(o ViaOptions, r Ready, version string) Config {
 	return cfg
 }
 
+// restartTries is how often a dead tunnel is started again before the server gives up; the pauses between are RestartWait, twice that, four
+// times, and so on.
+const restartTries = 5
+
+// supervisor keeps the child alive: when it ends (the computer slept, the network went) it is started again on the same port, which the
+// NATS client of the server connects to again by itself.
+type supervisor struct {
+	version string
+	opts    ViaOptions
+	viper   string
+	stderr  io.Writer
+	log     Logger
+
+	mu    sync.Mutex
+	child *tunnelChild
+	ready Ready
+	code  int // the exit status when the supervisor gave up (0: it did not)
+	why   string
+}
+
+func (v *supervisor) current() (*tunnelChild, Ready) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.child, v.ready
+}
+
+func (v *supervisor) stop() {
+	if c, _ := v.current(); c != nil {
+		c.stop()
+	}
+}
+
+func (v *supervisor) giveUp(code int, why string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.code, v.why = code, why
+}
+
+func (v *supervisor) gaveUp() (int, string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.code, v.why
+}
+
+// watch restarts the child each time it ends, until ctx is done or the server gives up (then cancel is called).
+func (v *supervisor) watch(ctx context.Context, cancel context.CancelFunc) {
+	for {
+		child, old := v.current()
+		select {
+		case <-child.done:
+		case <-ctx.Done():
+			return
+		}
+		v.log.Printf("viper nats tunnel ended: %s", child.errs.String())
+		next, ready, err := v.restart(ctx, old)
+		if err != nil {
+			if ctx.Err() == nil {
+				code := 1
+				if errors.Is(err, errCertificateChanged) {
+					code = ExitCertificateChanged
+				}
+				v.giveUp(code, err.Error())
+			}
+			cancel()
+			return
+		}
+		v.mu.Lock()
+		v.child, v.ready = next, ready
+		v.mu.Unlock()
+		v.log.Printf("the tunnel is up again (viper nats tunnel pid %d)", ready.PID)
+	}
+}
+
+var errCertificateChanged = errors.New("the server of the group has another certificate now; this connection keeps the old one: /mcp connects again")
+
+// restart starts the child on the port of the one that ended, up to restartTries times with growing pauses.
+func (v *supervisor) restart(ctx context.Context, old Ready) (*tunnelChild, Ready, error) {
+	port := portOf(old.URL)
+	wait := v.opts.RestartWait
+	var last error
+	for try := 1; try <= restartTries; try++ {
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			return nil, Ready{}, ctx.Err()
+		}
+		wait *= 2
+		child, ready, err := startTunnel(ctx, v.viper, v.opts, port, v.stderr, v.version)
+		if err == nil {
+			if certificateChanged(old, ready) {
+				child.stop()
+				return nil, Ready{}, errCertificateChanged
+			}
+			return child, ready, nil
+		}
+		last = err
+		v.log.Printf("the tunnel did not come up again (try %d of %d): %v", try, restartTries, err)
+	}
+	return nil, Ready{}, fmt.Errorf("the tunnel to the NATS server could not be opened again after %d tries: %w", restartTries, last)
+}
+
+// portOf is the port of an address such as tls://127.0.0.1:41000 (0 if there is none).
+func portOf(url string) int {
+	if i := strings.LastIndex(url, ":"); i >= 0 {
+		n, _ := strconv.Atoi(url[i+1:])
+		return n
+	}
+	return 0
+}
+
+// certificateChanged tells whether the server has another certificate than the one the connection was made with.
+func certificateChanged(old, now Ready) bool {
+	if old.CAFile == "" && now.CAFile == "" {
+		return false
+	}
+	a, errA := os.ReadFile(old.CAFile)
+	b, errB := os.ReadFile(now.CAFile)
+	return errA != nil || errB != nil || !bytes.Equal(a, b)
+}
+
 func viaRun(ctx context.Context, version string, o ViaOptions, viper string, stdin io.Reader, stdout, stderr io.Writer) int {
 	child, ready, err := startTunnel(ctx, viper, o, 0, stderr, version)
 	if err != nil {
@@ -438,28 +578,22 @@ func viaRun(ctx context.Context, version string, o ViaOptions, viper string, std
 		}
 		return 1
 	}
-	defer child.stop()
 	cfg := viaConfig(o, ready, version)
 	log := NewFileLogger(stderr, cfg.LogFile, 1<<20)
 	defer log.Close()
+	sup := &supervisor{version: version, opts: o, viper: viper, stderr: stderr, log: log, child: child, ready: ready}
+	defer sup.stop()
 	log.Printf("starting %s as %s in the group %s (through %s; viper nats tunnel pid %d)", version, cfg.Names.Me, cfg.Names.Group, ready.URL, ready.PID)
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	go func() { // the tunnel is gone: the tools could not do anything any more
-		select {
-		case <-child.done:
-			log.Printf("viper nats tunnel ended: %s", child.errs.String())
-			cancel()
-		case <-runCtx.Done():
-		}
-	}()
-	if err := Run(runCtx, cfg, version, stdin, stdout, log); err != nil {
-		select {
-		case <-child.done:
-			fmt.Fprintln(stderr, "viper-nats-mcp --via-viper: the tunnel to the NATS server ended; /mcp connects again")
-		default:
-			fmt.Fprintln(stderr, "viper-nats-mcp:", err)
-		}
+	go sup.watch(runCtx, cancel)
+	err = Run(runCtx, cfg, version, stdin, stdout, log)
+	if code, why := sup.gaveUp(); code != 0 { // the supervisor ended it: that is the reason, not the cancelled context
+		fmt.Fprintln(stderr, "viper-nats-mcp --via-viper:", why)
+		return code
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, "viper-nats-mcp:", err)
 		return 1
 	}
 	return 0

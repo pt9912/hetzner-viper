@@ -60,7 +60,7 @@ func newObjectID() string {
 // readAttachmentFile reads a file of this machine for sending: below the home directory (after links are followed), a regular
 // file, not larger than the limit.
 func (s *Service) readAttachmentFile(path string) ([]byte, string, error) {
-	resolved, err := homePath(path)
+	resolved, err := attachmentPath(s.cfg.AttachRoot, path)
 	if err != nil {
 		return nil, "", err
 	}
@@ -82,25 +82,32 @@ func (s *Service) readAttachmentFile(path string) ([]byte, string, error) {
 	return b, CleanName(filepath.Base(resolved)), nil
 }
 
-// homePath is the path of a file below the home directory, after links are followed; a file outside of it is refused.
-func homePath(path string) (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
+// attachmentPath is the path of a file below the root (the home directory, or the folder of --files), after links are followed; a file
+// outside of it is refused. A relative path is read from the root.
+func attachmentPath(root, path string) (string, error) {
+	where := "your home directory"
+	if root == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		root = home
+	} else {
+		where = "the folder " + root + " (--files)"
 	}
 	if !filepath.IsAbs(path) {
-		path = filepath.Join(home, path)
+		path = filepath.Join(root, path)
 	}
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		return "", fmt.Errorf("the attachment %s: %w", filepath.Base(path), errors.Unwrap(err))
 	}
-	realHome, err := filepath.EvalSymlinks(home)
+	realRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return "", err
 	}
-	if rel, err := filepath.Rel(realHome, resolved); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", errors.New("the attachment has to be a file in your home directory")
+	if rel, err := filepath.Rel(realRoot, resolved); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("the attachment has to be a file in %s", where)
 	}
 	return resolved, nil
 }

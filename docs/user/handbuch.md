@@ -1,8 +1,8 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.201  
+Version: 1.202  
 Software-Version: v0.34.3  
-Stand: 18.11.2026  
+Stand: 20.11.2026  
 
 ## 1. Einleitung
 
@@ -58,8 +58,8 @@ Sie haben kein Cloud-Konto oder wollen erst einmal ausprobieren? Dann beginnen S
 | `viper ui [--port N] [--no-open] [--readonly\|--edit]` | Startet eine Weboberfläche auf `127.0.0.1` im Browser: Übersicht der Rechner, Prüfen, Vorprüfung/Up/Down, NATS, Einstellungen und Protokolle; mit `--edit` auch neue Rechner und Gruppen anlegen. Siehe „Die Oberfläche im Browser“. |
 | `viper ui-chat [--port N] [--no-open] [--readonly] [--no-pairs] [--keep-days N] [--no-history]` | Startet einen Chat im Browser auf `127.0.0.1` für die NATS-Gruppen, deren Operator-Schlüssel hier liegt: Rechner, Themen und Paare als Gespräche, mit Verlauf, Fragen, Dateien und Suche. Siehe „Mit den Rechnern einer NATS-Gruppe chatten“. |
 | `viper up --group <gruppe>`, `viper down --group <gruppe>`, `viper check --group <gruppe>`, `viper preflight --group <gruppe>`, `viper ssh --group <gruppe> --cmd …` | Dieselben Befehle für alle Rechner einer Gruppe aus `groups/<gruppe>.env`, gleichzeitig (siehe „Eine Gruppe von Rechnern gemeinsam starten und beenden“). |
-| `viper mcp-binary --arch amd64\|arm64` | Schreibt den in `viper` eingebauten MCP-Server `viper-nats-mcp` für die Architektur nach stdout (`> datei`), zum Ansehen, Prüfen oder als `NATS_MCP_BINARY`. Zeigt nichts auf dem Terminal. |
-| `viper nats peers\|topics\|listen\|send\|broadcast\|request\|fetch\|init\|revoke <gruppe> …` | Sendet Nachrichten (und Bilder, PDFs und ZIP-Dateien) an die Rechner einer NATS-Gruppe (`--file DATEI` statt des Textes) und liest mit, als einer der Rechner der Gruppe (siehe „Nachrichten an eine NATS-Gruppe senden“); `fetch` holt eine Datei, `init` und `revoke` richten Ihren eigenen Schlüssel als Betreiber ein und entfernen ihn. |
+| `viper mcp-binary --arch amd64\|arm64 \| --host [--out DATEI]` | Schreibt den in `viper` eingebauten MCP-Server `viper-nats-mcp` nach stdout (`> datei`) oder mit `--out` in eine Datei: für die Architektur eines Linux-Rechners (`--arch`, zum Ansehen, Prüfen oder als `NATS_MCP_BINARY`) oder für diesen Computer (`--host`, für eine lokale Claude-Sitzung, siehe „Mit einer lokalen Claude-Sitzung in der Gruppe sprechen“). Zeigt nichts auf dem Terminal. |
+| `viper nats peers\|topics\|listen\|send\|broadcast\|request\|fetch\|init\|revoke <gruppe> …` | Sendet Nachrichten (und Bilder, PDFs und ZIP-Dateien) an die Rechner einer NATS-Gruppe (`--file DATEI` statt des Textes) und liest mit, als einer der Rechner der Gruppe (siehe „Nachrichten an eine NATS-Gruppe senden“); `fetch` holt eine Datei, `init` und `revoke` richten Ihren eigenen Schlüssel als Betreiber ein und entfernen ihn (mit `--name NAME` einen weiteren Schlüssel, etwa für eine lokale Claude-Sitzung). `viper nats tunnel` ist der Helfer dieser Sitzung und nicht für den Aufruf von Hand gedacht. |
 | `viper help`, `viper <befehl> --help`, `viper version` | Zeigt alle Befehle in Gruppen; die Hilfe eines Befehls mit seinen Optionen (jede erklärt), Beispielen und dem passenden Abschnitt des Handbuchs (`viper check --help`, `viper nats send --help`; auch `viper help check`); die Version. |
 
 ### Wie ein Rechner benannt wird
@@ -886,12 +886,63 @@ viper nats broadcast entwicklung --topic news --file mitteilung.md   # Text aus 
 * **Der Text ist nicht vertrauenswürdig und nichts ist privat.** Antworten und mitgelesene Nachrichten stammen von Agenten und können Anweisungen enthalten; `viper` entfernt Steuerzeichen, mehr nicht. Senden Sie nichts Vertrauliches.
 * **`peers` ohne `--query`** hört 35 Sekunden, weil sich jede Maschine nur alle 30 Sekunden meldet. Mit `--query` bitten Sie alle um eine Meldung (8 Sekunden); dann gilt die gewählte Maschine bei den anderen bis zu 90 Sekunden als anwesend, auch wenn dort kein Agent läuft.
 * **Größe:** Ein Text darf höchstens 16 KiB haben, und die kodierte Nachricht höchstens 32 KiB (Steuerzeichen werden länger); sonst meldet `viper` einen Fehler und sendet nichts.
-* **Als Betreiber senden (`viper nats init <gruppe>`).** Der Betreiber ist ein eigener Eintrag am NATS-Server mit dem Namen `operator` (einstellbar mit `NATS_OPERATOR_NAME` in der Gruppen- oder Rechnerdatei). `viper nats init entwicklung` erzeugt einen Schlüssel **auf Ihrem Rechner** (`~/.local/state/viper/groups/<gruppe>/operator.nk`, nur für Sie lesbar) und trägt den öffentlichen Teil am Server ein (der Server liest die Konfiguration neu; die Rechner der Gruppe bleiben eingetragen). Danach sendet `viper nats` ohne `--from` als `operator`: es baut einen SSH-Tunnel zum Server auf (über die Servermaschine) und verbindet sich von Ihrem Rechner aus; das Zertifikat holt es bei jedem Aufruf frisch vom Server. Ein Rechner der Gruppe wird nicht mehr als Absender gebraucht. `--from <maschine>` sendet weiter als diese Maschine. Der Empfänger sieht `operator` als Absender. `viper nats revoke <gruppe>` trägt den Betreiber wieder aus und löscht den Schlüssel.
+* **Als Betreiber senden (`viper nats init <gruppe>`).** Der Betreiber ist ein eigener Eintrag am NATS-Server mit dem Namen `operator` (einstellbar mit `NATS_OPERATOR_NAME` in der Gruppen- oder Rechnerdatei). `viper nats init entwicklung` erzeugt einen Schlüssel **auf Ihrem Rechner** (`~/.local/state/viper/groups/<gruppe>/operator.nk`, nur für Sie lesbar) und trägt den öffentlichen Teil am Server ein (der Server liest die Konfiguration neu; die Rechner der Gruppe bleiben eingetragen). Danach sendet `viper nats` ohne `--from` als `operator`: es baut einen SSH-Tunnel zum Server auf (über die Servermaschine) und verbindet sich von Ihrem Rechner aus; das Zertifikat holt es bei jedem Aufruf frisch vom Server. Ein Rechner der Gruppe wird nicht mehr als Absender gebraucht. `--from <maschine>` sendet weiter als diese Maschine. Der Empfänger sieht `operator` als Absender. `viper nats revoke <gruppe>` trägt den Betreiber wieder aus und löscht den Schlüssel. Mit `--name NAME` legt `init` (und entfernt `revoke`) einen **weiteren** Eintrag mit eigenem Schlüssel an (`…/groups/<gruppe>/identities/<name>.nk`), und `--from NAME` sendet als dieser Eintrag; `--name` benennt die Identität bei `init`, `revoke` und `tunnel`, `--from` den Absender bei den übrigen Befehlen. Der Name darf kein Rechner der Gruppe sein. Wofür das gut ist, steht unter „Mit einer lokalen Claude-Sitzung in der Gruppe sprechen“.
 * **Was der Betreiber darf:** senden nur in seinem eigenen Bereich `viper.<gruppe>.operator.>` und alles in der Gruppe mitlesen. Die Anfragebereiche der anderen Rechner (`…req.>`) und den Posteingang `_INBOX` hat er nicht; Antworten auf seine Anfragen kommen als normale Nachrichten an `viper.<gruppe>.<antwortender>.out.operator`. Wer den Schlüssel hat, kann als `operator` senden und alles in der Gruppe lesen (dieselbe Vertraulichkeit wie bei jedem Rechner). **Kein Rechner der Gruppe darf `operator` heißen** (und umgekehrt): `viper up` verweigert ihn, und ein Eintrag überschreibt nie den Schlüssel des anderen Typs.
 * **Agenten und der Betreiber:** Für die Agenten ist `operator` ein weiterer Absender, der Anweisungen schickt. `NATS_MCP_PUSH_FROM` darf `operator` nennen, dann schiebt der MCP-Server die Nachrichten des Betreibers von selbst in die Sitzung; Standard ist die leere Liste. Das ist Ihre Entscheidung über das Vertrauen, `viper` warnt dabei nicht.
 * **`listen --all`** zeigt zusätzlich die Direktnachrichten zwischen anderen Rechnern der Gruppe, mit Absender und Empfänger (`alpha -> beta: …`; `"to"` bei `--json`). Das ist kein neues Recht: der Server lässt jeden Rechner und den Betreiber die ganze Gruppe lesen. Es gibt in einer Gruppe keine Privatsphäre zwischen den Agenten. `--all` gilt nur für `listen`; `--topic` filtert nur Topic-Nachrichten, Direktnachrichten haben kein Topic.
 * **`listen --no-presence`** lässt die Meldungen „ich bin da“ (die Anwesenheit, alle 30 Sekunden, der Heartbeat) und die Themenlisten der Rechner weg. Im Text von `viper nats listen` fehlen sie ohnehin; bei `--json` und in der Oberfläche (Seite NATS, **Mitlesen**) erscheinen sie, und das Kästchen „ohne die Meldungen ‚ich bin da‘ (Heartbeat)“ blendet sie aus.
 * **`listen`** beendet das Programm auf der Maschine, wenn die Verbindung abbricht; es kann bis zur nächsten Nachricht der Gruppe (spätestens 30 Sekunden) weiterlaufen.
+
+### Mit einer lokalen Claude-Sitzung in der Gruppe sprechen (`viper-nats-mcp --via-viper`)
+
+Eine Claude-Code-Sitzung auf Ihrem eigenen Computer kann dieselben Werkzeuge benutzen wie die Sitzungen auf den Rechnern: wer da ist, Nachrichten senden, etwas fragen, einem Rechner einen Auftrag geben und die Antworten im Posteingang lesen. Die lokale Sitzung hat einen eigenen Namen in der Gruppe (Standard `local`) und erscheint bei den Rechnern als weiterer Teilnehmer. Sie erreicht den NATS-Server wie `viper nats` durch einen SSH-Tunnel.
+
+#### Voraussetzung
+
+* Die Voraussetzungen von `viper nats` (siehe „Nachrichten an eine NATS-Gruppe senden und mitlesen“): Die Rechner der Gruppe sind mit `viper up` gestartet, und `ssh` ist auf diesem Computer installiert (unter Windows als optionales Feature OpenSSH).
+* Claude Code auf diesem Computer.
+
+#### Vorgehen
+
+1. **Identität anlegen:** `viper nats init GRUPPE --name local` im Verzeichnis mit den Einstellungen. Das erzeugt einen Schlüssel auf diesem Computer (`~/.local/state/viper/groups/<gruppe>/identities/local.nk`, nur für Sie lesbar), trägt ihn am Server der Gruppe ein (mit den Rechten des Betreibers: im eigenen Bereich senden, die ganze Gruppe lesen) und merkt sich das Verzeichnis mit den Einstellungen.
+2. **Programm bereitstellen:** `viper mcp-binary --host --out ~/bin/viper-nats-mcp` schreibt den MCP-Server für diesen Computer (unter Windows mit `.exe`). Er stammt aus demselben Build wie `viper`; am einfachsten liegt er im selben Ordner wie `viper`.
+3. **Eintrag für Claude Code ausgeben:** `viper nats tunnel GRUPPE --print-config` druckt den Befehl `claude mcp add nats-GRUPPE -- …` und dieselbe Angabe für eine `.mcp.json`. Darunter steht, was noch fehlt (Schlüssel, Programm, `ssh`). Führen Sie den Befehl aus.
+4. **Claude Code starten:** `/mcp` zeigt `nats-GRUPPE`. Die Sitzung hat jetzt `peers`, `topics`, `send`, `broadcast`, `request`, `reply`, `inbox`, `subscribe`, `unsubscribe` und `delegate`.
+5. **Einen Auftrag geben:** Bitten Sie die Sitzung, `delegate` zu benutzen (zum Beispiel „Bitte w3, die Tests laufen zu lassen“). `delegate` schickt den Auftrag als Anfrage mit einem kurzen Vorspann, der dem Agenten dort sagt, dass er den Empfang sofort mit `reply` bestätigen und das Ergebnis mit `send` an `local` schicken soll. Die Antwort von `delegate` ist nur diese Bestätigung („confirmed by w3 …“) oder „not confirmed“, wenn in der Wartezeit (30 Sekunden, höchstens 120) nichts kam. Das Ergebnis und Rückfragen des Rechners kommen später als gewöhnliche Nachrichten an `local`; Sie antworten mit `send`.
+6. **Nachrichten von selbst in der Sitzung sehen (optional):** Geben Sie bei `--print-config` mit `--push-from w3,w5` die Rechner an, deren Nachrichten als Ereignis in der Sitzung erscheinen sollen, und starten Sie Claude Code mit `claude --dangerously-load-development-channels server:nats-GRUPPE` (die Ausgabe nennt den Aufruf). Ohne `--push-from` liegen alle Nachrichten im Posteingang (`inbox`).
+
+#### Optionen
+
+`viper nats tunnel GRUPPE --print-config` nimmt:
+
+* `--name NAME`: die Identität (Standard `local`).
+* `--push-from M,M`: Rechner, deren Nachrichten in die Sitzung geschoben werden.
+* `--files ORDNER`: erlaubt Anhänge aus diesem Ordner (Standard: keine Anhänge).
+* `--dir VERZEICHNIS`: das Verzeichnis mit den Einstellungen; ohne die Angabe gilt die Reihenfolge unter „Hinweise“.
+
+Der Eintrag ruft `viper-nats-mcp --via-viper GRUPPE` mit diesen Optionen auf:
+
+* `--viper PFAD`: das Programm `viper` (Standard: das neben `viper-nats-mcp`, sonst im `PATH`, nie im aktuellen Ordner). Es muss aus demselben Build stammen.
+* `--dir ORDNER`, `--name NAME`, `--push-from M,M`, `--files ORDNER`: wie oben (absolute Pfade).
+* `--send-per-min N`: höchstens so viele Aufrufe von `send`, `request`, `delegate`, `broadcast` und `reply` je Minute (Standard 20, `0` ohne Grenze).
+* `--yes`: bestätigt, dass Rechner den Text dieser Sitzung in ihre Sitzungen schieben dürfen (siehe „Hinweise“). `--print-config` schreibt es nie von selbst in den Eintrag.
+
+#### Ergebnis
+
+Die Sitzung ist in der Gruppe als `local` angemeldet, solange sie läuft; die Rechner sehen sie in `peers`. Endet die Sitzung, meldet sie sich ab und beendet den Tunnel. Entfernen Sie die Identität mit `viper nats revoke GRUPPE --name local`: das trägt den Namen am Server aus und löscht den Schlüssel.
+
+#### Hinweise
+
+* **Wie die Gruppe gefunden wird:** Claude Code startet den Server im Ordner des Projekts, nicht im Ordner mit den Einstellungen. `viper nats tunnel` und der Server suchen die Gruppe darum in dieser Reihenfolge, die erste Fundstelle gilt: `--dir`; der Ordner, in dem `viper nats init` lief (die Datei `settings-dir` neben dem Schlüssel); die Ordner über dem aktuellen, höchstens fünf und nie über das Home-Verzeichnis hinaus, nur wenn für den Namen hier ein Schlüssel liegt. Wird nichts gefunden, nennt die Meldung die geprüften Orte. Zeigt `settings-dir` auf einen verschobenen Ordner, sagt die Meldung es; `viper nats init` im neuen Ordner schreibt die Datei neu.
+* **Aufträge sind Text:** Der Vorspann von `delegate` ist Text einer anderen Sitzung wie jeder andere; der Agent kann ihm folgen oder nicht. Steht der Rechner nicht in `--push-from`, sehen Sie das Ergebnis erst, wenn die Sitzung `inbox` aufruft; Claude Code ruft das nicht von selbst auf, bitten Sie darum.
+* **Schieben in die Sitzung** braucht den Schalter für Channels von Claude Code (eine Forschungsvorschau, nur für interaktive Sitzungen, bei Team- und Enterprise-Plänen nur mit Freigabe eines Admins). Ob ein solches Ereignis eine untätige Sitzung zu einem neuen Zug weckt, bestimmt Claude Code; sonst erscheint es spätestens bei der nächsten Eingabe. Es werden höchstens zehn Nachrichten je Minute geschoben, der Rest liegt im Posteingang.
+* **Fremder Text:** Nachrichten der Rechner sind Text anderer Agenten und können Anweisungen enthalten. Die lokale Sitzung hat mehr Rechte (Dateien, Shell) als die Sitzungen der Rechner: Nehmen Sie `send`, `request`, `delegate`, `broadcast` und `reply` nicht in eine Erlaubnisliste von Claude Code auf, damit Sie jeden Aufruf sehen. Senden Sie nichts Vertrauliches: jeder Rechner der Gruppe liest alles.
+* **Rückfrage beim Start:** Steht `local` in `NATS_MCP_PUSH_FROM` eines Rechners, landet der Text dieser Sitzung ohne Rückfrage in der Sitzung des Agenten dort. Darum endet der Start mit der Meldung, welche Rechner es sind, und dem Rückgabewert 3, wenn `--yes` fehlt. Die Prüfung läuft einmal beim Start des Tunnels; trägt jemand `local` später ein, merkt der laufende Server es nicht.
+* **Der Tunnel stirbt** (der Computer schläft, das Netz geht): Der Server startet `viper nats tunnel` auf demselben Port neu, höchstens fünfmal mit Pausen von 1, 2, 4, 8 und 16 Sekunden, und die Verbindung baut sich von selbst wieder auf. Nach dem Aufwachen kann es bis zu etwa 75 Sekunden dauern, bis SSH den toten Tunnel bemerkt. Gelingt es nicht, endet der Server mit einer Meldung; hat der Server der Gruppe ein anderes Zertifikat (Gruppe neu angelegt), endet er mit dem Rückgabewert 4. In beiden Fällen verbindet `/mcp` neu.
+* **Ein Name, mehrere Sitzungen:** Alle Sitzungen mit demselben Namen teilen die Identität: jede bekommt die Nachrichten an den Namen, und das Abmelden einer Sitzung lässt `local` bei den Rechnern bis zur nächsten Meldung (30 Sekunden) fehlen. Für getrennte Gespräche legen Sie je Sitzung einen Namen an (`viper nats init GRUPPE --name local2`, `--name local2` im Eintrag). Der Name darf kein Rechner der Gruppe und nicht der Name des Betreibers sein; `viper check` warnt, wenn ein Rechner den Namen einer eingetragenen Identität trägt.
+* **Anhänge** gibt es nur mit `--files ORDNER` und nur für Dateien darin (nach dem Auflösen von Verknüpfungen), und nur in Gruppen mit `NATS_OBJECTS=true`. Das schützt vor Versehen, nicht vor einem Auftrag, der eine Datei in den Ordner kopiert. Empfangene Dateien legt `fetch` im Ordner `nats-mcp/<gruppe>-<name>/attachments` des Zustandsverzeichnisses ab.
+* **Protokoll:** Der Server schreibt `nats-mcp/<gruppe>-<name>.log` im Zustandsverzeichnis, ohne die Texte der Nachrichten.
+* **Der Befehl `viper nats tunnel`** öffnet den Tunnel, schreibt eine Zeile `ready` mit JSON auf die Standardausgabe und läuft, bis seine Standardeingabe endet. Er ist für den Server gedacht, nicht für Menschen, und fehlt in der Oberfläche von `viper ui`.
 
 ### Bilder, PDFs und ZIP-Dateien senden (`NATS_OBJECTS`)
 

@@ -8,12 +8,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driven/system"
+	"github.com/pt9912/hetzner-viper/internal/adapter/driving/cli"
+	"github.com/pt9912/hetzner-viper/internal/port/driving"
 )
 
 // A tunnel that dies and is started again on the same local port: does a NATS client that is connected through it carry on? This is
@@ -41,7 +45,15 @@ func waitPort(t *testing.T, port int) {
 	t.Fatalf("port %d never listens", port)
 }
 
-func TestANatsClientCarriesOnWhenTheTunnelIsStartedAgainOnTheSamePort(t *testing.T) {
+// sshdWorld is a real sshd of this user on a port of its own, with the NATS server behind it.
+type sshdWorld struct {
+	dir, ssh      string
+	sshPort, nats int
+}
+
+// startSSHD starts sshd (skips the test where there is none) and a NATS server that the tunnels lead to.
+func startSSHD(t *testing.T) *sshdWorld {
+	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("the real sshd of this measurement is for Linux")
 	}
@@ -92,6 +104,12 @@ func TestANatsClientCarriesOnWhenTheTunnelIsStartedAgainOnTheSamePort(t *testing
 	t.Cleanup(func() { _ = sd.Process.Kill(); _, _ = sd.Process.Wait() })
 	waitPort(t, sshPort)
 
+	return &sshdWorld{dir: dir, ssh: ssh, sshPort: sshPort, nats: natsPort}
+}
+
+func TestANatsClientCarriesOnWhenTheTunnelIsStartedAgainOnTheSamePort(t *testing.T) {
+	w := startSSHD(t)
+	dir, ssh, sshPort, natsPort := w.dir, w.ssh, w.sshPort, w.nats
 	local := freePort(t)
 	startTunnel := func() *exec.Cmd {
 		cmd := exec.CommandContext(context.Background(), ssh, "-N", "-L", fmt.Sprintf("127.0.0.1:%d:127.0.0.1:%d", local, natsPort), "-p", fmt.Sprint(sshPort),
@@ -160,4 +178,40 @@ func TestANatsClientCarriesOnWhenTheTunnelIsStartedAgainOnTheSamePort(t *testing
 	if !nc.IsConnected() {
 		t.Fatal("not connected")
 	}
+}
+
+func TestSSHTunnelTakesTheWantedPortAndNamesALeftoverOne(t *testing.T) {
+	w := startSSHD(t)
+	conf := filepath.Join(w.dir, "ssh_config")
+	text := fmt.Sprintf("Host sshdtest\n  HostName 127.0.0.1\n  Port %d\n  IdentityFile %s\n  IdentitiesOnly yes\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n  ServerAliveInterval 2\n",
+		w.sshPort, filepath.Join(w.dir, "user"))
+	if err := os.WriteFile(conf, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h := testHost()
+	h.StreamTool = system.Stream
+	via := driving.NATSTarget{Config: conf, Alias: "sshdtest"}
+	want := freePort(t)
+	addr, stop, err := cli.SSHTunnel(context.Background(), h, via, "127.0.0.1", w.nats, want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if addr != fmt.Sprintf("127.0.0.1:%d", want) {
+		t.Errorf("the tunnel is on %s, not on %d", addr, want)
+	}
+	nc, err := nats.Connect("nats://"+addr, nats.Timeout(2*time.Second))
+	if err != nil {
+		t.Fatalf("through the tunnel: %v", err)
+	}
+	nc.Close()
+	// the port is taken now: a second tunnel says so, and names a leftover ssh as the likely reason
+	if _, _, err := cli.SSHTunnel(context.Background(), h, via, "127.0.0.1", w.nats, want); err == nil || !strings.Contains(err.Error(), "is taken") {
+		t.Errorf("a taken port: %v", err)
+	}
+	stop() // ssh has ended when stop returns: the port is free again
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatalf("the port stays taken after stop: %v", err)
+	}
+	_ = l.Close()
 }

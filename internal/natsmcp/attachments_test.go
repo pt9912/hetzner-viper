@@ -588,3 +588,64 @@ func TestAReceiverWithoutAnObjectStoreIsNotToldToUseFetch(t *testing.T) {
 		t.Errorf("%s", out)
 	}
 }
+
+func TestAttachRootLimitsWhereAFileMayComeFrom(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	root := filepath.Join(home, "share")
+	if err := os.MkdirAll(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(p string, data []byte) string {
+		if err := os.WriteFile(p, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	inside := write(filepath.Join(root, "sub", "ok.png"), png(10))
+	inHome := write(filepath.Join(home, "home.png"), png(10)) // in the home, but not in the folder
+	secret := write(filepath.Join(home, "secret.png"), png(10))
+	link := filepath.Join(root, "link.png")
+	_ = os.Symlink(secret, link)
+	svc := func(root string) *natsmcp.Service {
+		return natsmcp.NewService(natsmcp.Config{Names: natsmcp.Names{Group: "g", Me: "local"}, ObjectsFileMax: 4 << 20, AttachRoot: root,
+			MaxText: natsmcp.DefaultMaxText, InboxMax: 10, InboxPerMan: 10}, nopLog{}, nil)
+	}
+	with := svc(root)
+	if _, name, err := with.ReadAttachmentFile(inside); err != nil || name != "ok.png" {
+		t.Errorf("a file in the folder: %q %v", name, err)
+	}
+	if _, name, err := with.ReadAttachmentFile("sub/ok.png"); err != nil || name != "ok.png" {
+		t.Errorf("a relative path is read from the folder: %q %v", name, err)
+	}
+	for name, p := range map[string]string{
+		"in the home, not in the folder": inHome,
+		"a step up":                      filepath.Join(root, "..", "home.png"),
+		"a link out of the folder":       link,
+		"a relative step up":             "../home.png",
+	} {
+		if runtime.GOOS == "windows" && name == "a link out of the folder" {
+			continue
+		}
+		if _, _, err := with.ReadAttachmentFile(p); err == nil || !strings.Contains(err.Error(), "--files") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	// without a folder it is the home, as on the machines
+	if _, _, err := svc("").ReadAttachmentFile(inHome); err != nil {
+		t.Errorf("the home: %v", err)
+	}
+}
+
+func TestWithoutAFilesFolderTheLocalSessionHasNoAttachments(t *testing.T) {
+	no := natsmcp.NewService(natsmcp.Config{Names: natsmcp.Names{Group: "g", Me: "local"}, Local: true, MaxText: natsmcp.DefaultMaxText, InboxMax: 10, InboxPerMan: 10}, nopLog{}, nil)
+	for _, tl := range no.Tools() {
+		if tl.Name == "fetch" {
+			t.Error("fetch without a folder")
+		}
+		if props, _ := tl.Schema["properties"].(map[string]any); props["attachment"] != nil {
+			t.Errorf("%s takes an attachment without a folder", tl.Name)
+		}
+	}
+}

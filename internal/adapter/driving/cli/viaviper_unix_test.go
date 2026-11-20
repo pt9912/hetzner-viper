@@ -50,3 +50,10 @@ func TestTheChildEndsWhenTheServerIsKilled(t *testing.T) {
 	}
 	t.Errorf("the child %d is still running after its parent was killed", pid)
 }
+
+func killProcess(t *testing.T, pid int) {
+	t.Helper()
+	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+}

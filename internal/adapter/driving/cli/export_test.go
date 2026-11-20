@@ -12,6 +12,7 @@ import (
 	"github.com/pt9912/hetzner-viper/internal/adapter/driving/web"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/chatstream"
 	"github.com/pt9912/hetzner-viper/internal/port/driven/settings"
+	"github.com/pt9912/hetzner-viper/internal/port/driving"
 )
 
 // What the external tests (package cli_test) may reach of the command line's internals.
@@ -268,4 +269,9 @@ func ChatBackend(p *Opts, env settings.Env) chatweb.Backend { //nolint:ireturn /
 // ChatConnector is the connection of the stream.
 func ChatConnector(p *Opts, env settings.Env) chatstream.Connector { //nolint:ireturn // the contract of the chat
 	return &chatConnector{o: p.options(), env: env}
+}
+
+// SSHTunnel exports sshTunnel for a host and without the signal for the end of ssh.
+func SSHTunnel(ctx context.Context, h *Host, via driving.NATSTarget, host string, port, want int) (string, func(), error) {
+	return sshTunnel(ctx, &options{h: h}, via, host, port, want, nil)
 }

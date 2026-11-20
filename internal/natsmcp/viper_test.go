@@ -146,3 +146,27 @@ func TestDefaultConfigHasTheLimitsAnInboxNeeds(t *testing.T) {
 		t.Errorf("%+v", c)
 	}
 }
+
+func TestACertificateThatChangedIsNoticed(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, text string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	a, a2, b := write("a.pem", "cert A"), write("a2.pem", "cert A"), write("b.pem", "cert B")
+	if natsmcp.CertificateChanged(a, a2) {
+		t.Error("the same certificate in another folder is no change")
+	}
+	if !natsmcp.CertificateChanged(a, b) {
+		t.Error("another certificate")
+	}
+	if !natsmcp.CertificateChanged(a, filepath.Join(dir, "none")) {
+		t.Error("a certificate that cannot be read counts as changed: the connection must not go on unchecked")
+	}
+	if natsmcp.CertificateChanged("", "") {
+		t.Error("a server without TLS has none to change")
+	}
+}

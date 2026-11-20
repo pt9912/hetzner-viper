@@ -2,12 +2,14 @@ package cli_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pt9912/hetzner-viper/internal/adapter/driving/cli"
 	"github.com/pt9912/hetzner-viper/internal/model"
@@ -41,6 +43,16 @@ func TestMain(m *testing.M) {
 // viperAsChild is viper with the server of the test behind its tunnel: the settings and keys are real, the registration at the server and
 // the ssh tunnel are answered from VIPER_TEST_PUB and VIPER_TEST_ADDR.
 func viperAsChild() int {
+	if f := os.Getenv("VIPER_TEST_LOG"); f != "" { // what the child was asked to do, one line per start
+		if w, err := os.OpenFile(f, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+			_, _ = w.WriteString(strings.Join(os.Args[1:], " ") + "\n")
+			_ = w.Close()
+		}
+	}
+	if f := os.Getenv("VIPER_TEST_FAIL"); f != "" && exists(f) { // the tunnel cannot be opened (the network is gone)
+		fmt.Fprintln(os.Stderr, "viper: the ssh tunnel to the NATS server: no route to host") //nolint:forbidigo // this process plays viper
+		return 1
+	}
 	h := testHost()
 	h.LookPath = func(string) (string, error) { return "/usr/bin/tool", nil }
 	h.Stdin, h.Stdout, h.Stderr = os.Stdin, os.Stdout, os.Stderr //nolint:forbidigo // this process plays viper: its streams are the real ones
@@ -172,5 +184,73 @@ func TestViaViperTellsTheSessionOfAComputerWhatItIs(t *testing.T) {
 	res, _ := m["result"].(map[string]any)
 	if ins, _ := res["instructions"].(string); !strings.Contains(ins, "own computer") || !strings.Contains(ins, "delegate") {
 		t.Errorf("instructions: %q", ins)
+	}
+}
+
+// killChild ends the child viper that the server started (the pid is in the log line) as a sleeping computer would.
+func killChild(t *testing.T, errs *lockedBuf) int {
+	t.Helper()
+	pid := 0
+	waitFor(t, "the log names the child", func() bool {
+		if _, rest, ok := strings.Cut(errs.String(), "viper nats tunnel pid "); ok {
+			pid, _ = strconv.Atoi(strings.TrimRight(strings.SplitN(rest, "\n", 2)[0], ")"))
+		}
+		return pid != 0
+	})
+	killProcess(t, pid)
+	return pid
+}
+
+func TestTheTunnelIsStartedAgainOnTheSamePortAndTheToolsKeepWorking(t *testing.T) {
+	v := newViaWorld(t)
+	log := filepath.Join(t.TempDir(), "child.log")
+	t.Setenv("VIPER_TEST_LOG", log)
+	r, errs := v.viaRig(t, "--restart-wait", "50ms")
+	if text, isErr := r.call("send", map[string]any{"to": "beta", "text": "before"}); isErr {
+		t.Fatalf("send: %s", text)
+	}
+	first := killChild(t, errs)
+	waitFor(t, "the tunnel is up again", func() bool { return strings.Contains(errs.String(), "the tunnel is up again") })
+	if strings.Count(errs.String(), "viper nats tunnel pid "+strconv.Itoa(first)) != 1 {
+		t.Errorf("the log: %s", errs.String())
+	}
+	if text, isErr := r.call("send", map[string]any{"to": "beta", "text": "after"}); isErr {
+		t.Fatalf("send after the restart: %s\n%s", text, errs.String())
+	}
+	waitFor(t, "beta has both", func() bool {
+		in := v.tool(t, "inbox", "{}")
+		return strings.Contains(in, "before") && strings.Contains(in, "after")
+	})
+	b, _ := os.ReadFile(log)
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	port := strings.TrimPrefix(v.url, "nats://127.0.0.1:")
+	if len(lines) != 2 || strings.Contains(lines[0], "--port") || !strings.Contains(lines[1], "--port "+port) {
+		t.Errorf("the second start asks for the port of the first (%s):\n%s", port, b)
+	}
+}
+
+func TestTheServerEndsWithAMessageWhenTheTunnelDoesNotComeUpAgain(t *testing.T) {
+	v := newViaWorld(t)
+	fail := filepath.Join(t.TempDir(), "fail")
+	t.Setenv("VIPER_TEST_FAIL", fail)
+	var out lockedBuf
+	errs := &lockedBuf{}
+	t.Setenv("VIPER_TEST_AS", asViper)
+	args := []string{"dev", "--viper", v.viper, "--dir", v.dir, "--restart-wait", "10ms"}
+	inR, inW := io.Pipe()
+	defer func() { _ = inW.Close() }()
+	done := make(chan int, 1)
+	go func() { done <- natsmcp.ViaViperMain(testVer, args, inR, &out, errs) }()
+	killChild(t, errs)
+	if err := os.WriteFile(fail, nil, 0o600); err != nil { // from now on the child cannot open the tunnel
+		t.Fatal(err)
+	}
+	select {
+	case code := <-done:
+		if code != 1 || !strings.Contains(errs.String(), "could not be opened again after 5 tries") || !strings.Contains(errs.String(), "no route to host") {
+			t.Errorf("code %d\n%s", code, errs.String())
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatalf("the server did not end\n%s", errs.String())
 	}
 }

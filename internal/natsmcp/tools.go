@@ -168,7 +168,11 @@ func (s *Service) toolDelegate(ctx context.Context, args json.RawMessage) (strin
 
 // withAttachments gives send, broadcast and request the parameter attachment (the text may then be empty) and adds fetch.
 func (s *Service) withAttachments(tools []Tool) []Tool {
-	file := strProp(fmt.Sprintf("optional: a file in your home directory to send with the message (an image, a PDF or a ZIP file, at most %d MiB). The text may then be empty. Nothing in the file is run or unpacked by anyone.", s.cfg.ObjectsFileMax>>20))
+	where := "your home directory"
+	if s.cfg.AttachRoot != "" {
+		where = "the folder " + s.cfg.AttachRoot
+	}
+	file := strProp(fmt.Sprintf("optional: a file in %s to send with the message (an image, a PDF or a ZIP file, at most %d MiB). The text may then be empty. Nothing in the file is run or unpacked by anyone.", where, s.cfg.ObjectsFileMax>>20))
 	for i := range tools {
 		switch tools[i].Name {
 		case "send", "broadcast", "request":
