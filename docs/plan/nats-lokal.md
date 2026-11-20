@@ -2,7 +2,7 @@
 
 **Ziel:** Eine Claude-Code-Sitzung auf dem **eigenen Rechner** (Laptop, Entwicklungsumgebung) soll mit den Sitzungen auf den Rechnern einer NATS-Gruppe reden können: wer ist da, Nachricht senden, fragen und die Antwort bekommen, auf Fragen der Rechner antworten, Rundrufe, Dateien. Dafür läuft der vorhandene MCP-Server `viper-nats-mcp` auch auf dem eigenen Rechner. **`viper` stellt ihn bereit** (eingebettet, für das eigene System) **und öffnet den Tunnel** zum Server der Gruppe, mit dem Schlüssel, den `viper nats` und der Chat schon benutzen. Auf den Rechnern ändert sich am Dienst nichts. Die Rechner verhalten sich dann für die lokale Sitzung **wie Subagenten**: Sie bekommen Aufträge und weitere Nachrichten, und ihre Antworten und Meldungen kommen **von selbst** in der lokalen Sitzung an (Push über den Channel des vorhandenen Dienstes, §4.4).
 
-**Stand:** Entwurf (20.11.2026), eine unabhängige Prüfung ist eingearbeitet (§10.1); die Aufteilung in §4 (Weg C) ist nach der Prüfung geändert und **noch nicht erneut geprüft**. Die Entscheidungen in §8 sind **getroffen** (Vorschläge übernommen, 20.11.2026), bis auf die Aufteilung (§8.10). **Meilenstein 0 läuft:** die Messungen in §7.1 sind gemacht; offen sind zwei Dinge, die nur du von Hand prüfen kannst. Gebaut ist noch nichts vom Befehl.
+**Stand:** Entwurf (20.11.2026), eine unabhängige Prüfung ist eingearbeitet (§10.1); die Aufteilung in §4 (Weg C) ist danach geändert und in einer zweiten Prüfung (§10.2) bewertet; deren Funde sind eingearbeitet. Die Entscheidungen in §8 sind **getroffen** (Vorschläge übernommen, 20.11.2026), bis auf die Aufteilung (§8.10). **Meilenstein 0 läuft:** die Messungen in §7.1 sind gemacht; offen sind zwei Dinge, die nur du von Hand prüfen kannst. Gebaut ist noch nichts vom Befehl.
 
 *[V]* heißt: im Code gelesen oder gemessen; *[?]* ist eine Vermutung, die zu prüfen ist.
 
@@ -26,7 +26,7 @@ Gehört zu [`nats-mcp.md`](nats-mcp.md) (der Dienst und seine Werkzeuge), [`nats
 2. **Eine eigene Identität für die lokale Sitzung**, nicht der Operator (§3). Wer sie in `NATS_MCP_PUSH_FROM` eines Rechners einträgt, entscheidet das ausdrücklich.
 3. **Von selbst in die Sitzung kommt nur Text von Rechnern, die der Betreiber nennt** (`--push-from`, Standard: keiner). Das ist der Weg, der die Rechner wie Subagenten wirken lässt (§4.4); er ist ein Hauptweg und kein Sonderfall. Die lokale Sitzung hat meist mehr Rechte (Dateien, Zugangsdaten, ssh-Schlüssel) als die Sitzung eines Rechners; Text von dort bleibt Text eines Fremden. Von allen anderen Rechnern liegt der Text im Posteingang (`inbox`).
 4. **Anhänge sind aus**, solange der Betreiber keinen Ordner nennt (§5.3). Das schützt vor Versehen, nicht vor einem Agenten, der in diesen Ordner schreiben kann.
-5. **Am Dienst auf den Rechnern ändert sich nichts**, außer dass ein Betreiber den neuen Namen in `NATS_MCP_PUSH_FROM` aufnehmen kann.
+5. **Verhalten und Konfiguration auf den Rechnern bleiben gleich**; ein Betreiber kann den neuen Namen in `NATS_MCP_PUSH_FROM` aufnehmen. Das Programm `viper-nats-mcp` enthält zusätzlich die Betriebsart `--via-viper`, `delegate`, `SendPerMin`, `AttachRoot` und `DefaultConfig`; das nächste `viper up` liefert es mit aus. Ein Test sichert, dass `LoadConfig` nach dem Umbau auf `DefaultConfig` **genau die alten Werte** liefert.
 6. **`stdout` des Servers gehört dem Protokoll.** Alles, was die Hilfsprogramme sonst ausgeben, geht auf `stderr` oder in eine Datei. *[V: der Test liest jede Zeile als JSON, §7.1.]*
 
 ## 3 Identitäten mit Namen (gemeinsam mit dem A2A-Plan)
@@ -43,7 +43,7 @@ Gehört zu [`nats-mcp.md`](nats-mcp.md) (der Dienst und seine Werkzeuge), [`nats
 
 ```
 Claude Code ──stdio──▶ viper-nats-mcp --via-viper GRUPPE          (Programm des Servers, ein Eintrag)
-                         └─ startet als Kind: viper nats tunnel GRUPPE --name local --port N
+                         └─ startet als Kind: viper nats tunnel GRUPPE --name local      (bei Neustarts mit --port N)
                               ├─ prüft den Eintrag des Namens beim Server (Find, Operator-Liste)
                               ├─ fragt bei NATS_MCP_PUSH_FROM (--yes)
                               ├─ öffnet den ssh-Tunnel (ssh -N -L, Wächter)
@@ -53,10 +53,20 @@ Claude Code ──stdio──▶ viper-nats-mcp --via-viper GRUPPE          (Pro
 
 ### 4.1 Wer macht was
 
-* **`viper nats tunnel GRUPPE [--name NAME] [--port N] [--yes]`** (neu, `viper`): ein Dauerlauf im Vordergrund für den Server (nicht für Menschen gedacht). Er lädt die Gruppe (`loadNatsGroup`), prüft, dass der **Name in der Operator-Liste des Servers** steht und der Schlüssel zu ihm gehört (der Dienst meldet bei einem fremden Schlüssel selbst keinen Fehler: `Connect` kehrt zurück, die Werkzeuge scheitern später mit „authorization violation“), fragt bei `NATS_MCP_PUSH_FROM` (§5.3), öffnet den Tunnel auf dem gewünschten Port und schreibt **eine** Zeile `{"event":"ready","url":"tls://127.0.0.1:PORT","server_name":"…","ca_file":"…","seed_file":"…","objects_file_max":N}`. Endet der Tunnel, endet der Befehl mit eigenem Rückgabewert. Alles andere (Fehler, Hinweise, die Notizen von `loadNatsGroup`) geht auf `stderr`.
-* **`viper-nats-mcp --via-viper GRUPPE [--viper PFAD] [--name NAME] [--push-from m1,m2] [--files ORDNER] [--yes] [--send-per-min N]`** (das Programm der Rechner, mit einer neuen Betriebsart): startet das Kind (`viper` aus `--viper`, sonst neben dem eigenen Programm, sonst aus `PATH`), liest die Zeile `ready`, baut die `natsmcp.Config` (§4.2) und läuft wie auf den Rechnern. Stirbt das Kind (Schlaf, Netz), startet er es auf **demselben Port** neu und lässt den NATS-Client sich selbst wieder verbinden (§4.3). Endet `stdin`, meldet er sich ab (`bye`) und beendet das Kind.
+* **`viper nats tunnel GRUPPE [--name NAME] [--port N] [--yes]`** (neu, `viper`): ein Dauerlauf im Vordergrund für den Server (nicht für Menschen gedacht). Er lädt die Gruppe (`loadNatsGroup`), prüft, dass der **Name in der Operator-Liste des Servers** steht und der Schlüssel zu ihm gehört (der Dienst meldet bei einem fremden Schlüssel selbst keinen Fehler: `Connect` kehrt zurück, die Werkzeuge scheitern später mit „authorization violation“), fragt bei `NATS_MCP_PUSH_FROM` (§5.3), öffnet den Tunnel und schreibt **eine** Zeile `{"event":"ready","version":"…","url":"tls://127.0.0.1:PORT","server_name":"…","ca_file":"…","seed_file":"…","objects_file_max":N}`. Alles andere (Fehler, Hinweise, die Notizen von `loadNatsGroup`) geht auf `stderr`.
+  * **Den Port wählt das Kind** beim ersten Start (`--port` fehlt) und nennt ihn in `ready`; der Server merkt ihn sich und gibt `--port N` nur bei **Neustarts** mit. So gibt es das Fenster zwischen `Listen(:0)` und `Close` nicht zwischen zwei Prozessen. `--port` gibt es heute schon als allgemeines Flag (`cli.go`): die Tabellen der Flags und `checkNatsOptions` müssen die Bedeutung bei `tunnel` zulassen.
+  * **Endet der Server, endet das Kind.** Das Kind **liest seinen `stdin`** und beendet sich bei EOF; das ist das einzige Zeichen vom Tod des Elternprozesses, das unter Linux, macOS **und** Windows trägt. Beim Beenden bricht es ssh ab und **wartet** auf dessen Ende. Unter Unix läuft ssh in einer **eigenen Prozessgruppe**, unter Windows in einem Job-Objekt mit `KILL_ON_JOB_CLOSE` (oder der Plan nennt die Lücke). **Bekannte Grenze:** Wird das Kind selbst mit SIGKILL beendet, bleibt ssh übrig (`sshTunnel` verwendet `exec.CommandContext` ohne Prozessgruppe). Darum prüft ein Neustart **vor** dem Start, ob der Port **frei** ist, und meldet sonst klar „Port N ist belegt (ein übrig gebliebenes ssh?)“; die Bereitschaftsprobe von `sshTunnel` (ein TCP-Aufruf) würde sonst am **alten** ssh gelingen und ein Tunnel „bereit“ melden, den niemand überwacht.
+  * **Die Rückfrage zu `NATS_MCP_PUSH_FROM`** fragt **nie** (`stdin` ist kein Terminal): ohne `--yes` endet das Kind mit **Rückgabewert 3** und einem Satz auf `stderr`, der die Rechner nennt. Der Server reicht `stderr` des Kindes weiter, Claude Code zeigt ihn aber nur dürftig (bei `/mcp`); `--print-config` sagt darum schon vorher, dass `--yes` fehlt und warum.
+  * **Neue Funktion für den Tunnel:** `openOperatorDead` gibt heute nur `*operatorSession` zurück (`remote`, `close`, `server`); URL, Zertifikat und `TLSServerName` bleiben intern, `dead` wird nicht herausgegeben. Neu ist `openTunnel` (liefert Adresse, Pfad des Zertifikats, Name im Zertifikat, `stop` und `dead`), die auch `openOperatorDead` benutzt. Das Zertifikat liegt in `os.MkdirTemp("viper-nats-")`; **`stop` des Kindes löscht es** (nach SIGKILL bleibt die öffentliche Datei liegen, harmlos). Jeder Neustart legt ein neues Verzeichnis an und nennt es in `ready`.
+* **`viper-nats-mcp --via-viper GRUPPE [--viper PFAD] [--name NAME] [--push-from m1,m2] [--files ORDNER] [--yes] [--send-per-min N]`** (das Programm der Rechner, mit einer neuen Betriebsart): **`Main` verarbeitet `--via-viper` vor `LoadConfig`** (das sonst ohne `connection.env` scheitert), wie `--version`; `ensure-bucket` und die Unterbefehle schließen es aus. Er startet das Kind, liest die Zeile `ready`, prüft sie (§4.1.1), baut die `natsmcp.Config` (§4.2) und läuft wie auf den Rechnern. Stirbt das Kind (Schlaf, Netz), startet er es mit `--port N` neu und liest `ready` **neu** (Zertifikat und Server können sich geändert haben); er versucht es höchstens **5-mal mit wachsender Pause** (1, 2, 4, 8, 16 Sekunden) und endet dann mit Meldung. Endet `stdin`, meldet er sich ab (`bye`) und beendet das Kind (durch Schließen von dessen `stdin`).
 * **`viper mcp-binary --host [--out DATEI]`** (erweitert): schreibt den MCP-Server für **das eigene System** aus (`.exe` unter Windows, mit Ausführungsrecht sonst). Das ist der Weg, ihn auf den Laptop zu bekommen; er ist derselbe Build wie das `viper`, das ihn schreibt.
 * **`viper nats tunnel --print-config`** gibt den Eintrag für Claude Code aus (§4.5).
+
+#### 4.1.1 Die Zeile `ready` und das Auffinden von `viper`
+
+* **`ready` ist Eingabe von außen** und wird so behandelt: nur **eine** Zeile von höchstens 4 KiB mit `event=ready`; `url` muss `tls://127.0.0.1:PORT` sein; `ca_file` und `seed_file` müssen **absolute** Pfade regulärer Dateien sein; unbekannte Felder werden überlesen; ein Fehler beim Lesen endet mit Rückgabewert und dem `stderr` des Kindes. Die **`version`** in `ready` wird mit der des Servers verglichen: ein anderes `viper` (zum Beispiel über `--viper`) wird abgelehnt, damit der Satz „derselbe Build“ gilt.
+* **`viper` wird gefunden** über `--viper`, sonst **neben dem eigenen Programm**, sonst über `PATH`; **nie** im aktuellen Verzeichnis (Claude Code startet den Server im Verzeichnis des Projekts, und ein Verzeichnis des Projekts im `PATH` wäre ein Weg, ein fremdes `viper` zu starten). Der Start geschieht **ohne Shell** (`exec.Command(pfad, "nats", "tunnel", …)`); `GRUPPE` und `--name` werden vorher mit `CheckNATSName` geprüft (nichts, was mit `-` beginnt), `--dir` und `--files` müssen absolute Pfade sein. Die Vertrauensgrenze: Wer die Zeile `claude mcp add` schreibt, startet das Programm ohnehin.
+* **Umgebung des Kindes:** nur `HOME`, `PATH`, `SSH_AUTH_SOCK`, `SystemRoot` (Windows), `XDG_*` und die `VIPER_*`-Variablen. Zugangsdaten stehen für den Tunnel in den Einstellungsdateien, nicht in der Umgebung.
 
 ### 4.2 Eigene Betriebsart: die Config
 
@@ -67,7 +77,7 @@ Die `Config` kommt aus dem Wert, den die Tunnel-Verbindung schon baut (`URL`, `T
 Der Tunnel ist ein `ssh -N -L` mit Wächter (wie im Chat). Ein Laptop schläft und wacht auf; dabei stirbt ssh (`ServerAliveInterval 15 × 4`), und ohne Neuverbindung verschwänden die Werkzeuge nach jedem Schlaf.
 
 * **Stufe 1:** Der Server endet mit eigener Meldung und eigenem Rückgabewert („Tunnel zum Server beendet; `/mcp` verbindet neu“).
-* **Stufe 2 (vor dem ersten Release des Befehls):** Der Server **bleibt**. Der Port wird **einmal** gewählt und bei jedem Neustart des Kindes wieder genommen (`sshTunnel` wählt heute mit `Listen(:0)` und `Close`, ein Fenster, in dem der Port weg sein kann; er bekommt einen gewünschten Port). Der NATS-Client verbindet sich selbst wieder. Bei jedem Neustart wird der Server neu gesucht (`Find`), denn Zertifikat oder Server können sich geändert haben. *[V, §7.1: ein NATS-Client verbindet sich durch einen auf demselben Port neu gestarteten Tunnel nach etwa 250 ms wieder. Das Aufwachen aus dem Schlaf (ssh lebt, die Verbindung ist tot) erkennt ssh erst nach `Interval × (Count+1)`, etwa 75 Sekunden.]*
+* **Stufe 2 (vor dem ersten Release des Befehls):** Der Server **bleibt**. Das Kind wählt den Port beim ersten Start; der Server nimmt ihn bei Neustarts wieder (`sshTunnel` bekommt einen gewünschten Port). Der NATS-Client verbindet sich selbst wieder. Bei jedem Neustart wird der Server neu gesucht (`Find`) und `ready` neu gelesen. *[?: Ein laufender NATS-Client hat sein TLS schon festgelegt; ob `natsmcp` ein neues `CAFile` übernehmen kann, wird in Meilenstein 5 geprüft. Wenn nicht, endet der Server bei **geändertem** Zertifikat mit eigenem Rückgabewert (`/mcp` verbindet neu).]* *[V, §7.1: ein NATS-Client verbindet sich durch einen auf demselben Port neu gestarteten Tunnel nach etwa 250 ms wieder. Das Aufwachen aus dem Schlaf (ssh lebt, die Verbindung ist tot) erkennt ssh erst nach `Interval × (Count+1)`, etwa 75 Sekunden.]*
 
 ### 4.4 Zustellung in die Sitzung (wie bei Subagenten)
 
@@ -103,10 +113,10 @@ Trägt der Channel nicht (andere Anmeldung, Admin-Sperre, nicht interaktiv, ein 
 
 ### 4.5 Das Programm auf den Laptop bringen und eintragen
 
-* **Das Programm:** Jedes `viper` hält den MCP-Server **für sein eigenes System** eingebettet. Linux hat ihn schon (die Datei seiner Architektur); die Fassungen für macOS und Windows betten die Datei für ihr System zusätzlich ein (rund 7 MB). Den Weg beschreibt §6.1. `viper mcp-binary --host --out ~/bin/viper-nats-mcp` schreibt ihn aus.
-* **Eintrag:** `claude mcp add nats-GRUPPE -- /pfad/viper-nats-mcp --via-viper GRUPPE --viper /pfad/viper --dir /absoluter/pfad`. **Claude Code startet den Server im Verzeichnis des Projekts**, nicht dort, wo die Einstellungen liegen: der Befehl nimmt darum immer einen absoluten `--dir` (die Einstellungen der Gruppe). Findet er dort keine Gruppe, sagt er es klar und endet.
+* **Das Programm:** Jedes `viper` hält den MCP-Server **für sein eigenes System** eingebettet. Linux hat ihn schon (die Datei seiner Architektur); die Fassungen für macOS und Windows betten die Datei für ihr System zusätzlich ein (7,4 bis 8,1 MB, gemessen: darwin/arm64 7,43, darwin/amd64 8,06, windows/amd64 8,09, linux/amd64 7,85). Den Weg beschreibt §6.1. `viper mcp-binary --host --out ~/bin/viper-nats-mcp` schreibt ihn aus.
+* **Eintrag:** `claude mcp add nats-GRUPPE -- /pfad/viper-nats-mcp --via-viper GRUPPE --viper /pfad/viper --dir /absoluter/pfad`. **Claude Code startet den Server im Verzeichnis des Projekts**, nicht dort, wo die Einstellungen liegen: der Befehl nimmt darum immer einen absoluten `--dir` (die Einstellungen der Gruppe). Findet er dort keine Gruppe, sagt er es klar und endet. Gibt es die Identität noch nicht, sagt er `viper nats init GRUPPE --name local`; fehlt OpenSSH (Windows), sagt er es.
 * **Name:** Auf den Rechnern heißt der Eintrag `nats` (`claude --dangerously-load-development-channels server:nats`). Auf dem Laptop heißt er **`nats-GRUPPE`** (eindeutig bei mehreren Gruppen); der Channel-Schalter nennt denselben Namen.
-* **`viper nats tunnel GRUPPE --print-config`** gibt den Befehl (mit den Pfaden des laufenden `viper` und, wenn nötig, ausgeschriebenem `viper-nats-mcp`) und die JSON-Form aus, mit absolutem `--dir` und dem passenden Channel-Namen. **`--yes` wird nicht eingebaut**: wer die Rückfrage übergehen will, tut das mit Absicht.
+* **`viper nats tunnel GRUPPE --print-config`** (ab Meilenstein 4, weil er den Pfad des Servers, `--files` und den Channel-Namen braucht) gibt den Befehl (mit den Pfaden des laufenden `viper` und, wenn nötig, ausgeschriebenem `viper-nats-mcp`) und die JSON-Form aus, mit absolutem `--dir` und dem passenden Channel-Namen. **`--yes` wird nicht eingebaut**: wer die Rückfrage übergehen will, tut das mit Absicht; `--print-config` sagt, **dass** `--yes` fehlt und warum. Pfade mit Leerzeichen werden richtig quotiert (auch unter Windows).
 
 ## 5 Sicherheitsmodell
 
@@ -125,7 +135,7 @@ Die lokale Sitzung liest Nachrichten von Agenten, die nicht dir gehören müssen
 ### 5.3 Richtung lokale Sitzung → Gruppe
 
 * Der Absender ist der Name der lokalen Sitzung (aus dem Subject, vom Server erzwungen).
-* **Rückfrage beim Start:** Führt ein Rechner der Gruppe den Namen in `NATS_MCP_PUSH_FROM`, landet Text der lokalen Sitzung **ohne Rückfrage** in dessen Sitzung. **Das ist neuer Code, nicht „wie beim Chat“:** `natsPushCheck` gibt es nur auf dem Weg über einen Rechner, und der Chat baut die Rückfrage selbst aus den Einstellungen (`loaded.ms[…].cfg.NATS.MCPPushFrom`). `viper nats tunnel` liest dieselben Einstellungen **auf dem Laptop** (nicht auf den Rechnern), nennt die Rechner auf `stderr` und startet in diesem Fall nur mit `--yes`; der Server reicht sein `--yes` durch. Die Prüfung läuft **einmal beim Start des Kindes**: Trägt jemand später `local` in die Einstellungen eines Rechners ein, merkt der laufende Dienst es nicht (ein Neustart des Kindes fragt wieder). Das Handbuch sagt es.
+* **Rückfrage beim Start:** Führt ein Rechner der Gruppe den Namen in `NATS_MCP_PUSH_FROM`, landet Text der lokalen Sitzung **ohne Rückfrage** in dessen Sitzung. **Das ist neuer Code, nicht „wie beim Chat“:** `natsPushCheck` gibt es nur auf dem Weg über einen Rechner, und der Chat baut die Rückfrage selbst aus den Einstellungen (`loaded.ms[…].cfg.NATS.MCPPushFrom`). `viper nats tunnel` liest dieselben Einstellungen **auf dem Laptop** (nicht auf den Rechnern), nennt die Rechner auf `stderr` und startet in diesem Fall nur mit `--yes` (sonst Rückgabewert 3, §4.1); der Server reicht sein `--yes` durch. Die Prüfung läuft **einmal beim Start des Kindes**: Trägt jemand später `local` in die Einstellungen eines Rechners ein, merkt der laufende Dienst es nicht (ein Neustart des Kindes fragt wieder). Das Handbuch sagt es.
 * **Anhänge:** Das Werkzeug nimmt Pfade (`attachment`). Heute sind sie auf `$HOME` begrenzt (nach dem Auflösen von Verknüpfungen) und auf PNG, JPEG, GIF, WebP, PDF und ZIP *[V: `homePath`, `Classify`]*; ein Schlüssel wie `~/.ssh/id_…` kommt dadurch nicht durch. Offen bleiben Bilder, PDFs und ZIP-Dateien unter `$HOME`. Darum: **ohne `--files ORDNER` keine Anhänge**; mit `--files` nur Dateien unterhalb des Ordners (`homePath` wird um die Wurzel verallgemeinert).
   **Das ist keine Mauer.** Die lokale Sitzung hat Bash; ein eingeschleuster Auftrag kann eine Datei in den erlaubten Ordner kopieren oder packen. `--files` schützt vor Versehen. Die eigentliche Sperre ist Claude Codes Rückfrage **bei jedem Aufruf** eines Werkzeugs: `send`, `request`, `delegate`, `broadcast` und `reply` gehören **nicht** auf eine Erlaubnisliste (das Handbuch sagt es).
 * **Grenzen beim Senden:** Auf der Seite des Dienstes gibt es heute nur Grenzen für **Eingehendes** (`PushPerMin`, Anteil je Absender im Posteingang). Es gibt **keine** Grenze, wie oft ein Agent sendet oder fragt. Eine Erlaubnis für die Werkzeuge ermöglichte eine Schleife zwischen zwei Agenten. Neu: `Config.SendPerMin` (Standard in dieser Betriebsart 20 je Minute, insgesamt für `send`, `request`, `delegate`, `broadcast`, `reply`); darüber meldet das Werkzeug einen Fehler.
@@ -141,21 +151,24 @@ Die lokale Sitzung liest Nachrichten von Agenten, die nicht dir gehören müssen
 
 ### 6.1 Das Programm für das eigene System einbetten
 
-* **`make mcp`** baut wie heute die Linux-Dateien. **`make dist`** baut vor dem Bau von `viper` für **jedes** Ziel (`darwin/amd64`, `darwin/arm64`, `windows/amd64`) zusätzlich `viper-nats-mcp` für dieses Ziel nach `internal/mcpbin/bin/viper-nats-mcp_<os>_<arch>[.exe]` und entfernt die Datei nach dem Bau von `viper` wieder, damit ein Build nur seine **eigene** Datei und die zwei Linux-Dateien einbettet (`go:embed all:bin` nimmt, was im Verzeichnis liegt). Der Bau für Linux ändert sich nicht.
-* **`mcpbin.Host()`** gibt die Datei für `runtime.GOOS`/`runtime.GOARCH` zurück (Linux: die schon eingebettete). Ein `viper`, das ohne `make` gebaut wurde, hat keine (`ErrNotIncluded`; wie heute für die Server).
-* **`viper mcp-binary --host`** schreibt sie aus. Ein Test prüft, dass `viper` unter jedem System die Datei seines Systems hat (`VIPER_REQUIRE_MCP=1`, wie heute für Linux).
-* Die Größe von `viper` wächst bei macOS und Windows um rund 7 MB (`viper` ist heute 115 bis 130 MB).
+Es gibt **zwei** Baupfade, und beide ändern sich: `make dist` (und `make build`) und das `Dockerfile` (`make dist-docker`, Stufen `mcp`, `build`, `dist-build`; die Release-Datei `release-binaries.yml` ruft `make dist` über `tools/ci-devcontainer.sh` auf und bleibt unverändert, ebenso die Homebrew-Formel).
+
+* **`make mcp`** baut wie heute die Linux-Dateien. Neu ist **`make mcp-host`** für das Ziel `GOOS`/`GOARCH` des Aufrufs (nach `internal/mcpbin/bin/viper-nats-mcp_<os>_<arch>[.exe]`); **`make build`** ruft beide. **`make dist`** und die Stufe `dist-build` des `Dockerfile` bauen **je Ziel** (`darwin/amd64`, `darwin/arm64`, `windows/amd64`) die Datei, bauen `viper` und entfernen sie wieder. **Die Datei wird am Anfang jeder Runde gelöscht** (nicht nur am Ende): `set -eu` bricht die Schleife ab, und eine liegen gebliebene Datei gelangte in den Bau des nächsten Ziels. `go:embed all:bin` nimmt, was im Verzeichnis liegt; die zwei Linux-Dateien halten das Verzeichnis auf jedem Ziel gefüllt (kein „no matching files“). `.gitignore` deckt die Dateien (`/internal/mcpbin/bin/viper-nats-mcp_*`, auch `.exe`).
+* **`mcpbin.Host()`** gibt die Datei für `runtime.GOOS`/`GOARCH` zurück, mit einem neuen `HostFileName(goos, goarch)` (`.exe` unter Windows); `FileName(goarch)` bleibt für die Server (Linux). `Binary` und `Architectures` nehmen von `--arch` weiter nur `amd64` und `arm64` für Linux an. Ein `viper`, das ohne `make` gebaut wurde, hat keine Datei (`ErrNotIncluded`).
+* **`viper mcp-binary --host`** schreibt sie aus.
+* **Die Größe:** `viper` ist heute etwa 126 MB; die Datei macht bei macOS und Windows 7,4 bis 8,1 MB aus, rund 6 Prozent. `cmd/viper-nats-mcp` baut ohne Änderung für `linux/amd64`, `darwin/arm64`, `darwin/amd64` und `windows/amd64` (`CGO_ENABLED=0`, keine Build-Bedingung; die einzige Systemfunktion ist `signal.NotifyContext(…, syscall.SIGTERM)`, das unter Windows nie ausgelöst wird: dort endet der Server durch `stdin` oder Beenden).
+* **Die CI prüft es heute nicht** *[V]*: `test.yml` führt unter Windows `go test ./...` ohne `make mcp` aus, unter macOS nur `./internal/adapter/driving/... ./internal/model/...`. Neu: ein Schritt unter macOS **und** Windows, der `make mcp-host` ausführt und `internal/mcpbin` mit `VIPER_REQUIRE_MCP=1` testet. `mcpbin_test.go` prüft heute nur ELF; es bekommt `debug/macho` (richtige CPU) und `debug/pe` für die Datei des eigenen Systems.
 
 ### 6.2 Änderungen am vorhandenen Code
 
 | Stelle | Änderung |
 |---|---|
-| `Makefile`, `release-binaries.yml` | Schritt aus §6.1 |
-| `internal/mcpbin` | `Host()`, Dateinamen je System |
+| `Makefile`, `Dockerfile` (Stufen `mcp`, `build`, `dist-build`), `.github/workflows/test.yml` | Schritte aus §6.1; `release-binaries.yml` und die Homebrew-Formel bleiben |
+| `internal/mcpbin` | `Host()`, `HostFileName(goos, goarch)`; der Test prüft ELF, Mach-O und PE |
 | `internal/model` | Schlüsseldatei je Name (`OperatorKeyFile(state, group, name)`); Standardname `local` |
 | `internal/adapter/driven/settingsfile`, `internal/usecase/check` | die Namenprüfung gilt für jeden Operator-Namen; `viper check` kennt die eingetragenen Namen und warnt bei gleichem Namen eines Rechners (§3) |
-| `internal/adapter/driving/cli` | `viper nats init|revoke --name`, `viper nats tunnel` (§4.1), `--print-config`, `mcp-binary --host`; `natsGroup` kennt den gewählten Namen; die Stellen aus §3; `openOperatorDead` gibt die Angaben für die Zeile `ready` heraus; `sshTunnel` nimmt einen gewünschten Port; Hilfe; **nicht** in der Seite NATS der Oberfläche |
-| `internal/natsmcp`, `cmd/viper-nats-mcp` | die Betriebsart `--via-viper` (Kind starten und neu starten, Zeile `ready` lesen, `Config` bauen); `DefaultConfig(names, seedFile)`, von `LoadConfig` mitbenutzt; `Config.AttachRoot`; `Config.SendPerMin`; das Werkzeug `delegate`; eine zweite Fassung der `instructions` für den Laptop |
+| `internal/adapter/driving/cli` | `viper nats init|revoke --name`, `viper nats tunnel` (§4.1), `--print-config`, `mcp-binary --host`; `natsGroup` kennt den gewählten Namen; die Stellen aus §3; neue Funktion `openTunnel` (Adresse, Zertifikat, Name im Zertifikat, `stop`, `dead`), die auch `openOperatorDead` benutzt; `sshTunnel` nimmt einen gewünschten Port und läuft in eigener Prozessgruppe (Windows: Job-Objekt); das Kind liest `stdin` und endet bei EOF; Hilfe; **nicht** in der Seite NATS der Oberfläche |
+| `internal/natsmcp`, `cmd/viper-nats-mcp` | die Betriebsart `--via-viper` (**vor** `LoadConfig` behandelt; Kind starten und neu starten, Zeile `ready` lesen und prüfen, `Config` bauen); `DefaultConfig(names, seedFile)`, von `LoadConfig` mitbenutzt; `Config.AttachRoot`; `Config.SendPerMin`; das Werkzeug `delegate`; eine zweite Fassung der `instructions` für den Laptop |
 | Handbuch, README, Hilfe | Kapitel „Mit einer lokalen Claude-Sitzung in der Gruppe sprechen“ (Ist-Zustand), Befehlstabelle |
 
 ## 7 Meilensteine
@@ -164,10 +177,10 @@ Die lokale Sitzung liest Nachrichten von Agenten, die nicht dir gehören müssen
 |---|---|---|
 | 0 | **Verifikation** (gemacht am 20.11.2026, Ergebnisse §7.1; offen sind zwei Prüfungen von Hand) | Messungen im Plan |
 | 1 | **Identitäten mit Namen:** `init|revoke --name`, Schlüsseldatei je Name, alle Stellen aus §3, `viper check`, der Absturz bei fremden Rechnern in `order` | Go-Tests (Namen, Schlüssel, Kollision mit Rechnernamen, zwei Einträge), Test mit eingebettetem Server |
-| 2 | **Das Programm für das eigene System:** `make dist` baut und bettet es ein (§6.1), `mcpbin.Host()`, `mcp-binary --host` | Test je System (`VIPER_REQUIRE_MCP=1`), Größe der Fassungen im Release geprüft |
-| 3 | **`viper nats tunnel`:** Vorprüfung des Eintrags, Rückfrage bei `PUSH_FROM`, Tunnel auf gewünschtem Port, Zeile `ready` auf `stdout`, Rückgabewerte, `--print-config` | Test mit eingebettetem Server (`newChatWorld`, `Host.OpenTunnel` als Haken): Zeile `ready`, widerrufener Schlüssel meldet klar, Rückfrage; Prüfung, dass nichts außer der einen Zeile auf `stdout` steht |
-| 4 | **`viper-nats-mcp --via-viper`:** Kind starten, `Config` bauen, `Run`, Ende (`bye`, Kind beenden), `--push-from`, `SendPerMin`, `delegate`, `instructions` für den Laptop | Test mit eingebettetem Server: MCP über Rohre (wie die Tests aus §7.1) mit dem Kind als echtem Aufruf von `viper nats tunnel` |
-| 5 | **Neuverbinden (Stufe 2):** gleicher Port, `Find` bei jedem Neustart, eigener Rückgabewert bei Stufe 1 | Test mit einem echten `sshd` (**nur unter Linux**; auf macOS und Windows übersprungen, dort läuft nur die Logik mit dem Haken) |
+| 2 | **Das Programm für das eigene System:** `make mcp-host`, `make dist` und `Dockerfile` betten es ein (§6.1), `mcpbin.Host()`, `mcp-binary --host`, der Schritt in `test.yml` für macOS und Windows | Test je System (`VIPER_REQUIRE_MCP=1`; ELF, Mach-O mit richtiger CPU, PE), Größe der Fassungen geprüft (7,4 bis 8,1 MB), `make dist-docker` ebenfalls |
+| 3 | **`viper nats tunnel`:** Vorprüfung des Eintrags, Rückfrage bei `PUSH_FROM`, Tunnel auf gewünschtem Port, Zeile `ready` auf `stdout`, Rückgabewerte (3 bei fehlendem `--yes`), `stdin`-EOF beendet das Kind und ssh, Prüfung des freien Ports beim Neustart | Test mit eingebettetem Server (`newChatWorld`, `Host.OpenTunnel` als Haken): Zeile `ready`, widerrufener Schlüssel meldet klar, Rückfrage; Prüfung, dass nichts außer der einen Zeile auf `stdout` steht, und dass SIGKILL des Elternprozesses das Kind beendet (Unix) |
+| 4 | **`viper-nats-mcp --via-viper`:** Kind starten (ohne Shell, Umgebung aus §4.1.1), `ready` prüfen (Version, Größe, Pfade), `Config` bauen, `Run`, Ende (`bye`, Kind beenden), `--push-from`, `SendPerMin`, `delegate`, `instructions` für den Laptop, `--print-config` | Test mit eingebettetem Server: MCP über Rohre (wie die Tests aus §7.1) mit dem Kind als echtem Aufruf von `viper nats tunnel`. **Wie der Haken `Host.OpenTunnel` ins Kind kommt:** Das Testprogramm startet sich selbst neu (`TestMain` mit einer Umgebungsvariable, die `cli.Main` mit einem `Host` aufruft, dessen `OpenTunnel` auf den eingebetteten Server zeigt); `--viper` zeigt auf das Testprogramm. Dazu ein Test mit SIGKILL des Servers (das Kind endet), ein Test der Regression von `LoadConfig` |
+| 5 | **Neuverbinden (Stufe 2):** gleicher Port, `Find` und `ready` bei jedem Neustart, höchstens 5 Versuche, neues Zertifikat (Prüfung, ob `natsmcp` ein neues `CAFile` übernimmt) | Test mit einem echten `sshd` und Tests der Prozessgruppen (**nur unter Linux**; auf macOS und Windows übersprungen, dort läuft nur die Logik mit dem Haken; das Verhalten des Kindes unter Windows prüfst du von Hand oder die CI deckt es mit dem Haken) |
 | 6 | **Dateien:** `--files`, `AttachRoot`, Grenzen von `fetch` | Tests der Grenzen (`..`, Verknüpfungen, fremde Art, ohne `--files`) |
 | 7 | **Handbuch, README, Hilfe**; Plan-Stand | Durchsicht, unabhängige Prüfung |
 
@@ -215,7 +228,7 @@ Nur zwei hängen noch an dir: 8.2 (ob der Channel eine untätige Sitzung weckt, 
 * **Mehrere Gruppen in einem Prozess**, eine Oberfläche, JetStream.
 * **Push von allen Rechnern als Standard**, `NATS_MCP_AUTOALLOW` für die lokale Sitzung (Claude Code fragt bei jedem Werkzeug; das ist hier der Schutz).
 * **Ein Relay in den Socket der Sitzung und ein Hook mit Spool:** nur als Ergänzung, falls der Channel bei dir nicht trägt. Die Nachrichten zwischen Sitzungen (ab Claude Code 2.1.224) erlauben, dass ein Skript **in der Sitzung** (Hook oder Bash-Befehl, nicht der MCP-Server: nur sie bekommen `CLAUDE_CODE_MESSAGING_SOCKET` und `CLAUDE_CODE_MESSAGING_TOKEN`) eine Nachricht in den Socket der Sitzung wirft; sie erscheint wie eine Nachricht einer anderen Sitzung, weckt eine untätige Sitzung, und Claude Code behandelt sie als fremd (kein Einverständnis, keine Änderung von Einstellungen, Rückfragen zu Rechten gelten). Das Format der eingeworfenen Nachricht ist in der Dokumentation **nicht** beschrieben; es müsste zuerst geklärt werden. Der dokumentierte Rückfall ist ein Hook (`UserPromptSubmit`), der neue Nachrichten aus einer Datei als `additionalContext` in den Kontext gibt.
-* **Änderungen an `viper-nats-mcp` auf den Rechnern** (dort bleibt alles wie heute; die neue Betriebsart `--via-viper` wird nur auf dem Laptop benutzt).
+* **Änderungen am Verhalten von `viper-nats-mcp` auf den Rechnern** (die neue Betriebsart `--via-viper` wird nur auf dem Laptop benutzt; das Programm ist ein neuer Build, das Verhalten dort gleich).
 
 ## 10 Risiken
 
@@ -227,14 +240,16 @@ Nur zwei hängen noch an dir: 8.2 (ob der Channel eine untätige Sitzung weckt, 
 | Schleifen und Fluten zwischen Agenten | `SendPerMin`, Claude Codes Rückfrage bei jedem Aufruf |
 | `stdout` wird verunreinigt, Claude Code bricht ab | Test auf reines Protokoll, Meldungen nur auf `stderr`, das Kind schreibt genau eine Zeile |
 | Der Laptop schläft, der Tunnel stirbt | Stufe 2 vor dem Release (gleicher Port, gemessen), Wächter, klare Meldung |
-| Das Kind (`viper`) wird nicht gefunden oder verwaist | `--viper`, Suche neben dem Programm, dann `PATH`; es endet mit dem Server |
+| Das Kind (`viper`) wird nicht gefunden oder verwaist (ssh bleibt stehen) | `--viper`, Suche neben dem Programm, dann `PATH`, nie im aktuellen Verzeichnis; das Kind liest `stdin` und endet bei EOF, ssh in eigener Prozessgruppe; Prüfung auf freien Port beim Neustart; **bekannt:** SIGKILL des Kindes lässt ssh stehen |
 | Ein Schlüssel, der dem Server nicht bekannt ist, scheitert still | Vorprüfung im Kind vor der Zeile `ready` |
+| Eine falsche oder übergroße Zeile `ready`; ein fremdes `viper` | Prüfung der Zeile (§4.1.1), Vergleich der Version, kein Shell-Start, keine Suche im aktuellen Verzeichnis |
+| Der Bau für macOS und Windows lässt die Datei weg (Docker-Weg, CI) | `Dockerfile` ändert sich mit, Test je System in `test.yml`, `VIPER_REQUIRE_MCP=1` |
 | Ein Rechner mit dem Namen einer Identität | `init` prüft, `viper check` warnt, der Server lehnt ab |
 | Ein Name, mehrere Sitzungen: Antworten kommen an der falschen an | Handbuch, `--name` je Sitzung |
 | Der Channel (Vorschau) ändert sich oder fehlt (Anmeldung, Admin, nicht interaktiv) | Meilenstein 0 prüft ihn; Ergänzungen aus §9 als Rückfall |
 | Ein Channel-Ereignis weckt eine untätige Sitzung nicht | Meilenstein 0 prüft es von Hand; sonst `request` und Pull, oder die Ergänzungen aus §9 |
 | Schlüssel auf dem Laptop gestohlen | `0600`, `viper nats revoke --name`; wie `operator.nk` heute |
-| `viper` wird größer (macOS und Windows rund 7 MB) | tragbar; keine eingebetteten Dateien für fremde Systeme (§6.1) |
+| `viper` wird größer (macOS und Windows 7,4 bis 8,1 MB, rund 6 Prozent) | tragbar; keine eingebetteten Dateien für fremde Systeme (§6.1) |
 
 ### 10.1 Prüfung des Plans (20.11.2026)
 
@@ -258,14 +273,32 @@ Eine unabhängige Prüfung gegen den Code ist eingearbeitet (die Aufteilung auf 
 | Rückfrage der Anwender (20.11.2026): Die Rechner sollen wie Subagenten wirken; **Push über den vorhandenen Channel ist der Hauptweg**, Relay und Hook sind Ergänzungen | §4.4, §9, §8.2 |
 | Rückfrage der Anwender (20.11.2026): Der MCP-Server bleibt ein eigenes Programm; `viper` stellt es bereit (jedes `viper` bettet es für sein eigenes System ein); der Tunnel als Kind | §4, §6.1, §8.10 |
 
+### 10.2 Zweite Prüfung: die Aufteilung auf Weg C (20.11.2026)
+
+| Fund | Wo |
+|---|---|
+| Ein zweiter Bauweg (`Dockerfile`, Stufen `mcp`, `build`, `dist-build`) fehlte; die Datei wird am **Anfang** jeder Runde gelöscht; `release-binaries.yml` ändert sich nicht | §6.1, §6.2 |
+| Die CI prüft das Einbetten heute nicht (Windows ohne `make mcp`, macOS nur Teile); `mcpbin_test.go` kennt nur ELF; `make build` bräuchte `mcp-host` | §6.1, §7 M2, §11 |
+| Verwaiste `ssh -N -L`, wenn der Elternprozess hart endet; Bereitschaftsprobe gelingt am alten ssh; das Kind liest `stdin` und endet bei EOF, eigene Prozessgruppe, Prüfung des freien Ports | §4.1, §10 |
+| `Main` ruft `LoadConfig` vor allem anderen: `--via-viper` zuerst behandeln | §4.1, §6.2 |
+| Wer wählt den Port: das Kind (kein Fenster zwischen zwei Prozessen); `--port` ist schon ein allgemeines Flag | §4.1 |
+| `openOperatorDead` gibt nicht heraus, was `ready` braucht: neue Funktion `openTunnel`; das Zertifikat gehört dem Kind; ein neues Zertifikat beim Neustart (ob `natsmcp` es übernimmt, offen) | §4.1, §4.3 |
+| Die Rückfrage bei `PUSH_FROM` fragt nie, Rückgabewert 3; `--print-config` sagt es vorher | §4.1, §4.5 |
+| Auffinden von `viper`, kein Shell-Start, Namen geprüft, Umgebung des Kindes begrenzt | §4.1.1 |
+| Die Zeile `ready` ist Eingabe von außen: Größe, Form, Pfade, Version | §4.1.1 |
+| Der Test von Meilenstein 4 braucht einen Weg, den Haken in ein Kind zu bringen (Neustart des Testprogramms) und einen Test mit SIGKILL | §7 M4 |
+| Größen gemessen (7,4 bis 8,1 MB), alle Ziele bauen heute, Homebrew und `release-binaries.yml` ändern sich nicht | §6.1 |
+| „Am Dienst ändert sich nichts“ war zu stark: das Programm ist ein neuer Build; Regressionstest für `LoadConfig` | §2.5, §11 |
+| Fehlende Entscheidungen: Neustartgrenze (5 mit wachsender Pause), Version zwischen Server und `viper`, Fehlertext bei fehlender Identität und fehlendem OpenSSH, Quotieren von Pfaden, Protokolle und Anhänge löscht der Benutzer (das Protokoll dreht sich bei 1 MiB) | §4.1, §4.5 |
+
 ## 11 Definition of Done
 
-* `viper nats init GRUPPE --name local` und `viper mcp-binary --host` laufen auf Linux, macOS und Windows; `claude mcp add nats-GRUPPE -- … --via-viper GRUPPE …` zeigt die Werkzeuge.
+* `viper nats init GRUPPE --name local` und `viper mcp-binary --host` laufen auf Linux, macOS und Windows; `claude mcp add nats-GRUPPE -- … --via-viper GRUPPE …` zeigt die Werkzeuge (**von Hand geprüft**, §7.1: das braucht das echte Claude Code).
 * Eine lokale Sitzung sieht mit `peers` die Rechner, sendet mit `send`, fragt mit `request` und bekommt die Antwort, beantwortet die Frage eines Rechners mit `reply` und findet Eingehendes in `inbox`; nach einem Schlaf des Rechners (Tunnel neu) geht das weiter.
 * `delegate` an einen Rechner, der bestätigt, gibt die Bestätigung zurück; an einen, der es nicht tut, nach der Wartezeit „nicht bestätigt“; das Ergebnis, das der Rechner später mit `send` schickt, geht **nicht** verloren (Posteingang oder Push).
 * Ohne `--push-from` wird nichts in die lokale Sitzung geschoben; mit `--push-from w3` erscheint ein Text von `w3` von selbst in der Sitzung (Channel-Ereignis), ein Text eines anderen Rechners nicht; ohne `--files` geht keine Datei hinaus; mit einem Rechner, der den Namen in `PUSH_FROM` führt, startet der Tunnel nur mit `--yes`; mehr als `SendPerMin` Sendungen in einer Minute scheitern.
 * `stdout` des Servers enthält nur Protokoll, `stdout` des Kindes nur die Zeile `ready` (getestet); ein unbekannter oder widerrufener Schlüssel wird beim Start klar gemeldet.
-* Jedes `viper` hat den MCP-Server für sein eigenes System (getestet in der CI auf drei Systemen).
-* Am Dienst auf den Rechnern ändert sich nichts; `viper check` warnt nicht mehr für den Namen der lokalen Sitzung.
+* Jedes `viper` hat den MCP-Server für sein eigenes System (getestet in der CI auf drei Systemen, `test.yml`, ELF, Mach-O, PE; auch der Bau mit `make dist-docker`).
+* Verhalten und Konfiguration auf den Rechnern bleiben gleich (ein Test: `LoadConfig` liefert die alten Werte); `viper check` warnt nicht mehr für den Namen der lokalen Sitzung.
 * Tests: Go-Tests (Namen, Schlüssel, Grenzen der Anhänge), Tests mit eingebettetem NATS-Server (MCP über Rohre, ein Rechner als Dienst), ein Test des Tunnels mit echtem `sshd` (nur Linux); Lint und Tests grün in der CI auf drei Systemen.
 * Handbuch (Ist-Zustand), README und Hilfe stimmen; **jeder Meilenstein unabhängig geprüft**.
