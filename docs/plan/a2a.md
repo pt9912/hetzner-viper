@@ -212,18 +212,110 @@ viper a2a check [GRUPPE]         # Karten, Anwesenheit, Rechte, ein Probeaufruf 
 
 Jeder Meilenstein endet mit grüner CI auf Linux, macOS und Windows (Go-Tests, Lint und die HTTP-Tests) und einer unabhängigen Prüfung, wie bei `viper ui` und beim Chat. Die Brücke braucht **keine** neuen Rechte auf den Rechnern, nur den zusätzlichen Eintrag im Server.
 
-## 9 Entscheidungen (offen)
+## 9 Entscheidungen (offen, mit Vorschlägen)
 
-1. **Eigene Identität `a2a` oder der Operator?** Vorschlag: eigene Identität (§2 Regel 1, §4.1). Der Operator brächte kein neues Konzept, aber fremder Verkehr erbte sein Vertrauen in `NATS_MCP_PUSH_FROM`.
-2. **Wo läuft die Brücke?** Vorschlag: auf dem Operator-Rechner, im Vordergrund (wie der Chat). Alternativ als Dienst auf dem NATS-Server oder in einem Container: mehr Betrieb, mehr Angriffsfläche, keine Verwendung von Tunnel und Schlüssel des Operators.
-3. **Welche Fassung?** Vorschlag: nur 1.0, mit klarer Fehlermeldung bei 0.3 (Meilenstein 7 optional). Viele vorhandene Clients sprechen noch 0.3; das ist die größte Reibung mit dem Ökosystem.
-4. **Welche Bindungen?** Vorschlag: JSON-RPC zuerst, REST in Meilenstein 6, gRPC nicht.
-5. **Anmeldung:** Vorschlag: Bearer-Token mit Hash und Rechnerliste je Aufrufer; mTLS und OAuth später.
-6. **Standard der Reichweite:** Vorschlag: `127.0.0.1`. Eine fremde Adresse nur mit TLS und Token.
-7. **Opt-in je Rechner (`NATS_A2A_ENABLED`):** Vorschlag: ja, Standard aus.
-8. **Kennzeile `[A2A: …]` im Text:** Vorschlag: ja (§5.4). Gegenargument: der Text ändert sich; dafür weiß der Agent, woher er kommt.
-9. **Blockierendes `SendMessage`:** Vorschlag: den Aufruf offen halten, bis die Aufgabe beendet oder unterbrochen ist (höchstens eine Stunde), wie die Spezifikation es verlangt. Die 120 Sekunden von `request` spielen keine Rolle, weil die Brücke über den Strom zuordnet. Alternative (kein Vorschlag): nach 120 Sekunden den Zustand zurückgeben und die Abweichung in Karte und Handbuch nennen.
-10. **Eigene Umsetzung oder Go-SDK?** Vorschlag: eigene schlanke Umsetzung, falls das SDK in Meilenstein 0 mehr als die Typen mitbringt.
+Jede Frage hat die Möglichkeiten, einen **Vorschlag** mit Begründung, die Folge und den Zeitpunkt: **jetzt** (bestimmt die Bauart und ist später teuer zu ändern) oder **nach Meilenstein 0** (hängt an einer Messung). Wenn du die Vorschläge übernimmst, genügt ein „alle Vorschläge übernehmen“.
+
+### Jetzt zu entscheiden: die Sicherheit
+
+**1. Eigene Identität `a2a` oder der Operator?**
+
+| | Möglichkeit | Folge |
+|---|---|---|
+| **A (Vorschlag)** | eigener Eintrag `a2a` im Server (Schlüssel `a2a.nk`), eigener Name im Subject | Rechner sehen den Absender `a2a`. Wer ihn nicht in `NATS_MCP_PUSH_FROM` führt, bekommt nichts in die Sitzung geschoben. Mehr Handgriffe: `viper a2a init`, ein zusätzlicher Name in `settingsfile` und `check` |
+| B | die Brücke spricht als Operator | nichts Neues zu bauen, aber fremder Verkehr **erbt** das Vertrauen aus `NATS_MCP_PUSH_FROM=operator`: ein Aufrufer von außen landete direkt in der Sitzung eines Agenten |
+
+*Begründung:* Die Sicherheit der Rechner hängt daran, **wer** in die Sitzung schreiben darf. Das darf nicht stillschweigend auf Fremde übergehen. Der Mehraufwand ist klein (Server und `natsop` tragen mehrere Operator-Einträge schon, §4.1).
+
+**2. Wo läuft die Brücke?**
+
+| | Möglichkeit | Folge |
+|---|---|---|
+| **A (Vorschlag)** | im Vordergrund auf dem Operator-Rechner (`viper a2a serve`, wie der Chat) | nutzt Tunnel und Schlüssel, die es gibt; nichts Neues auf Servern; endet mit Strg-C. Läuft nicht, wenn der Rechner aus ist |
+| B | als Dienst auf dem NATS-Server oder in einem Container | dauerhaft erreichbar, aber ein weiterer Dienst, der Schlüssel, Netz und Updates braucht; mehr Angriffsfläche; `viper up` müsste ihn anlegen |
+
+*Begründung:* Die Brücke ist neu und riskant. Sie klein zu halten und sichtbar zu betreiben (Vordergrund) ist besser als sie dauerhaft zu betreiben. B bleibt ein späterer Plan, wenn sich der Bedarf zeigt.
+
+**5. Anmeldung der Aufrufer?**
+
+| | Möglichkeit | Folge |
+|---|---|---|
+| **A (Vorschlag)** | **Bearer-Token**, Hash in einer Datei, je Token Name, erlaubte Rechner, Grenzen | einfach, jeder Client kann es; Token lässt sich einzeln widerrufen (`viper a2a token revoke`) |
+| B | mTLS | stärker, aber Zertifikate für jeden Aufrufer, mehr Betrieb |
+| C | OAuth/OpenID | nötig nur in Firmen mit Identitätsdienst; viel Umsetzung |
+
+*Begründung:* Für eine Brücke, die der Betreiber selbst startet, ist ein Token je Aufrufer mit Rechnerliste das Passende. B und C lassen sich später ergänzen, die Karte nennt dann weitere `securitySchemes`.
+
+**6. Wie weit ist die Brücke erreichbar?**
+
+| | Möglichkeit | Folge |
+|---|---|---|
+| **A (Vorschlag)** | Standard `127.0.0.1`; eine andere Adresse nur mit TLS (`--tls-cert/--tls-key`) oder `--behind-proxy`, und nur mit Tokendatei | sicher als Standard; Clients von anderen Rechnern brauchen einen Tunnel, einen Proxy oder ein Zertifikat |
+| B | gleich `0.0.0.0` | bequem, aber ein offener Port ins Internet für Text, der in Agenten landet |
+
+*Begründung:* Die Brücke leitet Text in Agenten. Ein Fehler bei der Voreinstellung wäre schwer zu verzeihen.
+
+**7. Muss ein Rechner die Brücke erlauben?**
+
+| | Möglichkeit | Folge |
+|---|---|---|
+| **A (Vorschlag)** | ja, `NATS_A2A_ENABLED=true` je Rechner, Standard **aus** | wer die Brücke startet, macht damit keinen Rechner erreichbar, den er nicht bedacht hat; die Karte gibt es nur für erlaubte Rechner |
+| B | alle Rechner der Gruppe sind erreichbar | weniger Einstellung, aber ein Versehen setzt alle Agenten einer Gruppe aus |
+
+*Begründung:* Das Opt-in hat dieselbe Rolle wie `NATS_MCP_PUSH_FROM`: eine bewusste Zusage je Rechner.
+
+**8. Kennzeile `[A2A: <Aufrufer>, Aufgabe <id>]` im Text?**
+
+| | Möglichkeit | Folge |
+|---|---|---|
+| **A (Vorschlag)** | ja, feste erste Zeile, mit gültigem Namen des Aufrufers | der Agent sieht, dass der Text von außen kommt und von wem; **schützt nicht** vor Prompt-Injektion (der Plan sagt es) |
+| B | Text unverändert weitergeben | der Agent kann Fremdtext von Text eines Rechners nicht unterscheiden |
+
+*Begründung:* Die Zeile kostet nichts und hilft bei der Auswertung. Der echte Schutz bleiben 1, 5 und 7.
+
+### Nach Meilenstein 0 zu entscheiden: hängt an einer Messung
+
+**3. Welche Fassung von A2A?**
+
+| | Möglichkeit | Folge |
+|---|---|---|
+| **A (Vorschlag)** | nur **1.0**; bei fehlendem Kopf `A2A-Version` (gilt nach der Spezifikation als 0.3) eine klare Fehlermeldung | die aktuelle Fassung, ein Dialekt weniger. Clients, die noch 0.3 sprechen, kommen zunächst nicht an |
+| B | 1.0 und 0.3 | erreicht mehr Clients, aber zwei Formen von Methodennamen und Feldern, doppelte Tests |
+
+*Begründung und Prüfung:* Der Vorschlag ist 1.0. In Meilenstein 0 messen wir, welche Clients und SDKs, die du wirklich nutzt, schon 1.0 sprechen. Sind es die meisten nicht, wird die Verträglichkeit mit 0.3 (Meilenstein 7) vorgezogen. **Das ist die Frage mit dem größten Einfluss auf den Nutzen der Brücke.**
+
+**4. Welche Bindungen?**
+
+| | Möglichkeit | Folge |
+|---|---|---|
+| **A (Vorschlag)** | JSON-RPC über HTTP zuerst; REST in Meilenstein 6; **kein gRPC** | JSON-RPC ist die verbreitete Form, HTTP+JSON kommt günstig dazu (dieselben Fälle). gRPC bräuchte Protobuf und viel Abhängigkeit |
+| B | gleich alle drei | mehr Aufwand, unklarer Nutzen |
+
+*Begründung:* Nur die Bindungen, die die Karte nennt, müssen laufen (*[?]* in Meilenstein 0 prüfen: die Spezifikation verlangt, so weit gelesen, nicht alle). gRPC lässt sich ergänzen, ohne den Kern zu ändern.
+
+**9. Wie blockiert `SendMessage`?**
+
+| | Möglichkeit | Folge |
+|---|---|---|
+| **A (Vorschlag)** | den HTTP-Aufruf offen halten, bis die Aufgabe beendet oder unterbrochen ist (höchstens eine Stunde) | entspricht der Spezifikation („MUST wait“). Clients und Proxys mit kurzen Fristen brechen ab; sie nehmen `SendStreamingMessage` oder `returnImmediately` |
+| B | nach 120 Sekunden den Zustand zurückgeben und die Abweichung in Karte und Handbuch nennen | verträglich mit kurzen Fristen, aber nicht regelkonform; ein strenger Client kann meckern |
+
+*Begründung und Prüfung:* A, weil die Brücke die Antwort ohnehin über den Strom zuordnet. Meilenstein 0 prüft, ob ein offener Aufruf über Minuten die Fristen von `net/http`, eines Proxys und eines echten Clients übersteht. Hält er nicht, wird B mit offener Abweichung genommen.
+
+**10. Eigene Umsetzung oder Go-SDK?**
+
+| | Möglichkeit | Folge |
+|---|---|---|
+| **A (Vorschlag)** | eigene schlanke Umsetzung (Typen, JSON-RPC, SSE, rund 800 Zeilen) | keine große Abhängigkeit, volle Kontrolle über Sicherheit und Fristen, wie bei MCP |
+| B | das offizielle Go-SDK | weniger zu schreiben, aber `go.mod` wächst, und Sicherheit und Fassung folgen dem SDK |
+
+*Begründung und Prüfung:* A, außer das SDK ist in Meilenstein 0 klein (nur Typen), unterstützt 1.0 und passt in die Schichten (`a2aweb` darf nur `port/driving` kennen). Gemessen werden `go.mod`/`go.sum`, Fassung, Lizenz.
+
+### Reihenfolge
+
+1. **Jetzt:** 1, 2, 5, 6, 7, 8 (zusammen das Sicherheitsmodell). Alle Vorschläge sind „sicher als Standard“.
+2. **Dann Meilenstein 0**, der 3, 4, 9 und 10 mit Messungen beantwortet.
+3. Danach Meilenstein 1.
 
 ## 10 Risiken
 
