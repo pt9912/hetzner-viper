@@ -96,6 +96,7 @@ Ein Umschlag trägt keinen Bezug zu einer Aufgabe (`v, kind, id, re, text, att`)
 ### 4.1 Eigene Identität der Brücke
 
 * Neu: `viper a2a init GRUPPE` trägt einen **zweiten Operator-Eintrag** mit dem Namen `a2a` (Einstellung `NATS_A2A_NAME`, Standard `a2a`) im Server ein; Schlüssel in `groups/<gruppe>/a2a.nk` (wie `operator.nk`, `0600`). Die Rechte sind die des Operators (`OperatorPermissions`): senden nur im eigenen Teilbaum `viper.<g>.a2a.>`, lesen die Gruppe. `viper a2a revoke GRUPPE` entfernt ihn. *[V, im Code: Server und `Register`/`Revoke` tragen mehrere Operator-Einträge je Gruppe; `checkedClients` verbietet nur gleiche Namen, `ParseClients`, `WithEntry` und `WithoutOperator` arbeiten mit dem Namen. `natsserver` und `natsop` brauchen **nur einen Test**. Zu ändern ist `cli`: `natsGroup.operator` ist **ein** Name; dazu `NATS_OPERATOR_NAME` und die Prüfung in `settingsfile` (der Name `a2a` ist für Rechner **und** für den Operator gesperrt) und die neuen `NATS_A2A_*` in `settingsfile`, `model.NATSConfig`, den Einstellungen der Oberfläche und in `viper check`.]*
+* Die **Identitäten mit Namen** (`viper nats init --name`, Schlüsseldatei je Name) baut zuerst der Plan [`nats-lokal.md`](nats-lokal.md) §3; `viper a2a init` nutzt sie.
 * Der Name `a2a` ist für Rechner **gesperrt** (wie der Name des Operators, `settingsfile.Load`).
 
 ### 4.2 Schichten (nach dem Muster des Chats)
