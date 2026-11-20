@@ -2,7 +2,7 @@
 
 **Ziel:** Ein Agent, der **nicht** zur NATS-Gruppe gehört (ein anderes Framework, ein anderer Anbieter, ein Skript), soll einen Agenten auf einem Rechner der Gruppe über das offene **A2A-Protokoll** ansprechen können: Aufgabe stellen, Verlauf sehen, Rückfragen beantworten, Ergebnis und Dateien holen. `viper` übersetzt dabei A2A-Aufgaben in die NATS-Nachrichten, die es schon gibt (`request`, `reply`, Dateianhänge), und umgekehrt. Auf den Rechnern ändert sich nichts.
 
-**Stand:** Entwurf (20.11.2026). Gebaut ist nichts. Die Entscheidungen in §9 sind **offen** und brauchen deine Antwort; zu jeder gibt es einen Vorschlag. *[V]* heißt: geprüft (A2A-Spezifikation 1.0.0 auf `a2a-protocol.org/latest/specification/`, Plan- und Code-Stand dieses Repositories); *[?]* ist eine Vermutung, die in Meilenstein 0 zu prüfen ist. **Die Spezifikation habe ich nicht Wort für Wort gelesen**, sondern mit gezielten Fragen zu Fassung, Bindungen, Operationen, Zuständen, Teilen, Agent-Card, Anmeldung, Strom, Push, Kennungen und Sicherheit ausgewertet; Einzelheiten (genaue Fehlercodes je Bindung, Feldlängen, Abschnitt 12 zu eigenen Bindungen) sind vor dem Bauen im Text nachzulesen.
+**Stand:** Entwurf (20.11.2026). Gebaut ist nichts. Die Entscheidungen in §9 sind **offen** und brauchen deine Antwort; zu jeder gibt es einen Vorschlag. Eine unabhängige Prüfung (20.11.2026) ist eingearbeitet (§10.1). *[V]* heißt: geprüft (A2A-Spezifikation 1.0.0 auf `a2a-protocol.org/latest/specification/`, Plan- und Code-Stand dieses Repositories); *[?]* ist eine Vermutung, die in Meilenstein 0 zu prüfen ist. **Die Spezifikation habe ich nicht Wort für Wort gelesen**, sondern mit gezielten Fragen zu Fassung, Bindungen, Operationen, Zuständen, Teilen, Agent-Card, Anmeldung, Strom, Push, Kennungen und Sicherheit ausgewertet; Einzelheiten (genaue Fehlercodes je Bindung, Feldlängen, Abschnitt 12 zu eigenen Bindungen) sind vor dem Bauen im Text nachzulesen.
 
 Gehört zu [`nats.md`](nats.md) (die Gruppen), [`nats-mcp.md`](nats-mcp.md) (der Dienst auf dem Rechner), [`nats-cli.md`](nats-cli.md) (`viper nats`, der Operator) und [`ui-chat.md`](ui-chat.md) (dieselbe Verbindung vom eigenen Rechner aus: Tunnel, Strom, Verlauf).
 
@@ -20,6 +20,7 @@ Gehört zu [`nats.md`](nats.md) (die Gruppen), [`nats-mcp.md`](nats-mcp.md) (der
 4. **Wiederverwenden:** Tunnel, Schlüssel, Anwesenheit, `request`, `reply`, Anhänge und Strom sind die Funktionen von `viper nats` und dem Chat (`openOperator`, `natsmcp.RunCLI`, `chatstream`). Die Brücke ist Übersetzung und Verwaltung der Aufgaben.
 5. **Alles, was von außen kommt, ist Text eines Fremden**, und alles, was hinausgeht, kann ein Geheimnis enthalten: Bereinigung und Schwärzen wie im Chat (`natsmcp.Clean`, `[hidden]`), in beide Richtungen.
 6. **Ein Rechner ist ein Agent** (Agent-Card, Pfad, Berechtigung). Die Gruppe ist der Rahmen, nicht der Agent.
+7. **Jede Anfrage ist angemeldet** (außer der Karte, wenn der Betreiber sie ausdrücklich öffentlich macht, §5.2). *[V: der Server MUST jede Anfrage anmelden]*
 
 ## 3 Abbildung A2A ⇄ NATS
 
@@ -43,31 +44,40 @@ NATS kennt keinen Fortschritt. Die Brücke sagt darum nur, was sie weiß:
 | Zustand | Wann |
 |---|---|
 | `SUBMITTED` | Die Brücke hat die Aufgabe angenommen und die Frage an den Server **gegeben** (nicht: zugestellt) |
-| `WORKING` | Der Rechner ist laut Anwesenheit da (`here`) **und** die Frage ist raus. Ein Rechner ohne Anwesenheit bleibt `SUBMITTED` |
-| `INPUT_REQUIRED` | Der Rechner hat der Brücke eine **Frage** gestellt (Umschlag `req` an `a2a`, `type=req` im Strom); der Text der Frage steht in `status.message`. Die Antwort des Aufrufers (neue Nachricht mit derselben `taskId`) geht als `reply --re` zurück |
-| `COMPLETED` | Der Strom liefert `res` mit `re` = ID der Frage **vom Angefragten** an die Brücke; der Text und die Dateien werden zum Artefakt |
+| `WORKING` | Die Frage ist raus **und** der Rechner hat sich in den letzten 90 Sekunden als verbunden gemeldet (Anwesenheit). Das heißt „verbunden“, **nicht** „arbeitet“: eine Anwesenheitsmeldung sagt nichts über die Sitzung des Agenten. Ein Rechner ohne Anwesenheit bleibt `SUBMITTED` |
+| `INPUT_REQUIRED` | Der Rechner, **an den die Aufgabe ging**, hat der Brücke eine **Frage** gestellt (Umschlag `req` an `a2a`); der Text steht in `status.message`. Die Antwort des Aufrufers (neue Nachricht mit derselben `taskId`) geht als `reply --re` zurück. **Grenzen: §3.2.1** |
+| `COMPLETED` | Der Strom liefert `res` mit `re` = ID der Frage **vom Angefragten** an die Brücke; der Text und die Dateien werden zum Artefakt. **Die erste solche `res` ist die endgültige;** spätere mit demselben `re` werden verworfen (und im Verlauf als „weitere Antwort“ vermerkt), denn ein Agent kann nicht sagen, dass noch weitere folgen |
 | `FAILED` | Die Frist der Aufgabe ist um (Standard 1 Stunde, §3.4), der Tunnel oder Server ist nicht erreichbar, oder die Frage wurde vom Server abgelehnt (Berechtigung, Größe). `status.message` nennt den Grund |
 | `CANCELED` | Der Aufrufer hat `CancelTask` gerufen, bevor ein Ende kam. Auf dem Rechner wird nichts abgebrochen; eine spätere Antwort wird verworfen (der Rechner kann nicht gefragt werden, ob er sie noch braucht) |
-| `REJECTED` | Die Brücke selbst hat die Nachricht **nicht angenommen** (zu groß, unbekannter Inhaltstyp, Aufrufer darf diesen Rechner nicht). Nichts geht nach NATS |
+| `REJECTED` | Nur für eine Aufgabe, die **angelegt** wurde und deren Ausführung die Brücke dann ablehnt (zum Beispiel: der Rechner meldet sich nach der Annahme mit `bye` ab). Fehler **vor** einer Aufgabe (zu groß, unbekannter Inhaltstyp, kein Zugriff, Grenze überschritten) sind **Fehler der Anfrage** (`InvalidParams`, `ContentTypeNotSupportedError`, HTTP 404/429) und legen keine Aufgabe an |
 | `AUTH_REQUIRED` | wird nicht gesetzt (§7) |
 
-Eine beendete Aufgabe nimmt keine Nachricht mehr an (`UnsupportedOperationError`); eine neue Nachricht im selben `contextId` ohne `taskId` ist eine **neue** Aufgabe *[V]*. `taskId` vergibt immer die Brücke *[V]*.
+Beendet (terminal) sind `COMPLETED`, `FAILED`, `CANCELED` und `REJECTED`; unterbrochen sind `INPUT_REQUIRED` und `AUTH_REQUIRED` *[V]*. Eine beendete Aufgabe nimmt keine Nachricht mehr an (`UnsupportedOperationError`); eine neue Nachricht im selben `contextId` ohne `taskId` ist eine **neue** Aufgabe *[V]*. `taskId` vergibt immer die Brücke *[V]*.
+
+#### 3.2.1 Fragen der Rechner (`INPUT_REQUIRED`) und ihre Grenzen
+
+Ein Umschlag trägt keinen Bezug zu einer Aufgabe (`v, kind, id, re, text, att`). Darum:
+
+* Eine Frage an `a2a` wird **nur** einer Aufgabe zugeordnet, wenn für diesen Rechner **genau eine** Aufgabe offen ist. Sind es mehrere, **ändert die Frage keinen Zustand**: sie kommt in den Verlauf aller offenen Aufgaben dieses Rechners als „nicht zugeordnete Frage“ und wird gezählt. Eine Frage eines Rechners, für den keine Aufgabe offen ist, wird verworfen. Jeder Rechner darf `a2a` anschreiben, und der Eintrag `a2a` liest die ganze Gruppe: ein Rechner, der nicht gefragt wurde, darf keine Aufgabe eines Aufrufers beeinflussen.
+* Die Kennzeile (§5.4) nennt die Aufgabe; ein Rechner kann `task <id>` in seine Frage schreiben. Das ist eine **Verabredung**, keine Prüfung.
+* Der Rechner wartet auf seine Frage **höchstens 120 Sekunden** (`request`). Antwortet der Aufrufer später, kommt die `res` beim Rechner ohne wartende Frage an und wird dort **nur protokolliert** („answer … to no open request“). Die Antwort geht dann verloren. Die Brücke sagt das in `status.message` („Der Rechner wartet höchstens zwei Minuten auf die Antwort“) und setzt die Aufgabe nach Ablauf dieser Frist wieder auf `WORKING`.
+* Meilenstein 3 prüft das mit einem Rechner als Dienst, bevor mehr darauf gebaut wird.
 
 ### 3.3 Operationen (Fassung 1.0.0 *[V]*)
 
 | Operation | Umsetzung |
 |---|---|
-| Agent-Card | Je Rechner eine Karte unter `/<gruppe>/<rechner>/.well-known/agent-card.json` und eine Liste der Rechner unter `/<gruppe>/`. `supportedInterfaces`: JSON-RPC (und später HTTP+JSON) mit `protocolVersion` `1.0`, `tenant`. Pflichtfelder (`name`, `description`, `version`, `capabilities`, `defaultInputModes`, `defaultOutputModes`, `skills`) kommen aus den Einstellungen des Rechners (§4.3) und aus der Fassung von `viper` |
-| `SendMessage` | Nachricht prüfen → Aufgabe anlegen (`SUBMITTED`) → `request --announce` an den Rechner (der Text ist der Text der Teile `text`, mit der Kennzeile von §5.4) → ohne `returnImmediately` (Standard: **blockierend**) warten, bis die Aufgabe `COMPLETED`, `FAILED` oder unterbrochen ist, höchstens **120 Sekunden**; danach die Aufgabe so zurückgeben, wie sie ist (`WORKING`), der Aufrufer fragt mit `GetTask` weiter *[?: die Spezifikation sagt „MUST wait until terminal or interrupted“; ob eine Obergrenze zulässig ist, ist in Meilenstein 0 zu klären; Ausweg: das Ergebnis als `Task` im Zustand `WORKING`, was jeder Client versteht]* |
-| `SendStreamingMessage`, `SubscribeToTask` | SSE; Ereignisse nur an den Übergängen der Zustände (§3.2) und ein `artifactUpdate` mit der Antwort. Keine Teilergebnisse (NATS liefert die Antwort als **eine** Nachricht). `capabilities.streaming = true` |
+| Agent-Card | Je Rechner eine Karte unter `/<gruppe>/<rechner>/.well-known/agent-card.json` und eine Liste der Rechner unter `/<gruppe>/`, die **angemeldet** nur die Rechner nennt, die der Aufrufer ansprechen darf. `supportedInterfaces`: JSON-RPC (und später HTTP+JSON) mit `protocolVersion` `1.0`, `tenant` = `<gruppe>/<rechner>` (der Pfad ist die Adresse, `tenant` der Wert, den der Client laut Karte mitsenden muss; die Brücke prüft, dass beide zusammenpassen). `defaultInputModes` nennt nur, was angenommen wird: `text/plain` und die Arten aus §3.3 (PDF, ZIP, PNG, JPEG, GIF, WebP). Pflichtfelder (`name`, `description`, `supportedInterfaces`, `version`, `capabilities`, `defaultInputModes`, `defaultOutputModes`, `skills`) kommen aus den Einstellungen des Rechners (§4.3) und aus der Fassung von `viper` |
+| `SendMessage` | Nachricht prüfen → Aufgabe anlegen (`SUBMITTED`) → die Frage an den Rechner (der Text der Teile `text` mit der Kennzeile von §5.4). Ohne `returnImmediately` (Standard: **blockierend**) hält die Brücke den HTTP-Aufruf offen, bis die Aufgabe **beendet oder unterbrochen** ist *[V: „MUST wait until the task reaches a terminal or interrupted state“]*, höchstens bis zur Frist der Aufgabe (Standard 1 Stunde, mit Schreibfrist des Servers). Die 120 Sekunden von `request` braucht die Brücke dafür **nicht**: sie ordnet die Antwort über den Strom zu (§3.4). Mit `returnImmediately: true` kommt die Aufgabe sofort zurück. Clients mit kurzen Fristen nehmen `SendStreamingMessage` oder `returnImmediately` (§9.9) |
+| `SendStreamingMessage`, `SubscribeToTask` | SSE; Ereignisse nur an den Übergängen der Zustände (§3.2) und ein `artifactUpdate` mit der Antwort. Keine Teilergebnisse (NATS liefert die Antwort als **eine** Nachricht). Bei JSON-RPC ist jedes Ereignis eine JSON-RPC-Antwort mit `result` = `StreamResponse`, bei REST das `StreamResponse` selbst *[V]*. `capabilities.streaming` ist **`false` bis Meilenstein 3**, dann `true` |
 | `GetTask`, `ListTasks` | aus dem Speicher der Brücke (§3.4); `historyLength` und Seiten (50 bis 100, Cursor, absteigend nach Zeit) wie in der Spezifikation; nur Aufgaben des **eigenen Aufrufers** |
-| `CancelTask` | `CANCELED`, wenn nicht beendet; sonst `TaskNotCancelableError` |
+| `CancelTask` | `CANCELED`, wenn nicht beendet; sonst `TaskNotCancelableError`. Eine Aufgabe, die es nicht gibt oder die einem anderen Aufrufer gehört: `TaskNotFoundError` |
 | Push-Benachrichtigung (Webhook) | **nicht in Fassung 1** (§7): `capabilities.pushNotifications = false`, die Operationen antworten `PushNotificationNotSupportedError` |
-| `GetExtendedAgentCard` | nicht gebaut (`ExtendedAgentCardNotConfiguredError`) |
+| `GetExtendedAgentCard` | nicht gebaut: `capabilities.extendedAgentCard = false`, Antwort `ExtendedAgentCardNotConfiguredError` |
 
-**Teile (`Part`) nach innen:** `text` (Pflicht, sonst `REJECTED`), `raw` (Bytes, Base64) für PDF, ZIP und Bilder bis zur Grenze der Gruppe (`NATS_OBJECTS_FILE_MAX`, höchstens 64 MiB), Art nach den ersten Bytes wie auf den Rechnern (`natsmcp.Classify`, `CheckAttachment`); `data` (strukturiertes JSON) wird nicht unterstützt (`ContentTypeNotSupportedError`); **`url` wird abgelehnt** (die Brücke lädt nichts von Adressen, die ein Fremder nennt: SSRF, §5). Eine Datei je Nachricht (wie im Chat).
+**Teile (`Part`) nach innen:** `text` (Pflicht, sonst `REJECTED`), `raw` (Bytes, Base64) für PDF, ZIP und Bilder bis zur Grenze der Gruppe (`NATS_OBJECTS_FILE_MAX`, höchstens 64 MiB), Art nach den ersten Bytes wie auf den Rechnern (`natsmcp.Classify`, `CheckAttachment`); **andere Arten (`text/plain`, JSON, Office) werden abgelehnt**, auch wenn Clients sie oft schicken. Eine Gruppe ohne `NATS_OBJECTS` nimmt keine Dateien (`ContentTypeNotSupportedError`). **Speicher:** 64 MiB Base64 sind rund 86 MiB JSON; die Brücke begrenzt den Körper **vor** dem Lesen (`MaxBytesReader`), liest Dateien nicht doppelt in den Speicher und begrenzt die Summe aller laufenden Anfragen (Standard 256 MiB). Der Text einschließlich der Kennzeile darf **16 KiB** nicht überschreiten; `data` (strukturiertes JSON) wird nicht unterstützt (`ContentTypeNotSupportedError`); **`url` wird abgelehnt** (die Brücke lädt nichts von Adressen, die ein Fremder nennt: SSRF, §5). Eine Datei je Nachricht (wie im Chat).
 
-**Teile nach außen:** der Text der Antwort als `text`; eine Datei der Antwort (`att_*`) holt die Brücke mit `fetch` und liefert sie als `raw` bis zu einer kleinen Grenze (Vorschlag 4 MiB), größere als `url` auf einen **Pfad der Brücke** mit demselben Token (`/<gruppe>/<rechner>/files/<id>`), der die Datei immer als Download ausliefert (wie der Chat).
+**Teile nach außen:** der Text der Antwort als `text`; eine Datei der Antwort (`att_*`) holt die Brücke mit `fetch` und liefert sie als `raw` bis zu einer kleinen Grenze (Vorschlag 4 MiB), größere als `url` auf einen **Pfad der Brücke** (`/<gruppe>/<rechner>/files/<id>`), der Token **und Aufgabe** prüft (nur der Aufrufer, dessen Aufgabe die Datei nennt; die Objekt-ID sehen alle Rechner der Gruppe) und die Datei immer als Download ausliefert (`Content-Disposition: attachment`, `nosniff`, wie der Chat). Die geholte Datei wird mit der Aufgabe gelöscht.
 
 ### 3.4 Speicher der Aufgaben
 
@@ -85,19 +95,20 @@ Eine beendete Aufgabe nimmt keine Nachricht mehr an (`UnsupportedOperationError`
 
 ### 4.1 Eigene Identität der Brücke
 
-* Neu: `viper a2a init GRUPPE` trägt einen **zweiten Operator-Eintrag** mit dem Namen `a2a` (Einstellung `NATS_A2A_NAME`, Standard `a2a`) im Server ein; Schlüssel in `groups/<gruppe>/a2a.nk` (wie `operator.nk`, `0600`). Die Rechte sind die des Operators (`OperatorPermissions`): senden nur im eigenen Teilbaum `viper.<g>.a2a.>`, lesen die Gruppe. `viper a2a revoke GRUPPE` entfernt ihn. *[?: Ob der Server und `Register`/`Revoke`/`checkedClients` **mehrere** Operator-Einträge je Gruppe tragen, ist in Meilenstein 0 zu prüfen; die Bauart (`Client{Operator:true}` mit Namen) spricht dafür. Ist es nicht so, ist das eine kleine Änderung in `natsserver` und `natsop`.]*
+* Neu: `viper a2a init GRUPPE` trägt einen **zweiten Operator-Eintrag** mit dem Namen `a2a` (Einstellung `NATS_A2A_NAME`, Standard `a2a`) im Server ein; Schlüssel in `groups/<gruppe>/a2a.nk` (wie `operator.nk`, `0600`). Die Rechte sind die des Operators (`OperatorPermissions`): senden nur im eigenen Teilbaum `viper.<g>.a2a.>`, lesen die Gruppe. `viper a2a revoke GRUPPE` entfernt ihn. *[V, im Code: Server und `Register`/`Revoke` tragen mehrere Operator-Einträge je Gruppe; `checkedClients` verbietet nur gleiche Namen, `ParseClients`, `WithEntry` und `WithoutOperator` arbeiten mit dem Namen. `natsserver` und `natsop` brauchen **nur einen Test**. Zu ändern ist `cli`: `natsGroup.operator` ist **ein** Name; dazu `NATS_OPERATOR_NAME` und die Prüfung in `settingsfile` (der Name `a2a` ist für Rechner **und** für den Operator gesperrt) und die neuen `NATS_A2A_*` in `settingsfile`, `model.NATSConfig`, den Einstellungen der Oberfläche und in `viper check`.]*
 * Der Name `a2a` ist für Rechner **gesperrt** (wie der Name des Operators, `settingsfile.Load`).
 
 ### 4.2 Schichten (nach dem Muster des Chats)
 
 | Schicht | Inhalt |
 |---|---|
-| `internal/usecase/a2a` | Aufgaben, Zustände, Zuordnung von Zeilen des Stroms zu Aufgaben (`re`, Frist), Fragen der Rechner, Rechte je Aufrufer, Grenzen. Kein Netz |
+| `internal/usecase/a2a` | Aufgaben, Zustände, Zuordnung von Zeilen des Stroms zu Aufgaben (`re`, Frist), Fragen der Rechner (§3.2.1), Rechte je Aufrufer, Grenzen. Kein Netz: NATS kommt über den Port `a2anats` |
 | `internal/port/driving/a2a.go` | `A2A`-Schnittstelle (SendMessage, GetTask, ListTasks, CancelTask, Subscribe) und Typen |
 | `internal/port/driven/a2astore` | Speicher der Aufgaben (Datei und Speicher als Adapter) |
+| `internal/port/driven/a2anats` | der Weg nach NATS für den Anwendungsfall: Frage senden, Antwort senden, Datei ablegen und holen, Strom der Zeilen an `a2a`, Anwesenheit. Der Adapter `internal/adapter/driven/a2anats` hält **eine** dauerhafte Verbindung (`natsmcp.Service`) und wird in `app` verdrahtet. **Nicht** `RunCLI` je Aufgabe: das verbindet jedes Mal neu und wartet 200 ms (`settle`) |
 | `internal/adapter/driving/a2aweb` | HTTP-Server: Agent-Cards, JSON-RPC, SSE, später REST; Anmeldung, TLS, Grenzen; **kein** Wissen über NATS |
-| `internal/adapter/driving/cli` | `viper a2a serve|init|revoke`, der Anschluss an NATS (Tunnel, `RunCLI`), Strom über `chatstream.Connector` (vorhanden) |
-| `internal/natsmcp` | unverändert; bei Bedarf eine Option `watch --to a2a` für nur die Zeilen an die Brücke *[?]* |
+| `internal/adapter/driving/cli` | `viper a2a …`, Tunnel (`openOperatorDead`, mit dem Namen `a2a`), Verdrahtung. Ein Treiber-Adapter darf **keinen** Anwendungsfall und keinen Treiber der anderen Seite einbinden (depguard, `.golangci.yml`): NATS erreicht den Anwendungsfall nur über `a2anats` |
+| `internal/natsmcp` | **nicht unverändert:** eine kleine **ausgeführte** Schnittstelle (senden, antworten, Datei, Strom, Anwesenheit), denn `peers.Present` und der Mitleser sind heute nicht ausgeführt. Ein `watch --to` ist **nicht** nötig: ohne `--all` kommen nur Zeilen an den eigenen Namen (`viper.<g>.*.out.<Me>`) |
 
 ### 4.3 Einstellungen
 
@@ -111,20 +122,22 @@ Ein Fremder, der die Brücke erreicht, kann Text in den Agenten eines Rechners b
 
 ### 5.2 Anmeldung und Berechtigung
 
-* **Anmeldung:** Karte und Aufrufe verlangen ein **Bearer-Token** (`securitySchemes`: `HTTPAuthSecurityScheme`, Schema `bearer`). Die Tokens stehen in einer Datei der Brücke (`<Zustandsverzeichnis>/a2a/tokens`, `0600`): je Zeile Name des Aufrufers, **Hash** des Tokens, erlaubte Rechner (`gruppe/rechner` oder `*`), Grenzen (Aufgaben, Aufrufe je Minute). `viper a2a token add NAME --machines …` gibt das Token **einmal** aus. Die Agent-Card selbst ist öffentlich lesbar, wenn `--public-card` gesetzt ist; sonst auch sie mit Token. Weitere Verfahren (OAuth, OpenID, mTLS): nicht in Fassung 1 (§7).
-* **Berechtigung:** je Aufrufer die Liste der Rechner. Eine Anfrage an einen anderen Rechner: `REJECTED`/404, ohne zu verraten, ob es ihn gibt.
+* **Anmeldung:** Karte und Aufrufe verlangen ein **Bearer-Token** (`securitySchemes`: `HTTPAuthSecurityScheme`, Schema `bearer`). Die Tokens stehen in einer Datei der Brücke (`<Zustandsverzeichnis>/a2a/tokens`, `0600`): je Zeile Name des Aufrufers, **Hash** des Tokens, erlaubte Rechner (`gruppe/rechner` oder `*`), Grenzen (Aufgaben, Aufrufe je Minute). `viper a2a token add NAME --machines …` gibt das Token **einmal** aus. Die Agent-Card selbst ist öffentlich lesbar, wenn `--public-card` gesetzt ist; **jeder andere Pfad verlangt das Token immer**, auch die Liste der Rechner. Das Token wird als **Hash** verglichen, mit `subtle.ConstantTimeCompare`; Namen der Aufrufer sind `CheckNATSName`-gültig (§5.4). Weitere Verfahren (OAuth, OpenID, mTLS): nicht in Fassung 1 (§7).
+* **Berechtigung:** je Aufrufer die Liste der Rechner. Eine Anfrage an einen anderen Rechner und eine an einen Rechner, den es nicht gibt, bekommen **dieselbe** Antwort (404, kein Hinweis, ob es ihn gibt) und legen **keine** Aufgabe an.
 * **Isolation:** `GetTask`, `ListTasks`, `CancelTask` und `SubscribeToTask` zeigen nur Aufgaben des **eigenen** Aufrufers; die Prüfung kommt **vor** jedem Zugriff auf den Speicher *[V: Spezifikation §13.1, MUST]*.
-* **Grenzen je Aufrufer:** offene Aufgaben (Standard 4), Nachrichten je Minute (Standard 10), Größe (Text 16 KiB, Datei wie in §3.3). Überschritten: HTTP 429 und `REJECTED`.
+* **Grenzen je Aufrufer:** offene Aufgaben (Standard 4), Nachrichten je Minute (Standard 10), Größe (Text 16 KiB, Datei wie in §3.3). Überschritten: HTTP 429, keine Aufgabe. **Weitere Grenzen:** offene SSE-Ströme je Aufrufer (Standard 4) und insgesamt (32), Fristen für das Lesen des Kopfes und das Schreiben, Aufgaben im Speicher je Aufrufer, Körper vor dem Lesen begrenzt. Die Anfrageverarbeitung macht `net/http`; nichts davon wird von Hand zerlegt.
 
 ### 5.3 Nach außen erreichbar machen
 
-* Standard `--listen 127.0.0.1:PORT`. Eine andere Adresse verlangt `--tls-cert` und `--tls-key` **oder** ausdrücklich `--behind-proxy` (TLS endet davor; die Brücke vertraut dann `X-Forwarded-*` nicht für die Anmeldung). Ohne Tokendatei startet die Brücke bei einer fremden Adresse nicht.
+* Standard `--listen 127.0.0.1:PORT`. Eine andere Adresse verlangt `--tls-cert` und `--tls-key` **oder** ausdrücklich `--behind-proxy` (TLS endet davor; die Brücke vertraut dann `X-Forwarded-*` **nicht**). Folge: Alle Aufrufer haben die Adresse des Proxys, darum begrenzt die Brücke **je Token-Name**, und Fehler der Anmeldung zählt sie **insgesamt**, nicht je Adresse. Ohne Tokendatei startet die Brücke bei einer fremden Adresse nicht.
 * Die Karte nennt die **öffentliche Adresse** (`--public-url`), nicht die, an die gebunden ist.
+* **Lokaler Port:** Die Brücke antwortet nur unter dem Namen, unter dem sie gerufen wird (die Prüfung des Kopfes `Host` von `viper ui`, gegen DNS-Rebinding), und verweigert Anfragen von Seiten im Browser (kein CORS, Prüfung von `Origin`). Andere Benutzer desselben Rechners erreichen `127.0.0.1`; dort schützt allein das Token. Das Handbuch sagt es.
 * Das Handbuch rät zum Weg über einen vorhandenen Zugang (ssh-Tunnel, VPN, Reverse-Proxy mit TLS) statt eines offenen Ports.
 
 ### 5.4 Was an den Agenten geht
 
-* Der Text beginnt mit **einer festen Zeile**: `[A2A: <Aufrufer>, Aufgabe <id>]`, dann ein Leerzeichen-Zeile, dann der Text des Aufrufers. So sieht der Agent, dass es Text von außen ist (und von wem), und kann ihn behandeln wie jede Nachricht eines anderen Agenten. Der Aufrufer kann die Zeile nicht ändern: Zeilen, die so beginnen, werden im Text des Aufrufers entschärft (ein Zeichen davor).
+* Der Text beginnt mit **einer festen Zeile**: `[A2A: <Aufrufer>, Aufgabe <id>]`, dann eine Leerzeile, dann der Text des Aufrufers. So sieht der Agent, dass es Text von außen ist (und von wem). Der Name des Aufrufers ist `CheckNATSName`-gültig (kein Zeilenende, keine Klammer). Zeilen im Text des Aufrufers, die mit `[A2A:` beginnen, werden entschärft.
+* **Das ist ein Hinweis, kein Schutz.** Ein Aufrufer kann nach der Leerzeile alles schreiben, auch ein falsches „Ende der Nachricht“ mit Anweisungen. **Prompt-Injektion verhindert das nicht.** Die eigentlichen Kontrollen sind: `a2a` nicht in `NATS_MCP_PUSH_FROM`, das Opt-in je Rechner und das Token mit seiner Rechnerliste. Antworten gehen ohne Zeile hinaus und tragen in `metadata` den Vermerk, dass sie von einem Rechner kommen und nicht geprüft sind.
 * Der Rechner sieht den Absender `a2a` (aus dem Subject, vom Server erzwungen). Nur wenn der Betreiber `a2a` in `NATS_MCP_PUSH_FROM` des Rechners führt, erscheint der Text in der Sitzung; sonst nur im Posteingang. **`viper a2a serve` fragt beim Start** (wie der Chat bei `NATS_MCP_PUSH_FROM`), wenn ein Rechner mit `NATS_A2A_ENABLED` den Namen `a2a` in der Liste führt, und verlangt `--yes`.
 
 ### 5.5 Was nicht geschützt ist
@@ -133,11 +146,11 @@ Ein Fremder, der die Brücke erreicht, kann Text in den Agenten eines Rechners b
 2. **Antworten gehen nach außen.** Die Brücke schwärzt bekannte Zugangsdaten (`[hidden]`, wie `viper ui`); ein Geheimnis ohne bekannten Namen kann herauskommen. Das ist die Wahl des Betreibers mit `NATS_A2A_ENABLED`.
 3. **Ein übernommener Rechner** kann in seiner Antwort jeden Text an den Aufrufer schicken (Injektion in **dessen** Agenten). Die Brücke kann das nicht verhindern; sie liefert die Antwort als Text und nennt in `metadata` den Rechner.
 4. **Wiederholung:** Ein Token, das gestohlen wird, ist bis zum Widerruf gültig (`viper a2a token revoke`).
-5. **SSRF:** Es gibt keine Webhooks und keine Teile mit `url`; die Brücke ruft keine Adresse auf, die ein Aufrufer nennt *[V: Spezifikation §13.2 verlangt dort Prüfungen; wir lassen die Funktion weg]*.
+5. **SSRF:** Es gibt keine Webhooks und keine Teile mit `url`; die Brücke ruft keine Adresse auf, die ein Aufrufer nennt *[V: die Spezifikation empfiehlt dort Prüfungen (SHOULD); wir lassen die Funktion weg]*.
 
 ### 5.6 Protokoll und Spuren
 
-* `events.log` bekommt eine Zeile je Aufgabe (Zeit, Aufrufer, Rechner, Zustand am Ende), **ohne** Inhalt. Anmeldefehler werden gezählt und begrenzt (Brute-Force: nach 10 Fehlern je Adresse eine Minute Pause).
+* `events.log` bekommt eine Zeile je Aufgabe (Zeit, Aufrufer, Rechner, Zustand am Ende), **ohne** Inhalt, ohne Token und ohne Kennung der Aufgabe. Anmeldefehler werden **insgesamt** gezählt und begrenzt (nach 10 Fehlern eine Minute Pause für alle Fehlversuche; das Token eines Aufrufers wird dadurch nicht gesperrt, damit kein Fremder es aussperren kann).
 * Ein Lauf von `viper a2a serve` ist ein Vordergrundprogramm (Strg-C beendet es); kein Dienst, keine Autostart.
 
 ## 6 Umsetzung
@@ -158,24 +171,24 @@ viper a2a check [GRUPPE]         # Karten, Anwesenheit, Rechte, ein Probeaufruf 
 
 ### 6.2 Protokolltreue
 
-* **Fassung 1.0** (`protocolVersion: "1.0"`). Der Kopf `A2A-Version` wird ausgewertet: `1.0` gilt; **fehlt er, gilt nach der Spezifikation 0.3**, und die Brücke antwortet `VersionNotSupportedError` mit einem Hinweis. Eine Verträglichkeit mit 0.3 (andere Methodennamen und Felder) ist Meilenstein 7.
-* **Bindung:** JSON-RPC über HTTP (`POST /<gruppe>/<rechner>/rpc`, PascalCase-Methoden) und SSE für Ströme. HTTP+JSON/REST ist Meilenstein 6, gRPC ist nicht geplant (§7).
+* **Fassung 1.0** (`protocolVersion: "1.0"`). Der Kopf `A2A-Version` wird ausgewertet: `1.0` gilt; **fehlt er, gilt nach der Spezifikation 0.3**, und die Brücke antwortet `VersionNotSupportedError` mit einem Hinweis. Eine Verträglichkeit mit 0.3 (andere Methodennamen und Felder) ist Meilenstein 7. Der Fehler `VersionNotSupportedError` hat den JSON-RPC-Code `-32009` *[V]*.
+* **Bindung:** JSON-RPC über HTTP (`POST /<gruppe>/<rechner>/rpc`, PascalCase-Methoden; die Spezifikation schreibt den Pfad nicht vor) und SSE für Ströme. *[?: ob eine einzige Bindung genügt, steht nicht ausdrücklich im gelesenen Text; wir lesen es so, dass die Karte nennt, was geboten wird.]* HTTP+JSON/REST ist Meilenstein 6, gRPC ist nicht geplant (§7).
 * **Bibliothek:** Eine eigene schlanke Umsetzung (Typen, JSON-RPC, SSE, rund 800 Zeilen) oder das offizielle Go-SDK von A2A; in Meilenstein 0 gemessen an Größe (`go.mod`, `go.sum`), Fassung 1.0, Lizenz und Anschluss an die Schichten. Vorschlag: eigene Umsetzung, wie bei MCP (`nats-mcp.md` §2), außer das SDK ist klein und hat nur die Typen.
 
 ### 6.3 Änderungen am vorhandenen Code
 
 | Stelle | Änderung |
 |---|---|
-| `internal/natsserver`, `internal/usecase/natsop` | mehrere Operator-Einträge je Gruppe (Name `a2a`); Test |
+| `internal/natsserver`, `internal/usecase/natsop` | nur ein Test für zwei Operator-Einträge je Gruppe (Name `a2a`) |
 | `internal/adapter/driving/cli` | Befehle `a2a …`, Hilfe, Befehlstabelle; `loadNatsGroup` kennt die Identität `a2a` (Schlüsseldatei, Name); `openOperatorDead` mit Name statt festem Operator |
 | `internal/natsmcp` | evtl. `watch --to NAME`; sonst nichts |
-| `internal/model` | Namen `a2a` gesperrt; Typen der Aufgaben |
-| Neue Pakete | `usecase/a2a`, `port/driving`, `port/driven/a2astore`, `adapter/driven/a2astore`, `adapter/driving/a2aweb` |
+| `internal/model`, `settingsfile`, Einstellungen der Oberfläche, `viper check` | Name `a2a` gesperrt (Rechner und Operator); `NATS_A2A_*` je Rechner und Gruppe; Typen der Aufgaben |
+| Neue Pakete | `usecase/a2a`, `port/driving/a2a.go`, `port/driven/a2astore`, `port/driven/a2anats`, `adapter/driven/a2astore`, `adapter/driven/a2anats`, `adapter/driving/a2aweb` (importiert **nur** `port/driving`) |
 | Handbuch, README, Hilfe | Kapitel „Rechner über A2A erreichbar machen“ (Ist-Zustand), Befehlstabelle |
 
 ## 7 Bewusst nicht enthalten (Fassung 1)
 
-* **gRPC-Bindung** (braucht Protobuf und viel Abhängigkeit; die Spezifikation verlangt nur eine Bindung).
+* **gRPC-Bindung** (braucht Protobuf und viel Abhängigkeit; *[?]* die Spezifikation verlangt, so weit gelesen, nicht alle Bindungen).
 * **Push-Benachrichtigungen (Webhooks):** SSRF-Prüfung, Speicher für Geheimnisse, Wiederholungen. Aufrufer nehmen `GetTask` oder `SubscribeToTask`.
 * **`AUTH_REQUIRED`, `GetExtendedAgentCard`, OAuth/OpenID/mTLS, signierte Karten.**
 * **Teile `url`** und `data` in Nachrichten nach innen.
@@ -188,16 +201,16 @@ viper a2a check [GRUPPE]         # Karten, Anwesenheit, Rechte, ein Probeaufruf 
 
 | | Inhalt | Prüfung |
 |---|---|---|
-| 0 | **Verifikation:** mehrere Operator-Einträge im Server; Strom nur mit Zeilen an `a2a`; blockierendes `SendMessage` mit Obergrenze (Spezifikation `MUST wait`); Fassung 1.0 gegen einen **fremden Client** (ein A2A-SDK oder der Prüfer der Gemeinschaft) mit einer Handvoll Karten und einer Nachricht; Größe und Fassung des Go-SDK; die Teile der Spezifikation, die nur über Fragen ausgewertet sind (Fehlercodes je Bindung, Abschnitt 12) | Messungen im Plan, Entscheidung zu Bibliothek, Version 0.3 und Obergrenze |
-| 1 | **Gerüst:** `viper a2a init|revoke|serve|check`, Identität `a2a`, Agent-Cards je Rechner, Anmeldung mit Token, `127.0.0.1`, Sperrdatei | Go-Tests (Karte, Anmeldung, Name gesperrt), Browser-/HTTP-Tests mit dem echten Programm |
-| 2 | **Aufgaben:** `SendMessage` blockierend → `request --announce`, Speicher, `GetTask`, `ListTasks`, `CancelTask`, Zustände, Fristen, Isolation | Tests mit eingebettetem NATS-Server (Rechner als Dienst), Tabellentests der Zustände, Isolation zweier Aufrufer |
-| 3 | **Strom und Rückfragen:** `SendStreamingMessage`, `SubscribeToTask` (SSE), späte Antworten über `re`, `INPUT_REQUIRED` mit `reply` | Tests mit Verzögerungen, Neustart der Brücke mit offener Aufgabe |
+| 0 | **Verifikation:** Test mit zwei Operator-Einträgen im Server; ein Rechner schickt `req` an `a2a`, und der Strom zeigt sie; ein **offener** HTTP-Aufruf über eine Stunde (Fristen von `net/http` und eines Proxys); eine Antwort, die nach 120 Sekunden kommt, und die Frage eines Rechners nach der Frist (§3.2.1); Fassung 1.0 gegen einen **fremden Client** (ein A2A-SDK oder der Prüfer der Gemeinschaft) mit einer Handvoll Karten und einer Nachricht; Größe und Fassung des Go-SDK; die Teile der Spezifikation, die nur über Fragen ausgewertet sind (Fehlercodes je Bindung, Abschnitt 12) | Messungen im Plan, Entscheidung zu Bibliothek, Version 0.3 und zum offenen Aufruf |
+| 1 | **Gerüst:** `viper a2a init|revoke|serve|check` und `token add|list|revoke`, Identität `a2a` (cli, `settingsfile`, `model`, `check`), Agent-Cards je Rechner (ohne Strom), Anmeldung mit Token (Hash, konstante Zeit), `Host`-Prüfung, `127.0.0.1`, Sperrdatei, die Frage nach `PUSH_FROM` beim Start (`--yes`), `--readonly` | Go-Tests (Karte, Anmeldung, Name gesperrt, zwei Operator-Einträge), HTTP-Tests mit dem echten Programm (ohne Browser) |
+| 2 | **Aufgaben:** `SendMessage` blockierend (offener Aufruf bis zum Ende), die Frage über die dauerhafte Verbindung (`a2anats`), Speicher, `GetTask`, `ListTasks`, `CancelTask`, Zustände, Fristen, Isolation | Tests mit eingebettetem NATS-Server (Rechner als Dienst), Tabellentests der Zustände, Isolation zweier Aufrufer; **ein Lauf gegen einen fremden Client** (Karte, Nachricht, Aufgabe) |
+| 3 | **Strom und Rückfragen:** `SendStreamingMessage`, `SubscribeToTask` (SSE), späte Antworten über `re`, `INPUT_REQUIRED` mit `reply` | Tests mit Verzögerungen und mit zwei offenen Aufgaben für einen Rechner (§3.2.1), Neustart der Brücke mit offener Aufgabe; ein Lauf gegen einen fremden Client mit Strom |
 | 4 | **Dateien:** `raw` nach innen (Prüfung wie die Rechner), `raw`/`url` nach außen mit `fetch`, Download-Pfad | Tests der Grenzen, Kopfzeilen des Downloads |
-| 5 | **Härten:** TLS, `--behind-proxy`, Grenzen je Aufrufer, 429, Schwärzen, Kennzeile, `events.log`, Brute-Force-Bremse, `viper a2a token …` | Tests der Angriffe (§5), Fuzz von JSON-RPC, Prüfung durch Dritte |
+| 5 | **Härten:** TLS, `--behind-proxy`, Grenzen je Aufrufer, 429, Schwärzen, Kennzeile, `events.log`, Brute-Force-Bremse (die Tokenbefehle sind schon in Meilenstein 1) | Tests der Angriffe (§5: falsches und gestohlenes Token, fremde Aufgabe, falscher Rechner, Kennzeile mit Zeilenumbruch, riesige Körper, viele Ströme, `Host` und `Origin`), Fuzz von JSON-RPC, unabhängige Prüfung; ein letzter Lauf gegen einen fremden Client |
 | 6 | **HTTP+JSON/REST** (`/message:send` usw.) | dieselben Fälle über REST |
 | 7 | **Handbuch, README, Hilfe** (Ist-Zustand, keine Chronik); optional **Verträglichkeit mit 0.3** | Durchsicht, unabhängige Prüfung |
 
-Nach jedem Meilenstein: unabhängige Prüfung, wie bei `viper ui` und beim Chat. Die Brücke braucht **keine** neuen Rechte auf den Rechnern, nur den zusätzlichen Eintrag im Server.
+Jeder Meilenstein endet mit grüner CI auf Linux, macOS und Windows (Go-Tests, Lint und die HTTP-Tests) und einer unabhängigen Prüfung, wie bei `viper ui` und beim Chat. Die Brücke braucht **keine** neuen Rechte auf den Rechnern, nur den zusätzlichen Eintrag im Server.
 
 ## 9 Entscheidungen (offen)
 
@@ -209,7 +222,7 @@ Nach jedem Meilenstein: unabhängige Prüfung, wie bei `viper ui` und beim Chat.
 6. **Standard der Reichweite:** Vorschlag: `127.0.0.1`. Eine fremde Adresse nur mit TLS und Token.
 7. **Opt-in je Rechner (`NATS_A2A_ENABLED`):** Vorschlag: ja, Standard aus.
 8. **Kennzeile `[A2A: …]` im Text:** Vorschlag: ja (§5.4). Gegenargument: der Text ändert sich; dafür weiß der Agent, woher er kommt.
-9. **Obergrenze von 120 Sekunden bei `SendMessage`:** Vorschlag: zurückgeben, was da ist (`WORKING`). Vorbehalt: die Spezifikation sagt „MUST wait“ (Meilenstein 0).
+9. **Blockierendes `SendMessage`:** Vorschlag: den Aufruf offen halten, bis die Aufgabe beendet oder unterbrochen ist (höchstens eine Stunde), wie die Spezifikation es verlangt. Die 120 Sekunden von `request` spielen keine Rolle, weil die Brücke über den Strom zuordnet. Alternative (kein Vorschlag): nach 120 Sekunden den Zustand zurückgeben und die Abweichung in Karte und Handbuch nennen.
 10. **Eigene Umsetzung oder Go-SDK?** Vorschlag: eigene schlanke Umsetzung, falls das SDK in Meilenstein 0 mehr als die Typen mitbringt.
 
 ## 10 Risiken
@@ -224,11 +237,30 @@ Nach jedem Meilenstein: unabhängige Prüfung, wie bei `viper ui` und beim Chat.
 | Spezifikation ändert sich | Fassung in der Karte; `A2A-Version` ausgewertet; Abschnitt „was gelesen ist“ im Plan |
 | Zwei Brücken gegen einen Schlüssel | Sperrdatei wie beim Chat |
 
+### 10.1 Prüfung des Plans (20.11.2026)
+
+Eine unabhängige Prüfung gegen die Spezifikation 1.0.0 und den Code ist eingearbeitet:
+
+| Fund | Wo |
+|---|---|
+| Die Grenze von 120 Sekunden bei blockierendem `SendMessage` verletzt „MUST wait“; die Brücke braucht sie nicht | §3.3, §9.9 |
+| `INPUT_REQUIRED` war nicht zuordenbar und fälschbar (kein Bezug zur Aufgabe, jeder Rechner darf `a2a` anschreiben); die späte Antwort geht beim Rechner verloren | §3.2.1 |
+| Ein Anschluss an NATS fehlte für den Anwendungsfall (depguard); `RunCLI` je Aufgabe ist falsch; `natsmcp` ist nicht unverändert | §4.2, §6.3 |
+| Mehrere Operator-Einträge tragen Server und `natsop` schon; zu ändern ist `cli` und die Einstellungen | §4.1, §6.3 |
+| `watch --to` ist überflüssig | §4.2 |
+| `WORKING` aus der Anwesenheit sagt „verbunden“, nicht „arbeitet“; die erste `res` ist endgültig; `REJECTED` nur für angelegte Aufgaben, sonst Fehler der Anfrage | §3.2 |
+| Dateien: andere Arten werden abgelehnt, Speicher bei Base64, Gruppe ohne Objektspeicher, die Kennzeile zählt gegen 16 KiB | §3.3 |
+| Anmeldung für jeden Pfad, Liste der Rechner angemeldet und gefiltert, gleiche Antwort für „gibt es nicht“ und „darf nicht“, Hash mit konstanter Zeit, `tenant` und Pfad | §2, §3.3, §5.2 |
+| Kennzeile ist ein Hinweis, kein Schutz; Name des Aufrufers geprüft; Antworten markiert | §5.4 |
+| Grenzen hinter einem Proxy (je Token-Name), `Host`-Prüfung, kein CORS, Ströme, Fristen; Download prüft die Aufgabe | §3.3, §5.2, §5.3 |
+| Meilensteine: Tokenbefehle und die Frage nach `PUSH_FROM` schon in Meilenstein 1; Strom erst ab Meilenstein 3; Lauf gegen einen fremden Client in mehreren Abschnitten; CI auf drei Systemen | §8, §11 |
+| Kleinigkeiten der Spezifikation: `supportedInterfaces` ist Pflicht, SSRF ist eine Empfehlung (SHOULD), Fehlercode `-32009`, „nur eine Bindung“ ist nicht belegt | §3.3, §5.5, §6.2, §7 |
+
 ## 11 Definition of Done
 
 * `viper a2a init|serve|check|token|revoke` laufen am Terminal; ein fremder A2A-Client findet die Karte eines Rechners, stellt eine Aufgabe, bekommt die Antwort (auch spät und mit Rückfrage) und kann die Aufgabe ansehen.
 * Ein Aufrufer ohne Token, mit falschem Token oder für einen anderen Rechner bekommt nichts; zwei Aufrufer sehen die Aufgaben des anderen nicht.
 * Ohne `NATS_A2A_ENABLED` ist ein Rechner nicht erreichbar; der Name `a2a` ist für Rechner gesperrt.
 * Kein Webhook, kein `url`: keine Anfrage der Brücke an eine Adresse, die ein Aufrufer nennt.
-* Tests: Go-Tests (Zustände, Isolation, Grenzen), Tests mit eingebettetem NATS-Server und einem Rechner als Dienst, ein Lauf gegen einen fremden Client; Lint und Browser-/HTTP-Tests grün in der CI auf Linux, macOS und Windows.
+* Tests: Go-Tests (Zustände, Isolation, Grenzen), Tests mit eingebettetem NATS-Server und einem Rechner als Dienst, **Läufe gegen einen fremden Client in den Meilensteinen 0, 2, 3 und 5**; Lint und Browser-/HTTP-Tests grün in der CI auf Linux, macOS und Windows.
 * Handbuch (Ist-Zustand, die Grenzen von NATS und A2A), README und Hilfe stimmen; **jeder Meilenstein unabhängig geprüft**.
