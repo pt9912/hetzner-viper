@@ -181,7 +181,7 @@ viper a2a check [GRUPPE]         # Karten, Anwesenheit, Rechte, ein Probeaufruf 
 |---|---|
 | `internal/natsserver`, `internal/usecase/natsop` | nur ein Test für zwei Operator-Einträge je Gruppe (Name `a2a`) |
 | `internal/adapter/driving/cli` | Befehle `a2a …`, Hilfe, Befehlstabelle; `loadNatsGroup` kennt die Identität `a2a` (Schlüsseldatei, Name); `openOperatorDead` mit Name statt festem Operator |
-| `internal/natsmcp` | evtl. `watch --to NAME`; sonst nichts |
+| `internal/natsmcp` | eine kleine ausgeführte Schnittstelle für die dauerhafte Verbindung (senden, antworten, Datei, Strom, Anwesenheit; §4.2). Kein `watch --to` |
 | `internal/model`, `settingsfile`, Einstellungen der Oberfläche, `viper check` | Name `a2a` gesperrt (Rechner und Operator); `NATS_A2A_*` je Rechner und Gruppe; Typen der Aufgaben |
 | Neue Pakete | `usecase/a2a`, `port/driving/a2a.go`, `port/driven/a2astore`, `port/driven/a2anats`, `adapter/driven/a2astore`, `adapter/driven/a2anats`, `adapter/driving/a2aweb` (importiert **nur** `port/driving`) |
 | Handbuch, README, Hilfe | Kapitel „Rechner über A2A erreichbar machen“ (Ist-Zustand), Befehlstabelle |
