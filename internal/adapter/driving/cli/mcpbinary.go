@@ -66,9 +66,15 @@ func writeProgram(path string, b []byte) error {
 	}
 	tmp := path + ".new"
 	if err := os.WriteFile(tmp, b, 0o755); err != nil { //nolint:gosec // a program: the user must run it
+		_ = os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, path) // a running program is replaced, not overwritten
+	// a running program is replaced, not overwritten; Windows refuses to replace one that runs: end Claude Code first
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("%w (is the program running? end the Claude Code session that uses it and try again)", err)
+	}
+	return nil
 }
 
 func nativeMCPBinary(o *options) error {

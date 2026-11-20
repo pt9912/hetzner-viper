@@ -189,7 +189,7 @@ func natsPrepare(o *options, g *natsGroup, args *natsArgs) (asOperator bool, err
 			return false, err
 		}
 	}
-	if _, isMachine := g.ms[o.from]; o.from != "" && !isMachine && o.from != g.operator && exists(g.keyOf(o.from)) {
+	if _, isMachine := g.ms[o.from]; o.from != "" && !isMachine && o.from != g.operator && model.CheckNATSName("identity", o.from) == nil && exists(g.keyOf(o.from)) {
 		g.useIdentity(o.from) // an identity made with viper nats init --name
 		return finishPrepare(args, true)
 	}

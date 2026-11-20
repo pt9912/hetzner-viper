@@ -44,7 +44,7 @@ func TestTheChildEndsWhenTheServerIsKilled(t *testing.T) {
 	_ = cmd.Process.Kill() // SIGKILL: nothing is cleaned up by the server
 	_, _ = cmd.Process.Wait()
 	for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
-		if syscall.Kill(pid, 0) != nil {
+		if gone(pid) {
 			return
 		}
 	}
@@ -56,4 +56,17 @@ func killProcess(t *testing.T, pid int) {
 	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// gone tells whether the process has ended: one that is a zombie (nobody has collected it, as in a container without an init) has.
+func gone(pid int) bool {
+	if syscall.Kill(pid, 0) != nil {
+		return true
+	}
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return false
+	}
+	_, rest, ok := strings.Cut(string(b), ") ")
+	return ok && strings.HasPrefix(rest, "Z")
 }

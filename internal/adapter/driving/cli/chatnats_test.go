@@ -32,9 +32,12 @@ type chatWorld struct {
 	localSeed, url string
 }
 
-func newChatWorld(t *testing.T) *chatWorld {
+func newChatWorld(t *testing.T) *chatWorld { return newChatWorldWith(t, "") }
+
+// newChatWorldWith is newChatWorld with more settings for the group.
+func newChatWorldWith(t *testing.T, extra string) *chatWorld {
 	t.Helper()
-	dir, env := natsGroup(t, "")
+	dir, env := natsGroup(t, extra)
 	op := &fakeOp{registered: map[string]string{}}
 	_, h := fakeTools(t)
 	h.Env = func() (settings.Env, error) { return env, nil }

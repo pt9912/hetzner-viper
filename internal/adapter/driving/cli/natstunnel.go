@@ -83,6 +83,9 @@ func findGroupDir(o *options, env settings.Env, group, name string) (dir, how st
 	if err != nil {
 		return "", "", err
 	}
+	if !within(env.Home, cwd) { // outside the home folder nothing is looked at: a folder there is not the user's
+		return "", "", notFoundError(group, name, checked, fmt.Sprintf("%s is not below %s: folders above it are not looked at", cwd, env.Home))
+	}
 	d := cwd
 	for i := 0; i <= walkUpLevels; i++ {
 		if has(d) {

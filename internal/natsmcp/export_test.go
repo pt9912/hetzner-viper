@@ -1,6 +1,9 @@
 package natsmcp
 
-import "time"
+import (
+	"os"
+	"time"
+)
 
 // Test-only exports of the unexported identifiers the external tests use.
 
@@ -55,9 +58,11 @@ func AuthHint(lastError, group string) string { return authHint(lastError, group
 // ChildEnv exports childEnv.
 func ChildEnv(environ []string) []string { return childEnv(environ) }
 
-// CertificateChanged exports certificateChanged for two files.
+// CertificateChanged exports certificateChanged for the certificates in two files (read as startTunnel reads them).
 func CertificateChanged(oldCA, newCA string) bool {
-	return certificateChanged(Ready{CAFile: oldCA}, Ready{CAFile: newCA})
+	a, _ := os.ReadFile(oldCA)
+	b, _ := os.ReadFile(newCA)
+	return certificateChanged(Ready{CAPEM: a}, Ready{CAPEM: b})
 }
 
 // ReadAttachmentFile exports readAttachmentFile.

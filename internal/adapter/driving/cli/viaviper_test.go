@@ -70,9 +70,11 @@ type viaWorld struct {
 	dir   string
 }
 
-func newViaWorld(t *testing.T) *viaWorld {
+func newViaWorld(t *testing.T) *viaWorld { return newViaWorldWith(t, "") }
+
+func newViaWorldWith(t *testing.T, extra string) *viaWorld {
 	t.Helper()
-	w := newChatWorld(t)
+	w := newChatWorldWith(t, extra)
 	state := model.StateDir(w.env.Home)
 	key := model.IdentityKeyFile(state, "dev", "local")
 	seed, err := os.ReadFile(w.localSeed)
@@ -252,5 +254,21 @@ func TestTheServerEndsWithAMessageWhenTheTunnelDoesNotComeUpAgain(t *testing.T) 
 		}
 	case <-time.After(20 * time.Second):
 		t.Fatalf("the server did not end\n%s", errs.String())
+	}
+}
+
+func TestTheServerSaysWhenYesIsMissingAndEndsWithTheStatusOfThatCase(t *testing.T) {
+	v := newViaWorldWith(t, "NATS_MCP_PUSH_FROM=local\n")
+	t.Setenv("VIPER_TEST_AS", asViper)
+	var out, errs lockedBuf
+	inR, inW := io.Pipe()
+	defer func() { _ = inW.Close() }()
+	args := []string{"dev", "--viper", v.viper, "--dir", v.dir}
+	if code := natsmcp.ViaViperMain(testVer, args, inR, &out, &errs); code != natsmcp.ExitNeedsYes || !strings.Contains(errs.String(), "--yes") || out.String() != "" {
+		t.Errorf("code %d\n%s", code, errs.String())
+	}
+	r, _ := v.viaRig(t, "--yes")
+	if text, isErr := r.call("peers", map[string]any{}); isErr {
+		t.Errorf("with --yes it starts: %s", text)
 	}
 }

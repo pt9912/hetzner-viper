@@ -161,6 +161,8 @@ type Ready struct {
 	StateDir       string `json:"state_dir"`
 	ObjectsFileMax int64  `json:"objects_file_max"`
 	PID            int    `json:"pid"`
+	// CAPEM is the certificate as it was when the line came: the file is deleted when the child ends, and a restarted child writes a new one.
+	CAPEM []byte `json:"-"`
 }
 
 // ParseReady reads and checks the line (it is input from another program): at most one line of 4 KiB, the event ready, the address on this
@@ -325,6 +327,9 @@ func startTunnel(ctx context.Context, viper string, o ViaOptions, port int, stde
 	if err != nil {
 		return nil, Ready{}, err
 	}
+	// the end of the context is the end of stdin, like any other end: the child then closes the tunnel itself (a kill would leave ssh behind)
+	cmd.Cancel = stdin.Close
+	cmd.WaitDelay = 5 * time.Second
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, Ready{}, err
@@ -333,12 +338,18 @@ func startTunnel(ctx context.Context, viper string, o ViaOptions, port int, stde
 		return nil, Ready{}, fmt.Errorf("starting %s: %w", viper, err)
 	}
 	c := &tunnelChild{cmd: cmd, stdin: stdin, out: bufio.NewReaderSize(stdout, maxReadyLine+1), done: make(chan struct{}), errs: errs}
-	go func() { _ = cmd.Wait(); close(c.done) }()
 	r, err := c.readReady(ctx, o, version)
 	if err != nil {
-		c.stop()
 		return nil, Ready{}, err
 	}
+	if r.CAFile != "" {
+		if r.CAPEM, err = os.ReadFile(r.CAFile); err != nil {
+			c.reap()
+			return nil, Ready{}, fmt.Errorf("reading the certificate: %w", err)
+		}
+	}
+	// Wait only once the line is read: it closes the pipe
+	go func() { _ = cmd.Wait(); close(c.done) }()
 	return c, r, nil
 }
 
@@ -357,22 +368,39 @@ func (c *tunnelChild) readReady(ctx context.Context, o ViaOptions, version strin
 	}()
 	select {
 	case r := <-ch:
-		if r.err != nil {
-			return Ready{}, c.failure(r.err)
+		if r.err != nil { // the pipe ended: the child is gone, and says why
+			c.reap()
+			return Ready{}, c.childError(r.err)
 		}
-		return ParseReady(bytes.TrimSpace(r.line), o, version)
-	case <-c.done:
-		return Ready{}, c.failure(errors.New("viper nats tunnel ended"))
+		pr, err := ParseReady(bytes.TrimSpace(r.line), o, version)
+		if err != nil {
+			c.reap()
+		}
+		return pr, err
 	case <-time.After(readyWait):
+		c.reap()
 		return Ready{}, errors.New("viper nats tunnel did not come up in time")
 	case <-ctx.Done():
+		c.reap()
 		return Ready{}, ctx.Err()
 	}
 }
 
-// failure is an error with what the child said, and its exit status.
-func (c *tunnelChild) failure(err error) error {
-	<-waitOrTimeout(c.done, 2*time.Second)
+// reap ends a child that did not come up: it is given a moment to end by itself (its exit status says what was wrong), then killed.
+func (c *tunnelChild) reap() {
+	_ = c.stdin.Close()
+	w := make(chan struct{})
+	go func() { _ = c.cmd.Wait(); close(w) }()
+	select {
+	case <-w:
+	case <-time.After(2 * time.Second):
+		_ = c.cmd.Process.Kill()
+		<-w
+	}
+}
+
+// childError is err with what the child said on stderr, or the request for --yes if that was its exit status; the child has been reaped.
+func (c *tunnelChild) childError(err error) error {
 	msg := c.errs.String()
 	if c.cmd.ProcessState != nil && c.cmd.ProcessState.ExitCode() == ExitNeedsYes {
 		return &NeedsYesError{Said: msg}
@@ -388,18 +416,6 @@ type NeedsYesError struct{ Said string }
 
 func (e *NeedsYesError) Error() string {
 	return e.Said + " (start viper-nats-mcp with --yes to accept that)"
-}
-
-func waitOrTimeout(done <-chan struct{}, d time.Duration) <-chan struct{} {
-	out := make(chan struct{})
-	go func() {
-		select {
-		case <-done:
-		case <-time.After(d):
-		}
-		close(out)
-	}()
-	return out
 }
 
 // stop ends the child: closing its stdin is the sign, then the process is killed if it does not go.
@@ -466,6 +482,8 @@ type supervisor struct {
 	ready Ready
 	code  int // the exit status when the supervisor gave up (0: it did not)
 	why   string
+	// closing: the server ends, so a child that ends is not started again
+	closing bool
 }
 
 func (v *supervisor) current() (*tunnelChild, Ready) {
@@ -475,10 +493,24 @@ func (v *supervisor) current() (*tunnelChild, Ready) {
 }
 
 func (v *supervisor) stop() {
-	if c, _ := v.current(); c != nil {
+	v.mu.Lock()
+	v.closing = true
+	c := v.child
+	v.mu.Unlock()
+	if c != nil {
 		c.stop()
 	}
 }
+
+func (v *supervisor) isClosing() bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.closing
+}
+
+// quickDeath is how long a tunnel must have been up for its end not to count against the tries: one that dies again at once is a
+// network or a server that is not well, and is not started again for ever.
+const quickDeath = time.Minute
 
 func (v *supervisor) giveUp(code int, why string) {
 	v.mu.Lock()
@@ -494,6 +526,8 @@ func (v *supervisor) gaveUp() (int, string) {
 
 // watch restarts the child each time it ends, until ctx is done or the server gives up (then cancel is called).
 func (v *supervisor) watch(ctx context.Context, cancel context.CancelFunc) {
+	quick := 0 // how many tunnels in a row died soon after they came up
+	up := time.Now()
 	for {
 		child, old := v.current()
 		select {
@@ -501,10 +535,23 @@ func (v *supervisor) watch(ctx context.Context, cancel context.CancelFunc) {
 		case <-ctx.Done():
 			return
 		}
+		if v.isClosing() {
+			return
+		}
 		v.log.Printf("viper nats tunnel ended: %s", child.errs.String())
+		if time.Since(up) < quickDeath {
+			quick++
+		} else {
+			quick = 0
+		}
+		if quick >= restartTries {
+			v.giveUp(1, fmt.Sprintf("the tunnel to the NATS server ended %d times in a row soon after it came up", quick))
+			cancel()
+			return
+		}
 		next, ready, err := v.restart(ctx, old)
 		if err != nil {
-			if ctx.Err() == nil {
+			if ctx.Err() == nil && !v.isClosing() {
 				code := 1
 				if errors.Is(err, errCertificateChanged) {
 					code = ExitCertificateChanged
@@ -517,6 +564,7 @@ func (v *supervisor) watch(ctx context.Context, cancel context.CancelFunc) {
 		v.mu.Lock()
 		v.child, v.ready = next, ready
 		v.mu.Unlock()
+		up = time.Now()
 		v.log.Printf("the tunnel is up again (viper nats tunnel pid %d)", ready.PID)
 	}
 }
@@ -526,6 +574,8 @@ var errCertificateChanged = errors.New("the server of the group has another cert
 // restart starts the child on the port of the one that ended, up to restartTries times with growing pauses.
 func (v *supervisor) restart(ctx context.Context, old Ready) (*tunnelChild, Ready, error) {
 	port := portOf(old.URL)
+	opts := v.opts
+	opts.Dir = old.SettingsDir // the folder the group was found in the first time, whatever has changed since
 	wait := v.opts.RestartWait
 	var last error
 	for try := 1; try <= restartTries; try++ {
@@ -535,7 +585,7 @@ func (v *supervisor) restart(ctx context.Context, old Ready) (*tunnelChild, Read
 			return nil, Ready{}, ctx.Err()
 		}
 		wait *= 2
-		child, ready, err := startTunnel(ctx, v.viper, v.opts, port, v.stderr, v.version)
+		child, ready, err := startTunnel(ctx, v.viper, opts, port, v.stderr, v.version)
 		if err == nil {
 			if certificateChanged(old, ready) {
 				child.stop()
@@ -558,14 +608,10 @@ func portOf(url string) int {
 	return 0
 }
 
-// certificateChanged tells whether the server has another certificate than the one the connection was made with.
+// certificateChanged tells whether the server has another certificate than the one the connection was made with. The bytes are those
+// read when the line ready came (the files are gone by then: the child that wrote one deletes it when it ends).
 func certificateChanged(old, now Ready) bool {
-	if old.CAFile == "" && now.CAFile == "" {
-		return false
-	}
-	a, errA := os.ReadFile(old.CAFile)
-	b, errB := os.ReadFile(now.CAFile)
-	return errA != nil || errB != nil || !bytes.Equal(a, b)
+	return !bytes.Equal(old.CAPEM, now.CAPEM)
 }
 
 func viaRun(ctx context.Context, version string, o ViaOptions, viper string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -582,10 +628,9 @@ func viaRun(ctx context.Context, version string, o ViaOptions, viper string, std
 	log := NewFileLogger(stderr, cfg.LogFile, 1<<20)
 	defer log.Close()
 	sup := &supervisor{version: version, opts: o, viper: viper, stderr: stderr, log: log, child: child, ready: ready}
-	defer sup.stop()
 	log.Printf("starting %s as %s in the group %s (through %s; viper nats tunnel pid %d)", version, cfg.Names.Me, cfg.Names.Group, ready.URL, ready.PID)
 	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	defer func() { sup.stop(); cancel() }() // the child first: it closes the tunnel when its stdin ends
 	go sup.watch(runCtx, cancel)
 	err = Run(runCtx, cfg, version, stdin, stdout, log)
 	if code, why := sup.gaveUp(); code != 0 { // the supervisor ended it: that is the reason, not the cancelled context
