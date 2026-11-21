@@ -58,14 +58,7 @@ func findGroupDir(o *options, env settings.Env, group, name string, cwdFirst boo
 	state := model.StateDir(env.Home)
 	var checked []string
 	if o.dir != "" {
-		abs, err := filepath.Abs(o.dir)
-		if err != nil {
-			return "", "", err
-		}
-		if !has(abs) {
-			return "", "", fmt.Errorf("--dir %s has no groups/%s.env", abs, group)
-		}
-		return abs, "--dir", nil
+		return explicitDir(o.dir, group)
 	}
 	checked = append(checked, "--dir (not given)")
 	if cwdFirst { // the commands of a person: the current folder is the folder with the settings, as for every other command
@@ -85,6 +78,23 @@ func findGroupDir(o *options, env settings.Env, group, name string, cwdFirst boo
 	if !model.HasIdentityKey(state, group, model.DefaultNATSOperator, name) {
 		return "", "", notFoundError(group, name, checked, "folders above the current one (not looked at: no key for "+name+" here)")
 	}
+	return walkUp(env, group, name, checked, has)
+}
+
+// explicitDir checks the folder --dir names.
+func explicitDir(dir, group string) (string, string, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", "", err
+	}
+	if !exists(filepath.Join(abs, "groups", group+".env")) {
+		return "", "", fmt.Errorf("--dir %s has no groups/%s.env", abs, group)
+	}
+	return abs, "--dir", nil
+}
+
+// walkUp looks in the folders above the current one, at most walkUpLevels of them and never above the home folder.
+func walkUp(env settings.Env, group, name string, checked []string, has func(string) bool) (string, string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", "", err
