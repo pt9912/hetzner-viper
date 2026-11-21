@@ -390,3 +390,27 @@ func TestPrintConfigWritesTheEntryForClaudeCodeAndWhatIsMissing(t *testing.T) {
 		t.Errorf("--push-from without --print-config: %v", err)
 	}
 }
+
+func TestPrintConfigFindsTheGroupInTheCurrentFolderLikeEveryOtherCommand(t *testing.T) {
+	dir, env := natsGroup(t, "")
+	_, h := fakeTools(t)
+	h.Env = func() (settings.Env, error) { return env, nil }
+	var out lockedBuf
+	h.Stdout = &out
+	t.Chdir(dir) // no --dir, no key, nothing remembered
+	if err := cli.RunCommand("nats", &cli.Opts{Host: h, Args: []string{"tunnel", "dev"}, PrintConfig: true}); err != nil {
+		t.Fatal(err)
+	}
+	abs, _ := filepath.Abs(dir)
+	for _, want := range []string{"the current folder", "--dir ", abs, "run viper nats init dev --name local"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the output lacks %q:\n%s", want, out.String())
+		}
+	}
+	// the tunnel itself, started by a program from a project folder, does not trust the current folder
+	t.Chdir(t.TempDir())
+	r := startTunnel(t, dir, env, &fakeOp{registered: map[string]string{}}, cli.Opts{Dir: noDir})
+	if err := <-r.done; err == nil || !strings.Contains(err.Error(), "was not found") {
+		t.Errorf("%v", err)
+	}
+}

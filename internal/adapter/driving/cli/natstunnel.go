@@ -53,7 +53,7 @@ const walkUpLevels = 5
 
 // findGroupDir says which folder holds the settings of the group (groups/<group>.env): --dir, the folder that viper nats init
 // remembered, or a folder above the current one (only for an identity that has a key here). It names the way it was found.
-func findGroupDir(o *options, env settings.Env, group, name string) (dir, how string, err error) {
+func findGroupDir(o *options, env settings.Env, group, name string, cwdFirst bool) (dir, how string, err error) {
 	has := func(d string) bool { return exists(filepath.Join(d, "groups", group+".env")) }
 	state := model.StateDir(env.Home)
 	var checked []string
@@ -68,6 +68,12 @@ func findGroupDir(o *options, env settings.Env, group, name string) (dir, how st
 		return abs, "--dir", nil
 	}
 	checked = append(checked, "--dir (not given)")
+	if cwdFirst { // the commands of a person: the current folder is the folder with the settings, as for every other command
+		if cwd, err := os.Getwd(); err == nil && has(cwd) {
+			return cwd, "the current folder", nil
+		}
+		checked = append(checked, "the current folder (no groups/"+group+".env)")
+	}
 	if raw, rerr := os.ReadFile(model.SettingsDirFile(state, group)); rerr == nil {
 		d := strings.TrimSpace(string(raw))
 		if filepath.IsAbs(d) && has(d) {
@@ -107,7 +113,7 @@ func within(dir, path string) bool {
 }
 
 func notFoundError(group, name string, checked []string, last string) error {
-	return fmt.Errorf("the group %s was not found (looked at: %s, %s). Give --dir ABSOLUTE-FOLDER, or run viper nats init %s --name %s in the folder with the settings",
+	return fmt.Errorf("the group %s was not found (looked at: %s, %s). Run viper in the folder with the settings, give --dir ABSOLUTE-FOLDER, or run viper nats init %s --name %s in the folder with the settings",
 		group, strings.Join(checked, ", "), last, group, name)
 }
 
@@ -161,7 +167,7 @@ func tunnelTarget(ctx context.Context, o *options, env settings.Env, group, name
 	if err := model.CheckNATSName("identity", name); err != nil {
 		return nil, "", err
 	}
-	dir, how, err := findGroupDir(o, env, group, name)
+	dir, how, err := findGroupDir(o, env, group, name, false)
 	if err != nil {
 		return nil, "", err
 	}
@@ -260,7 +266,7 @@ func runNatsPrintConfig(o *options, env settings.Env, group string, stdout io.Wr
 	if err := model.CheckNATSName("identity", name); err != nil {
 		return err
 	}
-	dir, how, err := findGroupDir(o, env, group, name)
+	dir, how, err := findGroupDir(o, env, group, name, true)
 	if err != nil {
 		return err
 	}
