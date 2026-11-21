@@ -1,6 +1,6 @@
 # Benutzerhandbuch: Hetzner Viper
 
-Version: 1.205  
+Version: 1.206  
 Software-Version: v0.35.1  
 Stand: 21.11.2026  
 
