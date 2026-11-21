@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 )
 
 // mcpArch reads --arch of viper mcp-binary: the Go and the usual names of the two architectures.
@@ -26,14 +29,59 @@ func writeMCPBinary(o *options, out io.Writer, terminal bool) error {
 	if err != nil {
 		return err
 	}
-	if o.out != "" { // a file of its own: the program must run, and no other program may be replaced by accident
-		return writeProgram(o.out, b)
+	path := o.out
+	if path == "" && o.hostBin { // the program for this computer goes next to viper, where the entry for Claude Code looks for it
+		if path, err = nextToViper(o); err != nil {
+			return err
+		}
+	}
+	if path != "" && path != "-" { // a file: the program must run, and no other program may be replaced by accident
+		if err := writeProgram(path, b); err != nil {
+			return err
+		}
+		if o.hostBin {
+			fmt.Fprintf(out, "Wrote %s (the program that belongs to this viper; write it again after every update of viper).\n", path)
+		}
+		return nil
 	}
 	if terminal {
 		return fmt.Errorf("viper mcp-binary: the program is binary: redirect it into a file or name one with --out")
 	}
 	_, err = out.Write(b)
 	return err
+}
+
+// invokedViper is the path under which viper was started: through the link the user types (Homebrew puts a link in its bin folder to a
+// folder with the version in its name), not the file behind it.
+func invokedViper(o *options) (string, error) {
+	if fn := o.host().Services.Executable; fn != nil {
+		return fn()
+	}
+	a := os.Args[0]
+	if !strings.ContainsAny(a, `/\`) {
+		if p, err := exec.LookPath(a); err == nil {
+			a = p
+		}
+	}
+	if abs, err := filepath.Abs(a); err == nil {
+		if _, err := os.Stat(abs); err == nil {
+			return abs, nil
+		}
+	}
+	return os.Executable()
+}
+
+// nextToViper is where viper-nats-mcp lies: in the folder of viper.
+func nextToViper(o *options) (string, error) {
+	self, err := invokedViper(o)
+	if err != nil {
+		return "", err
+	}
+	name := "viper-nats-mcp"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return filepath.Join(filepath.Dir(self), name), nil
 }
 
 // mcpProgram is the program that --arch or --host asks for.

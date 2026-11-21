@@ -40,6 +40,9 @@ type Services struct {
 	Proxy driving.Proxy
 	// MCPBinary is the viper-nats-mcp program built into viper for a Linux architecture ("amd64" or "arm64").
 	MCPBinary func(goarch string) ([]byte, error)
+	// Executable is the path under which viper was started (a link stays a link: Homebrew's folder of versions is not the path to keep); nil: found from
+	// the name of the program.
+	Executable func() (string, error)
 	// MCPHost is the viper-nats-mcp program for the system viper runs on (viper mcp-binary --host).
 	MCPHost func() ([]byte, error)
 	// LaunchVSCode opens VS Code on a machine (viper vscode).

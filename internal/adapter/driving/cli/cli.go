@@ -100,7 +100,7 @@ func commands() map[string]command {
 		"image":        {usage: "build [--tag NAME:TAG] [--k3d CLUSTER]", machine: restArgs, flags: []string{"tag", "k3d"}, run: nativeImage},
 		"k8s-proxy":    {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeK8sProxy},
 		"docker-proxy": {usage: "<machine> [--in-group G]", machine: needMachine, flags: []string{"in-group"}, run: nativeDockerProxy},
-		"mcp-binary":   {usage: "--arch amd64|arm64 | --host [--out FILE]", machine: noMachine, flags: []string{"arch", "host", "out"}, run: nativeMCPBinary},
+		"mcp-binary":   {usage: "--arch amd64|arm64 | --host [--out FILE|-]", machine: noMachine, flags: []string{"arch", "host", "out"}, run: nativeMCPBinary},
 		"ui-chat":      {usage: "[--port N] [--no-open] [--readonly] [--no-pairs] [--keep-days N] [--no-history]", machine: noMachine, flags: []string{"port", "no-open", "readonly", "no-pairs", "keep-days", "no-history"}, run: nativeUIChat},
 		"ui":           {usage: "[--port N] [--no-open] [--readonly|--edit]", machine: noMachine, flags: []string{"port", "no-open", "readonly", "edit"}, run: nativeUI},
 		"version":      {usage: "", machine: noMachine},

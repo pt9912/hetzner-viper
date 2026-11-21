@@ -335,13 +335,15 @@ func TestPrintConfigWritesTheEntryForClaudeCodeAndWhatIsMissing(t *testing.T) {
 	h.Env = func() (settings.Env, error) { return env, nil }
 	var out lockedBuf
 	h.Stdout = &out
+	link := filepath.Join(t.TempDir(), "brew", "bin", "viper") // a link in the folder of the package manager, not the folder of versions behind it
+	h.Services.Executable = func() (string, error) { return link, nil }
 	err := cli.RunCommand("nats", &cli.Opts{Host: h, Dir: dir, Args: []string{"tunnel", "dev"}, PrintConfig: true, PushFrom: "beta, gamma", Files: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := out.String()
 	abs, _ := filepath.Abs(dir)
-	for _, want := range []string{"claude mcp add nats-dev -- ", "--via-viper dev", "--viper ", "--dir ", abs, "--push-from ", "beta, gamma", "--files ", `"mcpServers"`, `"nats-dev"`,
+	for _, want := range []string{"claude mcp add nats-dev -- ", "--via-viper dev", "--viper ", filepath.Dir(link), "viper-nats-mcp", "--dir ", abs, "--push-from ", "beta, gamma", "--files ", `"mcpServers"`, `"nats-dev"`,
 		"--dangerously-load-development-channels server:nats-dev", "no key for local: run viper nats init dev --name local", "viper mcp-binary --host --out", "local is in NATS_MCP_PUSH_FROM of alpha, beta, gamma"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the output lacks %q:\n%s", want, got)

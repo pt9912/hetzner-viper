@@ -182,7 +182,7 @@ func ParseReady(line []byte, o ViaOptions, version string) (Ready, error) {
 		return r, fmt.Errorf("ready is for %s/%s, not %s/%s", r.Group, r.Name, o.Group, o.Name)
 	}
 	if r.Version != version {
-		return r, fmt.Errorf("viper is %q, this program is %q: both must come from one build (--viper names another program)", r.Version, version)
+		return r, fmt.Errorf("viper is %q, this program is %q: both must come from one build. Write the program again with the viper you use: viper mcp-binary --host (it replaces the file next to viper; end the Claude Code session that uses it first), or name that viper with --viper", r.Version, version)
 	}
 	if err := checkLocalURL(r); err != nil {
 		return r, err

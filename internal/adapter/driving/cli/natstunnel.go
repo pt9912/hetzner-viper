@@ -269,16 +269,13 @@ func runNatsPrintConfig(o *options, env settings.Env, group string, stdout io.Wr
 	if err != nil {
 		return err
 	}
-	self, err := os.Executable()
+	self, err := invokedViper(o)
 	if err != nil {
 		return err
 	}
-	if self, err = filepath.EvalSymlinks(self); err != nil {
+	mcp, err := nextToViper(o)
+	if err != nil {
 		return err
-	}
-	mcp := filepath.Join(filepath.Dir(self), "viper-nats-mcp")
-	if runtime.GOOS == "windows" {
-		mcp += ".exe"
 	}
 	args, err := serverArgs(o, group, name, self, dir)
 	if err != nil {

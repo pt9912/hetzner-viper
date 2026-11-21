@@ -693,9 +693,24 @@ func TestMCPBinaryHostWritesTheProgramOfThisComputerToStdoutOrAFile(t *testing.T
 	h.Services.MCPHost = func() ([]byte, error) { return []byte("MZ-host"), nil }
 	var out bytes.Buffer
 	h.Stdout = &out
-	if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h, HostBin: true}); err != nil || out.String() != "MZ-host" {
+	// without --out the program is written next to viper, under the path viper was started with (a link stays a link)
+	binDir := filepath.Join(t.TempDir(), "brew", "bin")
+	h.Services.Executable = func() (string, error) { return filepath.Join(binDir, "viper"), nil }
+	if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h, HostBin: true}); err != nil || !strings.Contains(out.String(), "Wrote ") {
 		t.Errorf("%v %q", err, out.String())
 	}
+	name := "viper-nats-mcp"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	if b, err := os.ReadFile(filepath.Join(binDir, name)); err != nil || string(b) != "MZ-host" {
+		t.Errorf("next to viper: %q %v", b, err)
+	}
+	out.Reset()
+	if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h, HostBin: true, Out: "-"}); err != nil || out.String() != "MZ-host" { // --out - is standard output
+		t.Errorf("%v %q", err, out.String())
+	}
+	out.Reset()
 	file := filepath.Join(t.TempDir(), "bin", "viper-nats-mcp")
 	for i := 0; i < 2; i++ { // the second time replaces the file
 		if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h, HostBin: true, Out: file}); err != nil {
@@ -714,7 +729,7 @@ func TestMCPBinaryHostWritesTheProgramOfThisComputerToStdoutOrAFile(t *testing.T
 	}
 	h.IsTerminal = func() bool { return true }
 	out.Reset()
-	if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h, HostBin: true}); err == nil || out.Len() != 0 {
+	if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h, HostBin: true, Out: "-"}); err == nil || out.Len() != 0 {
 		t.Errorf("a terminal must not get the bytes: %v", err)
 	}
 	h.Services.MCPHost = func() ([]byte, error) { return nil, errors.New("this viper was built without the NATS MCP server") }
