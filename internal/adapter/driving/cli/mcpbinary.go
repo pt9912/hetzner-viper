@@ -31,12 +31,18 @@ func writeMCPBinary(o *options, out io.Writer, terminal bool) error {
 	}
 	path := o.out
 	if path == "" && o.hostBin { // the program for this computer goes next to viper, where the entry for Claude Code looks for it
+		if !terminal { // a redirect (> file) used to take the program: it would now get the message and the program would lie next to viper
+			return errors.New("viper mcp-binary --host writes the program next to viper, not to standard output: use --out FILE for another place, or --out - for standard output")
+		}
 		if path, err = nextToViper(o); err != nil {
-			return err
+			return fmt.Errorf("%w (--out FILE writes it elsewhere)", err)
 		}
 	}
 	if path != "" && path != "-" { // a file: the program must run, and no other program may be replaced by accident
 		if err := writeProgram(path, b); err != nil {
+			if o.out == "" {
+				return fmt.Errorf("%w (--out FILE writes it elsewhere)", err)
+			}
 			return err
 		}
 		if o.hostBin {
@@ -120,7 +126,10 @@ func writeProgram(path string, b []byte) error {
 	// a running program is replaced, not overwritten; Windows refuses to replace one that runs: end Claude Code first
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("%w (is the program running? end the Claude Code session that uses it and try again)", err)
+		if runtime.GOOS == "windows" {
+			return fmt.Errorf("%w (is the program running? end the Claude Code session that uses it and try again)", err)
+		}
+		return err
 	}
 	return nil
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -337,20 +338,52 @@ func TestPrintConfigWritesTheEntryForClaudeCodeAndWhatIsMissing(t *testing.T) {
 	h.Stdout = &out
 	link := filepath.Join(t.TempDir(), "brew", "bin", "viper") // a link in the folder of the package manager, not the folder of versions behind it
 	h.Services.Executable = func() (string, error) { return link, nil }
+	serverName := "viper-nats-mcp"
+	if runtime.GOOS == "windows" {
+		serverName += ".exe"
+	}
+	server := filepath.Join(filepath.Dir(link), serverName)
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(server, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	err := cli.RunCommand("nats", &cli.Opts{Host: h, Dir: dir, Args: []string{"tunnel", "dev"}, PrintConfig: true, PushFrom: "beta, gamma", Files: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := out.String()
 	abs, _ := filepath.Abs(dir)
-	for _, want := range []string{"claude mcp add nats-dev -- ", "--via-viper dev", "--viper ", filepath.Dir(link), "viper-nats-mcp", "--dir ", abs, "--push-from ", "beta, gamma", "--files ", `"mcpServers"`, `"nats-dev"`,
-		"--dangerously-load-development-channels server:nats-dev", "no key for local: run viper nats init dev --name local", "viper mcp-binary --host --out", "local is in NATS_MCP_PUSH_FROM of alpha, beta, gamma"} {
+	for _, want := range []string{"claude mcp add nats-dev -- ", "--via-viper dev", "--dir ", abs, "--push-from ", "beta, gamma", "--files ", `"mcpServers"`, `"nats-dev"`,
+		"--dangerously-load-development-channels server:nats-dev", "no key for local: run viper nats init dev --name local", "local is in NATS_MCP_PUSH_FROM of alpha, beta, gamma"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the output lacks %q:\n%s", want, got)
 		}
 	}
+	// the entry names viper and the server under the path viper was started with, in the folder of that path
+	has := func(before, p, after string) bool {
+		for _, q := range []string{"", `"`, "'"} {
+			if strings.Contains(got, before+q+p+q+after) {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("--viper ", link, " ") || !has("-- ", server, " --via-viper") || strings.Contains(got, "program is not there yet") {
+		t.Errorf("viper and the server are named by the path of the call (%s), the server is there:\n%s", link, got)
+	}
 	if strings.Contains(got, "--yes") && !strings.Contains(got, "no --yes") {
 		t.Errorf("the entry must not carry --yes:\n%s", got)
+	}
+	if err := os.Remove(server); err != nil {
+		t.Fatal(err)
+	}
+	out.mu.Lock()
+	out.b.Reset()
+	out.mu.Unlock()
+	if err := cli.RunCommand("nats", &cli.Opts{Host: h, Dir: dir, Args: []string{"tunnel", "dev"}, PrintConfig: true}); err != nil || !strings.Contains(out.String(), "the program is not there yet: run viper mcp-binary --host") {
+		t.Errorf("a missing server is said: %v\n%s", err, out.String())
 	}
 	err = cli.RunCommand("nats", &cli.Opts{Host: h, Dir: dir, Args: []string{"tunnel", "dev"}, PushFrom: "beta"})
 	if err == nil || !strings.Contains(err.Error(), "--print-config") {

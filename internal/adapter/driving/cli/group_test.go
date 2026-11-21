@@ -696,6 +696,11 @@ func TestMCPBinaryHostWritesTheProgramOfThisComputerToStdoutOrAFile(t *testing.T
 	// without --out the program is written next to viper, under the path viper was started with (a link stays a link)
 	binDir := filepath.Join(t.TempDir(), "brew", "bin")
 	h.Services.Executable = func() (string, error) { return filepath.Join(binDir, "viper"), nil }
+	h.IsTerminal = func() bool { return false }
+	if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h, HostBin: true}); err == nil || !strings.Contains(err.Error(), "--out") {
+		t.Errorf("a redirect would take the message, not the program: %v", err)
+	}
+	h.IsTerminal = func() bool { return true }
 	if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h, HostBin: true}); err != nil || !strings.Contains(out.String(), "Wrote ") {
 		t.Errorf("%v %q", err, out.String())
 	}
@@ -707,6 +712,7 @@ func TestMCPBinaryHostWritesTheProgramOfThisComputerToStdoutOrAFile(t *testing.T
 		t.Errorf("next to viper: %q %v", b, err)
 	}
 	out.Reset()
+	h.IsTerminal = func() bool { return false }
 	if err := cli.RunCommand("mcp-binary", &cli.Opts{Host: h, HostBin: true, Out: "-"}); err != nil || out.String() != "MZ-host" { // --out - is standard output
 		t.Errorf("%v %q", err, out.String())
 	}

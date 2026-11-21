@@ -239,7 +239,14 @@ func FindViper(flag string) (string, error) {
 	if flag != "" {
 		return regularFile(flag)
 	}
+	var selves []string // the path this program was started with (a link stays a link), then the one behind it
+	if a := os.Args[0]; filepath.IsAbs(a) {
+		selves = append(selves, a)
+	}
 	if self, err := os.Executable(); err == nil {
+		selves = append(selves, self)
+	}
+	for _, self := range selves {
 		if p, err := regularFile(filepath.Join(filepath.Dir(self), name)); err == nil {
 			return p, nil
 		}

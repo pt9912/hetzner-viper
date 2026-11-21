@@ -307,7 +307,7 @@ func printConfigNotes(o *options, g *natsGroup, name, mcp string, stdout io.Writ
 		notes = append(notes, fmt.Sprintf("this computer has no key for %s: run viper nats init %s --name %s", name, g.name, name))
 	}
 	if !exists(mcp) {
-		notes = append(notes, fmt.Sprintf("the program is not there yet: run viper mcp-binary --host --out %s", quoteArg(mcp)))
+		notes = append(notes, fmt.Sprintf("the program is not there yet: run viper mcp-binary --host (it writes %s)", quoteArg(mcp)))
 	}
 	if _, err := o.host().LookPath("ssh"); err != nil {
 		notes = append(notes, "ssh was not found: the tunnel needs OpenSSH (on Windows an optional feature of the system)")

@@ -248,8 +248,8 @@ func helpsImages() map[string]commandDoc {
 		},
 		"mcp-binary": {
 			group:    helpImages,
-			summary:  "write the built-in MCP server (viper-nats-mcp) to stdout",
-			about:    "Writes the MCP server that is built into viper, to standard output (redirect it into a file) or to a file of your own. For a Linux server (--arch), to look at it, to check it, or as NATS_MCP_BINARY; for this computer (--host), so a Claude Code session here can talk to the group.",
+			summary:  "write the built-in MCP server (viper-nats-mcp) to a file or stdout",
+			about:    "Writes the MCP server that is built into viper. For a Linux server (--arch): to standard output (redirect it into a file) or to a file of your own (--out); to look at it, to check it, or as NATS_MCP_BINARY. For this computer (--host): next to viper (the path you started viper with), or where --out says, so a Claude Code session here can talk to the group; write it again after every update of viper.",
 			options:  []optionDoc{{"arch", "amd64|arm64", "the architecture of the Linux machine the server is for"}, {"host", "", "the program for this computer (the system and the architecture of this viper); without --out it is written next to viper"}, {"out", "FILE", "write the program to this file (executable) instead of standard output; with --host - means standard output"}},
 			examples: []string{"viper mcp-binary --arch arm64 > viper-nats-mcp", "viper mcp-binary --host"},
 			manual:   "Claude Code mit den anderen Rechnern der Gruppe sprechen lassen",
